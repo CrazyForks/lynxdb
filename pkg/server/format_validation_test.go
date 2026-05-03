@@ -58,6 +58,19 @@ func TestValidateStorageFormatRefusesFutureMarker(t *testing.T) {
 	}
 }
 
+func TestValidateStorageFormatRefusesCorruptMarker(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, storageformat.MarkerFilename), []byte("LSGFMT v1"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{dataDir: dir, logger: slog.Default()}
+
+	_, err := e.validateStorageFormat()
+	if !errors.Is(err, storageformat.ErrCorruptMarker) {
+		t.Fatalf("validateStorageFormat error = %v, want ErrCorruptMarker", err)
+	}
+}
+
 func TestValidateStorageFormatRefusesAncientMarker(t *testing.T) {
 	dir := t.TempDir()
 	if err := storageformat.WriteMarker([]string{dir}, 0); err != nil {

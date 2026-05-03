@@ -1116,8 +1116,5 @@ func makeRegionHeader(magic string) []byte {
 }
 
 func makeBloomRegionPrefix() []byte {
-	buf := make([]byte, 0, 6)
-	buf = append(buf, LSG_BLOOM_MAGIC...)
-	buf = append(buf, 0, 0)
-	return buf
+	return makeRegionHeader(LSG_BLOOM_MAGIC)
 }

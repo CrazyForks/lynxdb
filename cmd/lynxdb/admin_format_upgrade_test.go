@@ -40,3 +40,15 @@ func TestAdminFormatUpgradeRejectsUnsupportedTarget(t *testing.T) {
 		t.Fatalf("error = %v, want ErrFutureFormat", err)
 	}
 }
+
+func TestAdminFormatUpgradeRejectsDowngrade(t *testing.T) {
+	dir := t.TempDir()
+	if err := storageformat.WriteMarker([]string{dir}, segment.LSG_BINARY_MAX_MAJOR+1); err != nil {
+		t.Fatal(err)
+	}
+
+	err := runAdminFormatUpgrade(dir, segment.LSG_BINARY_MAX_MAJOR, true)
+	if !errors.Is(err, segment.ErrDowngradeForbidden) {
+		t.Fatalf("error = %v, want ErrDowngradeForbidden", err)
+	}
+}

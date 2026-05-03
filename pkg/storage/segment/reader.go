@@ -1333,10 +1333,10 @@ func (r *Reader) loadPerColumnBlooms(rgIdx int) (map[string]*index.BloomFilter, 
 	if string(section[0:4]) != LSG_BLOOM_MAGIC {
 		return nil, fmt.Errorf("%w: bloom region magic mismatch (got %q, expected %q)", ErrCorruptRegion, string(section[0:4]), LSG_BLOOM_MAGIC)
 	}
-	if section[4] != 0 || section[5] != 0 {
+	if section[4] != 0 || section[5] != 0 || section[6] != 0 || section[7] != 0 {
 		return nil, fmt.Errorf("%w: bloom region revision or reserved byte set", ErrCorruptRegion)
 	}
-	pos = 6
+	pos = 8
 	bloomCount := binary.LittleEndian.Uint16(section[pos : pos+2])
 	pos += 2
 

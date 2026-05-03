@@ -672,6 +672,16 @@ func commandStageName(cmd spl2.Command) string {
 // commands. Used by tail to plug LiveScanIterator as the source instead of
 // an event store.
 func BuildFromSource(ctx context.Context, source Iterator, commands []spl2.Command, batchSize int) (Iterator, error) {
+	return buildFromSource(ctx, source, commands, batchSize, nil)
+}
+
+// BuildFromSourceWithBudget builds a pipeline from an existing source iterator
+// with operator accounts backed by the supplied BudgetAdapter.
+func BuildFromSourceWithBudget(ctx context.Context, source Iterator, commands []spl2.Command, batchSize int, budget *memgov.BudgetAdapter) (Iterator, error) {
+	return buildFromSource(ctx, source, commands, batchSize, budget)
+}
+
+func buildFromSource(ctx context.Context, source Iterator, commands []spl2.Command, batchSize int, budget *memgov.BudgetAdapter) (Iterator, error) {
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
@@ -680,6 +690,7 @@ func BuildFromSource(ctx context.Context, source Iterator, commands []spl2.Comma
 		datasets:  make(map[string][]map[string]event.Value),
 		batchSize: batchSize,
 		progCache: vm.NewProgramCache(),
+		govBudget: budget,
 	}
 	iter := source
 	for _, cmd := range commands {

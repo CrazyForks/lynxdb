@@ -283,35 +283,7 @@ func (s *Server) handleIngestHEC(w http.ResponseWriter, r *http.Request) {
 	if !s.requireScope(w, r, auth.ScopeIngest) {
 		return
 	}
-
-	var skippedLines int64
-
-	buildEvent := func(line string) *event.Event {
-		var hec receiver.HECEvent
-		if err := json.Unmarshal([]byte(line), &hec); err != nil {
-			skippedLines++
-
-			return nil // skip unparseable lines (Splunk HEC behavior)
-		}
-
-		return hec.ToEvent()
-	}
-
-	_, _, _, err := s.processBatched(w, r, buildEvent)
-	if err != nil {
-		return // response already written
-	}
-
-	// HEC: Splunk-compatible response format (no envelope).
-	// Include skipped_lines count so clients know if parsing failures occurred.
-	resp := map[string]interface{}{
-		"text": "Success",
-		"code": 0,
-	}
-	if skippedLines > 0 {
-		resp["skipped_lines"] = skippedLines
-	}
-	respondJSON(w, http.StatusOK, resp)
+	s.splunkHECHandler(false).HandleEvent(w, r)
 }
 
 // processBatched reads lines from the request body, builds events using buildEvent,

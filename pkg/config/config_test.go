@@ -43,6 +43,12 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Ingest.OTLP.GRPCMaxRecvBytes != 16*MB {
 		t.Errorf("expected OTLP gRPC max recv 16mb, got %s", cfg.Ingest.OTLP.GRPCMaxRecvBytes)
 	}
+	if !cfg.Ingest.SplunkHEC.Enabled {
+		t.Error("expected Splunk HEC enabled by default")
+	}
+	if cfg.Ingest.SplunkHEC.RequireToken {
+		t.Error("expected Splunk HEC require_token false by default")
+	}
 	if cfg.Ingest.Limits.MaxCompressedBodyBytes != 32*MB {
 		t.Errorf("expected compressed body limit 32mb, got %s", cfg.Ingest.Limits.MaxCompressedBodyBytes)
 	}

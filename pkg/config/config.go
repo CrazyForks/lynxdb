@@ -213,6 +213,7 @@ type IngestConfig struct {
 	MaxLineBytes int                 `yaml:"max_line_bytes" json:"max_line_bytes"`
 	ESCompat     ESCompatConfig      `yaml:"es_compat" json:"es_compat"`
 	OTLP         OTLPConfig          `yaml:"otlp" json:"otlp"`
+	SplunkHEC    SplunkHECConfig     `yaml:"splunk_hec" json:"splunk_hec"`
 	Limits       IngestLimitsConfig  `yaml:"limits" json:"limits"`
 	Staging      IngestStagingConfig `yaml:"staging" json:"staging"`
 
@@ -258,6 +259,11 @@ type OTLPConfig struct {
 	HTTPListen       string   `yaml:"http_listen" json:"http_listen"`
 	GRPCListen       string   `yaml:"grpc_listen" json:"grpc_listen"`
 	GRPCMaxRecvBytes ByteSize `yaml:"grpc_max_recv_bytes" json:"grpc_max_recv_bytes"`
+}
+
+type SplunkHECConfig struct {
+	Enabled      bool `yaml:"enabled" json:"enabled"`
+	RequireToken bool `yaml:"require_token" json:"require_token"`
 }
 
 type IngestStagingConfig struct {
@@ -459,6 +465,10 @@ func DefaultConfig() *Config {
 				HTTPListen:       "0.0.0.0:4318",
 				GRPCListen:       "",
 				GRPCMaxRecvBytes: 16 * MB,
+			},
+			SplunkHEC: SplunkHECConfig{
+				Enabled:      true,
+				RequireToken: false,
 			},
 			Limits: IngestLimitsConfig{
 				MaxCompressedBodyBytes:   32 * MB,

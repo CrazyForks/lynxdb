@@ -21,6 +21,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/ingest/receiver/eshttp"
 	"github.com/lynxbase/lynxdb/pkg/ingest/receiver/otlpgrpc"
 	"github.com/lynxbase/lynxdb/pkg/ingest/receiver/otlphttp"
+	"github.com/lynxbase/lynxdb/pkg/ingest/receiver/splunkhec"
 	syslogrecv "github.com/lynxbase/lynxdb/pkg/ingest/receiver/syslog"
 	"github.com/lynxbase/lynxdb/pkg/ingest/staging"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
@@ -320,6 +321,10 @@ func NewServer(cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /api/v1/ingest/raw", s.handleIngestRaw)
 	mux.HandleFunc("POST /api/v1/ingest/hec", s.handleIngestHEC)
 	mux.HandleFunc("POST /api/v1/ingest/bulk", s.handleESBulk)
+	mux.HandleFunc("POST /services/collector/event", s.handleSplunkHECEvent)
+	mux.HandleFunc("POST /services/collector", s.handleSplunkHECEvent)
+	mux.HandleFunc("POST /services/collector/raw", s.handleSplunkHECRaw)
+	mux.HandleFunc("GET /services/collector/health", s.handleSplunkHECHealth)
 	// Field catalog.
 	mux.HandleFunc("GET /api/v1/fields", s.handleListFields)
 
@@ -675,6 +680,52 @@ func (s *Server) submitShipperEvents(ctx context.Context, events []*event.Event)
 		return s.stagingBuffer.Add(ctx, events)
 	}
 	return s.engine.IngestContext(ctx, events)
+}
+
+func (s *Server) submitPipelineEvents(ctx context.Context, events []*event.Event) error {
+	processed, err := ingestPipelineForConfig(s.currentIngestConfig()).Process(events)
+	if err != nil {
+		return err
+	}
+	return s.submitShipperEvents(ctx, processed)
+}
+
+func (s *Server) splunkHECHandler(requireSplunkAuth bool) *splunkhec.Handler {
+	ingestCfg := s.currentIngestConfig()
+	authCfg := splunkhec.AuthConfig{
+		Enabled:      requireSplunkAuth,
+		RequireToken: ingestCfg.SplunkHEC.RequireToken,
+	}
+	return splunkhec.NewHandler(splunkhec.Config{
+		Auth:               authCfg,
+		MaxBatchSize:       ingestCfg.MaxBatchSize,
+		MaxLineBytes:       ingestCfg.MaxLineBytes,
+		RespondIngestError: func(w http.ResponseWriter, err error) { respondIngestError(w, err) },
+	}, s.submitPipelineEvents)
+}
+
+func (s *Server) handleSplunkHECEvent(w http.ResponseWriter, r *http.Request) {
+	if !s.currentIngestConfig().SplunkHEC.Enabled {
+		respondJSON(w, http.StatusNotFound, map[string]interface{}{"text": "HEC is disabled", "code": 4})
+		return
+	}
+	s.splunkHECHandler(true).HandleEvent(w, r)
+}
+
+func (s *Server) handleSplunkHECRaw(w http.ResponseWriter, r *http.Request) {
+	if !s.currentIngestConfig().SplunkHEC.Enabled {
+		respondJSON(w, http.StatusNotFound, map[string]interface{}{"text": "HEC is disabled", "code": 4})
+		return
+	}
+	s.splunkHECHandler(true).HandleRaw(w, r)
+}
+
+func (s *Server) handleSplunkHECHealth(w http.ResponseWriter, r *http.Request) {
+	if !s.currentIngestConfig().SplunkHEC.Enabled {
+		respondJSON(w, http.StatusNotFound, map[string]interface{}{"text": "HEC is disabled", "code": 4})
+		return
+	}
+	s.splunkHECHandler(false).HandleHealth(w, r)
 }
 
 func (s *Server) startStagingBuffer() {

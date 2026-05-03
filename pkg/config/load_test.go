@@ -101,6 +101,8 @@ func TestLoadEnvOverrides(t *testing.T) {
 	t.Setenv("LYNXDB_INGEST_OTLP_HTTP_LISTEN", "127.0.0.1:18318")
 	t.Setenv("LYNXDB_INGEST_OTLP_GRPC_LISTEN", "127.0.0.1:18317")
 	t.Setenv("LYNXDB_INGEST_OTLP_GRPC_MAX_RECV_BYTES", "32mb")
+	t.Setenv("LYNXDB_INGEST_SPLUNK_HEC_ENABLED", "false")
+	t.Setenv("LYNXDB_INGEST_SPLUNK_HEC_REQUIRE_TOKEN", "true")
 	t.Setenv("LYNXDB_INGEST_LIMITS_MAX_COMPRESSED_BODY_BYTES", "16mb")
 	t.Setenv("LYNXDB_INGEST_LIMITS_MAX_DECOMPRESSED_BODY_BYTES", "64mb")
 	t.Setenv("LYNXDB_INGEST_STAGING_MAX_BYTES", "8mb")
@@ -136,6 +138,12 @@ func TestLoadEnvOverrides(t *testing.T) {
 	}
 	if cfg.Ingest.OTLP.GRPCMaxRecvBytes != 32*MB {
 		t.Errorf("OTLP.GRPCMaxRecvBytes: got %s", cfg.Ingest.OTLP.GRPCMaxRecvBytes)
+	}
+	if cfg.Ingest.SplunkHEC.Enabled {
+		t.Error("SplunkHEC.Enabled: got true, want false")
+	}
+	if !cfg.Ingest.SplunkHEC.RequireToken {
+		t.Error("SplunkHEC.RequireToken: got false, want true")
 	}
 	if cfg.Ingest.Limits.MaxCompressedBodyBytes != 16*MB {
 		t.Errorf("MaxCompressedBodyBytes: got %s", cfg.Ingest.Limits.MaxCompressedBodyBytes)

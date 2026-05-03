@@ -527,6 +527,28 @@ var envBindings = []envBinding{
 			return nil
 		},
 		func(c *Config) string { return c.Ingest.OTLP.GRPCMaxRecvBytes.String() }},
+	{"LYNXDB_INGEST_SPLUNK_HEC_ENABLED", "ingest.splunk_hec.enabled",
+		func(c *Config, v string) error {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			c.Ingest.SplunkHEC.Enabled = b
+
+			return nil
+		},
+		func(c *Config) string { return strconv.FormatBool(c.Ingest.SplunkHEC.Enabled) }},
+	{"LYNXDB_INGEST_SPLUNK_HEC_REQUIRE_TOKEN", "ingest.splunk_hec.require_token",
+		func(c *Config, v string) error {
+			b, err := strconv.ParseBool(v)
+			if err != nil {
+				return err
+			}
+			c.Ingest.SplunkHEC.RequireToken = b
+
+			return nil
+		},
+		func(c *Config) string { return strconv.FormatBool(c.Ingest.SplunkHEC.RequireToken) }},
 	{"LYNXDB_INGEST_LIMITS_MAX_COMPRESSED_BODY_BYTES", "ingest.limits.max_compressed_body_bytes",
 		func(c *Config, v string) error {
 			b, err := ParseByteSize(v)

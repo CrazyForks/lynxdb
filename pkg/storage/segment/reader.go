@@ -346,9 +346,13 @@ func (r *Reader) readChunk(cc *ColumnChunkMeta) ([]byte, error) {
 	case CompressionLZ4:
 		return decompressLZ4Block(chunkData)
 	case CompressionZSTD:
+		if r.footer.RequiredCaps&CapBit_ColumnZSTD == 0 {
+			return nil, fmt.Errorf("%w: column %q uses ZSTD without required capability bit", ErrCorruptSegment, cc.Name)
+		}
 		return decompressZSTDBlock(chunkData)
 	default:
-		return nil, fmt.Errorf("%w: unsupported compression %d", ErrCorruptSegment, cc.Compression)
+		return nil, fmt.Errorf("%w: required capability bit for compression %d not supported by this binary",
+			ErrUnsupportedCapability, cc.Compression)
 	}
 }
 

@@ -52,9 +52,11 @@ func (e *Engine) initDiskPersistence(ctx context.Context) error {
 	e.partLayout = part.NewLayoutWithGranularity(e.dataDir, granularity)
 	e.partRegistry = part.NewRegistry(e.logger)
 
-	if err := e.validateStorageFormat(); err != nil {
+	formatMajor, err := e.validateStorageFormat()
+	if err != nil {
 		return err
 	}
+	e.formatMajor = formatMajor
 
 	if err := e.partRegistry.ScanDir(e.partLayout); err != nil {
 		return fmt.Errorf("scan parts: %w", err)
@@ -66,7 +68,7 @@ func (e *Engine) initDiskPersistence(ctx context.Context) error {
 	e.compactor = compaction.NewCompactor(e.logger)
 
 	// Initialize compaction manifest store for crash recovery.
-	manifestStore, err := compaction.NewManifestStore(e.dataDir)
+	manifestStore, err := compaction.NewManifestStoreWithFormatVersion(e.dataDir, int(e.formatMajor))
 	if err != nil {
 		return fmt.Errorf("init manifest store: %w", err)
 	}
@@ -193,7 +195,7 @@ func (e *Engine) initDiskPersistence(ctx context.Context) error {
 	})
 	e.retentionMgr.Start(ctx)
 
-	viewReg, err := views.Open(e.layout.ViewsDir())
+	viewReg, err := views.OpenWithFormatVersion(e.layout.ViewsDir(), int(e.formatMajor))
 	if err != nil {
 		return fmt.Errorf("open view registry: %w", err)
 	}
@@ -216,34 +218,34 @@ func (e *Engine) initDiskPersistence(ctx context.Context) error {
 	return nil
 }
 
-func (e *Engine) validateStorageFormat() error {
+func (e *Engine) validateStorageFormat() (uint16, error) {
 	segmentPaths, err := listSegmentFiles(e.dataDir)
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	markerValue, err := storageformat.ReadMarker([]string{e.dataDir})
 	if err != nil {
 		if errors.Is(err, storageformat.ErrMissingMarker) {
 			if len(segmentPaths) > 0 {
-				return fmt.Errorf("%w: data dir contains %d segment(s) but no FORMAT marker; refusing to write one automatically",
+				return 0, fmt.Errorf("%w: data dir contains %d segment(s) but no FORMAT marker; refusing to write one automatically",
 					storageformat.ErrMissingMarker, len(segmentPaths))
 			}
 			if writeErr := storageformat.WriteMarker([]string{e.dataDir}, segment.LSG_BINARY_MAX_MAJOR); writeErr != nil {
-				return fmt.Errorf("write FORMAT marker: %w", writeErr)
+				return 0, fmt.Errorf("write FORMAT marker: %w", writeErr)
 			}
 			markerValue = segment.LSG_BINARY_MAX_MAJOR
 		} else {
-			return err
+			return 0, err
 		}
 	}
 
 	if markerValue > segment.LSG_BINARY_MAX_MAJOR {
-		return fmt.Errorf("%w: data dir was written by a future LynxDB (FORMAT v%d, this binary supports up to v%d)",
+		return 0, fmt.Errorf("%w: data dir was written by a future LynxDB (FORMAT v%d, this binary supports up to v%d)",
 			storageformat.ErrFutureFormat, markerValue, segment.LSG_BINARY_MAX_MAJOR)
 	}
 	if markerValue < segment.LSG_BINARY_MIN_MAJOR {
-		return fmt.Errorf("%w: data dir format v%d is below this binary's minimum (v%d); use an older LynxDB to compact forward",
+		return 0, fmt.Errorf("%w: data dir format v%d is below this binary's minimum (v%d); use an older LynxDB to compact forward",
 			storageformat.ErrAncientFormat, markerValue, segment.LSG_BINARY_MIN_MAJOR)
 	}
 
@@ -261,10 +263,10 @@ func (e *Engine) validateStorageFormat() error {
 		e.logger.Warn("segment physical corruption detected during boot scan", "path", path, "error", err)
 	}
 	if len(versionErrs) > 0 {
-		return fmt.Errorf("segment format validation failed: %w", errors.Join(versionErrs...))
+		return 0, fmt.Errorf("segment format validation failed: %w", errors.Join(versionErrs...))
 	}
 
-	return nil
+	return markerValue, nil
 }
 
 func listSegmentFiles(dataDir string) ([]string, error) {
@@ -350,19 +352,18 @@ func (e *Engine) openPartSegmentHandle(meta *part.Meta) (*segmentHandle, error) 
 		reader: ms.Reader(),
 		mmap:   ms,
 		meta: model.SegmentMeta{
-			ID:           meta.ID,
-			Index:        meta.Index,
-			Partition:    meta.Partition,
-			MinTime:      meta.MinTime,
-			MaxTime:      meta.MaxTime,
-			EventCount:   meta.EventCount,
-			SizeBytes:    meta.SizeBytes,
-			Level:        meta.Level,
-			Path:         meta.Path,
-			CreatedAt:    meta.CreatedAt,
-			Columns:      meta.Columns,
-			Tier:         meta.Tier,
-			BloomVersion: 2,
+			ID:         meta.ID,
+			Index:      meta.Index,
+			Partition:  meta.Partition,
+			MinTime:    meta.MinTime,
+			MaxTime:    meta.MaxTime,
+			EventCount: meta.EventCount,
+			SizeBytes:  meta.SizeBytes,
+			Level:      meta.Level,
+			Path:       meta.Path,
+			CreatedAt:  meta.CreatedAt,
+			Columns:    meta.Columns,
+			Tier:       meta.Tier,
 		},
 		index:       meta.Index,
 		bloom:       bf,

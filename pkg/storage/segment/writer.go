@@ -126,7 +126,7 @@ func NewWriterWithCompression(w io.Writer, compression CompressionType) *Writer 
 // Used to compute catalog indices for presence bitmap.
 var builtinColumns = []string{"_time", "_raw", "_source", "_sourcetype", "host", "index"}
 
-// Write encodes the given events into .lsg V4 format and writes to the underlying writer.
+// Write encodes the given events into .lsg format-major v1 and writes to the underlying writer.
 // Events should be sorted by timestamp. Returns total bytes written.
 func (sw *Writer) Write(events []*event.Event) (int64, error) {
 	if len(events) == 0 {

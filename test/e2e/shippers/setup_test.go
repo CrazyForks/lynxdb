@@ -26,6 +26,7 @@ type TestRig struct {
 	Client   *client.Client
 	ESPort   int
 	OTLPPort int
+	OTLPGRPC int
 	DataDir  string
 
 	cancel    context.CancelFunc
@@ -39,6 +40,7 @@ func StartLynxDB(t *testing.T) *TestRig {
 	cfg.Listen = "127.0.0.1:0"
 	cfg.DataDir = t.TempDir()
 	cfg.Ingest.OTLP.HTTPListen = "127.0.0.1:0"
+	cfg.Ingest.OTLP.GRPCListen = "127.0.0.1:0"
 	cfg.Storage.CompactionInterval = time.Hour
 	cfg.Storage.TieringInterval = time.Hour
 
@@ -77,8 +79,13 @@ func StartLynxDB(t *testing.T) *TestRig {
 	if err != nil {
 		t.Fatalf("OTLP addr %q: %v", srv.OTLPHTTPAddr(), err)
 	}
+	otlpGRPCPort, err := portOf(srv.OTLPGRPCAddr())
+	if err != nil {
+		t.Fatalf("OTLP gRPC addr %q: %v", srv.OTLPGRPCAddr(), err)
+	}
 	rig.ESPort = esPort
 	rig.OTLPPort = otlpPort
+	rig.OTLPGRPC = otlpGRPCPort
 	rig.Client = client.NewClient(
 		client.WithBaseURL("http://"+srv.Addr()),
 		client.WithTimeout(60*time.Second),

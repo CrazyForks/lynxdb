@@ -253,6 +253,15 @@ func applyCLIOverrides(cmd *cobra.Command, cfg *config.Config) ([]config.CLIOver
 	checkStr("otlp-grpc-listen", "ingest.otlp.grpc_listen", flagOTLPGRPCListen, func() {
 		cfg.Ingest.OTLP.GRPCListen = flagOTLPGRPCListen
 	})
+	if cmd.Flags().Changed("otlp-grpc-max-recv-bytes") {
+		b, err := config.ParseByteSize(flagOTLPGRPCMaxRecvBytes)
+		if err != nil {
+			return nil, nil, err
+		}
+		cfg.Ingest.OTLP.GRPCMaxRecvBytes = b
+		cli = append(cli, config.CLIOverride{Key: "ingest.otlp.grpc_max_recv_bytes", Value: b.String(), Flag: "--otlp-grpc-max-recv-bytes"})
+		flags = append(flags, "--otlp-grpc-max-recv-bytes")
+	}
 	if cmd.Flags().Changed("ingest-max-compressed-body-bytes") {
 		b, err := config.ParseByteSize(flagIngestMaxCompressedBodyBytes)
 		if err != nil {

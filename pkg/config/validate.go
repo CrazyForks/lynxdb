@@ -297,6 +297,9 @@ func (i *IngestConfig) validate() error {
 			return validationErr("ingest", "otlp.grpc_listen", i.OTLP.GRPCListen, "must be a valid host:port address")
 		}
 	}
+	if i.OTLP.GRPCMaxRecvBytes < 1*MB {
+		return validationErr("ingest", "otlp.grpc_max_recv_bytes", i.OTLP.GRPCMaxRecvBytes.String(), "must be at least 1mb")
+	}
 	if i.Staging.Enabled {
 		if i.Staging.MaxBytes < 1*KB {
 			return validationErr("ingest", "staging.max_bytes", i.Staging.MaxBytes.String(), "must be at least 1kb")

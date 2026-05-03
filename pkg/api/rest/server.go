@@ -19,6 +19,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/ingest/limits"
 	"github.com/lynxbase/lynxdb/pkg/ingest/receiver/eshttp"
+	"github.com/lynxbase/lynxdb/pkg/ingest/receiver/otlpgrpc"
 	"github.com/lynxbase/lynxdb/pkg/ingest/receiver/otlphttp"
 	syslogrecv "github.com/lynxbase/lynxdb/pkg/ingest/receiver/syslog"
 	"github.com/lynxbase/lynxdb/pkg/ingest/staging"
@@ -53,6 +54,7 @@ type Server struct {
 	tlsConfig          *tls.Config  // non-nil when TLS is enabled
 	syslogReceiver     *syslogrecv.Receiver
 	otlpHTTPReceiver   *otlphttp.Receiver
+	otlpGRPCReceiver   *otlpgrpc.Receiver
 	stagingBuffer      *staging.Buffer
 	esHandshake        *eshttp.Handshake
 	esStubs            *eshttp.Stubs
@@ -174,6 +176,7 @@ func NewServer(cfg Config) (*Server, error) {
 	s.promMetrics = promMetrics
 	promMetrics.SetListenerUp("es", false)
 	promMetrics.SetListenerUp("otlp_http", false)
+	promMetrics.SetListenerUp("otlp_grpc", false)
 	engine.SetOnQueryComplete(promMetrics.RecordQuery)
 
 	if cfg.Syslog.Enabled() {
@@ -218,6 +221,27 @@ func NewServer(cfg Config) (*Server, error) {
 			return nil, fmt.Errorf("otlp http receiver: %w", err)
 		}
 		s.otlpHTTPReceiver = otlpReceiver
+	}
+	if cfg.Ingest.OTLP.GRPCListen != "" {
+		otlpReceiver, err := otlpgrpc.New(
+			otlpgrpc.Config{
+				Listen:       cfg.Ingest.OTLP.GRPCListen,
+				MaxRecvBytes: int(cfg.Ingest.OTLP.GRPCMaxRecvBytes),
+			},
+			func(ctx context.Context, events []*event.Event) error {
+				processed, err := ingestPipelineForConfig(s.currentIngestConfig()).Process(events)
+				if err != nil {
+					return err
+				}
+				return s.submitShipperEvents(ctx, processed)
+			},
+			cfg.Logger,
+			promMetrics,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("otlp grpc receiver: %w", err)
+		}
+		s.otlpGRPCReceiver = otlpReceiver
 	}
 
 	esCfg := normalizedESCompatConfig(cfg.Ingest)
@@ -525,6 +549,31 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		s.promMetrics.SetListenerUp("otlp_http", true)
 	}
+	if s.otlpGRPCReceiver != nil {
+		go func() {
+			if err := s.otlpGRPCReceiver.Start(ctx); err != nil {
+				s.engine.Logger().Error("OTLP gRPC receiver stopped with error", "error", err)
+			}
+		}()
+		s.otlpGRPCReceiver.WaitReady()
+		if err := s.otlpGRPCReceiver.ReadyError(); err != nil {
+			if s.syslogReceiver != nil {
+				s.syslogReceiver.Stop()
+			}
+			if s.otlpHTTPReceiver != nil {
+				_ = s.otlpHTTPReceiver.Stop(context.Background())
+			}
+			if s.otlpGRPCReceiver != nil {
+				_ = s.otlpGRPCReceiver.Stop(context.Background())
+			}
+			if shutErr := s.engine.Shutdown(5 * time.Second); shutErr != nil {
+				slog.Error("engine shutdown failed after OTLP gRPC listen error", "error", shutErr)
+			}
+			s.closeStagingBuffer(context.Background())
+			return fmt.Errorf("otlp grpc: %w", err)
+		}
+		s.promMetrics.SetListenerUp("otlp_grpc", true)
+	}
 
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", s.httpServer.Addr)
@@ -535,6 +584,9 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		if s.otlpHTTPReceiver != nil {
 			_ = s.otlpHTTPReceiver.Stop(context.Background())
+		}
+		if s.otlpGRPCReceiver != nil {
+			_ = s.otlpGRPCReceiver.Stop(context.Background())
 		}
 		if shutErr := s.engine.Shutdown(5 * time.Second); shutErr != nil {
 			slog.Error("engine shutdown failed after listen error", "error", shutErr)
@@ -568,6 +620,10 @@ func (s *Server) Start(ctx context.Context) error {
 		if s.otlpHTTPReceiver != nil {
 			_ = s.otlpHTTPReceiver.Stop(context.Background())
 			s.promMetrics.SetListenerUp("otlp_http", false)
+		}
+		if s.otlpGRPCReceiver != nil {
+			_ = s.otlpGRPCReceiver.Stop(context.Background())
+			s.promMetrics.SetListenerUp("otlp_grpc", false)
 		}
 		s.closeStagingBuffer(context.Background())
 
@@ -667,6 +723,15 @@ func (s *Server) OTLPHTTPAddr() string {
 		return ""
 	}
 	return s.otlpHTTPReceiver.Addr()
+}
+
+// OTLPGRPCAddr returns the resolved canonical OTLP/gRPC listener address.
+// It is empty when the listener is disabled.
+func (s *Server) OTLPGRPCAddr() string {
+	if s.otlpGRPCReceiver == nil {
+		return ""
+	}
+	return s.otlpGRPCReceiver.Addr()
 }
 
 // SetIndexStore sets an external IndexStore for full SPL2 queries.

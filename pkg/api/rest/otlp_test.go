@@ -2,6 +2,7 @@ package rest
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,8 @@ import (
 	logscollector "go.opentelemetry.io/proto/otlp/collector/logs/v1"
 	commonpb "go.opentelemetry.io/proto/otlp/common/v1"
 	logspb "go.opentelemetry.io/proto/otlp/logs/v1"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -88,6 +91,39 @@ func TestServer_OTLPHTTPReceiver_Protobuf(t *testing.T) {
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, body)
+	}
+}
+
+func TestServer_OTLPGRPCReceiver_Protobuf(t *testing.T) {
+	ingestCfg := config.DefaultConfig().Ingest
+	ingestCfg.OTLP.HTTPListen = ""
+	ingestCfg.OTLP.GRPCListen = "127.0.0.1:0"
+	ingestCfg.Staging.Enabled = false
+	srv, cleanup := startTestServerWithConfig(t, Config{Ingest: ingestCfg})
+	defer cleanup()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	conn, err := grpc.DialContext(ctx, srv.OTLPGRPCAddr(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithBlock())
+	if err != nil {
+		t.Fatalf("DialContext: %v", err)
+	}
+	defer conn.Close()
+
+	_, err = logscollector.NewLogsServiceClient(conn).Export(ctx, &logscollector.ExportLogsServiceRequest{
+		ResourceLogs: []*logspb.ResourceLogs{{
+			ScopeLogs: []*logspb.ScopeLogs{{
+				LogRecords: []*logspb.LogRecord{{
+					Body: &commonpb.AnyValue{Value: &commonpb.AnyValue_StringValue{StringValue: "canonical otlp grpc"}},
+				}},
+			}},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+	if srv.engine.SegmentCount() == 0 {
+		t.Fatal("expected segments after OTLP gRPC ingest")
 	}
 }
 

@@ -135,6 +135,12 @@ func TestValidateIngest(t *testing.T) {
 		{"bad otlp http listen", func(i *IngestConfig) {
 			i.OTLP.HTTPListen = "not-an-addr"
 		}, "ingest.otlp.http_listen"},
+		{"bad otlp grpc listen", func(i *IngestConfig) {
+			i.OTLP.GRPCListen = "not-an-addr"
+		}, "ingest.otlp.grpc_listen"},
+		{"small otlp grpc max recv", func(i *IngestConfig) {
+			i.OTLP.GRPCMaxRecvBytes = 512 * KB
+		}, "ingest.otlp.grpc_max_recv_bytes"},
 		{"small compressed body limit", func(i *IngestConfig) {
 			i.Limits.MaxCompressedBodyBytes = 100
 		}, "ingest.limits.max_compressed_body_bytes"},

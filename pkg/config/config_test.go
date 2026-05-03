@@ -40,6 +40,9 @@ func TestDefaultConfig(t *testing.T) {
 	if cfg.Ingest.OTLP.HTTPListen != "0.0.0.0:4318" {
 		t.Errorf("expected OTLP HTTP listen 0.0.0.0:4318, got %q", cfg.Ingest.OTLP.HTTPListen)
 	}
+	if cfg.Ingest.OTLP.GRPCMaxRecvBytes != 16*MB {
+		t.Errorf("expected OTLP gRPC max recv 16mb, got %s", cfg.Ingest.OTLP.GRPCMaxRecvBytes)
+	}
 	if cfg.Ingest.Limits.MaxCompressedBodyBytes != 32*MB {
 		t.Errorf("expected compressed body limit 32mb, got %s", cfg.Ingest.Limits.MaxCompressedBodyBytes)
 	}

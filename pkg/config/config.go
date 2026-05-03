@@ -255,8 +255,9 @@ type ESCompatConfig struct {
 }
 
 type OTLPConfig struct {
-	HTTPListen string `yaml:"http_listen" json:"http_listen"`
-	GRPCListen string `yaml:"grpc_listen" json:"grpc_listen"`
+	HTTPListen       string   `yaml:"http_listen" json:"http_listen"`
+	GRPCListen       string   `yaml:"grpc_listen" json:"grpc_listen"`
+	GRPCMaxRecvBytes ByteSize `yaml:"grpc_max_recv_bytes" json:"grpc_max_recv_bytes"`
 }
 
 type IngestStagingConfig struct {
@@ -455,8 +456,9 @@ func DefaultConfig() *Config {
 				ClusterName:       "lynxdb",
 			},
 			OTLP: OTLPConfig{
-				HTTPListen: "0.0.0.0:4318",
-				GRPCListen: "",
+				HTTPListen:       "0.0.0.0:4318",
+				GRPCListen:       "",
+				GRPCMaxRecvBytes: 16 * MB,
 			},
 			Limits: IngestLimitsConfig{
 				MaxCompressedBodyBytes:   32 * MB,

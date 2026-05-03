@@ -45,6 +45,7 @@ var (
 	flagIngestESVersion                string
 	flagOTLPHTTPListen                 string
 	flagOTLPGRPCListen                 string
+	flagOTLPGRPCMaxRecvBytes           string
 	flagIngestMaxCompressedBodyBytes   string
 	flagIngestMaxDecompressedBodyBytes string
 	flagIngestStagingEnabled           bool
@@ -93,7 +94,8 @@ func init() {
 	serverCmd.Flags().BoolVar(&flagIngestESEnabled, "ingest-es-enabled", true, "Enable Elasticsearch-compatible bulk endpoint")
 	serverCmd.Flags().StringVar(&flagIngestESVersion, "ingest-es-version", "", "ES version advertised in handshake")
 	serverCmd.Flags().StringVar(&flagOTLPHTTPListen, "otlp-http-listen", "", "OTLP HTTP listen address (empty disables)")
-	serverCmd.Flags().StringVar(&flagOTLPGRPCListen, "otlp-grpc-listen", "", "OTLP gRPC listen address (P1; empty disables)")
+	serverCmd.Flags().StringVar(&flagOTLPGRPCListen, "otlp-grpc-listen", "", "OTLP gRPC listen address (empty disables)")
+	serverCmd.Flags().StringVar(&flagOTLPGRPCMaxRecvBytes, "otlp-grpc-max-recv-bytes", "", "OTLP gRPC max receive message size")
 	serverCmd.Flags().StringVar(&flagIngestMaxCompressedBodyBytes, "ingest-max-compressed-body-bytes", "", "Max compressed shipper body size")
 	serverCmd.Flags().StringVar(&flagIngestMaxDecompressedBodyBytes, "ingest-max-decompressed-body-bytes", "", "Max decompressed shipper body size")
 	serverCmd.Flags().BoolVar(&flagIngestStagingEnabled, "ingest-staging-enabled", true, "Enable server-side shipper staging buffer")

@@ -516,6 +516,17 @@ var envBindings = []envBinding{
 			return nil
 		},
 		func(c *Config) string { return c.Ingest.OTLP.GRPCListen }},
+	{"LYNXDB_INGEST_OTLP_GRPC_MAX_RECV_BYTES", "ingest.otlp.grpc_max_recv_bytes",
+		func(c *Config, v string) error {
+			b, err := ParseByteSize(v)
+			if err != nil {
+				return err
+			}
+			c.Ingest.OTLP.GRPCMaxRecvBytes = b
+
+			return nil
+		},
+		func(c *Config) string { return c.Ingest.OTLP.GRPCMaxRecvBytes.String() }},
 	{"LYNXDB_INGEST_LIMITS_MAX_COMPRESSED_BODY_BYTES", "ingest.limits.max_compressed_body_bytes",
 		func(c *Config, v string) error {
 			b, err := ParseByteSize(v)

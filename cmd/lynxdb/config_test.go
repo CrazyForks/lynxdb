@@ -149,6 +149,9 @@ func TestApplyCLIOverrides_ShipperFlagsOverrideEnv(t *testing.T) {
 	if err := serverCmd.Flags().Set("otlp-http-listen", "127.0.0.1:28318"); err != nil {
 		t.Fatal(err)
 	}
+	if err := serverCmd.Flags().Set("otlp-grpc-max-recv-bytes", "32mb"); err != nil {
+		t.Fatal(err)
+	}
 	if err := serverCmd.Flags().Set("ingest-max-compressed-body-bytes", "16mb"); err != nil {
 		t.Fatal(err)
 	}
@@ -167,14 +170,17 @@ func TestApplyCLIOverrides_ShipperFlagsOverrideEnv(t *testing.T) {
 	if cfg.Ingest.OTLP.HTTPListen != "127.0.0.1:28318" {
 		t.Fatalf("OTLP.HTTPListen = %q", cfg.Ingest.OTLP.HTTPListen)
 	}
+	if cfg.Ingest.OTLP.GRPCMaxRecvBytes != 32*config.MB {
+		t.Fatalf("OTLP.GRPCMaxRecvBytes = %s", cfg.Ingest.OTLP.GRPCMaxRecvBytes)
+	}
 	if cfg.Ingest.Limits.MaxCompressedBodyBytes != 16*config.MB {
 		t.Fatalf("MaxCompressedBodyBytes = %s", cfg.Ingest.Limits.MaxCompressedBodyBytes)
 	}
 	if cfg.Ingest.Staging.MaxAge != config.Duration(2*time.Second) {
 		t.Fatalf("Staging.MaxAge = %s", cfg.Ingest.Staging.MaxAge)
 	}
-	if len(cli) != 4 {
-		t.Fatalf("cli overrides = %d, want 4", len(cli))
+	if len(cli) != 5 {
+		t.Fatalf("cli overrides = %d, want 5", len(cli))
 	}
 }
 

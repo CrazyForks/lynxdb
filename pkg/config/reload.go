@@ -46,18 +46,19 @@ var nonHotReloadablePrefixes = []string{
 }
 
 var nonHotReloadableExactFields = map[string]struct{}{
-	"http.idle_timeout":             {},
-	"http.read_header_timeout":      {},
-	"http.rate_limit":               {},
-	"ingest.otlp.http_listen":       {},
-	"ingest.otlp.grpc_listen":       {},
-	"ingest.max_body_size":          {},
-	"ingest.fsync":                  {},
-	"ingest.dedup_enabled":          {},
-	"ingest.dedup_capacity":         {},
-	"query.global_query_pool_bytes": {},
-	"query.spill_dir":               {},
-	"query.max_temp_dir_size_bytes": {},
+	"http.idle_timeout":               {},
+	"http.read_header_timeout":        {},
+	"http.rate_limit":                 {},
+	"ingest.otlp.http_listen":         {},
+	"ingest.otlp.grpc_listen":         {},
+	"ingest.otlp.grpc_max_recv_bytes": {},
+	"ingest.max_body_size":            {},
+	"ingest.fsync":                    {},
+	"ingest.dedup_enabled":            {},
+	"ingest.dedup_capacity":           {},
+	"query.global_query_pool_bytes":   {},
+	"query.spill_dir":                 {},
+	"query.max_temp_dir_size_bytes":   {},
 }
 
 // ClassifyReloadChanges returns the changed config fields grouped by whether

@@ -58,6 +58,17 @@ func OpenSegment(data []byte) (*Reader, error) {
 	}
 }
 
+func ValidateSegmentHeader(data []byte, fileSize int64) error {
+	if fileSize < LSG_MIN_FILE_SIZE {
+		return fmt.Errorf("%w: file too small", ErrCorruptSegment)
+	}
+	if len(data) < LSG_HEADER_SIZE {
+		return fmt.Errorf("%w: file too small", ErrCorruptSegment)
+	}
+	_, err := validateHeader(data)
+	return err
+}
+
 type headerV1 struct {
 	major        uint16
 	requiredCaps uint64

@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"time"
@@ -11,6 +13,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 	"github.com/lynxbase/lynxdb/pkg/storage/compaction"
+	storageformat "github.com/lynxbase/lynxdb/pkg/storage/format"
 	"github.com/lynxbase/lynxdb/pkg/storage/part"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment/index"
@@ -48,6 +51,10 @@ func (e *Engine) initDiskPersistence(ctx context.Context) error {
 	granularity := part.ParseGranularity(e.storageCfg.PartitionBy)
 	e.partLayout = part.NewLayoutWithGranularity(e.dataDir, granularity)
 	e.partRegistry = part.NewRegistry(e.logger)
+
+	if err := e.validateStorageFormat(); err != nil {
+		return err
+	}
 
 	if err := e.partRegistry.ScanDir(e.partLayout); err != nil {
 		return fmt.Errorf("scan parts: %w", err)
@@ -207,6 +214,112 @@ func (e *Engine) initDiskPersistence(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (e *Engine) validateStorageFormat() error {
+	segmentPaths, err := listSegmentFiles(e.dataDir)
+	if err != nil {
+		return err
+	}
+
+	markerValue, err := storageformat.ReadMarker([]string{e.dataDir})
+	if err != nil {
+		if errors.Is(err, storageformat.ErrMissingMarker) {
+			if len(segmentPaths) > 0 {
+				return fmt.Errorf("%w: data dir contains %d segment(s) but no FORMAT marker; refusing to write one automatically",
+					storageformat.ErrMissingMarker, len(segmentPaths))
+			}
+			if writeErr := storageformat.WriteMarker([]string{e.dataDir}, segment.LSG_BINARY_MAX_MAJOR); writeErr != nil {
+				return fmt.Errorf("write FORMAT marker: %w", writeErr)
+			}
+			markerValue = segment.LSG_BINARY_MAX_MAJOR
+		} else {
+			return err
+		}
+	}
+
+	if markerValue > segment.LSG_BINARY_MAX_MAJOR {
+		return fmt.Errorf("%w: data dir was written by a future LynxDB (FORMAT v%d, this binary supports up to v%d)",
+			storageformat.ErrFutureFormat, markerValue, segment.LSG_BINARY_MAX_MAJOR)
+	}
+	if markerValue < segment.LSG_BINARY_MIN_MAJOR {
+		return fmt.Errorf("%w: data dir format v%d is below this binary's minimum (v%d); use an older LynxDB to compact forward",
+			storageformat.ErrAncientFormat, markerValue, segment.LSG_BINARY_MIN_MAJOR)
+	}
+
+	var versionErrs []error
+	for _, path := range segmentPaths {
+		err := validateSegmentHeaderFile(path)
+		if err == nil {
+			continue
+		}
+		if isVersionFormatError(err) {
+			e.logger.Error("segment format validation failed", "path", path, "error", err)
+			versionErrs = append(versionErrs, fmt.Errorf("%s: %w", path, err))
+			continue
+		}
+		e.logger.Warn("segment physical corruption detected during boot scan", "path", path, "error", err)
+	}
+	if len(versionErrs) > 0 {
+		return fmt.Errorf("segment format validation failed: %w", errors.Join(versionErrs...))
+	}
+
+	return nil
+}
+
+func listSegmentFiles(dataDir string) ([]string, error) {
+	root := filepath.Join(dataDir, "segments")
+	var paths []string
+	err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
+		}
+		if d.IsDir() || filepath.Ext(path) != ".lsg" {
+			return nil
+		}
+		name := filepath.Base(path)
+		if part.IsTempFile(name) || part.IsDeletedFile(name) {
+			return nil
+		}
+		paths = append(paths, path)
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	return paths, nil
+}
+
+func validateSegmentHeaderFile(path string) error {
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
+	if err != nil {
+		return err
+	}
+	header := make([]byte, segment.LSG_HEADER_SIZE)
+	n, err := io.ReadFull(f, header)
+	if err != nil {
+		if errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, io.EOF) {
+			return segment.ValidateSegmentHeader(header[:n], info.Size())
+		}
+		return err
+	}
+	return segment.ValidateSegmentHeader(header, info.Size())
+}
+
+func isVersionFormatError(err error) bool {
+	return errors.Is(err, segment.ErrUnsupportedMajor) ||
+		errors.Is(err, segment.ErrUnsupportedCapability) ||
+		errors.Is(err, segment.ErrInvalidMagic) ||
+		errors.Is(err, segment.ErrUnsupportedHeaderRev)
 }
 
 // openPartSegmentHandle opens a part file via mmap and builds a query-visible

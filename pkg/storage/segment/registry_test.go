@@ -30,3 +30,37 @@ func TestCapabilityRegistryStatic(t *testing.T) {
 		t.Fatalf("docs capability registry should assign bit 0 exactly once")
 	}
 }
+
+func TestMagicRegistryStatic(t *testing.T) {
+	magics := []string{
+		LSG_MAGIC_V1,
+		LSG_FOOTER_MAGIC,
+		LSG_INVERTED_MAGIC,
+		LSG_PRIMARY_MAGIC,
+		LSG_BLOOM_MAGIC,
+	}
+	seen := make(map[string]struct{}, len(magics))
+	for _, magic := range magics {
+		if len(magic) != 4 {
+			t.Fatalf("magic %q has length %d, want 4", magic, len(magic))
+		}
+		if !strings.HasPrefix(magic, "LS") {
+			t.Fatalf("magic %q does not use the LS namespace", magic)
+		}
+		if _, ok := seen[magic]; ok {
+			t.Fatalf("duplicate magic %q", magic)
+		}
+		seen[magic] = struct{}{}
+	}
+
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "docs", "storage-format.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, magic := range magics {
+		if strings.Count(text, "magic: "+magic) != 1 {
+			t.Fatalf("docs magic registry should contain %s exactly once", magic)
+		}
+	}
+}

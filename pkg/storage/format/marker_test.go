@@ -19,7 +19,7 @@ func TestReadMarkerFileStrict(t *testing.T) {
 		{name: "missing newline", content: "LSGFMT v1", wantErr: ErrCorruptMarker},
 		{name: "trailing whitespace", content: "LSGFMT v1 \n", wantErr: ErrCorruptMarker},
 		{name: "extra line", content: "LSGFMT v1\nx\n", wantErr: ErrCorruptMarker},
-		{name: "zero", content: "LSGFMT v0\n", wantErr: ErrCorruptMarker},
+		{name: "zero", content: "LSGFMT v0\n"},
 		{name: "wrong magic", content: "FORMAT v1\n", wantErr: ErrCorruptMarker},
 	}
 

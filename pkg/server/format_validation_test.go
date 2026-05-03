@@ -58,6 +58,19 @@ func TestValidateStorageFormatRefusesFutureMarker(t *testing.T) {
 	}
 }
 
+func TestValidateStorageFormatRefusesAncientMarker(t *testing.T) {
+	dir := t.TempDir()
+	if err := storageformat.WriteMarker([]string{dir}, 0); err != nil {
+		t.Fatal(err)
+	}
+	e := &Engine{dataDir: dir, logger: slog.Default()}
+
+	_, err := e.validateStorageFormat()
+	if !errors.Is(err, storageformat.ErrAncientFormat) {
+		t.Fatalf("validateStorageFormat error = %v, want ErrAncientFormat", err)
+	}
+}
+
 func writeBootTestSegment(t *testing.T, dir string) {
 	t.Helper()
 	segDir := filepath.Join(dir, "segments", "hot", "main", "2030-01-02")

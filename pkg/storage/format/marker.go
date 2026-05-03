@@ -72,7 +72,7 @@ func ReadMarkerFile(root string) (uint16, error) {
 			ErrCorruptMarker, root)
 	}
 	n, err := strconv.ParseUint(versionText, 10, 16)
-	if err != nil || n == 0 {
+	if err != nil {
 		return 0, fmt.Errorf("%w: FORMAT marker on disk %s does not match expected format (LSGFMT v<N>\\n)",
 			ErrCorruptMarker, root)
 	}

@@ -74,6 +74,16 @@ func LogsToEvents(resourceLogs []*logspb.ResourceLogs) []*event.Event {
 	return out
 }
 
+func countLogRecords(resourceLogs []*logspb.ResourceLogs) int {
+	total := 0
+	for _, rl := range resourceLogs {
+		for _, sl := range rl.GetScopeLogs() {
+			total += len(sl.GetLogRecords())
+		}
+	}
+	return total
+}
+
 func attrsToMap(res *resourcepb.Resource) map[string]string {
 	out := make(map[string]string)
 	if res == nil {

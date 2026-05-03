@@ -172,6 +172,8 @@ func NewServer(cfg Config) (*Server, error) {
 	// pipeline, memory, rows) and increments segment-skip counters.
 	promMetrics := NewPrometheusMetrics()
 	s.promMetrics = promMetrics
+	promMetrics.SetListenerUp("es", false)
+	promMetrics.SetListenerUp("otlp_http", false)
 	engine.SetOnQueryComplete(promMetrics.RecordQuery)
 
 	if cfg.Syslog.Enabled() {
@@ -521,6 +523,7 @@ func (s *Server) Start(ctx context.Context) error {
 			s.closeStagingBuffer(context.Background())
 			return fmt.Errorf("otlp http: %w", err)
 		}
+		s.promMetrics.SetListenerUp("otlp_http", true)
 	}
 
 	var lc net.ListenConfig
@@ -546,6 +549,7 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	s.listenAddr.Store(ln.Addr().String())
+	s.promMetrics.SetListenerUp("es", true)
 
 	// shutdownDone is closed after the engine has fully shut down (batcher
 	// flushed, mmaps closed). Start() waits on this channel before returning
@@ -563,6 +567,7 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 		if s.otlpHTTPReceiver != nil {
 			_ = s.otlpHTTPReceiver.Stop(context.Background())
+			s.promMetrics.SetListenerUp("otlp_http", false)
 		}
 		s.closeStagingBuffer(context.Background())
 
@@ -575,6 +580,7 @@ func (s *Server) Start(ctx context.Context) error {
 		if err := s.httpServer.Shutdown(shutdownCtx); err != nil {
 			s.engine.Logger().Error("HTTP server shutdown error", "error", err)
 		}
+		s.promMetrics.SetListenerUp("es", false)
 
 		// Safe to flush batcher and close mmaps — no in-flight ingests remain.
 		if err := s.engine.Shutdown(shutdownTimeout); err != nil {

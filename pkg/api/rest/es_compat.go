@@ -279,6 +279,12 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 	}
 
 	start := time.Now()
+	metricResult := "error"
+	defer func() {
+		if s.promMetrics != nil {
+			s.promMetrics.RecordESBulkRequest(metricResult, time.Since(start).Seconds())
+		}
+	}()
 
 	ingestCfg := s.currentIngestConfig()
 	pathIndex := r.PathValue("index")
@@ -324,16 +330,21 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := processESBatch(r.Context(), pipe, batch, s); err != nil {
 			if respondIngestError(w, err) {
+				for _, p := range pending {
+					s.recordESBulkItem(p.action, "rejected")
+				}
 				return false
 			}
 			for _, p := range pending {
 				items[p.itemIdx] = makeErrorItem(p.action, p.index, p.docID,
 					http.StatusInternalServerError, "ingest_exception", err.Error())
+				s.recordESBulkItem(p.action, "rejected")
 			}
 			hasErrors = true
 		} else {
 			for _, p := range pending {
 				items[p.itemIdx] = makeSuccessItem(p.action, p.index, p.docID)
+				s.recordESBulkItem(p.action, "ok")
 			}
 		}
 		batch = batch[:0]
@@ -351,6 +362,7 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal([]byte(actionLine), &action); err != nil {
 			items = append(items, makeErrorItem("index", "", "", http.StatusBadRequest,
 				"mapper_parsing_exception", fmt.Sprintf("malformed action line: %v", err)))
+			s.recordESBulkItem("index", "rejected")
 			hasErrors = true
 			// Try to consume data line.
 			scanner.Scan()
@@ -362,6 +374,7 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 		if meta == nil {
 			items = append(items, makeErrorItem("index", "", "", http.StatusBadRequest,
 				"mapper_parsing_exception", "no recognized action"))
+			s.recordESBulkItem("index", "rejected")
 			hasErrors = true
 			scanner.Scan()
 
@@ -372,6 +385,7 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 		case "update":
 			items = append(items, makeErrorItem("index", meta.Index, meta.ID, http.StatusBadRequest,
 				"action_request_validation_exception", "update action is not supported"))
+			s.recordESBulkItem("update", "rejected")
 			hasErrors = true
 			scanner.Scan() // consume data line
 
@@ -379,6 +393,7 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 		case "delete":
 			items = append(items, makeErrorItem("index", meta.Index, meta.ID, http.StatusBadRequest,
 				"action_request_validation_exception", "delete action is not supported"))
+			s.recordESBulkItem("delete", "rejected")
 			hasErrors = true
 			continue
 		}
@@ -387,6 +402,7 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 		if !scanner.Scan() {
 			items = append(items, makeErrorItem(actionName, meta.Index, meta.ID, http.StatusBadRequest,
 				"mapper_parsing_exception", "missing data line after action"))
+			s.recordESBulkItem(actionName, "rejected")
 			hasErrors = true
 
 			continue
@@ -397,6 +413,7 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 		if err := json.Unmarshal([]byte(dataLine), &doc); err != nil {
 			items = append(items, makeErrorItem(actionName, meta.Index, meta.ID, http.StatusBadRequest,
 				"mapper_parsing_exception", fmt.Sprintf("invalid data JSON: %v", err)))
+			s.recordESBulkItem(actionName, "rejected")
 			hasErrors = true
 
 			continue
@@ -452,12 +469,23 @@ func (s *Server) handleESBulk(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []esBulkItemResult{}
 	}
+	if hasErrors {
+		metricResult = "partial"
+	} else {
+		metricResult = "success"
+	}
 
 	respondJSON(w, http.StatusOK, esBulkResponse{
 		Took:   took,
 		Errors: hasErrors,
 		Items:  items,
 	})
+}
+
+func (s *Server) recordESBulkItem(action, result string) {
+	if s.promMetrics != nil {
+		s.promMetrics.RecordESBulkItem(action, result)
+	}
 }
 
 func processESBatch(ctx context.Context, pipe *pipeline.Pipeline, batch []*event.Event, s *Server) error {

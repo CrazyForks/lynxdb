@@ -24,6 +24,9 @@ type SubmitFunc func(context.Context, []*event.Event) error
 
 type Metrics interface {
 	limits.Hook
+	RecordOTLPRequest(signal, encoding, result string, bytes int)
+	RecordOTLPRecords(signal, result string, count int)
+	RecordDroppedRecords(source, reason string, count int)
 }
 
 type Config struct {
@@ -120,32 +123,42 @@ func (r *Receiver) markReady(err error) {
 
 func (r *Receiver) handleLogs(w http.ResponseWriter, req *http.Request) {
 	var export logscollector.ExportLogsServiceRequest
-	encoding, ok := decodeRequest(w, req, &export)
+	encoding, bytes, ok := decodeRequest(w, req, &export)
 	if !ok {
+		r.recordRequest("logs", encoding, "error", bytes)
 		return
 	}
+	total := countLogRecords(export.GetResourceLogs())
 	events := LogsToEvents(export.GetResourceLogs())
+	dropped := total - len(events)
+	r.recordRecords("logs", "accepted", len(events))
+	r.recordRecords("logs", "dropped", dropped)
+	r.recordDropped("otlp", "empty_body", dropped)
 	if len(events) > 0 {
 		if err := r.submit(req.Context(), events); err != nil {
 			w.Header().Set("Retry-After", "1")
 			http.Error(w, err.Error(), http.StatusServiceUnavailable)
+			r.recordRequest("logs", encoding, "error", bytes)
 			return
 		}
 	}
+	r.recordRequest("logs", encoding, "success", bytes)
 	writeProtoResponse(w, encoding, &logscollector.ExportLogsServiceResponse{})
 }
 
 func (r *Receiver) handleTraces(w http.ResponseWriter, req *http.Request) {
 	encoding := requestEncoding(req)
+	r.recordRequest("traces", encoding, "success", 0)
 	writeProtoResponse(w, encoding, &tracecollector.ExportTraceServiceResponse{})
 }
 
 func (r *Receiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 	encoding := requestEncoding(req)
+	r.recordRequest("metrics", encoding, "success", 0)
 	writeProtoResponse(w, encoding, &metricscollector.ExportMetricsServiceResponse{})
 }
 
-func decodeRequest(w http.ResponseWriter, req *http.Request, msg proto.Message) (string, bool) {
+func decodeRequest(w http.ResponseWriter, req *http.Request, msg proto.Message) (string, int, bool) {
 	encoding := requestEncoding(req)
 	body := req.Body
 	defer body.Close()
@@ -155,27 +168,46 @@ func decodeRequest(w http.ResponseWriter, req *http.Request, msg proto.Message) 
 		data, err := io.ReadAll(body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return encoding, false
+			return encoding, len(data), false
 		}
 		if err := proto.Unmarshal(data, msg); err != nil {
 			http.Error(w, "invalid protobuf: "+err.Error(), http.StatusBadRequest)
-			return encoding, false
+			return encoding, len(data), false
 		}
+		return encoding, len(data), true
 	case "json":
 		data, err := io.ReadAll(body)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return encoding, false
+			return encoding, len(data), false
 		}
 		if err := protojson.Unmarshal(data, msg); err != nil {
 			http.Error(w, "invalid JSON: "+err.Error(), http.StatusBadRequest)
-			return encoding, false
+			return encoding, len(data), false
 		}
+		return encoding, len(data), true
 	default:
 		http.Error(w, "unsupported content type", http.StatusUnsupportedMediaType)
-		return encoding, false
+		return encoding, 0, false
 	}
-	return encoding, true
+}
+
+func (r *Receiver) recordRequest(signal, encoding, result string, bytes int) {
+	if r.metrics != nil {
+		r.metrics.RecordOTLPRequest(signal, encoding, result, bytes)
+	}
+}
+
+func (r *Receiver) recordRecords(signal, result string, count int) {
+	if r.metrics != nil {
+		r.metrics.RecordOTLPRecords(signal, result, count)
+	}
+}
+
+func (r *Receiver) recordDropped(source, reason string, count int) {
+	if r.metrics != nil {
+		r.metrics.RecordDroppedRecords(source, reason, count)
+	}
 }
 
 func writeProtoResponse(w http.ResponseWriter, encoding string, msg proto.Message) {

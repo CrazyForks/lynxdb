@@ -6,7 +6,7 @@ LDFLAGS  = -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).Dat
 
 CUSTOM_GCL = ./custom-gcl
 
-.PHONY: build test test-unit test-e2e test-cli test-compat test-compat-filebeat test-compat-fluentbit test-compat-vector test-compat-otelcol vet clean lint lint-build
+.PHONY: build test test-unit test-e2e test-cli test-compat test-compat-filebeat test-compat-fluentbit test-compat-vector test-compat-otelcol test-compat-splunk-hec vet clean lint lint-build
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o lynxdb ./cmd/lynxdb/
@@ -33,6 +33,9 @@ test-compat-vector:
 
 test-compat-otelcol:
 	go test -timeout 3m -tags=e2e -run "^TestE2E_Shipper_OtelCol" ./test/e2e/shippers/
+
+test-compat-splunk-hec:
+	go test -timeout 2m -tags=e2e -run "^TestE2E_Shipper_SplunkHEC" ./test/e2e/shippers/
 
 test-cli: build
 	go test -tags clitest -count=1 -timeout 300s ./test/cli/

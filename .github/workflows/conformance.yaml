@@ -1,0 +1,51 @@
+name: Shipper Conformance
+
+on:
+  schedule:
+    - cron: "43 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.25.4"
+
+jobs:
+  conformance:
+    name: ${{ matrix.shipper }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - shipper: filebeat-8.15
+            target: test-compat-filebeat
+          - shipper: fluent-bit-3.x
+            target: test-compat-fluentbit
+          - shipper: vector-0.40
+            target: test-compat-vector
+          - shipper: otelcol-0.105
+            target: test-compat-otelcol
+          - shipper: splunk-hec
+            target: test-compat-splunk-hec
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Build Web UI
+        run: make webui
+
+      - name: Run conformance cell
+        run: make ${{ matrix.target }}

@@ -11,9 +11,14 @@ set -euo pipefail
 # This script is developer-facing only. It is not intended for CI.
 
 rsigma_ref="v0.9.0"
+with_matches=false
 
 while (($# > 0)); do
   case "$1" in
+    --with-matches)
+      with_matches=true
+      shift
+      ;;
     --rsigma-ref)
       if (($# < 2)); then
         echo "--rsigma-ref requires a tag or sha" >&2
@@ -23,7 +28,7 @@ while (($# > 0)); do
       shift 2
       ;;
     -h|--help)
-      echo "usage: scripts/sync_rsigma_golden.sh [--rsigma-ref <tag-or-sha>]"
+      echo "usage: scripts/sync_rsigma_golden.sh [--with-matches] [--rsigma-ref <tag-or-sha>]"
       exit 0
       ;;
     *)
@@ -68,7 +73,9 @@ for i in "${!yaml_files[@]}"; do
   name="$(basename "$yml" .yml)"
   cp "$yml" "$golden_dir/$name.yml"
   "$rsigma_bin" convert -t lynxdb -f default "$yml" >"$golden_dir/$name.spl2"
-  printf '{"events": [], "matches": []}\n' >"$golden_dir/$name.matches.json"
+  if [[ "$with_matches" == false ]]; then
+    printf '{"events": [], "matches": []}\n' >"$golden_dir/$name.matches.json"
+  fi
 
   title="$(awk -F': ' '/^title:/ {print $2; exit}' "$yml")"
   comma=","
@@ -111,5 +118,48 @@ done
 printf '  }\n}\n' >>"$golden_dir/manifest.json"
 
 "$repo_root/scripts/check_rsigma_golden_parses.sh"
+
+if [[ "$with_matches" == true ]]; then
+  cat >"$tmpdir/write_rsigma_matches.go" <<'GO'
+package main
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/lynxbase/lynxdb/test/integration/sigmacompat"
+)
+
+func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintln(os.Stderr, "usage: write_rsigma_matches <golden-dir>")
+		os.Exit(2)
+	}
+	refs, err := sigmacompat.AllReferences()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
+	for _, ref := range refs {
+		data, err := json.MarshalIndent(ref, "", "  ")
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		data = append(data, '\n')
+		path := filepath.Join(os.Args[1], ref.Fixture+".matches.json")
+		if err := os.WriteFile(path, data, 0o644); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	}
+}
+GO
+  echo "writing reference match sets using local_reference_evaluator"
+  echo "rsigma ${rsigma_ref} convert is still used for SPL2; this repository's sync path does not have a matched-indices rsigma eval mode, so --with-matches maps the deterministic synthetic datasets with the local reference evaluator."
+  (cd "$repo_root" && go run "$tmpdir/write_rsigma_matches.go" "$golden_dir")
+fi
 
 git -C "$repo_root" status --short pkg/sigmaqueries/testdata/golden/

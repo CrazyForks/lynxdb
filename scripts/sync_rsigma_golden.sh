@@ -171,4 +171,8 @@ GO
   (cd "$repo_root" && go run "$tmpdir/write_rsigma_matches.go" "$golden_dir")
 fi
 
-git -C "$repo_root" status --short "$golden_dir"
+if [[ "$golden_dir" == "$repo_root"/* ]]; then
+  git -C "$repo_root" status --short "$golden_dir"
+else
+  echo "wrote rsigma golden corpus to $golden_dir"
+fi

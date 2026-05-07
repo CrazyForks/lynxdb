@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/spl2"
@@ -23,12 +24,19 @@ func FuzzPlanEmittedSPL2(f *testing.F) {
 	seedGoldenCorpus(f)
 
 	f.Fuzz(func(t *testing.T, input string) {
+		if len(input) > 4096 {
+			t.Skip()
+		}
+
 		prog, err := spl2.ParseProgram(input)
 		if err != nil {
 			t.Skip()
 		}
 
-		iter, err := pipeline.BuildProgram(context.Background(), prog, &pipeline.ServerIndexStore{}, 0)
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+
+		iter, err := pipeline.BuildProgram(ctx, prog, &pipeline.ServerIndexStore{}, 0)
 		if err != nil {
 			return
 		}

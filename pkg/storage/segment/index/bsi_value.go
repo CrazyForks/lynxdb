@@ -17,19 +17,22 @@ const (
 // float ordering for all non-NaN values.
 func FloatToOrderedInt64(f float64) int64 {
 	bits := math.Float64bits(f)
+	var ordered uint64
 	if bits&(1<<63) != 0 {
-		return int64(^bits)
+		ordered = ^bits
+	} else {
+		ordered = bits ^ (1 << 63)
 	}
-	return int64(bits ^ (1 << 63))
+	return int64(ordered ^ (1 << 63))
 }
 
 // OrderedInt64ToFloat reverses FloatToOrderedInt64.
 func OrderedInt64ToFloat(v int64) float64 {
-	bits := uint64(v)
-	if bits&(1<<63) == 0 {
-		return math.Float64frombits(^bits)
+	ordered := uint64(v) ^ (1 << 63)
+	if ordered&(1<<63) == 0 {
+		return math.Float64frombits(^ordered)
 	}
-	return math.Float64frombits(bits ^ (1 << 63))
+	return math.Float64frombits(ordered ^ (1 << 63))
 }
 
 // BoolToInt64 maps a boolean to the integer domain used by Range BSI.

@@ -431,6 +431,7 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 		RangeBSIChecks:       qr.ss.RangeBSIChecks,
 		RangeBSISkips:        qr.ss.RangeBSISkips,
 		RangeBSIMaskBytes:    qr.ss.RangeBSIMaskBytes,
+		RangePredicates:      append([]spl2.RangePredicate(nil), qr.rangePredicates...),
 		PrefetchUsed:         qr.ss.PrefetchUsed,
 		PartialAggUsed:       aggSpec != nil || hasTransformPartialAgg(prog),
 		TopKUsed:             qr.topKUsed,
@@ -661,6 +662,7 @@ type queryPipelineResult struct {
 	topKUsed             bool
 	vectorizedFilterUsed bool
 	pipelineStages       []PipelineStage
+	rangePredicates      []spl2.RangePredicate
 	warnings             []string
 	vmCalls              int64
 	vmTimeNS             int64
@@ -1153,6 +1155,9 @@ func (e *Engine) runStreamingPipeline(
 	}
 
 	qr.ss = ss
+	if hints != nil {
+		qr.rangePredicates = append([]spl2.RangePredicate(nil), hints.RangePredicates...)
+	}
 	qr.vectorizedFilterUsed = enginepipeline.CheckVectorizedFilter(streamIter)
 	stages := enginepipeline.CollectStageStats(streamIter)
 	qr.pipelineStages = convertStageStats(stages)

@@ -610,39 +610,47 @@ func (sw *Writer) writeRangeBSISections(events []*event.Event, rowGroups []RowGr
 		}
 		rgEvents := events[start:end]
 
-		enc := index.NewRangeSectionEncoder(sw.w, sw.w.written)
-		for _, cand := range rangeColumns {
-			if constInRG[rg][cand.Name] {
-				continue
-			}
-			kind, minV, maxV, vals, ok := scanColumnForBSI(rgEvents, cand)
-			if !ok {
-				continue
-			}
-			bitCount := bitCountForSpread(minV, maxV)
-			if sw.indexConfig.BSIMaxBitCount > 0 && bitCount > sw.indexConfig.BSIMaxBitCount {
-				continue
-			}
-
-			builder := index.NewBSIBuilder(kind, minV, maxV)
-			for rowID, val := range vals {
-				if val.Present {
-					builder.Set(uint32(rowID), val.Raw)
-				}
-			}
-			if err := enc.AddColumn(cand.Name, kind, minV, maxV, builder.Build()); err != nil {
-				return fmt.Errorf("segment: encode range BSI column %q rg%d: %w", cand.Name, rg, err)
-			}
-		}
-
-		off, length, err := enc.Finalize()
+		off, length, err := writeRangeBSISection(sw.w, sw.w.written, rg, rgEvents, constInRG[rg], rangeColumns, sw.indexConfig)
 		if err != nil {
-			return fmt.Errorf("segment: write range BSI section rg%d: %w", rg, err)
+			return err
 		}
 		rowGroups[rg].PerColumnRangeOffset = off
 		rowGroups[rg].PerColumnRangeLength = length
 	}
 	return nil
+}
+
+func writeRangeBSISection(w io.Writer, startOffset int64, rg int, events []*event.Event, constColumns map[string]bool, rangeColumns []RangeBSICandidate, cfg IndexConfig) (int64, int64, error) {
+	enc := index.NewRangeSectionEncoder(w, startOffset)
+	for _, cand := range rangeColumns {
+		if constColumns[cand.Name] {
+			continue
+		}
+		kind, minV, maxV, vals, ok := scanColumnForBSI(events, cand)
+		if !ok {
+			continue
+		}
+		bitCount := bitCountForSpread(minV, maxV)
+		if cfg.BSIMaxBitCount > 0 && bitCount > cfg.BSIMaxBitCount {
+			continue
+		}
+
+		builder := index.NewBSIBuilder(kind, minV, maxV)
+		for rowID, val := range vals {
+			if val.Present {
+				builder.Set(uint32(rowID), val.Raw)
+			}
+		}
+		if err := enc.AddColumn(cand.Name, kind, minV, maxV, builder.Build()); err != nil {
+			return startOffset, 0, fmt.Errorf("segment: encode range BSI column %q rg%d: %w", cand.Name, rg, err)
+		}
+	}
+
+	off, length, err := enc.Finalize()
+	if err != nil {
+		return off, length, fmt.Errorf("segment: write range BSI section rg%d: %w", rg, err)
+	}
+	return off, length, nil
 }
 
 func scanColumnForBSI(events []*event.Event, cand RangeBSICandidate) (uint8, int64, int64, []rangeBSIValue, bool) {

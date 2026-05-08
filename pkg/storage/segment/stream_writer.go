@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -42,6 +43,11 @@ type StreamWriter struct {
 	// Bloom accumulator: per-RG bloom data stored for footer write.
 	bloomSections []bloomSectionData
 
+	// Range BSI sections are encoded while each row group is still resident
+	// and written at Finalize before the inverted index.
+	rangeSections       [][]byte
+	rangeCatalogColumns map[string]RangeBSICandidate
+
 	// Inverted index accumulated across all RGs.
 	inv *index.InvertedIndex
 
@@ -77,6 +83,12 @@ func (sw *StreamWriter) SetRowGroupSize(size int) {
 // Must be called before the first WriteRowGroup().
 func (sw *StreamWriter) SetMaxColumns(n int) {
 	sw.maxColumns = n
+}
+
+// SetIndexConfig configures optional indexes selected while writing segments.
+// It must be called before the first WriteRowGroup.
+func (sw *StreamWriter) SetIndexConfig(cfg IndexConfig) {
+	sw.w.SetIndexConfig(cfg)
 }
 
 // WriteRowGroup writes a single row group of events to the segment.
@@ -238,6 +250,26 @@ func (sw *StreamWriter) WriteRowGroup(events []*event.Event) error {
 		length: sw.w.w.written - bloomSectionOffset,
 	})
 
+	if defaultFormatMajor >= LSG_FORMAT_MAJOR_V2 && !sw.w.indexConfig.DisableBSI {
+		rangeColumns := collectRangeBSIColumns(events, catalog, sw.w.indexConfig)
+		if len(rangeColumns) > 0 {
+			if sw.rangeCatalogColumns == nil {
+				sw.rangeCatalogColumns = make(map[string]RangeBSICandidate, len(rangeColumns))
+			}
+			for _, cand := range rangeColumns {
+				sw.rangeCatalogColumns[cand.Name] = cand
+			}
+		}
+
+		var rangeBuf bytes.Buffer
+		if _, _, err := writeRangeBSISection(&rangeBuf, 0, len(sw.rowGroups), events, constInRG, rangeColumns, sw.w.indexConfig); err != nil {
+			return err
+		}
+		sw.rangeSections = append(sw.rangeSections, rangeBuf.Bytes())
+	} else {
+		sw.rangeSections = append(sw.rangeSections, nil)
+	}
+
 	// Add events to the global inverted index with absolute row offsets.
 	for i, e := range events {
 		sw.inv.Add(uint32(sw.rowOffset+i), e.Raw)
@@ -314,6 +346,13 @@ func (sw *StreamWriter) Finalize() (int64, error) {
 	}
 
 	finalCatalog := buildCatalog(finalFieldSet, finalFieldNames)
+	if len(sw.rangeCatalogColumns) > 0 {
+		rangeColumns := make([]RangeBSICandidate, 0, len(sw.rangeCatalogColumns))
+		for _, cand := range sw.rangeCatalogColumns {
+			rangeColumns = append(rangeColumns, cand)
+		}
+		markRangeBSICatalog(finalCatalog, rangeColumns)
+	}
 	finalCatalogIndex := make(map[string]int, len(finalCatalog))
 	for i, cat := range finalCatalog {
 		finalCatalogIndex[cat.Name] = i
@@ -325,6 +364,20 @@ func (sw *StreamWriter) Finalize() (int64, error) {
 		presence := sw.rgFieldPresence[rgi]
 		for name := range presence {
 			setPresenceBit(&sw.rowGroups[rgi], name, finalCatalogIndex)
+		}
+	}
+
+	if defaultFormatMajor >= LSG_FORMAT_MAJOR_V2 && !sw.w.indexConfig.DisableBSI {
+		for rgIdx, section := range sw.rangeSections {
+			if len(section) == 0 {
+				continue
+			}
+			offset := sw.w.w.written
+			if _, err := sw.w.w.Write(section); err != nil {
+				return sw.w.w.written, fmt.Errorf("segment: write range BSI section rg%d: %w", rgIdx, err)
+			}
+			sw.rowGroups[rgIdx].PerColumnRangeOffset = offset
+			sw.rowGroups[rgIdx].PerColumnRangeLength = sw.w.w.written - offset
 		}
 	}
 

@@ -12,9 +12,12 @@ const (
 	LSG_MIN_FILE_SIZE       = LSG_HEADER_SIZE + LSG_FOOTER_TRAILER_SIZE + 4
 
 	LSG_FORMAT_MAJOR_V1  uint16 = 1
-	LSG_BINARY_MAX_MAJOR uint16 = 1
+	LSG_FORMAT_MAJOR_V2  uint16 = 2
+	LSG_BINARY_MAX_MAJOR uint16 = 2
 	LSG_BINARY_MIN_MAJOR uint16 = 1
 )
+
+var defaultFormatMajor = LSG_FORMAT_MAJOR_V2
 
 func MagicForMajor(major uint16) string {
 	if major > 9 {

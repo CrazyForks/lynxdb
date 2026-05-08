@@ -9,7 +9,7 @@ var (
 	ErrColumnNotFound        = errors.New("segment: column not found")
 	ErrInvalidMagic          = errors.New("segment: invalid magic bytes")
 	ErrUnsupportedMajor      = errors.New("segment: unsupported format major version")
-	ErrUnsupportedCapability = errors.New("segment: unsupported required capability")
+	ErrUnsupportedCapability = errors.New("segment: unsupported required or optional capability")
 	ErrUnsupportedHeaderRev  = errors.New("segment: unsupported header revision")
 	ErrCorruptRegion         = errors.New("segment: corrupt region")
 	ErrDowngradeForbidden    = errors.New("segment: downgrade forbidden")

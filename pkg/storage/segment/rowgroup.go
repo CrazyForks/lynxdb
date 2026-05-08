@@ -19,6 +19,16 @@ const (
 	CompressionZSTD CompressionType = 2
 )
 
+// IndexProfile identifies the index family selected for a catalog column.
+type IndexProfile uint8
+
+const (
+	IndexProfileDefault    IndexProfile = 0
+	IndexProfileRangeBSI   IndexProfile = 1
+	IndexProfileEqInverted IndexProfile = 2
+	IndexProfileNone       IndexProfile = 3
+)
+
 // ColumnChunkMeta describes a single column chunk within a row group.
 type ColumnChunkMeta struct {
 	Name         string
@@ -51,13 +61,16 @@ type RowGroupMeta struct {
 	ConstColumns         []ConstColumnEntry // columns with identical value across all rows in this RG
 	PerColumnBloomOffset int64              // byte offset of this row group's per-column bloom section
 	PerColumnBloomLength int64              // byte length of this row group's per-column bloom section
+	PerColumnRangeOffset int64              // byte offset of this row group's per-column range index section
+	PerColumnRangeLength int64              // byte length of this row group's per-column range index section
 	RequiredCapabilities uint64             // required capability bits used by this row group
 }
 
 // CatalogEntry describes a column in the column catalog.
 type CatalogEntry struct {
-	Name         string
-	DominantType uint8 // encoding type that dominates across row groups
+	Name         string       // column name
+	DominantType uint8        // encoding type that dominates across row groups
+	IndexProfile IndexProfile // index family selected for this column
 }
 
 // PrimaryIndexEntry is a single sample in the sparse primary index.

@@ -36,6 +36,7 @@ func collectRangeBSIColumns(events []*event.Event, catalog []CatalogEntry, cfg I
 	}
 
 	candidates := make([]RangeBSICandidate, 0, len(catalog))
+	explicitProfiles := len(cfg.ProfileOverrides) > 0
 	for _, cat := range catalog {
 		if override, ok := cfg.ProfileOverrides[cat.Name]; ok {
 			if override == IndexProfileRangeBSI {
@@ -43,6 +44,9 @@ func collectRangeBSIColumns(events []*event.Event, catalog []CatalogEntry, cfg I
 					candidates = append(candidates, RangeBSICandidate{Name: cat.Name, ValueKind: kind})
 				}
 			}
+			continue
+		}
+		if explicitProfiles {
 			continue
 		}
 

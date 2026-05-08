@@ -12,6 +12,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/storage/compaction"
 	"github.com/lynxbase/lynxdb/pkg/storage/part"
+	"github.com/lynxbase/lynxdb/pkg/storage/segment"
 )
 
 const compactionEscalateThreshold = 5
@@ -212,6 +213,9 @@ func (e *Engine) executeCompactionPlan(ctx context.Context, idx, partition strin
 	if e.storageCfg.MaxColumnsPerPart > 0 {
 		writerOpts = append(writerOpts, part.WithMaxColumns(e.storageCfg.MaxColumnsPerPart))
 	}
+	if e.storageCfg.CompactionDisableBSIOnOutput {
+		writerOpts = append(writerOpts, part.WithDisableBSI(true))
+	}
 
 	streamWriter, err := part.NewPartStreamWriter(e.partLayout, idx, plan.OutputLevel, writerOpts...)
 	if err != nil {
@@ -369,6 +373,13 @@ func (e *Engine) executeCompactionPlan(ctx context.Context, idx, partition strin
 
 	e.metrics.CompactionInputBytes.Add(inputBytes)
 	e.metrics.CompactionOutputBytes.Add(outputMeta.SizeBytes)
+	e.metrics.CompactionSegmentsMergedV1.Add(int64(result.FormatV1Inputs))
+	e.metrics.CompactionSegmentsMergedV2.Add(int64(result.FormatV2Inputs))
+	if outputMeta.FormatMajor == segment.LSG_FORMAT_MAJOR_V2 {
+		e.metrics.CompactionSegmentsEmittedV2.Add(1)
+	}
+	e.metrics.CompactionBSIColumnsTotal.Add(int64(outputMeta.BSIColumns))
+	e.metrics.CompactionBSISectionBytes.Add(outputMeta.BSISectionBytes)
 
 	// Per-level compaction metrics.
 	switch plan.OutputLevel {
@@ -403,8 +414,13 @@ func (e *Engine) executeCompactionPlan(ctx context.Context, idx, partition strin
 		"index", idx,
 		"partition", partition,
 		"input_count", len(plan.InputSegments),
+		"input_format_v1_count", result.FormatV1Inputs,
+		"input_format_v2_count", result.FormatV2Inputs,
 		"output_id", outputMeta.ID,
 		"output_level", outputMeta.Level,
+		"output_format", outputMeta.FormatMajor,
+		"bsi_columns", outputMeta.BSIColumns,
+		"bsi_section_bytes", outputMeta.BSISectionBytes,
 		"output_size", outputMeta.SizeBytes,
 	)
 }

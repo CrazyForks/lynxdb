@@ -104,11 +104,14 @@ type SegmentStreamStats struct {
 	PeakMemoryBytes  int64 // max memory used at any point
 
 	// Row-group-level skip counters from the unified RG filter evaluator.
-	RGConstSkips    int // row groups skipped by const column mismatch
-	RGPresenceSkips int // row groups skipped by column absence
-	RGZoneMapSkips  int // row groups skipped by zone map exclusion
-	RGBloomSkips    int // row groups skipped by per-column bloom filter
-	RGBloomsChecked int // total bloom filter consultations across all RGs
+	RGConstSkips        int   // row groups skipped by const column mismatch
+	RGPresenceSkips     int   // row groups skipped by column absence
+	RGZoneMapSkips      int   // row groups skipped by zone map exclusion
+	RGBloomSkips        int   // row groups skipped by per-column bloom filter
+	RGBloomsChecked     int   // total bloom filter consultations across all RGs
+	RGRangeBSIChecks    int   // total range BSI filter attempts
+	RGRangeBSISkips     int   // row groups skipped by range BSI
+	RGRangeBSIMaskBytes int64 // approximate serialized bytes of attached BSI row masks
 
 	// Segment-level skip counters (complement BloomSkips/TimeSkips which are row-group-level).
 	SegmentBloomSkips int // segments skipped by bloom filter
@@ -142,16 +145,18 @@ type SegmentStreamIterator struct {
 	acct      memgov.MemoryAccount
 
 	// Mutable scan state
-	phase    scanPhase
-	memOff   int                 // position within memEvents
-	segIdx   int                 // current segment index
-	rgIdx    int                 // current row group within segment
-	rgEvents []*event.Event      // buffered events from current row group
-	rgOff    int                 // position within rgEvents
-	bitmap   *roaring.Bitmap     // search bitmap for current segment (nil = no filter)
-	rgTotal  int                 // total row groups in current segment
-	needCols map[string]bool     // column projection set (nil = all)
-	segPreds []segment.Predicate // converted field predicates for segment reader
+	phase       scanPhase
+	memOff      int                 // position within memEvents
+	segIdx      int                 // current segment index
+	rgIdx       int                 // current row group within segment
+	rgEvents    []*event.Event      // buffered events from current row group
+	rgOff       int                 // position within rgEvents
+	bitmap      *roaring.Bitmap     // search bitmap for current segment (nil = no filter)
+	rgTotal     int                 // total row groups in current segment
+	rgStartRows []uint32            // segment-global row offset for each row group in current segment
+	rgRowCounts []uint32            // row count for each row group in current segment
+	needCols    map[string]bool     // column projection set (nil = all)
+	segPreds    []segment.Predicate // converted field predicates for segment reader
 
 	// Row-group filter evaluator (unified boolean filter tree).
 	rgFilterNode  *segment.RGFilterNode      // query-level (computed once in constructor)
@@ -345,6 +350,9 @@ func (s *SegmentStreamIterator) Stats() SegmentStreamStats {
 	s.streamStats.RGZoneMapSkips = s.rgFilterStats.ZoneMapSkips
 	s.streamStats.RGBloomSkips = s.rgFilterStats.BloomSkips
 	s.streamStats.RGBloomsChecked = s.rgFilterStats.BloomsChecked
+	s.streamStats.RGRangeBSIChecks = s.rgFilterStats.RangeBSIChecks
+	s.streamStats.RGRangeBSISkips = s.rgFilterStats.RangeBSISkips
+	s.streamStats.RGRangeBSIMaskBytes = s.rgFilterStats.RangeBSIMaskBytes
 
 	return s.streamStats
 }
@@ -551,6 +559,11 @@ func (s *SegmentStreamIterator) advanceRowGroup() bool {
 		s.bitmap = nil
 		s.rgEvents = nil
 		s.rgOff = 0
+		s.rgStartRows = s.rgStartRows[:0]
+		s.rgRowCounts = s.rgRowCounts[:0]
+		if s.rgFilter != nil {
+			s.rgFilter.ResetRowMasks()
+		}
 
 		// Move to next segment.
 		s.segIdx++
@@ -624,6 +637,7 @@ func (s *SegmentStreamIterator) advanceRowGroup() bool {
 		}
 
 		s.rgTotal = seg.Reader.RowGroupCount()
+		s.rgStartRows, s.rgRowCounts = buildRowGroupOffsets(seg.Reader, s.rgStartRows, s.rgRowCounts)
 		s.rgIdx = 0
 		s.streamStats.SegmentsScanned++
 		s.reportSegmentEntered(seg)
@@ -672,10 +686,12 @@ func (s *SegmentStreamIterator) loadCurrentRowGroup() error {
 		return nil
 	}
 
+	rowBitmap := s.bitmapForCurrentRowGroup()
+
 	// Read the row group with bitmap and predicate filtering.
 	events, err := reader.ReadRowGroupFiltered(
 		s.rgIdx,
-		s.bitmap,
+		rowBitmap,
 		s.segPreds,
 		s.hints.RequiredCols,
 	)
@@ -694,6 +710,76 @@ func (s *SegmentStreamIterator) loadCurrentRowGroup() error {
 	s.reportRowGroupDone()
 
 	return nil
+}
+
+func (s *SegmentStreamIterator) bitmapForCurrentRowGroup() *roaring.Bitmap {
+	if s.rgFilter == nil {
+		return s.bitmap
+	}
+
+	mask := s.rgFilter.RowMaskFor(s.rgIdx)
+	if mask == nil || mask.IsEmpty() {
+		return s.bitmap
+	}
+	if s.rgIdx < 0 || s.rgIdx >= len(s.rgRowCounts) {
+		return s.bitmap
+	}
+
+	rowCount := s.rgRowCounts[s.rgIdx]
+	if rowCount == 0 {
+		return s.bitmap
+	}
+
+	if s.hints.BitmapSelectivityThreshold > 0 {
+		selectivity := float64(mask.GetCardinality()) / float64(rowCount)
+		if selectivity > s.hints.BitmapSelectivityThreshold {
+			return s.bitmap
+		}
+	}
+
+	shifted := translateBitmap(mask, s.rgStartRows[s.rgIdx])
+	if s.bitmap == nil {
+		return shifted
+	}
+
+	combined := s.bitmap.Clone()
+	combined.And(shifted)
+
+	return combined
+}
+
+func buildRowGroupOffsets(reader *segment.Reader, starts, counts []uint32) ([]uint32, []uint32) {
+	rgTotal := reader.RowGroupCount()
+	if cap(starts) < rgTotal {
+		starts = make([]uint32, rgTotal)
+	} else {
+		starts = starts[:rgTotal]
+	}
+	if cap(counts) < rgTotal {
+		counts = make([]uint32, rgTotal)
+	} else {
+		counts = counts[:rgTotal]
+	}
+
+	var rowOffset uint32
+	for rgIdx := 0; rgIdx < rgTotal; rgIdx++ {
+		starts[rgIdx] = rowOffset
+		rowCount := uint32(reader.RowGroupRowCount(rgIdx))
+		counts[rgIdx] = rowCount
+		rowOffset += rowCount
+	}
+
+	return starts, counts
+}
+
+func translateBitmap(src *roaring.Bitmap, delta uint32) *roaring.Bitmap {
+	out := roaring.New()
+	it := src.Iterator()
+	for it.HasNext() {
+		out.Add(it.Next() + delta)
+	}
+
+	return out
 }
 
 // matchesStreamSourceScope checks if a segment's index matches the streaming

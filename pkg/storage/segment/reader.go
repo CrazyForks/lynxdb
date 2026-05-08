@@ -689,6 +689,15 @@ func (r *Reader) RowGroupCount() int {
 	return len(r.footer.RowGroups)
 }
 
+// RowGroupRowCount returns the number of rows in the row group.
+func (r *Reader) RowGroupRowCount(rgIdx int) int {
+	if rgIdx < 0 || rgIdx >= len(r.footer.RowGroups) {
+		return 0
+	}
+
+	return r.footer.RowGroups[rgIdx].RowCount
+}
+
 // ReadRowGroup reads all events from row group at the given index.
 func (r *Reader) ReadRowGroup(idx int) ([]*event.Event, error) {
 	if idx < 0 || idx >= len(r.footer.RowGroups) {

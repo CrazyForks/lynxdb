@@ -27,12 +27,43 @@ from pathlib import Path
 # Map GoReleaser naming conventions to our platform keys
 # Archive format: lynxdb-v{version}-{os}-{arch}[-musl].tar.gz
 ARTIFACT_PATTERN = re.compile(
-    r"lynxdb-v[\d.]+(?:-(?:rc|alpha|beta|dev)\.\d+)?-"
+    r"lynxdb-v(?P<version>[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?)-"
     r"(?P<os>linux|darwin|windows)-"
     r"(?P<arch>amd64|arm64|armv7)"
     r"(?P<variant>-musl)?"
     r"\.(?P<ext>tar\.gz|zip)$"
 )
+VERSION_PATTERN = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)?$")
+NIGHTLY_PATTERN = re.compile(r"^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]{8}\.g[0-9a-fA-F]+$")
+SOURCE_COMMIT_PATTERN = re.compile(r"-nightly\.[0-9]{8}\.g(?P<sha>[0-9a-fA-F]+)$")
+
+
+def is_prerelease(version: str) -> bool:
+    """Return whether a version has a SemVer prerelease suffix."""
+    return "-" in version
+
+
+def source_commit(version: str) -> str | None:
+    """Extract the short source commit from a nightly version."""
+    match = SOURCE_COMMIT_PATTERN.search(version)
+    if not match:
+        return None
+    return match.group("sha")
+
+
+def validate_release_channel(version: str, channel: str, allow_stable_prerelease: bool = False) -> None:
+    """Reject channel/version combinations that can overwrite stable pointers."""
+    if not VERSION_PATTERN.match(version):
+        raise ValueError("version must match vX.Y.Z or vX.Y.Z-prerelease")
+
+    if channel not in ("stable", "nightly"):
+        raise ValueError("channel must be stable or nightly")
+
+    if channel == "stable" and is_prerelease(version) and not allow_stable_prerelease:
+        raise ValueError("stable channel cannot be used with a prerelease version")
+
+    if channel == "nightly" and not NIGHTLY_PATTERN.match(version):
+        raise ValueError("nightly channel requires vX.Y.Z-nightly.YYYYMMDD.gSHA")
 
 
 def parse_checksums(checksums_path: str) -> dict[str, str]:
@@ -75,6 +106,10 @@ def build_manifest(
         if not match:
             continue
 
+        artifact_version = f"v{match.group('version')}"
+        if artifact_version != version:
+            continue
+
         os_name = match.group("os")
         arch = match.group("arch")
         variant = match.group("variant") or ""
@@ -89,17 +124,18 @@ def build_manifest(
             "filename": filename,
         }
 
-    # Determine if this is a pre-release
-    is_prerelease = bool(re.search(r"-(rc|alpha|beta|dev)\.", version))
-
     manifest = {
         "version": version,
-        "channel": "prerelease" if is_prerelease else channel,
+        "channel": channel,
         "released_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "changelog_url": f"https://github.com/lynxbase/lynxdb/releases/tag/{version}",
         "artifacts": artifacts,
         "notices": [],
     }
+
+    commit = source_commit(version)
+    if commit:
+        manifest["source_commit"] = commit
 
     return manifest
 
@@ -131,9 +167,24 @@ def main():
     parser.add_argument("--checksums", required=True, help="Path to checksums.txt")
     parser.add_argument("--artifacts-dir", required=True, help="Directory containing artifacts")
     parser.add_argument("--base-url", default="https://dl.lynxdb.org", help="CDN base URL")
-    parser.add_argument("--channel", default="stable", help="Release channel")
+    parser.add_argument("--channel", choices=["stable", "nightly"], default="stable", help="Release channel")
+    parser.add_argument(
+        "--allow-stable-prerelease",
+        action="store_true",
+        help="Allow a prerelease version with --channel stable",
+    )
     parser.add_argument("--output", default="manifest.json", help="Output file path")
     args = parser.parse_args()
+
+    try:
+        validate_release_channel(
+            args.version,
+            args.channel,
+            allow_stable_prerelease=args.allow_stable_prerelease,
+        )
+    except ValueError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
 
     print(f"Generating manifest for {args.version}...")
     checksums = parse_checksums(args.checksums)
@@ -153,6 +204,10 @@ def main():
     for w in warnings:
         print(f"  WARNING: {w}", file=sys.stderr)
 
+    if not manifest["artifacts"]:
+        print("ERROR: no release artifacts matched the requested version", file=sys.stderr)
+        sys.exit(1)
+
     platforms = list(manifest["artifacts"].keys())
     print(f"  Platforms: {', '.join(platforms)}")
 
@@ -162,11 +217,6 @@ def main():
         f.write("\n")
 
     print(f"  Manifest written to {args.output}")
-
-    # Exit with warning code if validation issues
-    if warnings and not manifest["artifacts"]:
-        sys.exit(1)
-
 
 if __name__ == "__main__":
     main()

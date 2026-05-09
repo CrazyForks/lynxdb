@@ -1,0 +1,90 @@
+name: Nightly Trigger
+
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+    inputs:
+      base_version:
+        description: "Base SemVer without v, for example 0.7.0"
+        required: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: nightly-trigger
+  cancel-in-progress: false
+
+env:
+  GO_VERSION: "1.25.4"
+
+jobs:
+  tag-nightly:
+    name: Create Nightly Tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Resolve nightly tag
+        id: nightly
+        env:
+          INPUT_BASE_VERSION: ${{ inputs.base_version }}
+          VAR_BASE_VERSION: ${{ vars.NIGHTLY_BASE_VERSION }}
+        run: |
+          BASE_VERSION="${INPUT_BASE_VERSION:-$VAR_BASE_VERSION}"
+          if [ -n "$BASE_VERSION" ]; then
+            NIGHTLY_BASE_VERSION="$BASE_VERSION" CI=true scripts/nightly-version.sh > nightly.env
+          else
+            CI=true scripts/nightly-version.sh > nightly.env
+          fi
+          cat nightly.env
+          cat nightly.env >> "$GITHUB_OUTPUT"
+
+      - name: Check remote tag
+        id: existing_tag
+        env:
+          TAG: ${{ steps.nightly.outputs.tag }}
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${TAG}" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "Nightly tag ${TAG} already exists"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run preflight tests
+        if: steps.existing_tag.outputs.exists != 'true'
+        run: go test ./...
+
+      - name: Validate nightly GoReleaser config
+        if: steps.existing_tag.outputs.exists != 'true'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: check --config .goreleaser-nightly.yaml
+
+      - name: Push nightly tag
+        if: steps.existing_tag.outputs.exists != 'true'
+        env:
+          TAG: ${{ steps.nightly.outputs.tag }}
+        run: |
+          git config user.name "lynxdb-bot"
+          git config user.email "bot@lynxdb.org"
+          git tag "$TAG"
+          git push origin "refs/tags/${TAG}"

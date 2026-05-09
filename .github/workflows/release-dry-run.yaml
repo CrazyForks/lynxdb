@@ -9,8 +9,14 @@ on:
   pull_request:
     paths:
       - ".goreleaser.yaml"
+      - ".goreleaser-nightly.yaml"
       - ".github/workflows/release.yaml"
+      - ".github/workflows/nightly-release.yaml"
+      - ".github/workflows/nightly-trigger.yaml"
       - ".github/workflows/release-dry-run.yaml"
+      - "scripts/generate-manifest.py"
+      - "scripts/nightly-version.sh"
+      - "scripts/render-homebrew-nightly.py"
       - "cmd/**"
       - "internal/**"
       - "web/**"
@@ -48,19 +54,46 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Validate GoReleaser config
+      - name: Validate stable GoReleaser config
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: check
+          args: check --config .goreleaser.yaml
 
-      - name: Run GoReleaser snapshot
+      - name: Validate nightly GoReleaser config
         uses: goreleaser/goreleaser-action@v6
         with:
           distribution: goreleaser
           version: "~> v2"
-          args: release --snapshot --clean
+          args: check --config .goreleaser-nightly.yaml
+
+      - name: Assert nightly config excludes stable outputs
+        run: |
+          if grep -Eq 'ghcr\.io/lynxbase/lynxdb:latest' .goreleaser-nightly.yaml; then
+            echo "::error::nightly GoReleaser config must not publish Docker latest tags"
+            exit 1
+          fi
+          if grep -Eq '^brews:' .goreleaser-nightly.yaml; then
+            echo "::error::nightly GoReleaser config must not update Homebrew lynxdb"
+            exit 1
+          fi
+
+      - name: Run stable GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --config .goreleaser.yaml
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           HOMEBREW_TAP_GITHUB_TOKEN: dry-run
+
+      - name: Run nightly GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --snapshot --clean --config .goreleaser-nightly.yaml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

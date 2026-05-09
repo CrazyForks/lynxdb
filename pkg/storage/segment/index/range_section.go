@@ -56,7 +56,7 @@ func (e *RangeSectionEncoder) AddColumn(name string, kind uint8, minValue, maxVa
 	}
 	var payload bytes.Buffer
 	for _, frame := range frames {
-		if len(frame) > math.MaxUint32 {
+		if !fitsUint32(len(frame)) {
 			return fmt.Errorf("index: encode range BSI column %q: frame too large", name)
 		}
 		var lenBuf [4]byte
@@ -64,7 +64,7 @@ func (e *RangeSectionEncoder) AddColumn(name string, kind uint8, minValue, maxVa
 		payload.Write(lenBuf[:])
 		payload.Write(frame)
 	}
-	if payload.Len() > math.MaxUint32 {
+	if !fitsUint32(payload.Len()) {
 		return fmt.Errorf("index: encode range BSI column %q: payload too large", name)
 	}
 
@@ -78,10 +78,10 @@ func (e *RangeSectionEncoder) AddColumnPacked(name string, kind uint8, minValue,
 	if bitCount < 0 || bitCount > math.MaxUint8 {
 		return fmt.Errorf("index: encode packed range BSI column %q: bit count %d exceeds uint8", name, bitCount)
 	}
-	if rowCount < 0 || rowCount > math.MaxUint32 {
+	if rowCount < 0 || !fitsUint32(rowCount) {
 		return fmt.Errorf("index: encode packed range BSI column %q: row count out of range", name)
 	}
-	if len(values) > math.MaxUint32 {
+	if !fitsUint32(len(values)) {
 		return fmt.Errorf("index: encode packed range BSI column %q: too many values", name)
 	}
 
@@ -89,7 +89,7 @@ func (e *RangeSectionEncoder) AddColumnPacked(name string, kind uint8, minValue,
 	if err != nil {
 		return fmt.Errorf("index: encode packed range BSI column %q: %w", name, err)
 	}
-	if len(payload) > math.MaxUint32 {
+	if !fitsUint32(len(payload)) {
 		return fmt.Errorf("index: encode packed range BSI column %q: payload too large", name)
 	}
 
@@ -133,6 +133,10 @@ func (e *RangeSectionEncoder) addEntry(name string, layout, bitCount, kind uint8
 	return nil
 }
 
+func fitsUint32(n int) bool {
+	return n >= 0 && uint64(n) <= uint64(math.MaxUint32)
+}
+
 func encodePackedRangePayload(bitCount, rowCount int, values []RangeSectionValue) ([]byte, error) {
 	presenceBytes := (rowCount + 7) / 8
 	valueBytes, err := packedValueByteLen(bitCount, len(values))
@@ -150,7 +154,7 @@ func encodePackedRangePayload(bitCount, rowCount int, values []RangeSectionValue
 
 	var lastRow uint32
 	for i, value := range values {
-		if int(value.RowID) >= rowCount {
+		if uint64(value.RowID) >= uint64(rowCount) {
 			return nil, fmt.Errorf("row id %d outside row count %d", value.RowID, rowCount)
 		}
 		if i > 0 && value.RowID <= lastRow {

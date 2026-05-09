@@ -424,6 +424,31 @@ func TestExtractQueryHints_WhereInGeneratedField(t *testing.T) {
 	}
 }
 
+func TestExtractQueryHints_RangePredicateGeneratedField(t *testing.T) {
+	prog, err := ParseProgram(`FROM main | streamstats count as row_num | where status >= 500 and row_num <= 10 | table row_num`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+	prog.Main.Annotate("rangePredicates", []RangePredicate{
+		{Field: "status", Min: "500"},
+		{Field: "row_num", Max: "10"},
+	})
+
+	hints := ExtractQueryHints(prog)
+	if len(hints.RangePredicates) != 1 {
+		t.Fatalf("RangePredicates: got %d, want 1; preds=%+v", len(hints.RangePredicates), hints.RangePredicates)
+	}
+	if hints.RangePredicates[0].Field != "status" {
+		t.Fatalf("RangePredicates[0].Field: got %q, want status", hints.RangePredicates[0].Field)
+	}
+	if len(hints.FieldPredicates) != 1 {
+		t.Fatalf("FieldPredicates: got %d, want 1; preds=%+v", len(hints.FieldPredicates), hints.FieldPredicates)
+	}
+	if hints.FieldPredicates[0].Field != "status" {
+		t.Fatalf("FieldPredicates[0].Field: got %q, want status", hints.FieldPredicates[0].Field)
+	}
+}
+
 func TestCollectAllIndexNames(t *testing.T) {
 	tests := []struct {
 		name  string

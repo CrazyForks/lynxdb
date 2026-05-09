@@ -205,32 +205,7 @@ func extractQueryHintsFromQuery(q *Query) *QueryHints {
 		}
 	}
 
-	// Remove predicates that reference pipeline-generated fields.
-	// These fields are created during pipeline execution (by STREAMSTATS,
-	// EVENTSTATS, EVAL, REX, BIN, RENAME, UNPACK) and don't exist in segment
-	// data. Pushing them to the segment reader causes evalPredicatesOnEvent to
-	// reject ALL events (null field → no match → 0 rows returned).
-	if !generatedFields.empty() && len(h.FieldPredicates) > 0 {
-		filtered := h.FieldPredicates[:0]
-		for _, fp := range h.FieldPredicates {
-			if !generatedFields.contains(fp.Field) {
-				filtered = append(filtered, fp)
-			}
-		}
-		h.FieldPredicates = filtered
-	}
-
-	// Same filter for IN predicates — fields created by pipeline operators
-	// (EVAL, REX, STREAMSTATS, UNPACK, etc.) don't exist in segment data.
-	if !generatedFields.empty() && len(h.InPredicates) > 0 {
-		filtered := h.InPredicates[:0]
-		for _, ip := range h.InPredicates {
-			if !generatedFields.contains(ip.Field) {
-				filtered = append(filtered, ip)
-			}
-		}
-		h.InPredicates = filtered
-	}
+	filterGeneratedFieldPredicates(h, generatedFields)
 
 	// Terminal HeadCommand → set Limit hint only when safe to push down.
 	// Limit pushdown is unsafe when intermediate commands filter rows, aggregate,
@@ -279,8 +254,48 @@ func extractQueryHintsFromQuery(q *Query) *QueryHints {
 
 	// Merge optimizer annotations into hints.
 	mergeAnnotations(q, h)
+	filterGeneratedFieldPredicates(h, generatedFields)
 
 	return h
+}
+
+func filterGeneratedFieldPredicates(h *QueryHints, generatedFields *generatedFieldInfo) {
+	if h == nil || generatedFields == nil || generatedFields.empty() {
+		return
+	}
+
+	// Pipeline-generated fields do not exist in segment data. Pushing them to
+	// segment pruning or row-group filtering makes null comparisons reject rows
+	// before the pipeline can create those fields.
+	if len(h.FieldPredicates) > 0 {
+		filtered := h.FieldPredicates[:0]
+		for _, fp := range h.FieldPredicates {
+			if !generatedFields.contains(fp.Field) {
+				filtered = append(filtered, fp)
+			}
+		}
+		h.FieldPredicates = filtered
+	}
+
+	if len(h.InPredicates) > 0 {
+		filtered := h.InPredicates[:0]
+		for _, ip := range h.InPredicates {
+			if !generatedFields.contains(ip.Field) {
+				filtered = append(filtered, ip)
+			}
+		}
+		h.InPredicates = filtered
+	}
+
+	if len(h.RangePredicates) > 0 {
+		filtered := h.RangePredicates[:0]
+		for _, rp := range h.RangePredicates {
+			if !generatedFields.contains(rp.Field) {
+				filtered = append(filtered, rp)
+			}
+		}
+		h.RangePredicates = filtered
+	}
 }
 
 // isLimitPushdownSafe returns true if none of the commands can reduce the

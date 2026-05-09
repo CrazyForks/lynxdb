@@ -20,6 +20,23 @@ func (s testSegmentSet) Segments() []*segment.Reader {
 	return s.readers
 }
 
+func TestUnit_Optimizer_RangeMerge_SkipsGeneratedFields(t *testing.T) {
+	prog, err := spl2.ParseProgram(`FROM main | streamstats count as row_num | where status >= 500 and row_num <= 10 | table row_num`)
+	if err != nil {
+		t.Fatalf("parse: %v", err)
+	}
+
+	opt := New()
+	result := opt.Optimize(prog.Main)
+	preds := rangeBSIAnnotation(t, result)
+	if len(preds) != 1 {
+		t.Fatalf("range predicate count = %d, want 1; preds=%+v", len(preds), preds)
+	}
+	if preds[0].Field != "status" {
+		t.Fatalf("range predicate field = %q, want status", preds[0].Field)
+	}
+}
+
 func TestUnit_Optimizer_LowerRangeToBSI_AllSegmentsHaveRangeBSI_TagsPredicate(t *testing.T) {
 	query, cmp := rangeBSITestQuery()
 	readers := []*segment.Reader{

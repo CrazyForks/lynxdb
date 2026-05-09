@@ -26,15 +26,20 @@ type Metrics struct {
 	SegmentL3Count    atomic.Int64
 
 	// Compaction metrics.
-	CompactionRuns             atomic.Int64
-	CompactionInputBytes       atomic.Int64
-	CompactionOutputBytes      atomic.Int64
-	CompactionErrors           atomic.Int64
-	CompactionQueueDepth       atomic.Int64 // current number of pending compaction jobs
-	CompactionTrivialMoveCount atomic.Int64 // trivial move promotions (no merge)
-	CompactionTrivialMoveBytes atomic.Int64 // bytes promoted via trivial move
-	CompactionIntraL0Runs      atomic.Int64 // intra-L0 merge runs (L0→L0)
-	CompactionDurationNs       atomic.Int64 // cumulative compaction nanoseconds
+	CompactionRuns              atomic.Int64
+	CompactionInputBytes        atomic.Int64
+	CompactionOutputBytes       atomic.Int64
+	CompactionErrors            atomic.Int64
+	CompactionQueueDepth        atomic.Int64 // current number of pending compaction jobs
+	CompactionTrivialMoveCount  atomic.Int64 // trivial move promotions (no merge)
+	CompactionTrivialMoveBytes  atomic.Int64 // bytes promoted via trivial move
+	CompactionIntraL0Runs       atomic.Int64 // intra-L0 merge runs (L0→L0)
+	CompactionDurationNs        atomic.Int64 // cumulative compaction nanoseconds
+	CompactionSegmentsMergedV1  atomic.Int64 // input segments merged with LSG format major 1
+	CompactionSegmentsMergedV2  atomic.Int64 // input segments merged with LSG format major 2
+	CompactionSegmentsEmittedV2 atomic.Int64 // output segments emitted with LSG format major 2
+	CompactionBSIColumnsTotal   atomic.Int64 // cumulative range BSI columns on compaction outputs
+	CompactionBSISectionBytes   atomic.Int64 // cumulative range BSI section bytes on compaction outputs
 
 	// Per-level compaction metrics.
 	CompactionL0ToL1Runs       atomic.Int64
@@ -136,6 +141,11 @@ type MetricsSnapshot struct {
 		QueueDepth         int64   `json:"queue_depth"`
 		TrivialMoveCount   int64   `json:"trivial_move_count"`
 		TrivialMoveBytes   int64   `json:"trivial_move_bytes"`
+		SegmentsMergedV1   int64   `json:"segments_merged_v1"`
+		SegmentsMergedV2   int64   `json:"segments_merged_v2"`
+		SegmentsEmittedV2  int64   `json:"segments_emitted_v2"`
+		BSIColumnsTotal    int64   `json:"bsi_columns_total"`
+		BSISectionBytes    int64   `json:"bsi_section_bytes"`
 		WriteAmplification float64 `json:"write_amplification"` // output_bytes / input_bytes (ideal = 1.0)
 		DurationMs         int64   `json:"duration_ms"`
 	} `json:"compaction"`
@@ -254,6 +264,11 @@ func (m *Metrics) Snapshot() *MetricsSnapshot {
 	snap.Compaction.QueueDepth = m.CompactionQueueDepth.Load()
 	snap.Compaction.TrivialMoveCount = m.CompactionTrivialMoveCount.Load()
 	snap.Compaction.TrivialMoveBytes = m.CompactionTrivialMoveBytes.Load()
+	snap.Compaction.SegmentsMergedV1 = m.CompactionSegmentsMergedV1.Load()
+	snap.Compaction.SegmentsMergedV2 = m.CompactionSegmentsMergedV2.Load()
+	snap.Compaction.SegmentsEmittedV2 = m.CompactionSegmentsEmittedV2.Load()
+	snap.Compaction.BSIColumnsTotal = m.CompactionBSIColumnsTotal.Load()
+	snap.Compaction.BSISectionBytes = m.CompactionBSISectionBytes.Load()
 	snap.Compaction.DurationMs = m.CompactionDurationNs.Load() / 1e6
 	if snap.Compaction.InputBytes > 0 {
 		snap.Compaction.WriteAmplification = float64(snap.Compaction.OutputBytes) / float64(snap.Compaction.InputBytes)

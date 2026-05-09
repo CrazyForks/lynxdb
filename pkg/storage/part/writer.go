@@ -31,6 +31,8 @@ type Writer struct {
 	rowGroupSize int
 	fsync        bool // whether to fsync before rename (default: true)
 	maxColumns   int  // max user-defined columns per part (0 = unlimited)
+	disableBSI   bool // disables range BSI sections for this writer
+	formatMajor  uint16
 	logger       *slog.Logger
 }
 
@@ -63,6 +65,21 @@ func WithLogger(logger *slog.Logger) WriterOption {
 func WithMaxColumns(n int) WriterOption {
 	return func(w *Writer) {
 		w.maxColumns = n
+	}
+}
+
+// WithDisableBSI controls range BSI emission for written segments.
+func WithDisableBSI(disabled bool) WriterOption {
+	return func(w *Writer) {
+		w.disableBSI = disabled
+	}
+}
+
+// WithFormatMajor selects the LSG format major emitted by this writer.
+// A zero value keeps the segment package default.
+func WithFormatMajor(major uint16) WriterOption {
+	return func(w *Writer) {
+		w.formatMajor = major
 	}
 }
 
@@ -147,9 +164,18 @@ func (w *Writer) Write(ctx context.Context, index string, events []*event.Event,
 	}
 
 	sw := segment.NewWriterWithCompression(f, w.compression)
+	if err := sw.SetFormatMajor(w.formatMajor); err != nil {
+		f.Close()
+		os.Remove(tmpPath)
+
+		return nil, fmt.Errorf("part.Writer.Write: format major: %w", err)
+	}
 	sw.SetRowGroupSize(w.rowGroupSize)
 	if w.maxColumns > 0 {
 		sw.SetMaxColumns(w.maxColumns)
+	}
+	if w.disableBSI {
+		sw.SetIndexConfig(segment.IndexConfig{DisableBSI: true})
 	}
 	written, err := sw.Write(events)
 	if err != nil {
@@ -189,6 +215,13 @@ func (w *Writer) Write(ctx context.Context, index string, events []*event.Event,
 		os.Remove(tmpPath)
 
 		return nil, fmt.Errorf("part.Writer.Write: close: %w", err)
+	}
+
+	formatMajor, bsiColumns, bsiSectionBytes, err := verifySegmentBeforePromote(tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+
+		return nil, fmt.Errorf("part.Writer.Write: %w", err)
 	}
 
 	// Atomic rename: the part becomes visible only after this succeeds.
@@ -232,6 +265,10 @@ func (w *Writer) Write(ctx context.Context, index string, events []*event.Event,
 		Columns:    columns,
 		Tier:       "hot",
 		Partition:  partitionKey,
+
+		FormatMajor:     formatMajor,
+		BSIColumns:      bsiColumns,
+		BSISectionBytes: bsiSectionBytes,
 	}
 
 	return meta, nil

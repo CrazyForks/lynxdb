@@ -3,6 +3,7 @@ package rest
 import (
 	"net/http"
 
+	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
 
@@ -75,6 +76,10 @@ func (s *Server) handleExplainAnalyze(w http.ResponseWriter, r *http.Request, q 
 		return
 	}
 
+	if submitResult.Done {
+		applyAnalyzedRangePredicates(explainResult, submitResult.Stats.RangePredicates)
+	}
+
 	// Build the combined response: plan + actual execution stats.
 	resp := buildExplainResponse(explainResult)
 	if submitResult.Done {
@@ -83,6 +88,29 @@ func (s *Server) handleExplainAnalyze(w http.ResponseWriter, r *http.Request, q 
 	}
 
 	respondData(w, http.StatusOK, resp)
+}
+
+func applyAnalyzedRangePredicates(result *usecases.ExplainResult, preds []spl2.RangePredicate) {
+	if result == nil || result.Parsed == nil || len(preds) == 0 {
+		return
+	}
+	result.Parsed.RangePredicates = make([]usecases.ExplainRangePredicate, 0, len(preds))
+	for _, pred := range preds {
+		rgStrategy := "zone-map"
+		rowStrategy := "per-row"
+		if pred.LoweredToBSI {
+			rgStrategy = "bsi"
+			rowStrategy = "handled_by=bsi"
+		}
+		result.Parsed.RangePredicates = append(result.Parsed.RangePredicates, usecases.ExplainRangePredicate{
+			Field:            pred.Field,
+			Min:              pred.Min,
+			Max:              pred.Max,
+			LoweredToBSI:     pred.LoweredToBSI,
+			RGFilterStrategy: rgStrategy,
+			RowVMStrategy:    rowStrategy,
+		})
+	}
 }
 
 // respondExplainResult writes the standard explain response.
@@ -183,6 +211,27 @@ func buildExplainResponse(result *usecases.ExplainResult) map[string]interface{}
 			scope["total_sources_available"] = result.Parsed.SourceScope.TotalSourcesAvailable
 		}
 		parsed["source_scope"] = scope
+	}
+	if len(result.Parsed.RangePredicates) > 0 {
+		preds := make([]map[string]interface{}, 0, len(result.Parsed.RangePredicates))
+		for _, pred := range result.Parsed.RangePredicates {
+			p := map[string]interface{}{
+				"field":              pred.Field,
+				"rg_filter_strategy": pred.RGFilterStrategy,
+				"row_vm_strategy":    pred.RowVMStrategy,
+			}
+			if pred.Min != "" {
+				p["min"] = pred.Min
+			}
+			if pred.Max != "" {
+				p["max"] = pred.Max
+			}
+			if pred.LoweredToBSI {
+				p["lowered_to_bsi"] = true
+			}
+			preds = append(preds, p)
+		}
+		parsed["range_predicates"] = preds
 	}
 
 	if len(result.Parsed.OptimizerMessages) > 0 {

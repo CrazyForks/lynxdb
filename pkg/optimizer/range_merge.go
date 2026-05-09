@@ -22,12 +22,25 @@ func (r *rangeMergeRule) Apply(q *spl2.Query) (*spl2.Query, bool) {
 	}
 
 	var ranges []spl2.RangePredicate
+	generatedFields := collectGeneratedFields(q)
 	for _, cmd := range q.Commands {
 		w, ok := cmd.(*spl2.WhereCommand)
 		if !ok {
 			continue
 		}
 		extractRanges(w.Expr, &ranges)
+	}
+	if len(ranges) == 0 {
+		return q, false
+	}
+	if !generatedFields.empty() {
+		filtered := ranges[:0]
+		for _, rp := range ranges {
+			if !generatedFields.contains(rp.Field) {
+				filtered = append(filtered, rp)
+			}
+		}
+		ranges = filtered
 	}
 	if len(ranges) == 0 {
 		return q, false
@@ -67,7 +80,7 @@ func extractRanges(expr spl2.Expr, ranges *[]spl2.RangePredicate) {
 		}
 	}
 	for _, rp := range fieldBounds {
-		if rp.Min != "" && rp.Max != "" {
+		if rp.Min != "" || rp.Max != "" {
 			*ranges = append(*ranges, *rp)
 		}
 	}

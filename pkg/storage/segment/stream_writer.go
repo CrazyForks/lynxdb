@@ -1,6 +1,7 @@
 package segment
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -42,6 +43,11 @@ type StreamWriter struct {
 	// Bloom accumulator: per-RG bloom data stored for footer write.
 	bloomSections []bloomSectionData
 
+	// Range BSI sections are encoded while each row group is still resident
+	// and written at Finalize before the inverted index.
+	rangeSections       [][]byte
+	rangeCatalogColumns map[string]RangeBSICandidate
+
 	// Inverted index accumulated across all RGs.
 	inv *index.InvertedIndex
 
@@ -77,6 +83,19 @@ func (sw *StreamWriter) SetRowGroupSize(size int) {
 // Must be called before the first WriteRowGroup().
 func (sw *StreamWriter) SetMaxColumns(n int) {
 	sw.maxColumns = n
+}
+
+// SetIndexConfig configures optional indexes selected while writing segments.
+// It must be called before the first WriteRowGroup.
+func (sw *StreamWriter) SetIndexConfig(cfg IndexConfig) {
+	sw.w.SetIndexConfig(cfg)
+}
+
+// SetFormatMajor configures the LSG format major emitted by this writer.
+// A zero value reverts to the package default. It must be called before the
+// first WriteRowGroup.
+func (sw *StreamWriter) SetFormatMajor(major uint16) error {
+	return sw.w.SetFormatMajor(major)
 }
 
 // WriteRowGroup writes a single row group of events to the segment.
@@ -142,7 +161,7 @@ func (sw *StreamWriter) WriteRowGroup(events []*event.Event) error {
 
 	// Write header on first call; caps are patched at Finalize.
 	if !sw.headerWritten {
-		header := makeHeader(LSG_FORMAT_MAJOR_V1, 0, 0)
+		header := makeHeader(sw.w.effectiveFormatMajor(), 0, 0)
 		if _, err := sw.w.w.Write(header); err != nil {
 			return fmt.Errorf("segment: write header: %w", err)
 		}
@@ -238,6 +257,26 @@ func (sw *StreamWriter) WriteRowGroup(events []*event.Event) error {
 		length: sw.w.w.written - bloomSectionOffset,
 	})
 
+	if sw.w.effectiveFormatMajor() >= LSG_FORMAT_MAJOR_V2 && !sw.w.indexConfig.DisableBSI {
+		rangeColumns := collectRangeBSIColumns(events, catalog, sw.w.indexConfig)
+		if len(rangeColumns) > 0 {
+			if sw.rangeCatalogColumns == nil {
+				sw.rangeCatalogColumns = make(map[string]RangeBSICandidate, len(rangeColumns))
+			}
+			for _, cand := range rangeColumns {
+				sw.rangeCatalogColumns[cand.Name] = cand
+			}
+		}
+
+		var rangeBuf bytes.Buffer
+		if _, _, err := writeRangeBSISection(&rangeBuf, 0, len(sw.rowGroups), events, constInRG, rangeColumns, sw.w.indexConfig); err != nil {
+			return err
+		}
+		sw.rangeSections = append(sw.rangeSections, rangeBuf.Bytes())
+	} else {
+		sw.rangeSections = append(sw.rangeSections, nil)
+	}
+
 	// Add events to the global inverted index with absolute row offsets.
 	for i, e := range events {
 		sw.inv.Add(uint32(sw.rowOffset+i), e.Raw)
@@ -314,6 +353,13 @@ func (sw *StreamWriter) Finalize() (int64, error) {
 	}
 
 	finalCatalog := buildCatalog(finalFieldSet, finalFieldNames)
+	if len(sw.rangeCatalogColumns) > 0 {
+		rangeColumns := make([]RangeBSICandidate, 0, len(sw.rangeCatalogColumns))
+		for _, cand := range sw.rangeCatalogColumns {
+			rangeColumns = append(rangeColumns, cand)
+		}
+		markRangeBSICatalog(finalCatalog, rangeColumns)
+	}
 	finalCatalogIndex := make(map[string]int, len(finalCatalog))
 	for i, cat := range finalCatalog {
 		finalCatalogIndex[cat.Name] = i
@@ -325,6 +371,20 @@ func (sw *StreamWriter) Finalize() (int64, error) {
 		presence := sw.rgFieldPresence[rgi]
 		for name := range presence {
 			setPresenceBit(&sw.rowGroups[rgi], name, finalCatalogIndex)
+		}
+	}
+
+	if sw.w.effectiveFormatMajor() >= LSG_FORMAT_MAJOR_V2 && !sw.w.indexConfig.DisableBSI {
+		for rgIdx, section := range sw.rangeSections {
+			if len(section) == 0 {
+				continue
+			}
+			offset := sw.w.w.written
+			if _, err := sw.w.w.Write(section); err != nil {
+				return sw.w.w.written, fmt.Errorf("segment: write range BSI section rg%d: %w", rgIdx, err)
+			}
+			sw.rowGroups[rgIdx].PerColumnRangeOffset = offset
+			sw.rowGroups[rgIdx].PerColumnRangeLength = sw.w.w.written - offset
 		}
 	}
 
@@ -348,12 +408,13 @@ func (sw *StreamWriter) Finalize() (int64, error) {
 		Catalog:        finalCatalog,
 	}
 	footer.RequiredCaps, footer.OptionalCaps = aggregateCapabilities(sw.rowGroups)
-	footerBytes := encodeFooter(footer)
+	formatMajor := sw.w.effectiveFormatMajor()
+	footerBytes := encodeFooterForMajor(footer, formatMajor)
 	if _, err := sw.w.w.Write(footerBytes); err != nil {
 		return sw.w.w.written, fmt.Errorf("segment: write footer: %w", err)
 	}
 
-	header := makeHeader(LSG_FORMAT_MAJOR_V1, footer.RequiredCaps, footer.OptionalCaps)
+	header := makeHeader(formatMajor, footer.RequiredCaps, footer.OptionalCaps)
 	if sw.w.direct {
 		n, err := sw.w.writerAt.WriteAt(header, 0)
 		if err != nil {
@@ -365,7 +426,7 @@ func (sw *StreamWriter) Finalize() (int64, error) {
 		return sw.w.w.written, nil
 	}
 
-	patchHeader(sw.w.buf.Bytes(), LSG_FORMAT_MAJOR_V1, footer.RequiredCaps, footer.OptionalCaps)
+	patchHeader(sw.w.buf.Bytes(), formatMajor, footer.RequiredCaps, footer.OptionalCaps)
 	n, err := sw.w.out.Write(sw.w.buf.Bytes())
 	if err != nil {
 		return int64(n), err

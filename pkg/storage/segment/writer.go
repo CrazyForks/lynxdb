@@ -89,6 +89,8 @@ type Writer struct {
 	sortKey     []string // sort key fields for sparse primary index (MV segments)
 	rgSize      int      // row group size override (0 = use DefaultRowGroupSize)
 	maxColumns  int      // max user-defined columns per segment (0 = unlimited)
+	indexConfig IndexConfig
+	formatMajor uint16 // 0 = package default
 }
 
 // SetSortKey configures the sort key fields used to build a sparse primary index.
@@ -114,20 +116,20 @@ func (sw *Writer) SetMaxColumns(n int) {
 
 // NewWriter creates a writer that outputs to w with default LZ4 layer 2 compression.
 func NewWriter(w io.Writer) *Writer {
-	sw := &Writer{out: w, compression: CompressionLZ4}
+	sw := &Writer{out: w, compression: CompressionLZ4, indexConfig: defaultIndexConfig()}
 	sw.resetBuffer()
 	return sw
 }
 
 // NewWriterWithCompression creates a writer with a specific layer 2 compression.
 func NewWriterWithCompression(w io.Writer, compression CompressionType) *Writer {
-	sw := &Writer{out: w, compression: compression}
+	sw := &Writer{out: w, compression: compression, indexConfig: defaultIndexConfig()}
 	sw.resetBuffer()
 	return sw
 }
 
 func newStreamBackingWriter(w io.Writer, compression CompressionType) *Writer {
-	sw := &Writer{out: w, compression: compression}
+	sw := &Writer{out: w, compression: compression, indexConfig: defaultIndexConfig()}
 	if writerAt, ok := w.(interface {
 		WriteAt([]byte, int64) (int, error)
 	}); ok {
@@ -140,11 +142,39 @@ func newStreamBackingWriter(w io.Writer, compression CompressionType) *Writer {
 	return sw
 }
 
+// SetIndexConfig configures optional indexes selected while writing segments.
+// It must be called before Write.
+func (sw *Writer) SetIndexConfig(cfg IndexConfig) {
+	if cfg.ProfileOverrides != nil {
+		overrides := make(map[string]IndexProfile, len(cfg.ProfileOverrides))
+		for name, profile := range cfg.ProfileOverrides {
+			overrides[name] = profile
+		}
+		cfg.ProfileOverrides = overrides
+	}
+	sw.indexConfig = cfg
+}
+
+// SetFormatMajor configures the LSG format major emitted by this writer.
+// A zero value reverts to the package default. The writer must not have
+// started writing when this is called.
+func (sw *Writer) SetFormatMajor(major uint16) error {
+	if major == 0 {
+		sw.formatMajor = 0
+		return nil
+	}
+	if err := ValidateFormatMajor(major); err != nil {
+		return err
+	}
+	sw.formatMajor = major
+	return nil
+}
+
 // builtinColumns is the ordered list of builtin column names.
 // Used to compute catalog indices for presence bitmap.
 var builtinColumns = []string{"_time", "_raw", "_source", "_sourcetype", "host", "index"}
 
-// Write encodes the given events into .lsg format-major v1 and writes to the underlying writer.
+// Write encodes the given events into .lsg format-major v2 and writes to the underlying writer.
 // Events should be sorted by timestamp. Returns total bytes written.
 func (sw *Writer) Write(events []*event.Event) (int64, error) {
 	if len(events) == 0 {
@@ -159,7 +189,8 @@ func (sw *Writer) Write(events []*event.Event) (int64, error) {
 	}
 	rgCount := (len(events) + rgSize - 1) / rgSize
 
-	header := makeHeader(LSG_FORMAT_MAJOR_V1, 0, 0)
+	formatMajor := sw.effectiveFormatMajor()
+	header := makeHeader(formatMajor, 0, 0)
 	if _, err := sw.w.Write(header); err != nil {
 		return sw.w.written, fmt.Errorf("segment: write header: %w", err)
 	}
@@ -206,6 +237,11 @@ func (sw *Writer) Write(events []*event.Event) (int64, error) {
 
 	// Build column catalog early so we know bit positions for the presence bitmap.
 	catalog := buildCatalog(fieldSet, fieldNames)
+	var rangeColumns []RangeBSICandidate
+	if formatMajor >= LSG_FORMAT_MAJOR_V2 {
+		rangeColumns = collectRangeBSIColumns(events, catalog, sw.indexConfig)
+		markRangeBSICatalog(catalog, rangeColumns)
+	}
 	catalogIndex := make(map[string]int, len(catalog))
 	for i, cat := range catalog {
 		catalogIndex[cat.Name] = i
@@ -343,6 +379,12 @@ func (sw *Writer) Write(events []*event.Event) (int64, error) {
 		}
 	}
 
+	if formatMajor >= LSG_FORMAT_MAJOR_V2 && !sw.indexConfig.DisableBSI {
+		if err := sw.writeRangeBSISections(events, rowGroups, rgSize, constInRG, rangeColumns); err != nil {
+			return sw.w.written, err
+		}
+	}
+
 	// Write inverted index.
 	invertedOffset := sw.w.written
 	invertedData, err := inv.Encode()
@@ -387,12 +429,12 @@ func (sw *Writer) Write(events []*event.Event) (int64, error) {
 		Catalog:            catalog,
 	}
 	footer.RequiredCaps, footer.OptionalCaps = aggregateCapabilities(rowGroups)
-	footerBytes := encodeFooter(footer)
+	footerBytes := encodeFooterForMajor(footer, formatMajor)
 	if _, err := sw.w.Write(footerBytes); err != nil {
 		return sw.w.written, fmt.Errorf("segment: write footer: %w", err)
 	}
 
-	patchHeader(sw.buf.Bytes(), LSG_FORMAT_MAJOR_V1, footer.RequiredCaps, footer.OptionalCaps)
+	patchHeader(sw.buf.Bytes(), formatMajor, footer.RequiredCaps, footer.OptionalCaps)
 	n, err := sw.out.Write(sw.buf.Bytes())
 	if err != nil {
 		return int64(n), err
@@ -402,6 +444,13 @@ func (sw *Writer) Write(events []*event.Event) (int64, error) {
 	}
 
 	return int64(n), nil
+}
+
+func (sw *Writer) effectiveFormatMajor() uint16 {
+	if sw.formatMajor != 0 {
+		return sw.formatMajor
+	}
+	return currentDefaultFormatMajor()
 }
 
 // writeRowGroup writes a single row group and returns its metadata.
@@ -568,6 +617,136 @@ func requiredCapsForRowGroup(rg RowGroupMeta) uint64 {
 		caps |= requiredCapsForCompression(c.Compression)
 	}
 	return caps
+}
+
+type rangeBSIValue struct {
+	Present bool
+	Raw     int64
+}
+
+const (
+	rangeBSIPackedMinRows     = 4096
+	rangeBSIPackedMinBitCount = 1
+)
+
+func (sw *Writer) writeRangeBSISections(events []*event.Event, rowGroups []RowGroupMeta, rgSize int, constInRG []map[string]bool, rangeColumns []RangeBSICandidate) error {
+	for rg := range rowGroups {
+		start := rg * rgSize
+		end := start + rgSize
+		if end > len(events) {
+			end = len(events)
+		}
+		rgEvents := events[start:end]
+
+		off, length, err := writeRangeBSISection(sw.w, sw.w.written, rg, rgEvents, constInRG[rg], rangeColumns, sw.indexConfig)
+		if err != nil {
+			return err
+		}
+		rowGroups[rg].PerColumnRangeOffset = off
+		rowGroups[rg].PerColumnRangeLength = length
+	}
+	return nil
+}
+
+func writeRangeBSISection(w io.Writer, startOffset int64, rg int, events []*event.Event, constColumns map[string]bool, rangeColumns []RangeBSICandidate, cfg IndexConfig) (int64, int64, error) {
+	enc := index.NewRangeSectionEncoder(w, startOffset)
+	for _, cand := range rangeColumns {
+		if constColumns[cand.Name] {
+			continue
+		}
+		kind, minV, maxV, vals, ok := scanColumnForBSI(events, cand)
+		if !ok {
+			continue
+		}
+		bitCount := bitCountForSpread(minV, maxV)
+		if cfg.BSIMaxBitCount > 0 && bitCount > cfg.BSIMaxBitCount {
+			continue
+		}
+
+		if shouldPackRangeBSIValues(len(events), bitCount, vals) {
+			packed := make([]index.RangeSectionValue, 0, len(vals))
+			for rowID, val := range vals {
+				if val.Present {
+					packed = append(packed, index.RangeSectionValue{
+						RowID:  uint32(rowID),
+						Offset: uint64(val.Raw) - uint64(minV),
+					})
+				}
+			}
+			if err := enc.AddColumnPacked(cand.Name, kind, minV, maxV, bitCount, len(events), packed); err != nil {
+				return startOffset, 0, fmt.Errorf("segment: encode packed range BSI column %q rg%d: %w", cand.Name, rg, err)
+			}
+			continue
+		}
+
+		builder := index.NewBSIBuilder(kind, minV, maxV)
+		for rowID, val := range vals {
+			if val.Present {
+				builder.Set(uint32(rowID), val.Raw)
+			}
+		}
+		if err := enc.AddColumn(cand.Name, kind, minV, maxV, builder.Build()); err != nil {
+			return startOffset, 0, fmt.Errorf("segment: encode range BSI column %q rg%d: %w", cand.Name, rg, err)
+		}
+	}
+
+	off, length, err := enc.Finalize()
+	if err != nil {
+		return off, length, fmt.Errorf("segment: write range BSI section rg%d: %w", rg, err)
+	}
+	return off, length, nil
+}
+
+func shouldPackRangeBSIValues(rowCount, bitCount int, vals []rangeBSIValue) bool {
+	if rowCount < rangeBSIPackedMinRows || bitCount < rangeBSIPackedMinBitCount {
+		return false
+	}
+	present := 0
+	for _, val := range vals {
+		if val.Present {
+			present++
+		}
+	}
+	if present == 0 {
+		return false
+	}
+	if present*2 < rowCount {
+		return false
+	}
+
+	presenceBytes := (rowCount + 7) / 8
+	packedValueBytes := (present*bitCount + 7) / 8
+	// Dense Roaring slices generally serialize as bitmap containers. In that
+	// shape each bit-slice costs roughly one byte per possible row, while the
+	// packed layout stores only the value width plus one presence bit per row.
+	return 12+presenceBytes+packedValueBytes < (bitCount+1)*rowCount
+}
+
+func scanColumnForBSI(events []*event.Event, cand RangeBSICandidate) (uint8, int64, int64, []rangeBSIValue, bool) {
+	vals := make([]rangeBSIValue, len(events))
+	var minV, maxV int64
+	found := false
+	for i, e := range events {
+		raw, ok := rawRangeBSIValue(e, cand.Name, cand.ValueKind)
+		if !ok {
+			continue
+		}
+		vals[i] = rangeBSIValue{Present: true, Raw: raw}
+		if !found {
+			minV, maxV, found = raw, raw, true
+			continue
+		}
+		if raw < minV {
+			minV = raw
+		}
+		if raw > maxV {
+			maxV = raw
+		}
+	}
+	if !found || minV == maxV || !spreadFitsInt64(minV, maxV) {
+		return cand.ValueKind, 0, 0, nil, false
+	}
+	return cand.ValueKind, minV, maxV, vals, true
 }
 
 // isConstString returns true if all values in the slice are identical and non-empty.

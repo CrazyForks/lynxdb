@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"hash/crc32"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
+	bsi "github.com/RoaringBitmap/roaring/BitSliceIndexing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment/column"
@@ -25,17 +27,27 @@ type QueryHints struct {
 
 // Reader reads .lsg segment files.
 type Reader struct {
-	data         []byte
-	footer       *Footer
-	columnIndex  map[string]int                        // catalog name → index (built once on open)
-	perColBlooms map[int]map[string]*index.BloomFilter // lazily populated: rgIdx → colName → bloom
-	statsIndex   map[string]int                        // lazily built: column name → index in Stats()
+	data            []byte
+	major           uint16
+	footer          *Footer
+	columnIndex     map[string]int                        // catalog name → index (built once on open)
+	perColBlooms    map[int]map[string]*index.BloomFilter // lazily populated: rgIdx → colName → bloom
+	perColRangeBSIs map[int]map[string]*bsi.BSI           // lazily populated: rgIdx → colName → BSI
+	perColRangeMeta map[int]map[string]rangeMeta          // lazily populated alongside perColRangeBSIs
+	rangeMu         sync.Mutex                            // guards perColRangeBSIs and perColRangeMeta
+	statsIndex      map[string]int                        // lazily built: column name → index in Stats()
 
 	// Optional column cache for decoded column data. When set, column read
 	// methods check the cache before decompressing and store results after.
 	// Set via SetColumnCache; nil means no caching.
 	columnCache ColumnCache
 	segmentID   string
+}
+
+type rangeMeta struct {
+	ValueKind uint8
+	MinValue  int64
+	MaxValue  int64
 }
 
 // OpenSegment opens a segment from raw bytes.
@@ -52,6 +64,8 @@ func OpenSegment(data []byte) (*Reader, error) {
 	switch header.major {
 	case LSG_FORMAT_MAJOR_V1:
 		return openV1(data, header)
+	case LSG_FORMAT_MAJOR_V2:
+		return openV2(data, header)
 	default:
 		return nil, fmt.Errorf("%w: unsupported format major version %d (this binary supports %d..%d)",
 			ErrUnsupportedMajor, header.major, LSG_BINARY_MIN_MAJOR, LSG_BINARY_MAX_MAJOR)
@@ -85,8 +99,8 @@ type headerV1 struct {
 func validateHeader(data []byte) (headerV1, error) {
 	magicMajor, ok := magicMajor(data[0:4])
 	if !ok {
-		return headerV1{}, fmt.Errorf("%w: invalid magic bytes (got %q, expected one of: LSG1)",
-			ErrInvalidMagic, string(data[0:4]))
+		return headerV1{}, fmt.Errorf("%w: invalid magic bytes (got %q, expected one of: LSG1..LSG%d)",
+			ErrInvalidMagic, string(data[0:4]), LSG_BINARY_MAX_MAJOR)
 	}
 
 	version := binary.LittleEndian.Uint16(data[4:6])
@@ -111,12 +125,24 @@ func validateHeader(data []byte) (headerV1, error) {
 		return headerV1{}, fmt.Errorf("%w: required capability bit %d not supported by this binary",
 			ErrUnsupportedCapability, lowestSetBit(unsupported))
 	}
+	if unsupported := optionalCaps &^ LSG_OPTIONAL_CAPS_KNOWN; unsupported != 0 {
+		return headerV1{}, fmt.Errorf("%w: optional capability bit %d not supported by this binary",
+			ErrUnsupportedCapability, lowestSetBit(unsupported))
+	}
 
 	return headerV1{major: version, requiredCaps: requiredCaps, optionalCaps: optionalCaps}, nil
 }
 
 func openV1(data []byte, header headerV1) (*Reader, error) {
-	footer, err := decodeFooter(data)
+	return openWithFooterMajor(data, header, LSG_FORMAT_MAJOR_V1)
+}
+
+func openV2(data []byte, header headerV1) (*Reader, error) {
+	return openWithFooterMajor(data, header, LSG_FORMAT_MAJOR_V2)
+}
+
+func openWithFooterMajor(data []byte, header headerV1, major uint16) (*Reader, error) {
+	footer, err := decodeFooterForMajor(data, major)
 	if err != nil {
 		return nil, fmt.Errorf("segment: parse footer: %w", err)
 	}
@@ -132,6 +158,7 @@ func openV1(data []byte, header headerV1) (*Reader, error) {
 
 	return &Reader{
 		data:         data,
+		major:        major,
 		footer:       footer,
 		columnIndex:  colIdx,
 		perColBlooms: make(map[int]map[string]*index.BloomFilter),
@@ -238,6 +265,22 @@ func (r *Reader) HasColumn(name string) bool {
 	}
 
 	return false
+}
+
+// HasRangeBSI returns true when this segment advertises range BSI sections.
+func (r *Reader) HasRangeBSI() bool {
+	return r.footer.OptionalCaps&CapBit_RangeBSI != 0
+}
+
+// FormatMajor returns the LSG format major version used by this segment.
+func (r *Reader) FormatMajor() uint16 {
+	return r.major
+}
+
+// RangeBSIStats returns the number of catalog columns marked as range BSI
+// and the total bytes occupied by row-group range BSI sections.
+func (r *Reader) RangeBSIStats() (columns int, sectionBytes int64) {
+	return r.footer.RangeBSIStats()
 }
 
 // HasColumnInRowGroup returns true if the named column is present in the given
@@ -657,6 +700,15 @@ func (r *Reader) ReadEventsWithHints(hints QueryHints) ([]*event.Event, error) {
 // RowGroupCount returns the number of row groups in this segment.
 func (r *Reader) RowGroupCount() int {
 	return len(r.footer.RowGroups)
+}
+
+// RowGroupRowCount returns the number of rows in the row group.
+func (r *Reader) RowGroupRowCount(rgIdx int) int {
+	if rgIdx < 0 || rgIdx >= len(r.footer.RowGroups) {
+		return 0
+	}
+
+	return r.footer.RowGroups[rgIdx].RowCount
 }
 
 // ReadRowGroup reads all events from row group at the given index.
@@ -1298,6 +1350,211 @@ func (r *Reader) findColumnInAllRowGroups(name string) *ColumnChunkMeta {
 	}
 
 	return findChunk(&r.footer.RowGroups[0], name)
+}
+
+// LoadRangeBSI returns the decoded range BSI for a row-group column.
+// The returned BSI is owned by the Reader and must not be mutated.
+func (r *Reader) LoadRangeBSI(rgIdx int, columnName string) (*bsi.BSI, error) {
+	if rgIdx < 0 || rgIdx >= len(r.footer.RowGroups) {
+		return nil, fmt.Errorf("%w: %d", ErrInvalidRGIndex, rgIdx)
+	}
+	rg := &r.footer.RowGroups[rgIdx]
+	if rg.PerColumnRangeLength == 0 {
+		return nil, nil
+	}
+
+	section, err := r.rangeSectionBytes(rgIdx)
+	if err != nil {
+		return nil, err
+	}
+
+	r.rangeMu.Lock()
+	defer r.rangeMu.Unlock()
+
+	if r.perColRangeBSIs != nil {
+		if cached, ok := r.perColRangeBSIs[rgIdx]; ok {
+			if idx, ok := cached[columnName]; ok {
+				return idx, nil
+			}
+		}
+	}
+
+	entry, err := index.DecodeRangeSectionEntry(section, columnName)
+	if err != nil {
+		return nil, fmt.Errorf("segment: decode range BSI %q rg%d: %w", columnName, rgIdx, err)
+	}
+
+	r.ensureRangeCacheLocked(rgIdx)
+	if entry == nil {
+		r.perColRangeBSIs[rgIdx][columnName] = nil
+		return nil, nil
+	}
+
+	r.perColRangeBSIs[rgIdx][columnName] = entry.BSI
+	r.perColRangeMeta[rgIdx][columnName] = rangeMeta{
+		ValueKind: entry.ValueKind,
+		MinValue:  entry.MinValue,
+		MaxValue:  entry.MaxValue,
+	}
+
+	return entry.BSI, nil
+}
+
+// LoadRangeMeta returns range BSI metadata for a row-group column.
+func (r *Reader) LoadRangeMeta(rgIdx int, columnName string) (rangeMeta, bool, error) {
+	if rgIdx < 0 || rgIdx >= len(r.footer.RowGroups) {
+		return rangeMeta{}, false, fmt.Errorf("%w: %d", ErrInvalidRGIndex, rgIdx)
+	}
+	rg := &r.footer.RowGroups[rgIdx]
+	if rg.PerColumnRangeLength == 0 {
+		return rangeMeta{}, false, nil
+	}
+
+	r.rangeMu.Lock()
+	if r.perColRangeMeta != nil {
+		if cached, ok := r.perColRangeMeta[rgIdx]; ok {
+			if meta, ok := cached[columnName]; ok {
+				r.rangeMu.Unlock()
+				return meta, true, nil
+			}
+		}
+	}
+	r.rangeMu.Unlock()
+
+	section, err := r.rangeSectionBytes(rgIdx)
+	if err != nil {
+		return rangeMeta{}, false, err
+	}
+	entry, err := index.DecodeRangeSectionEntryMeta(section, columnName)
+	if err != nil {
+		return rangeMeta{}, false, fmt.Errorf("segment: decode range BSI metadata %q rg%d: %w", columnName, rgIdx, err)
+	}
+	if entry == nil {
+		return rangeMeta{}, false, nil
+	}
+
+	r.rangeMu.Lock()
+	defer r.rangeMu.Unlock()
+
+	r.ensureRangeCacheLocked(rgIdx)
+	meta := rangeMeta{
+		ValueKind: entry.ValueKind,
+		MinValue:  entry.MinValue,
+		MaxValue:  entry.MaxValue,
+	}
+	r.perColRangeMeta[rgIdx][columnName] = meta
+	return meta, true, nil
+}
+
+func (r *Reader) compareRangeBSI(rgIdx int, columnName string, meta rangeMeta, op bsi.Operation, raw int64) (*roaring.Bitmap, bool, error) {
+	if rgIdx < 0 || rgIdx >= len(r.footer.RowGroups) {
+		return nil, false, fmt.Errorf("%w: %d", ErrInvalidRGIndex, rgIdx)
+	}
+	rg := &r.footer.RowGroups[rgIdx]
+	if rg.PerColumnRangeLength == 0 {
+		return nil, false, nil
+	}
+	section, err := r.rangeSectionBytes(rgIdx)
+	if err != nil {
+		return nil, false, err
+	}
+	if mask, ok, err := index.ComparePackedRangeSectionEntry(section, columnName, op, raw); ok || err != nil {
+		if err != nil {
+			return nil, false, fmt.Errorf("segment: compare packed range BSI %q rg%d: %w", columnName, rgIdx, err)
+		}
+		return mask, true, nil
+	}
+
+	idx, err := r.LoadRangeBSI(rgIdx, columnName)
+	if err != nil {
+		return nil, false, err
+	}
+	if idx == nil {
+		return nil, false, nil
+	}
+
+	empty := func() *roaring.Bitmap { return roaring.New() }
+	all := func() *roaring.Bitmap { return idx.GetExistenceBitmap().Clone() }
+
+	switch op {
+	case bsi.GT:
+		if raw >= meta.MaxValue {
+			return empty(), true, nil
+		}
+		if raw < meta.MinValue {
+			return all(), true, nil
+		}
+	case bsi.GE:
+		if raw > meta.MaxValue {
+			return empty(), true, nil
+		}
+		if raw <= meta.MinValue {
+			return all(), true, nil
+		}
+	case bsi.LT:
+		if raw <= meta.MinValue {
+			return empty(), true, nil
+		}
+		if raw > meta.MaxValue {
+			return all(), true, nil
+		}
+	case bsi.LE:
+		if raw < meta.MinValue {
+			return empty(), true, nil
+		}
+		if raw >= meta.MaxValue {
+			return all(), true, nil
+		}
+	default:
+		return nil, false, nil
+	}
+
+	return idx.CompareValue(0, op, rangeBSIOffset(raw, meta.MinValue), 0, nil), true, nil
+}
+
+// VerifyAllRangeBSIs decodes every range BSI section and validates checksums.
+func (r *Reader) VerifyAllRangeBSIs() error {
+	for rgIdx := range r.footer.RowGroups {
+		rg := &r.footer.RowGroups[rgIdx]
+		if rg.PerColumnRangeLength == 0 {
+			continue
+		}
+		section, err := r.rangeSectionBytes(rgIdx)
+		if err != nil {
+			return err
+		}
+		if _, err := index.DecodeRangeSection(section); err != nil {
+			return fmt.Errorf("segment: verify range BSI rg%d: %w", rgIdx, err)
+		}
+	}
+
+	return nil
+}
+
+func (r *Reader) ensureRangeCacheLocked(rgIdx int) {
+	if r.perColRangeBSIs == nil {
+		r.perColRangeBSIs = make(map[int]map[string]*bsi.BSI)
+		r.perColRangeMeta = make(map[int]map[string]rangeMeta)
+	}
+	if r.perColRangeBSIs[rgIdx] == nil {
+		r.perColRangeBSIs[rgIdx] = make(map[string]*bsi.BSI)
+		r.perColRangeMeta[rgIdx] = make(map[string]rangeMeta)
+	}
+}
+
+func (r *Reader) rangeSectionBytes(rgIdx int) ([]byte, error) {
+	if rgIdx < 0 || rgIdx >= len(r.footer.RowGroups) {
+		return nil, fmt.Errorf("%w: %d", ErrInvalidRGIndex, rgIdx)
+	}
+	rg := &r.footer.RowGroups[rgIdx]
+	start := rg.PerColumnRangeOffset
+	length := rg.PerColumnRangeLength
+	end := start + length
+	if start < 0 || length < 0 || end < start || end > int64(len(r.data)) {
+		return nil, fmt.Errorf("%w: range BSI offset out of range for rg %d", ErrCorruptSegment, rgIdx)
+	}
+
+	return r.data[start:end], nil
 }
 
 // Per-column bloom filter access.

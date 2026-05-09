@@ -6,6 +6,8 @@ import (
 	"hash/crc32"
 	"math/bits"
 	"sync"
+
+	"github.com/lynxbase/lynxdb/pkg/storage/segment/index"
 )
 
 // Footer holds the segment file footer data for LSG major v1.
@@ -40,6 +42,20 @@ func (f *Footer) Stats() []ColumnStats {
 		f.cachedStats = f.computeStats()
 	})
 	return f.cachedStats
+}
+
+// RangeBSIStats returns the number of catalog columns marked as range BSI
+// and the total bytes occupied by row-group range BSI sections.
+func (f *Footer) RangeBSIStats() (columns int, sectionBytes int64) {
+	for _, cat := range f.Catalog {
+		if cat.IndexProfile == IndexProfileRangeBSI {
+			columns++
+		}
+	}
+	for _, rg := range f.RowGroups {
+		sectionBytes += rg.PerColumnRangeLength
+	}
+	return columns, sectionBytes
 }
 
 // computeStats aggregates column stats across all row groups.
@@ -112,6 +128,29 @@ func (f *Footer) computeStats() []ColumnStats {
 }
 
 func encodeFooter(f *Footer) []byte {
+	return encodeFooterForMajor(f, currentDefaultFormatMajor())
+}
+
+func encodeFooterForMajor(f *Footer, major uint16) []byte {
+	switch major {
+	case LSG_FORMAT_MAJOR_V1:
+		return encodeFooterV1(f)
+	case LSG_FORMAT_MAJOR_V2:
+		return encodeFooterV2(f)
+	default:
+		return encodeFooterV2(f)
+	}
+}
+
+func encodeFooterV1(f *Footer) []byte {
+	return encodeFooterWithLayout(f, false)
+}
+
+func encodeFooterV2(f *Footer) []byte {
+	return encodeFooterWithLayout(f, true)
+}
+
+func encodeFooterWithLayout(f *Footer, includeRange bool) []byte {
 	buf := make([]byte, 0, 4096)
 
 	buf = append(buf, LSG_FOOTER_MAGIC...)
@@ -168,6 +207,10 @@ func encodeFooter(f *Footer) []byte {
 		// Per-column bloom section location.
 		buf = binary.LittleEndian.AppendUint64(buf, uint64(rg.PerColumnBloomOffset))
 		buf = binary.LittleEndian.AppendUint64(buf, uint64(rg.PerColumnBloomLength))
+		if includeRange {
+			buf = binary.LittleEndian.AppendUint64(buf, uint64(rg.PerColumnRangeOffset))
+			buf = binary.LittleEndian.AppendUint64(buf, uint64(rg.PerColumnRangeLength))
+		}
 		buf = binary.LittleEndian.AppendUint64(buf, rg.RequiredCapabilities)
 	}
 
@@ -176,6 +219,9 @@ func encodeFooter(f *Footer) []byte {
 		buf = binary.LittleEndian.AppendUint16(buf, uint16(len(nameBytes)))
 		buf = append(buf, nameBytes...)
 		buf = append(buf, cat.DominantType)
+		if includeRange {
+			buf = append(buf, byte(cat.IndexProfile))
+		}
 	}
 
 	// Inverted index offsets.
@@ -204,6 +250,46 @@ func DecodeFooter(data []byte) (*Footer, error) {
 }
 
 func decodeFooter(data []byte) (*Footer, error) {
+	if len(data) >= LSG_HEADER_SIZE {
+		if major, ok := magicMajor(data[:4]); ok && binary.LittleEndian.Uint16(data[4:6]) == major {
+			return decodeFooterForMajor(data, major)
+		}
+	}
+
+	formatMajor := currentDefaultFormatMajor()
+	footer, err := decodeFooterForMajor(data, formatMajor)
+	if err == nil {
+		return footer, nil
+	}
+	if formatMajor != LSG_FORMAT_MAJOR_V1 {
+		if footer, v1Err := decodeFooterForMajor(data, LSG_FORMAT_MAJOR_V1); v1Err == nil {
+			return footer, nil
+		}
+	}
+	return nil, err
+}
+
+func decodeFooterForMajor(data []byte, major uint16) (*Footer, error) {
+	switch major {
+	case LSG_FORMAT_MAJOR_V1:
+		return decodeFooterV1(data)
+	case LSG_FORMAT_MAJOR_V2:
+		return decodeFooterV2(data)
+	default:
+		return nil, fmt.Errorf("%w: unsupported format major version %d (this binary supports %d..%d)",
+			ErrUnsupportedMajor, major, LSG_BINARY_MIN_MAJOR, LSG_BINARY_MAX_MAJOR)
+	}
+}
+
+func decodeFooterV1(data []byte) (*Footer, error) {
+	return decodeFooterWithLayout(data, false)
+}
+
+func decodeFooterV2(data []byte) (*Footer, error) {
+	return decodeFooterWithLayout(data, true)
+}
+
+func decodeFooterWithLayout(data []byte, includeRange bool) (*Footer, error) {
 	if len(data) < LSG_FOOTER_TRAILER_SIZE {
 		return nil, fmt.Errorf("%w: truncated trailer (file size %d, expected >= %d)", ErrCorruptSegment, len(data), LSG_FOOTER_TRAILER_SIZE)
 	}
@@ -407,6 +493,15 @@ func decodeFooter(data []byte) (*Footer, error) {
 		pos += 8
 		f.RowGroups[rg].PerColumnBloomLength = int64(binary.LittleEndian.Uint64(payload[pos : pos+8]))
 		pos += 8
+		if includeRange {
+			if pos+16 > len(payload) {
+				return nil, ErrCorruptSegment
+			}
+			f.RowGroups[rg].PerColumnRangeOffset = int64(binary.LittleEndian.Uint64(payload[pos : pos+8]))
+			pos += 8
+			f.RowGroups[rg].PerColumnRangeLength = int64(binary.LittleEndian.Uint64(payload[pos : pos+8]))
+			pos += 8
+		}
 		if pos+8 > len(payload) {
 			return nil, ErrCorruptSegment
 		}
@@ -436,6 +531,13 @@ func decodeFooter(data []byte) (*Footer, error) {
 		}
 		f.Catalog[i].DominantType = payload[pos]
 		pos++
+		if includeRange {
+			if pos >= len(payload) {
+				return nil, ErrCorruptSegment
+			}
+			f.Catalog[i].IndexProfile = IndexProfile(payload[pos])
+			pos++
+		}
 	}
 
 	// Inverted index offsets.
@@ -452,6 +554,10 @@ func decodeFooter(data []byte) (*Footer, error) {
 		f.PrimaryIndexOffset = int64(binary.LittleEndian.Uint64(payload[pos : pos+8]))
 		pos += 8
 		f.PrimaryIndexLength = int64(binary.LittleEndian.Uint64(payload[pos : pos+8]))
+		pos += 8
+	}
+	if pos != len(payload) {
+		return nil, ErrCorruptSegment
 	}
 
 	return f, nil
@@ -463,10 +569,14 @@ func footerCapsSummary(required, optional uint64) uint32 {
 
 func aggregateCapabilities(rowGroups []RowGroupMeta) (uint64, uint64) {
 	var required uint64
+	var optional uint64
 	for _, rg := range rowGroups {
 		required |= rg.RequiredCapabilities
+		if rg.PerColumnRangeLength > index.RangeSectionHeaderSize {
+			optional |= CapBit_RangeBSI
+		}
 	}
-	return required, 0
+	return required, optional
 }
 
 func lowestSetBit(mask uint64) int {

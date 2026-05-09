@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"container/heap"
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"runtime"
@@ -57,11 +58,13 @@ func (f MergeWriterFunc) WriteBatch(events []*event.Event) error { return f(even
 
 // StreamingMergeResult holds metadata from a streaming merge (no events).
 type StreamingMergeResult struct {
-	MinTime    time.Time
-	MaxTime    time.Time
-	Index      string
-	Level      int
-	EventCount int64
+	MinTime        time.Time
+	MaxTime        time.Time
+	Index          string
+	Level          int
+	EventCount     int64
+	FormatV1Inputs int
+	FormatV2Inputs int
 }
 
 // SegmentInfo describes a segment available for compaction.
@@ -229,6 +232,8 @@ func (c *Compactor) PlanCompaction(index string) *Plan {
 // ordered by priority (L0→L1 first, then L1→L2, then L2→L3).
 // Plans are partition-scoped: segments from different partitions are never mixed.
 // Each Job carries the Partition field for partition-level scheduler concurrency.
+// Segment format is intentionally not part of scheduling priority; mixed V1/V2
+// migration remains size-tiered and level-based rather than format-biased.
 func (c *Compactor) PlanAllCompactions(index string) []*Job {
 	var jobs []*Job
 
@@ -399,13 +404,31 @@ func (c *Compactor) StreamingMerge(ctx context.Context, plan *Plan, writer Merge
 	}()
 
 	cursors := make(mergeHeap, 0, len(plan.InputSegments))
+	var formatV1Inputs, formatV2Inputs int
 
 	for _, seg := range plan.InputSegments {
 		openStart := time.Now()
 		reader, ms, err := c.openSegmentReader(seg)
 		if err != nil {
+			if errors.Is(err, segment.ErrUnsupportedMajor) {
+				return nil, fmt.Errorf("compaction: unsupported segment format %s: %w", seg.Meta.ID, err)
+			}
 			return nil, fmt.Errorf("compaction: open segment %s: %w", seg.Meta.ID, err)
 		}
+		switch reader.FormatMajor() {
+		case segment.LSG_FORMAT_MAJOR_V1:
+			formatV1Inputs++
+		case segment.LSG_FORMAT_MAJOR_V2:
+			formatV2Inputs++
+		}
+		source := seg.Path
+		if source == "" {
+			source = seg.Meta.ID
+		}
+		c.logger.Info("merging segment",
+			"format_major", reader.FormatMajor(),
+			"from", source,
+		)
 
 		if ms != nil {
 			mmapHandles = append(mmapHandles, ms)
@@ -534,11 +557,13 @@ func (c *Compactor) StreamingMerge(ctx context.Context, plan *Plan, writer Merge
 	)
 
 	return &StreamingMergeResult{
-		MinTime:    minTime,
-		MaxTime:    maxTime,
-		Index:      index,
-		Level:      plan.OutputLevel,
-		EventCount: totalEvents,
+		MinTime:        minTime,
+		MaxTime:        maxTime,
+		Index:          index,
+		Level:          plan.OutputLevel,
+		EventCount:     totalEvents,
+		FormatV1Inputs: formatV1Inputs,
+		FormatV2Inputs: formatV2Inputs,
 	}, nil
 }
 

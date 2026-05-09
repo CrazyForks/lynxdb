@@ -11,6 +11,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: nightly-trigger
@@ -92,3 +93,10 @@ jobs:
           git config user.email "bot@lynxdb.org"
           git tag "$TAG"
           git push origin "refs/tags/${TAG}"
+
+      - name: Dispatch nightly release
+        if: steps.existing_tag.outputs.exists != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.nightly.outputs.tag }}
+        run: gh workflow run nightly-release.yaml --ref "$TAG"

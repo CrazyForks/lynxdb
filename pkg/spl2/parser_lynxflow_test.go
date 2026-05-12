@@ -1222,6 +1222,65 @@ func TestLynxFlow_RateDefault(t *testing.T) {
 	}
 }
 
+func TestLynxFlow_Proportion(t *testing.T) {
+	q, err := Parse(`from app | proportion status >= 500 AS error_rate by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+
+	stats, ok := q.Commands[0].(*StatsCommand)
+	if !ok {
+		t.Fatalf("command[0]: got %T, want StatsCommand", q.Commands[0])
+	}
+	if len(stats.Aggregations) != 2 {
+		t.Fatalf("Aggregations: got %d, want 2", len(stats.Aggregations))
+	}
+	if stats.Aggregations[0].Func != "count" || stats.Aggregations[0].Alias != "error_rate_num" {
+		t.Errorf("num agg: got %+v", stats.Aggregations[0])
+	}
+	if _, ok := stats.Aggregations[0].Args[0].(*FuncCallExpr); !ok {
+		t.Fatalf("num agg arg: got %T, want FuncCallExpr", stats.Aggregations[0].Args[0])
+	}
+	if stats.Aggregations[1].Func != "count" || stats.Aggregations[1].Alias != "error_rate_den" {
+		t.Errorf("den agg: got %+v", stats.Aggregations[1])
+	}
+	if len(stats.GroupBy) != 1 || stats.GroupBy[0] != "service" {
+		t.Errorf("GroupBy: got %v, want [service]", stats.GroupBy)
+	}
+
+	eval, ok := q.Commands[1].(*EvalCommand)
+	if !ok {
+		t.Fatalf("command[1]: got %T, want EvalCommand", q.Commands[1])
+	}
+	if eval.Field != "error_rate" {
+		t.Errorf("Eval field: got %q, want error_rate", eval.Field)
+	}
+}
+
+func TestLynxFlow_ProportionEvery(t *testing.T) {
+	q, err := Parse(`from app | proportion level = "error" AS error_rate every 5m by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 3 {
+		t.Fatalf("Commands: got %d, want 3", len(q.Commands))
+	}
+	bin, ok := q.Commands[0].(*BinCommand)
+	if !ok {
+		t.Fatalf("command[0]: got %T, want BinCommand", q.Commands[0])
+	}
+	if bin.Field != "_time" || bin.Span != "5m" {
+		t.Errorf("bin: got field=%q span=%q, want _time/5m", bin.Field, bin.Span)
+	}
+	stats := q.Commands[1].(*StatsCommand)
+	if len(stats.GroupBy) != 2 || stats.GroupBy[0] != "service" || stats.GroupBy[1] != "_time" {
+		t.Errorf("GroupBy: got %v, want [service _time]", stats.GroupBy)
+	}
+}
+
 func TestLynxFlow_Percentiles(t *testing.T) {
 	q, err := Parse(`from app | percentiles dur by service`)
 	if err != nil {
@@ -1624,6 +1683,7 @@ func TestLynxFlow_LexerKeywordsAsTokens(t *testing.T) {
 		{"latency", TokenLatency},
 		{"errors", TokenErrors},
 		{"rate", TokenRate},
+		{"proportion", TokenProportion},
 		{"percentiles", TokenPercentiles},
 		{"slowest", TokenSlowest},
 	}
@@ -1988,7 +2048,7 @@ func TestLynxFlow_NormalizeKnownCommands(t *testing.T) {
 		"let", "keep", "omit", "select", "group", "every", "bucket",
 		"order", "take", "rank", "topby", "bottomby", "bottom",
 		"running", "enrich", "parse", "explode", "pack", "lookup",
-		"latency", "errors", "rate", "percentiles", "slowest",
+		"latency", "errors", "rate", "proportion", "percentiles", "slowest",
 		"views", "dropview",
 	}
 	for _, cmd := range lfCommands {
@@ -2810,6 +2870,7 @@ func TestLynxFlow_NormalizerAllLynxFlowCommands(t *testing.T) {
 		{"every 5m compute count()", "FROM main | every 5m compute count()"},
 		{"order by f asc", "FROM main | order by f asc"},
 		{"take 10", "FROM main | take 10"},
+		{"proportion status >= 500 AS error_rate", "FROM main | proportion status >= 500 AS error_rate"},
 		{"views", "FROM main | views"},
 	}
 	for _, tt := range tests {

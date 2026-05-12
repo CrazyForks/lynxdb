@@ -515,6 +515,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return p.parseErrorsCmd()
 	case TokenRate:
 		return singleCmd(p.parseRateCmd())
+	case TokenProportion:
+		return p.parseProportionCmd()
 	case TokenPercentiles:
 		return singleCmd(p.parsePercentilesCmd())
 	case TokenSlowest:
@@ -3011,7 +3013,7 @@ func isIdentLike(t TokenType) bool {
 		TokenUsing, TokenExtract, TokenIfMissing, TokenPer, TokenOn,
 		TokenInto, TokenAsc, TokenDesc,
 		// Lynx Flow domain sugar keywords.
-		TokenLatency, TokenErrors, TokenRate, TokenPercentiles, TokenSlowest,
+		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
 		// SPL2 keywords that can be field names in expression context.
 		TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
@@ -4059,6 +4061,81 @@ func (p *Parser) parseRateCmd() (*TimechartCommand, error) {
 	}
 
 	return cmd, nil
+}
+
+// parseProportionCmd parses:
+// proportion <where_expr> AS <alias> [every <span>] [by <fields>].
+// Desugars to optional bin, stats count(eval(expr)) + count(), then eval ratio.
+func (p *Parser) parseProportionCmd() ([]Command, error) {
+	p.advance() // consume "proportion"
+
+	predicate, err := p.parseExpr()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: proportion: expected predicate: %w", err)
+	}
+	if p.peek().Type != TokenAs {
+		return nil, fmt.Errorf("spl2: proportion: expected 'as' after predicate at position %d", p.peek().Pos)
+	}
+	p.advance()
+	alias, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: proportion: expected alias after 'as'")
+	}
+
+	var span string
+	if p.peek().Type == TokenEvery {
+		p.advance()
+		span = p.readSpanValue()
+		if span == "" {
+			return nil, fmt.Errorf("spl2: proportion: expected time span after 'every'")
+		}
+	}
+
+	var groupBy []string
+	if p.peek().Type == TokenBy {
+		p.advance()
+		groupBy, err = p.parseIdentListLF()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	aliasName := alias.Literal
+	numAlias := aliasName + "_num"
+	denAlias := aliasName + "_den"
+
+	statsGroupBy := append([]string{}, groupBy...)
+	if span != "" {
+		statsGroupBy = append(statsGroupBy, "_time")
+	}
+
+	commands := make([]Command, 0, 3)
+	if span != "" {
+		commands = append(commands, &BinCommand{Field: "_time", Span: span})
+	}
+	commands = append(commands, &StatsCommand{
+		Aggregations: []AggExpr{
+			{Func: "count", Args: []Expr{&FuncCallExpr{Name: "eval", Args: []Expr{predicate}}}, Alias: numAlias},
+			{Func: "count", Alias: denAlias},
+		},
+		GroupBy: statsGroupBy,
+	})
+	ratioExpr := &ArithExpr{
+		Left: &ArithExpr{
+			Left:  &FieldExpr{Name: numAlias},
+			Op:    "*",
+			Right: &LiteralExpr{Value: "1.0"},
+		},
+		Op:    "/",
+		Right: &FieldExpr{Name: denAlias},
+	}
+	commands = append(commands, &EvalCommand{
+		Field:       aliasName,
+		Expr:        ratioExpr,
+		Assignments: []EvalAssignment{{Field: aliasName, Expr: ratioExpr}},
+	})
+
+	return commands, nil
 }
 
 // parsePercentilesCmd parses: percentiles <field> [by <group>].

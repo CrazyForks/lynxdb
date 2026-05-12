@@ -149,6 +149,7 @@ const (
 	TokenLatency
 	TokenErrors
 	TokenRate
+	TokenProportion
 	TokenPercentiles
 	TokenSlowest
 	TokenRollup
@@ -315,6 +316,7 @@ var tokenNames = map[TokenType]string{
 	TokenLatency:           "LATENCY",
 	TokenErrors:            "ERRORS",
 	TokenRate:              "RATE",
+	TokenProportion:        "PROPORTION",
 	TokenPercentiles:       "PERCENTILES",
 	TokenSlowest:           "SLOWEST",
 	TokenRollup:            "ROLLUP",
@@ -456,6 +458,7 @@ var keywords = map[string]TokenType{
 	"latency":             TokenLatency,
 	"errors":              TokenErrors,
 	"rate":                TokenRate,
+	"proportion":          TokenProportion,
 	"percentiles":         TokenPercentiles,
 	"slowest":             TokenSlowest,
 	"rollup":              TokenRollup,

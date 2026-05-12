@@ -14,6 +14,7 @@ const (
 	LintDefaultSource      = "L002"
 	LintIndexRewrite       = "L003"
 	LintRawExactCompare    = "L005"
+	LintOptionAfterArg     = "L010"
 	LintDoubleQuotedName   = "L012"
 	LintCountWithoutParens = "L013"
 	LintDeprecatedSort     = "L022"
@@ -48,6 +49,7 @@ func LintProgram(input string, prog *Program) ([]QueryLint, error) {
 	lints = append(lints, lintLeadingWildcards(prog)...)
 	lints = append(lints, lintRawExactCompare(prog)...)
 	lints = append(lints, lintIndexRewrite(tokens)...)
+	lints = append(lints, lintOptionAfterArg(tokens)...)
 	lints = append(lints, lintDoubleQuotedNames(tokens)...)
 	lints = append(lints, lintCountWithoutParens(tokens)...)
 	lints = append(lints, lintDeprecatedSortSyntax(tokens)...)
@@ -128,6 +130,43 @@ func isFieldNameOption(name string) bool {
 	default:
 		return false
 	}
+}
+
+func lintOptionAfterArg(tokens []Token) []QueryLint {
+	var lints []QueryLint
+
+	for i := 0; i < len(tokens); i++ {
+		if tokens[i].Type != TokenTransaction {
+			continue
+		}
+
+		seenField := false
+		for j := i + 1; j < len(tokens); j++ {
+			switch tokens[j].Type {
+			case TokenPipe, TokenRBracket, TokenSemicolon, TokenEOF:
+				j = len(tokens)
+				continue
+			}
+
+			if isTransactionOptionName(tokens[j]) && peekTokenType(tokens, j+1) == TokenEq {
+				if seenField {
+					lints = append(lints, QueryLint{
+						Code:     LintOptionAfterArg,
+						Message:  "Options (`key=value`) must precede positional arguments",
+						Position: tokens[j].Pos,
+					})
+				}
+				j++
+				continue
+			}
+
+			if isIdentLike(tokens[j].Type) {
+				seenField = true
+			}
+		}
+	}
+
+	return lints
 }
 
 func lintRawExactCompare(prog *Program) []QueryLint {

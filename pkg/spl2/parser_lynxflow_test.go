@@ -943,6 +943,20 @@ func TestLynxFlow_Transaction(t *testing.T) {
 	}
 }
 
+func TestLynxFlow_TransactionCanonicalOptionOrder(t *testing.T) {
+	q, err := Parse(`from app | transaction maxspan=30m startswith="login" endswith="logout" session_id`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	tx, ok := q.Commands[0].(*TransactionCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected TransactionCommand, got %T", q.Commands[0])
+	}
+	if tx.Field != "session_id" || tx.MaxSpan != "30m" || tx.StartsWith != "login" || tx.EndsWith != "logout" {
+		t.Errorf("Transaction: got %+v", tx)
+	}
+}
+
 func TestLynxFlow_StreamstatsModifierKeywords(t *testing.T) {
 	q, err := Parse(`from app | streamstats current=false window=5 count() as n`)
 	if err != nil {

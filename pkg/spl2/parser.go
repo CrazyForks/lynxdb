@@ -1499,37 +1499,47 @@ func (p *Parser) parseTransaction() (*TransactionCommand, error) {
 	p.advance() // consume "transaction"
 	cmd := &TransactionCommand{}
 
+	p.parseTransactionOptions(cmd)
+
 	field, err := p.expectIdent()
 	if err != nil {
 		return nil, err
 	}
 	cmd.Field = field.Literal
 
-	for p.peek().Type == TokenIdent ||
-		p.peek().Type == TokenMaxspan ||
-		p.peek().Type == TokenStartswith ||
-		p.peek().Type == TokenEndswith {
+	p.parseTransactionOptions(cmd)
+
+	return cmd, nil
+}
+
+func (p *Parser) parseTransactionOptions(cmd *TransactionCommand) {
+	for isTransactionOptionName(p.peek()) && p.peekAt(1).Type == TokenEq {
 		name := strings.ToLower(p.peek().Literal)
-		if name == "maxspan" && p.peekAt(1).Type == TokenEq {
-			p.advance()
-			p.advance()
+		p.advance()
+		p.advance()
+		switch name {
+		case "maxspan":
 			cmd.MaxSpan = p.readSpanValue()
-		} else if name == "startswith" && p.peekAt(1).Type == TokenEq {
-			p.advance()
-			p.advance()
+		case "startswith":
 			tok := p.advance()
 			cmd.StartsWith = tok.Literal
-		} else if name == "endswith" && p.peekAt(1).Type == TokenEq {
-			p.advance()
-			p.advance()
+		case "endswith":
 			tok := p.advance()
 			cmd.EndsWith = tok.Literal
-		} else {
-			break
+		}
+	}
+}
+
+func isTransactionOptionName(tok Token) bool {
+	switch tok.Type {
+	case TokenIdent, TokenMaxspan, TokenStartswith, TokenEndswith:
+		switch strings.ToLower(tok.Literal) {
+		case "maxspan", "startswith", "endswith":
+			return true
 		}
 	}
 
-	return cmd, nil
+	return false
 }
 
 func (p *Parser) parseXYSeries() (*XYSeriesCommand, error) {

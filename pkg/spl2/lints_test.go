@@ -393,6 +393,42 @@ func TestLintQuery_DeprecatedSortSyntax(t *testing.T) {
 	}
 }
 
+func TestLintQuery_OptionAfterArg(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantCodes []string
+	}{
+		{
+			name:      "transaction option after field",
+			query:     `from app | transaction session_id maxspan=30m`,
+			wantCodes: []string{LintOptionAfterArg},
+		},
+		{
+			name:      "transaction canonical option order",
+			query:     `from app | transaction maxspan=30m session_id`,
+			wantCodes: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lints, err := LintQuery(tt.query)
+			if err != nil {
+				t.Fatalf("LintQuery: %v", err)
+			}
+			if len(lints) != len(tt.wantCodes) {
+				t.Fatalf("lints: got %+v, want codes %v", lints, tt.wantCodes)
+			}
+			for i, want := range tt.wantCodes {
+				if lints[i].Code != want {
+					t.Fatalf("lints[%d].Code: got %q, want %q", i, lints[i].Code, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLintProgram_RequiresSuccessfulParse(t *testing.T) {
 	_, err := LintQuery(`from app | stats count(`)
 	if err == nil {

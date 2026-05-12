@@ -198,8 +198,8 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 			}
 			addValueToRunning(states[j], agg, row)
 			var val event.Value
-			if strings.EqualFold(agg.Name, aggValues) {
-				// Values aggregate requires full scan for order-preserving dedup.
+			if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
+				// Values/list aggregates require full scan for order-sensitive output.
 				val = s.computeAgg(agg, rb.items())
 			} else {
 				val = readRunningAgg(states[j], agg, rb)
@@ -247,7 +247,7 @@ func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 		return true
 	}
 	for _, agg := range aggs {
-		if strings.EqualFold(agg.Name, aggValues) {
+		if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
 			return true
 		}
 	}
@@ -348,8 +348,8 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 			st.freq[v.String()]++
 			st.count++
 		}
-	case aggValues:
-		// Values aggregate still requires full scan for correctness (dedup + order).
+	case aggValues, aggList:
+		// Values/list aggregates still require full scan for correctness.
 		// Fall through to readRunningAgg which does the scan.
 		st.count++
 	}
@@ -402,7 +402,7 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 			}
 			st.count--
 		}
-	case aggValues:
+	case aggValues, aggList:
 		st.count--
 	}
 }
@@ -564,6 +564,15 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 					seen[s] = true
 					vals = append(vals, s)
 				}
+			}
+		}
+
+		return event.StringValue(strings.Join(vals, "|||"))
+	case aggList:
+		var vals []string
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok && !v.IsNull() {
+				vals = append(vals, v.String())
 			}
 		}
 

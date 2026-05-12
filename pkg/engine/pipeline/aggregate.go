@@ -70,6 +70,7 @@ const (
 	aggMax    = "max"
 	aggRange  = "range"
 	aggValues = "values"
+	aggList   = "list"
 	aggDC     = "dc"
 	aggStdev  = "stdev"
 	aggPerc25 = "perc25"
@@ -126,7 +127,7 @@ func NewAggregateIterator(child Iterator, aggs []AggFunc, groupBy []string, acct
 	needsValues := make([]bool, len(aggs))
 	for i, a := range aggs {
 		switch strings.ToLower(a.Name) {
-		case aggDC, aggValues, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev:
+		case aggDC, aggValues, aggList, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev:
 			needsValues[i] = true
 		}
 	}
@@ -623,6 +624,10 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value)
 				s.all = append(s.all, str)
 			}
 		}
+	case aggList:
+		if !val.IsNull() && len(s.all) < maxValuesPerGroup {
+			s.all = append(s.all, val.String())
+		}
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
 			s.first = val
@@ -909,6 +914,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeDCFromRow(&group.states[j], row, agg.Alias)
 		case aggValues:
 			a.mergeValuesFromRow(&group.states[j], row, agg.Alias)
+		case aggList:
+			a.mergeListFromRow(&group.states[j], row, agg.Alias)
 		case aggStdev:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
 		case aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
@@ -1068,6 +1075,21 @@ func (a *AggregateIterator) mergeValuesFromRow(s *aggState, row map[string]event
 	}
 }
 
+func (a *AggregateIterator) mergeListFromRow(s *aggState, row map[string]event.Value, alias string) {
+	valsVal, ok := row[alias+"__listvals"]
+	if !ok || valsVal.IsNull() {
+		return
+	}
+	valsStr, _ := valsVal.TryAsString()
+	parts := strings.Split(valsStr, "|||")
+	for _, p := range parts {
+		if len(s.all) >= maxValuesPerGroup {
+			break
+		}
+		s.all = append(s.all, p)
+	}
+}
+
 // mergeStdevFromRow merges stdev state from a spill row's suffixed columns.
 // Uses the parallel variance formula: combined variance from (sum, count, sumSq) tuples.
 func (a *AggregateIterator) mergeStdevFromRow(s *aggState, row map[string]event.Value, alias string) {
@@ -1188,6 +1210,13 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 
 		return event.IntValue(int64(len(s.values)))
 	case aggValues:
+		var strs []string
+		for _, v := range s.all {
+			strs = append(strs, fmt.Sprintf("%v", v))
+		}
+
+		return event.StringValue(strings.Join(strs, "|||"))
+	case aggList:
 		var strs []string
 		for _, v := range s.all {
 			strs = append(strs, fmt.Sprintf("%v", v))

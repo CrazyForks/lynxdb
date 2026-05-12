@@ -461,6 +461,18 @@ func updateAggState(s *aggState, fn string, val event.Value) {
 		if !val.IsNull() {
 			s.values[val.String()] = true
 		}
+	case aggValues:
+		if !val.IsNull() {
+			str := val.String()
+			if !s.values[str] {
+				s.values[str] = true
+				s.all = append(s.all, str)
+			}
+		}
+	case aggList:
+		if !val.IsNull() {
+			s.all = append(s.all, val.String())
+		}
 	}
 }
 
@@ -482,6 +494,13 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 		return s.max
 	case "dc":
 		return event.IntValue(int64(len(s.values)))
+	case aggValues, aggList:
+		var strs []string
+		for _, v := range s.all {
+			strs = append(strs, fmt.Sprintf("%v", v))
+		}
+
+		return event.StringValue(strings.Join(strs, "|||"))
 	}
 
 	return event.NullValue()

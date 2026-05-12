@@ -809,6 +809,63 @@ func TestServer_StatsRangeAggregate(t *testing.T) {
 	t.Fatalf("missing duration_range column in %v", cols)
 }
 
+func TestServer_StatsListAggregatePreservesDuplicates(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	now := time.Now()
+	users := []string{"alice", "bob", "alice"}
+	events := make([]*event.Event, 0, len(users))
+	for i, user := range users {
+		ev := event.NewEvent(now.Add(time.Duration(i)*time.Second), fmt.Sprintf("user=%s", user))
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+		ev.SetField("user", event.StringValue(user))
+		events = append(events, ev)
+	}
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats list(user) as user_list, values(user) as user_values`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST query: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	values := map[string]string{}
+	for i, col := range cols {
+		values[fmt.Sprint(col)] = row[i].(string)
+	}
+	if got := values["user_list"]; got != "alice|||bob|||alice" {
+		t.Fatalf("user_list: got %q, want alice|||bob|||alice", got)
+	}
+	if got := values["user_values"]; got != "alice|||bob" {
+		t.Fatalf("user_values: got %q, want alice|||bob", got)
+	}
+}
+
 // New Three-Mode Query Tests
 
 func TestQuery_SyncMode(t *testing.T) {

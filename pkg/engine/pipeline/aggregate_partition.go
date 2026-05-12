@@ -328,6 +328,11 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 				row[agg.Alias+"__vals"] = event.StringValue(
 					joinAllStrings(s.all, "|||"))
 			}
+		case aggList:
+			if len(s.all) > 0 {
+				row[agg.Alias+"__listvals"] = event.StringValue(
+					joinAllStrings(s.all, "|||"))
+			}
 		case aggStdev:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 			row[agg.Alias+"__count"] = event.IntValue(s.count)
@@ -384,6 +389,8 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeDCFromRow(&group.states[j], row, agg.Alias)
 		case aggValues:
 			a.mergeValuesFromRow(&group.states[j], row, agg.Alias)
+		case aggList:
+			a.mergeListFromRow(&group.states[j], row, agg.Alias)
 		case aggStdev:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
 		case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:

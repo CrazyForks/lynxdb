@@ -47,6 +47,7 @@ const (
 	TokenRex
 	TokenRegex
 	TokenReplace
+	TokenFieldformat
 	TokenFields
 	TokenTable
 	TokenDedup
@@ -246,6 +247,7 @@ var tokenNames = map[TokenType]string{
 	TokenRex:               "REX",
 	TokenRegex:             "REGEX",
 	TokenReplace:           "REPLACE",
+	TokenFieldformat:       "FIELDFORMAT",
 	TokenFields:            "FIELDS",
 	TokenTable:             "TABLE",
 	TokenDedup:             "DEDUP",
@@ -405,6 +407,7 @@ var keywords = map[string]TokenType{
 	"rex":                 TokenRex,
 	"regex":               TokenRegex,
 	"replace":             TokenReplace,
+	"fieldformat":         TokenFieldformat,
 	"fields":              TokenFields,
 	"table":               TokenTable,
 	"dedup":               TokenDedup,

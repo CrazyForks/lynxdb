@@ -2021,6 +2021,41 @@ func TestParse_ReplaceCommand(t *testing.T) {
 	}
 }
 
+func TestParse_FieldformatCommand(t *testing.T) {
+	q, err := Parse(`FROM main | fieldformat totalCount=tostring(totalCount, "commas")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*FieldformatCommand)
+	if !ok {
+		t.Fatalf("expected FieldformatCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "totalCount" {
+		t.Errorf("field: got %q, want totalCount", cmd.Field)
+	}
+	call, ok := cmd.Expr.(*FuncCallExpr)
+	if !ok {
+		t.Fatalf("expr: got %T, want FuncCallExpr", cmd.Expr)
+	}
+	if call.Name != "tostring" || len(call.Args) != 2 {
+		t.Fatalf("call: got %s with %d args, want tostring with 2 args", call.Name, len(call.Args))
+	}
+}
+
+func TestParse_FieldformatQuotedField(t *testing.T) {
+	q, err := Parse(`FROM main | fieldformat "First Event"=strftime(firstTime, "%c")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*FieldformatCommand)
+	if !ok {
+		t.Fatalf("expected FieldformatCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "First Event" {
+		t.Errorf("field: got %q, want %q", cmd.Field, "First Event")
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

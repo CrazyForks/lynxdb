@@ -634,6 +634,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Regex"
 	case *spl2.ReplaceCommand:
 		return "Replace"
+	case *spl2.FieldformatCommand:
+		return "Fieldformat"
 	case *spl2.BinCommand:
 		return "Bin"
 	case *spl2.StreamstatsCommand:
@@ -1021,6 +1023,9 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		}
 
 		return iter, nil
+
+	case *spl2.FieldformatCommand:
+		return NewFieldformatIterator(child), nil
 
 	case *spl2.BinCommand:
 		dur := parseDuration(c.Span)

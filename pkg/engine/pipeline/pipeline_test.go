@@ -550,6 +550,38 @@ func TestBuildFromSourceReplaceSkipsInternalWithoutIn(t *testing.T) {
 	}
 }
 
+func TestBuildFromSourceFieldformatKeepsUnderlyingValue(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | fieldformat totalCount=tostring(totalCount, "commas")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"totalCount": event.IntValue(1234)},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := results[0]["totalCount"]
+	if got.Type() != event.FieldTypeInt {
+		t.Fatalf("totalCount type: got %s, want int", got.Type())
+	}
+	if got.AsInt() != 1234 {
+		t.Errorf("totalCount: got %d, want 1234", got.AsInt())
+	}
+}
+
 func TestPipelineEndToEnd(t *testing.T) {
 	// FROM idx | WHERE status >= 500 | stats count
 	events := makeEvents(100)

@@ -14,7 +14,7 @@ cte_ref          = "$" ident ;
 
 command          = search_cmd | where_cmd | stats_cmd | eval_cmd | sort_cmd
                  | head_cmd | tail_cmd | reverse_cmd | table_cmd | fields_cmd | rename_cmd
-                 | dedup_cmd | rex_cmd | regex_cmd | replace_cmd | bin_cmd | timechart_cmd
+                 | dedup_cmd | rex_cmd | regex_cmd | replace_cmd | fieldformat_cmd | bin_cmd | timechart_cmd
                  | top_cmd | rare_cmd | fillnull_cmd | streamstats_cmd
                  | eventstats_cmd | join_cmd | append_cmd | transaction_cmd
                  | xyseries_cmd | untable_cmd | materialize_cmd | from_cmd | views_cmd
@@ -204,6 +204,7 @@ makemv_cmd       = "makemv" [ ( "delim" | "tokenizer" ) "=" quoted_string ]
                    [ "allowempty" "=" ( "true" | "false" ) ] [ "setsv" "=" ( "true" | "false" ) ] field ;
 mvcombine_cmd    = "mvcombine" [ "delim" "=" quoted_string ] field ;
 nomv_cmd         = "nomv" field ;
+fieldformat_cmd  = "fieldformat" field "=" expr ;
 pack_json_cmd    = "pack_json" ident_list [ "as" ident ] ;
 
 (* ─── Grouping / bucketing ─── *)

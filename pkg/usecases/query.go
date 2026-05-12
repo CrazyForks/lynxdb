@@ -211,6 +211,8 @@ func commandName(cmd spl2.Command) string {
 		return "rex"
 	case *spl2.ReplaceCommand:
 		return "replace"
+	case *spl2.FieldformatCommand:
+		return "fieldformat"
 	case *spl2.BinCommand:
 		return "bin"
 	case *spl2.StreamstatsCommand:
@@ -548,6 +550,9 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 			stage.Description = truncateDesc(c.String(), 80)
 
 		case *spl2.ReplaceCommand:
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.FieldformatCommand:
 			stage.Description = truncateDesc(c.String(), 80)
 
 		case *spl2.BinCommand:

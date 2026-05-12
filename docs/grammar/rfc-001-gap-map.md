@@ -24,6 +24,7 @@ Source contract: `docs/grammar/RFC.md`.
 | SPL2 `reverse` command reverses current row order without changing row contents | `pkg/spl2/parser.go`, `pkg/engine/pipeline/pipeline.go`, `pkg/engine/pipeline/pipeline_test.go` |
 | SPL `regex` command filters `_raw` by default and supports field `=` / `!=` patterns | `pkg/spl2/parser.go`, `pkg/engine/pipeline/pipeline.go`, `pkg/engine/pipeline/pipeline_test.go` |
 | SPL `replace` command replaces exact and wildcard field values across selected fields | `pkg/spl2/parser.go`, `pkg/engine/pipeline/replace.go`, `pkg/engine/pipeline/pipeline_test.go` |
+| SPL `fieldformat` parses one field/eval-expression pair and preserves underlying row values | `pkg/spl2/parser.go`, `pkg/engine/pipeline/fieldformat.go`, `pkg/engine/pipeline/pipeline_test.go` |
 | SPL/SPL2 `mvexpand` and SPL2 `expand` expand one multivalue/array field into separate rows, including `limit` | `pkg/spl2/parser.go`, `pkg/engine/pipeline/unroll.go`, `pkg/engine/pipeline/unroll_test.go` |
 | SPL/SPL2 `makeresults` generates temporary rows with `_time` and supports default, positional, and `count=<n>` counts | `pkg/spl2/parser.go`, `pkg/engine/pipeline/pipeline.go`, `pkg/engine/pipeline/pipeline_test.go` |
 | SPL/SPL2 `untable` converts wide rows into name/value rows for every field except the x-field | `pkg/spl2/parser.go`, `pkg/engine/pipeline/untable.go`, `pkg/engine/pipeline/pipeline_test.go` |
@@ -44,6 +45,7 @@ Official Splunk compatibility checked:
 | Reverse command | Splunk docs define `reverse` as reversing result row order without changing which rows are returned. |
 | Regex command | Splunk docs define `regex` as a streaming filter over `_raw` by default, with `field="pattern"` retaining matches and `field!="pattern"` retaining non-matches plus null field values. LynxDB uses the default linear regex engine unless PCRE2 is explicitly added later. |
 | Replace command | Splunk docs define `replace (<wc-string> WITH <wc-string>)... [IN <field-list>]` as a streaming value replacement command. Wildcards match value text, replacement wildcards reuse captures, and internal fields require explicit `IN`. |
+| Fieldformat command | Splunk docs define `fieldformat <field>=<eval-expression>` as changing rendered appearance without changing the underlying field value. Only one eval expression is accepted per command; exported data keeps original values. |
 | Multivalue expansion | Splunk docs define `mvexpand` as expanding one multivalue field into separate rows while keeping other fields unchanged; SPL2 also defines `expand` for arrays. SPL2 places `limit=<int>` before the field, while SPL allows it after the field. |
 | Makeresults command | Splunk docs define `makeresults` default row generation and `count=<num>`; SPL2 examples also use positional counts. LynxDB implements generated rows with `_time`; `annotate`, `format`, and `data` options are deferred. |
 | Untable command | Splunk docs define `untable <x-field> <y-name-field> <y-data-field>` as the inverse of `xyseries`, emitting field names other than the x-field into the y-name field and their values into the y-data field. |
@@ -61,7 +63,7 @@ Official Splunk compatibility checked:
 | Lints | Compatibility hints, parse suggestions, and post-parse `L001`/`L002`/`L003`/`L005`/`L010`/`L012`/`L013`/`L022`/`L030`/`L031`/`L034`/`L036` exist | Most RFC lint catalog entries `L001` through `L039` are not implemented yet. |
 | Quoted identifier canon | Single-quoted identifiers now parse as canonical names and double-quoted names remain accepted in legacy positions with `L012` | Some less-common double-quoted legacy name positions may still need coverage. |
 | Function catalog | Many eval and aggregate functions parse and execute; common aggregate aliases and time aggregates now normalize before planning | RFC aggregate/eval catalog needs a full parser, VM, and editor cross-check for missing functions and aliases. |
-| Command catalog | Native SPL2/LynxFlow commands plus several helpers parse; profile-excluded Splunk commands reject with `L021` | SPL compatibility commands such as `chart`, `fieldformat`, `union`, `appendcols`, `appendpipe`, and optional capability commands remain incomplete. |
+| Command catalog | Native SPL2/LynxFlow commands plus several helpers parse; profile-excluded Splunk commands reject with `L021` | SPL compatibility commands such as `chart`, `union`, `appendcols`, `appendpipe`, and optional capability commands remain incomplete. |
 | Editor assistance | Autocomplete covers commands, fields, values, regex snippets, time values, and templates | Ranking reasons and disable switches are not surfaced as RFC `meta.suggestions` behavior. |
 | REST lint metadata | Sync, completed hybrid, async handles, and job completion responses expose `meta.lints` for implemented lints; `lint: false` disables them | Full lint output controls are not wired yet. |
 | CLI/TUI assistance | Shell autocomplete exists; `lynxdb query --no-lint` passes `lint:false`; server-mode CLI/TUI results render returned lints on stderr | Query-context autocomplete and rewrite preview are not aligned with the web catalog yet. |
@@ -75,6 +77,7 @@ Official Splunk compatibility checked:
 | Broad-search lints and explain blocks `L032`, `L037`, source counts, skipped segments | Deferred | Requires planner and API metadata integration. |
 | Regex engine selection, PCRE2 diagnostics, and `L038`/`L039` | Deferred | Requires runtime regex engine configuration and planner literal-extraction diagnostics. |
 | `makeresults` `annotate`, `format`, and `data` options | Deferred | Current implementation covers generated row counts and `_time`; inline dataset formats require a richer generator parser. |
+| `fieldformat` render metadata | Deferred | Current `event.Value` has one representation per field; expressions parse and rows keep original values, but alternate display strings are not represented. |
 | `makemv` `setsv` dual representation | Deferred | Current `event.Value` has one representation per field; delimiter and tokenizer multivalue splitting are implemented, but parallel single-value display metadata is not represented. |
 | `mvcombine` delimiter display metadata | Deferred | Current `event.Value` has one representation per field; row grouping and multivalue values are implemented, but delimiter-specific alternate display strings are not represented. |
 | `facets` fan-out normalization | Deferred | Requires prefix-aware normalizer support for command suffixes that expand the prior pipeline into `multisearch`. |

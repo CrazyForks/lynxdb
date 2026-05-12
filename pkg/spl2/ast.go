@@ -253,6 +253,20 @@ func (c *ReplaceCommand) String() string {
 	return fmt.Sprintf("replace <%d pairs>", len(c.Pairs))
 }
 
+// FieldformatCommand represents: | fieldformat <field>=<expr>.
+type FieldformatCommand struct {
+	Field string
+	Expr  Expr
+}
+
+func (*FieldformatCommand) commandNode() {}
+func (c *FieldformatCommand) String() string {
+	if c.Expr == nil {
+		return fmt.Sprintf("fieldformat %s=<nil>", c.Field)
+	}
+	return fmt.Sprintf("fieldformat %s=%s", c.Field, c.Expr.String())
+}
+
 // FieldsCommand represents: fields <field1>, <field2>, ...
 type FieldsCommand struct {
 	Fields []string

@@ -371,6 +371,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseRegex())
 	case TokenReplace:
 		return singleCmd(p.parseReplace())
+	case TokenFieldformat:
+		return singleCmd(p.parseFieldformat())
 	case TokenFields:
 		return singleCmd(p.parseFields())
 	case TokenTable:
@@ -1379,6 +1381,27 @@ func (p *Parser) parseReplaceFields() ([]string, error) {
 	}
 
 	return fields, nil
+}
+
+func (p *Parser) parseFieldformat() (*FieldformatCommand, error) {
+	p.advance() // consume "fieldformat"
+
+	fieldTok := p.peek()
+	if !isIdentLike(fieldTok.Type) && fieldTok.Type != TokenString {
+		return nil, fmt.Errorf("spl2: fieldformat requires a field name")
+	}
+	p.advance()
+
+	if _, err := p.expect(TokenEq); err != nil {
+		return nil, fmt.Errorf("spl2: fieldformat requires '=' after field %q", fieldTok.Literal)
+	}
+
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	return &FieldformatCommand{Field: fieldTok.Literal, Expr: expr}, nil
 }
 
 func (p *Parser) readReplaceValue(name string) (string, error) {
@@ -3266,7 +3289,7 @@ func isIdentLike(t TokenType) bool {
 		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
 		TokenImpact, TokenBaseline, TokenChanges, TokenExemplars,
 		// SPL2 keywords that can be field names in expression context.
-		TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
+		TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
 		return true
 	}

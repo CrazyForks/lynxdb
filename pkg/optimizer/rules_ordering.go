@@ -230,6 +230,7 @@ func orderingBehavior(cmd spl2.Command) OrderingBehavior {
 	case *spl2.SearchCommand,
 		*spl2.WhereCommand,
 		*spl2.EvalCommand,
+		*spl2.FieldformatCommand,
 		*spl2.FieldsCommand,
 		*spl2.TableCommand,
 		*spl2.RenameCommand,

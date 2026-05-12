@@ -648,6 +648,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Append"
 	case *spl2.MultisearchCommand:
 		return "Multisearch"
+	case *spl2.UnionCommand:
+		return "Union"
 	case *spl2.XYSeriesCommand:
 		return "XYSeries"
 	case *spl2.UntableCommand:
@@ -1120,6 +1122,29 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 			return NewConcurrentUnionIterator(
 				children, OrderConcurrent, &qc.parallelCfg,
 			), nil
+		}
+
+		return NewUnionIterator(children), nil
+
+	case *spl2.UnionCommand:
+		children := []Iterator{child}
+		for _, branch := range c.Branches {
+			subQuery := branch
+			if subQuery.Source == nil && qc.defaultSource != nil {
+				subQuery = &spl2.Query{
+					Source:      qc.defaultSource,
+					Commands:    branch.Commands,
+					Annotations: branch.Annotations,
+				}
+			}
+			subIter, err := qc.buildQuery(qc.ctx, subQuery)
+			if err != nil {
+				return nil, fmt.Errorf("build UNION branch: %w", err)
+			}
+			children = append(children, subIter)
+		}
+		if qc.parallelCfg.Enabled && len(children) > 1 {
+			return NewConcurrentUnionIterator(children, OrderConcurrent, &qc.parallelCfg), nil
 		}
 
 		return NewUnionIterator(children), nil

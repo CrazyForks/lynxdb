@@ -1286,6 +1286,7 @@ Every SPL2 command has a Lynx Flow counterpart. Both syntaxes are first-class.
 | `JOIN` | `join` | Identical |
 | `APPEND` | `append` | Identical |
 | `MULTISEARCH` | `multisearch` | Identical |
+| `UNION` | `union` | Merge result sets |
 | `TRANSACTION` | `transaction` | Identical |
 | `UNTABLE` | `untable` | Identical |
 | `XYSERIES` | `xyseries` | Identical |

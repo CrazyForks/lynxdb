@@ -59,6 +59,7 @@ const (
 	TokenJoin
 	TokenAppend
 	TokenMultisearch
+	TokenUnion
 	TokenTransaction
 	TokenXyseries
 	TokenUntable
@@ -261,6 +262,7 @@ var tokenNames = map[TokenType]string{
 	TokenJoin:              "JOIN",
 	TokenAppend:            "APPEND",
 	TokenMultisearch:       "MULTISEARCH",
+	TokenUnion:             "UNION",
 	TokenTransaction:       "TRANSACTION",
 	TokenXyseries:          "XYSERIES",
 	TokenUntable:           "UNTABLE",
@@ -423,6 +425,7 @@ var keywords = map[string]TokenType{
 	"join":                TokenJoin,
 	"append":              TokenAppend,
 	"multisearch":         TokenMultisearch,
+	"union":               TokenUnion,
 	"transaction":         TokenTransaction,
 	"xyseries":            TokenXyseries,
 	"untable":             TokenUntable,

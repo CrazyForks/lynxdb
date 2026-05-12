@@ -2087,6 +2087,29 @@ func TestParse_ChartCommandByTwoFields(t *testing.T) {
 	}
 }
 
+func TestParse_UnionCommand(t *testing.T) {
+	q, err := Parse(`FROM main | union maxout=1000 customers, orders [search error | stats count by source]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*UnionCommand)
+	if !ok {
+		t.Fatalf("expected UnionCommand, got %T", q.Commands[0])
+	}
+	if len(cmd.Branches) != 3 {
+		t.Fatalf("branches: got %d, want 3", len(cmd.Branches))
+	}
+	if cmd.Branches[0].Source == nil || cmd.Branches[0].Source.Index != "customers" {
+		t.Fatalf("branch[0] source: got %+v, want customers", cmd.Branches[0].Source)
+	}
+	if cmd.Branches[1].Source == nil || cmd.Branches[1].Source.Index != "orders" {
+		t.Fatalf("branch[1] source: got %+v, want orders", cmd.Branches[1].Source)
+	}
+	if len(cmd.Branches[2].Commands) != 2 {
+		t.Fatalf("branch[2] commands: got %d, want 2", len(cmd.Branches[2].Commands))
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

@@ -400,6 +400,16 @@ func (c *MultisearchCommand) String() string {
 	return fmt.Sprintf("multisearch <%d searches>", len(c.Searches))
 }
 
+// UnionCommand represents: UNION <dataset-or-subsearch>...
+type UnionCommand struct {
+	Branches []*Query
+}
+
+func (*UnionCommand) commandNode() {}
+func (c *UnionCommand) String() string {
+	return fmt.Sprintf("union <%d branches>", len(c.Branches))
+}
+
 // TransactionCommand represents: TRANSACTION <field> [maxspan=<dur>] [startswith=<expr>] [endswith=<expr>].
 type TransactionCommand struct {
 	Field      string

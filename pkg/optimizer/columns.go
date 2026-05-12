@@ -439,6 +439,13 @@ func commandAccessedFields(cmd spl2.Command, cols map[string]bool) {
 				commandAccessedFields(subcmd, cols)
 			}
 		}
+	case *spl2.UnionCommand:
+		cols["*"] = true
+		for _, branch := range c.Branches {
+			for _, subcmd := range branch.Commands {
+				commandAccessedFields(subcmd, cols)
+			}
+		}
 	case *spl2.UnpackCommand:
 		cols[c.SourceField] = true
 	case *spl2.JsonCommand:

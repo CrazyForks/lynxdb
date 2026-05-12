@@ -227,6 +227,8 @@ func commandName(cmd spl2.Command) string {
 		return "append"
 	case *spl2.MultisearchCommand:
 		return "multisearch"
+	case *spl2.UnionCommand:
+		return "union"
 	case *spl2.TransactionCommand:
 		return "transaction"
 	case *spl2.XYSeriesCommand:
@@ -643,6 +645,10 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 			stage.Description = truncateDesc(c.String(), 80)
 
 		case *spl2.MultisearchCommand:
+			fieldsUnknown = true
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.UnionCommand:
 			fieldsUnknown = true
 			stage.Description = truncateDesc(c.String(), 80)
 

@@ -395,6 +395,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseAppend())
 	case TokenMultisearch:
 		return singleCmd(p.parseMultisearch())
+	case TokenUnion:
+		return singleCmd(p.parseUnion())
 	case TokenTransaction:
 		return singleCmd(p.parseTransaction())
 	case TokenXyseries:
@@ -1737,6 +1739,60 @@ func (p *Parser) parseMultisearch() (*MultisearchCommand, error) {
 	}
 
 	return cmd, nil
+}
+
+func (p *Parser) parseUnion() (*UnionCommand, error) {
+	p.advance() // consume "union"
+	cmd := &UnionCommand{}
+
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if p.peek().Type == TokenComma {
+			p.advance()
+			continue
+		}
+		if p.isUnionOption() {
+			p.advance()
+			if _, err := p.expect(TokenEq); err != nil {
+				return nil, err
+			}
+			if p.peek().Type != TokenNumber && p.peek().Type != TokenString && !isIdentLike(p.peek().Type) {
+				return nil, fmt.Errorf("spl2: union option requires a value")
+			}
+			p.advance()
+			continue
+		}
+		if p.peek().Type == TokenLBracket {
+			sub, err := p.parseSubsearch()
+			if err != nil {
+				return nil, err
+			}
+			cmd.Branches = append(cmd.Branches, sub)
+			continue
+		}
+
+		name, err := p.parseSourceName()
+		if err != nil {
+			return nil, fmt.Errorf("spl2: union requires dataset names or subsearches: %w", err)
+		}
+		cmd.Branches = append(cmd.Branches, &Query{Source: &SourceClause{Index: name}})
+	}
+	if len(cmd.Branches) == 0 {
+		return nil, fmt.Errorf("spl2: union requires at least one dataset or subsearch")
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) isUnionOption() bool {
+	if !isIdentLike(p.peek().Type) || p.peekAt(1).Type != TokenEq {
+		return false
+	}
+	switch strings.ToLower(p.peek().Literal) {
+	case "maxout", "maxtime", "timeout":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parseTransaction() (*TransactionCommand, error) {
@@ -3362,7 +3418,7 @@ func isIdentLike(t TokenType) bool {
 		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
 		TokenImpact, TokenBaseline, TokenChanges, TokenExemplars,
 		// SPL2 keywords that can be field names in expression context.
-		TokenChart, TokenOver, TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
+		TokenChart, TokenOver, TokenUnion, TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
 		return true
 	}

@@ -11,7 +11,7 @@ import (
 
 // CompareIterator is a blocking operator that re-executes the child pipeline
 // with a time shift and merges current + previous results side by side.
-// Output columns: group columns + each numeric column X as X + previous_X + change_X (%).
+// Output columns: group columns + each numeric column X as X + previous_X + change_X.
 type CompareIterator struct {
 	child     Iterator
 	shift     time.Duration
@@ -166,11 +166,10 @@ func (c *CompareIterator) mergeRows() *Batch {
 			if hasPrev {
 				if pv, ok := prevRow[col]; ok {
 					merged["previous_"+col] = pv
-					// Compute % change.
 					curF, curOk := vm.ValueToFloat(row[col])
 					prevF, prevOk := vm.ValueToFloat(pv)
-					if curOk && prevOk && prevF != 0 {
-						merged["change_"+col] = event.FloatValue(((curF - prevF) / prevF) * 100)
+					if curOk && prevOk {
+						merged["change_"+col] = event.FloatValue(curF - prevF)
 					} else {
 						merged["change_"+col] = event.NullValue()
 					}

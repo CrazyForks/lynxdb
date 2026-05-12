@@ -13,6 +13,7 @@ type QueryRequest struct {
 	Format    string            `json:"format"`              // json (default)
 	Wait      *float64          `json:"wait"`                // nil=sync, 0=async, N=hybrid
 	Profile   string            `json:"profile"`             // "basic", "full", "trace" — enables profiling in response
+	Lint      *bool             `json:"lint,omitempty"`      // false disables advisory query lints
 	Variables map[string]string `json:"variables,omitempty"` // template variable substitution
 }
 

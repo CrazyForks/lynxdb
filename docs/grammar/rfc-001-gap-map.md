@@ -34,7 +34,7 @@ Official Splunk compatibility checked:
 | Function catalog | Many eval and aggregate functions parse and execute | RFC aggregate/eval catalog needs a parser, VM, and editor cross-check for missing functions and aliases. |
 | Command catalog | Native SPL2/LynxFlow commands plus several helpers parse | SPL compatibility commands such as `chart`, `fieldformat`, `regex`, `replace`, `reverse`, `mvexpand`, `makeresults`, `union`, and optional capability commands remain incomplete. |
 | Editor assistance | Autocomplete covers commands, fields, values, regex snippets, time values, and templates | Ranking reasons and disable switches are not surfaced as RFC `meta.suggestions` behavior. |
-| REST lint metadata | Sync and completed hybrid query responses expose `meta.lints` for implemented lints | Async job completion, CLI, and TUI lint rendering are not wired yet. |
+| REST lint metadata | Sync and completed hybrid query responses expose `meta.lints` for implemented lints; `lint: false` disables them | Async job completion, CLI, and TUI lint rendering are not wired yet. |
 | CLI/TUI assistance | Shell autocomplete exists | Query-context autocomplete and lint/rewrite preview are not aligned with the web catalog yet. |
 
 ## Missing Or Deferred

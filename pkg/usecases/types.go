@@ -27,6 +27,7 @@ type SubmitRequest struct {
 	Mode    QueryMode
 	Wait    time.Duration // used in hybrid mode
 	Profile string        // "basic", "full", "trace" — passed to engine for profiling
+	NoLint  bool          // disables advisory query lints
 }
 
 // SubmitResult is the domain output for query submission.

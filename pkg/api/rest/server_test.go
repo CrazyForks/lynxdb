@@ -335,6 +335,32 @@ func TestServer_IngestAndQuery(t *testing.T) {
 	if firstLint["code"] != spl2.LintCountWithoutParens {
 		t.Fatalf("meta.lints[0].code: got %v, want %s", firstLint["code"], spl2.LintCountWithoutParens)
 	}
+
+	disabled := false
+	noLintBody, _ := json.Marshal(map[string]interface{}{
+		"q":    `FROM main | stats count`,
+		"lint": disabled,
+	})
+	noLintResp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(noLintBody))
+	if err != nil {
+		t.Fatalf("POST no-lint query: %v", err)
+	}
+	defer noLintResp.Body.Close()
+
+	if noLintResp.StatusCode != 200 {
+		b, _ := io.ReadAll(noLintResp.Body)
+		t.Fatalf("no-lint query status: %d, body: %s", noLintResp.StatusCode, string(b))
+	}
+
+	var noLintResult map[string]interface{}
+	json.NewDecoder(noLintResp.Body).Decode(&noLintResult)
+	noLintMeta, _ := noLintResult["meta"].(map[string]interface{})
+	if noLintMeta == nil {
+		t.Fatal("missing meta in no-lint query response")
+	}
+	if _, ok := noLintMeta["lints"]; ok {
+		t.Fatalf("meta.lints present despite lint=false: %#v", noLintMeta["lints"])
+	}
 }
 
 func TestServer_IngestJSONArray_PartialSuccessOnMalformedTail(t *testing.T) {

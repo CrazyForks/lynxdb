@@ -125,6 +125,7 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 		Mode:    mode,
 		Wait:    wait,
 		Profile: req.Profile,
+		NoLint:  req.Lint != nil && !*req.Lint,
 	})
 	if err != nil {
 		handlePlanError(w, err)

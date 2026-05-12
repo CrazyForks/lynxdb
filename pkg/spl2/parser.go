@@ -1796,23 +1796,26 @@ func (p *Parser) parseAppendcols() (*AppendcolsCommand, error) {
 
 func (p *Parser) parseAppendpipe() (*AppendpipeCommand, error) {
 	p.advance() // consume "appendpipe"
+	cmd := &AppendpipeCommand{RunInPreview: true}
 
 	if isIdentLike(p.peek().Type) && strings.EqualFold(p.peek().Literal, "run_in_preview") &&
 		p.peekAt(1).Type == TokenEq {
 		p.advance()
 		p.advance()
-		if p.peek().Type != TokenTrue && p.peek().Type != TokenFalse && !isIdentLike(p.peek().Type) {
-			return nil, fmt.Errorf("spl2: appendpipe run_in_preview requires a boolean value")
+		value, err := p.parseBoolOption("appendpipe run_in_preview")
+		if err != nil {
+			return nil, err
 		}
-		p.advance()
+		cmd.RunInPreview = value
 	}
 
 	sub, err := p.parseSubsearch()
 	if err != nil {
 		return nil, err
 	}
+	cmd.Subquery = sub
 
-	return &AppendpipeCommand{Subquery: sub}, nil
+	return cmd, nil
 }
 
 func (p *Parser) parseMultisearch() (*MultisearchCommand, error) {

@@ -401,13 +401,17 @@ func (c *AppendcolsCommand) String() string {
 	return "appendcols [...]"
 }
 
-// AppendpipeCommand represents: APPENDPIPE [subpipe].
+// AppendpipeCommand represents: APPENDPIPE [run_in_preview=<bool>] [subpipe].
 type AppendpipeCommand struct {
-	Subquery *Query
+	Subquery     *Query
+	RunInPreview bool
 }
 
 func (*AppendpipeCommand) commandNode() {}
 func (c *AppendpipeCommand) String() string {
+	if !c.RunInPreview {
+		return "appendpipe run_in_preview=false [...]"
+	}
 	return "appendpipe [...]"
 }
 

@@ -25,7 +25,7 @@ Append rows produced by running a subpipe over the current result set.
 
 - The subpipe runs when the pipeline reaches `appendpipe`, not before the main search.
 - LynxDB materializes current rows, emits the original rows, then emits the subpipe output.
-- `run_in_preview` parses for Splunk compatibility but has no effect because LynxDB does not expose Splunk preview-mode execution.
+- `run_in_preview` is retained for Splunk compatibility but has no effect because LynxDB does not expose Splunk preview-mode execution.
 
 ## See Also
 

@@ -357,6 +357,24 @@ func assertIntField(t *testing.T, row map[string]event.Value, field string, expe
 	}
 }
 
+func assertStringField(t *testing.T, row map[string]event.Value, field, expected string) {
+	t.Helper()
+	v, ok := row[field]
+	if !ok {
+		t.Errorf("field %q not found in row", field)
+
+		return
+	}
+	if v.Type() != event.FieldTypeString {
+		t.Errorf("field %q: expected string, got %s (%v)", field, v.Type(), v)
+
+		return
+	}
+	if v.AsString() != expected {
+		t.Errorf("field %q: expected %q, got %q", field, expected, v.AsString())
+	}
+}
+
 func assertFloatField(t *testing.T, row map[string]event.Value, field string, expected float64) {
 	t.Helper()
 	v, ok := row[field]
@@ -963,6 +981,42 @@ func TestMergePartialAggs_VarianceFamily(t *testing.T) {
 	assertFloatField(t, rows[0], "stdevp_v", 1)
 	assertFloatField(t, rows[0], "var_v", 2)
 	assertFloatField(t, rows[0], "varp_v", 1)
+}
+
+func TestPartialAgg_Mode(t *testing.T) {
+	events := makePartialAggEvents(
+		map[string]event.Value{"status": event.StringValue("200")},
+		map[string]event.Value{"status": event.StringValue("500")},
+		map[string]event.Value{"status": event.StringValue("200")},
+		map[string]event.Value{"status": event.StringValue("404")},
+	)
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: aggMode, Field: "status", Alias: "common_status"}},
+	}
+	partials := ComputePartialAgg(events, spec)
+	rows := MergePartialAggs([][]*PartialAggGroup{partials}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertStringField(t, rows[0], "common_status", "200")
+}
+
+func TestMergePartialAggs_Mode(t *testing.T) {
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: aggMode, Field: "status", Alias: "common_status"}},
+	}
+	p1 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{ModeCounts: map[string]int64{"200": 2, "500": 1}}}},
+	}
+	p2 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{ModeCounts: map[string]int64{"500": 2, "404": 1}}}},
+	}
+
+	rows := MergePartialAggs([][]*PartialAggGroup{p1, p2}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertStringField(t, rows[0], "common_status", "500")
 }
 
 func TestPartialAgg_Stdev_SingleValue(t *testing.T) {

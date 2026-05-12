@@ -647,7 +647,7 @@ func TestServer_StatsAggregateAliases(t *testing.T) {
 	}
 
 	searchBody, _ := json.Marshal(map[string]interface{}{
-		"q": `FROM main | stats mean(duration_ms) as avg_dur, median(duration_ms) as p50_dur, distinct_count(user) as users, estdc(user) as estimated_users, estdc_error(user) as estimated_user_error`,
+		"q": `FROM main | stats mean(duration_ms) as avg_dur, median(duration_ms) as p50_dur, distinct_count(user) as users, estdc(user) as estimated_users, estdc_error(user) as estimated_user_error, mode(user) as common_user`,
 	})
 	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(searchBody))
 	if err != nil {
@@ -696,6 +696,9 @@ func TestServer_StatsAggregateAliases(t *testing.T) {
 	}
 	if got := row[colIndex("estimated_user_error")].(float64); got != 0 {
 		t.Errorf("estimated_user_error: got %v, want 0", got)
+	}
+	if got := row[colIndex("common_user")].(string); got != "alice" {
+		t.Errorf("common_user: got %v, want alice", got)
 	}
 }
 

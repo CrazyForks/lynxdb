@@ -299,7 +299,7 @@ func (r *ringBuffer) nextEvictedBytes() int64 {
 // newRunningAggState creates an initialized running state for the given aggregate.
 func newRunningAggState(aggName string) *runningAggState {
 	st := &runningAggState{}
-	if strings.EqualFold(aggName, aggDC) || strings.EqualFold(aggName, aggEstDCE) {
+	if strings.EqualFold(aggName, aggDC) || strings.EqualFold(aggName, aggEstDCE) || strings.EqualFold(aggName, aggMode) {
 		st.freq = make(map[string]int64)
 	}
 
@@ -350,7 +350,7 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 			}
 			st.count++
 		}
-	case aggDC, aggEstDCE:
+	case aggDC, aggEstDCE, aggMode:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			st.freq[v.String()]++
 			st.count++
@@ -407,7 +407,7 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 				st.maxVal = event.Value{} // invalidate
 			}
 		}
-	case aggDC, aggEstDCE:
+	case aggDC, aggEstDCE, aggMode:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			key := v.String()
 			st.freq[key]--
@@ -468,6 +468,8 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		return event.IntValue(int64(len(st.freq)))
 	case aggEstDCE:
 		return event.FloatValue(0)
+	case aggMode:
+		return modeFromCounts(st.freq)
 	}
 
 	return event.NullValue()
@@ -586,6 +588,15 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return event.IntValue(int64(len(seen)))
+	case aggMode:
+		counts := make(map[string]int64)
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok && !v.IsNull() {
+				counts[v.String()]++
+			}
+		}
+
+		return modeFromCounts(counts)
 	case aggValues:
 		var vals []string
 		seen := make(map[string]bool)

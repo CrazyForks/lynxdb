@@ -477,6 +477,13 @@ func updateAggState(s *aggState, fn string, val event.Value) {
 		if !val.IsNull() {
 			s.all = append(s.all, val.String())
 		}
+	case aggMode:
+		if !val.IsNull() {
+			if s.mode == nil {
+				s.mode = make(map[string]int64)
+			}
+			s.mode[val.String()]++
+		}
 	}
 }
 
@@ -509,6 +516,8 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 		}
 
 		return event.StringValue(strings.Join(strs, "|||"))
+	case aggMode:
+		return modeFromCounts(s.mode)
 	}
 
 	return event.NullValue()

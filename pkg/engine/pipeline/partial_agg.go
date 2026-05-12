@@ -66,6 +66,7 @@ type PartialAggState struct {
 	// DistinctHLL is used when the distinct set exceeds dcHLLThreshold.
 	// When non-nil, DistinctSet is nil and cardinality is approximate.
 	DistinctHLL *HyperLogLog
+	ModeCounts  map[string]int64
 	// Digest holds t-digest state for approximate percentile computation
 	// in partial aggregation. Merged across segments via TDigest.Merge().
 	Digest *TDigest
@@ -80,7 +81,7 @@ type PartialAggState struct {
 // into partial aggregation + merge.
 func IsPushableAgg(name string) bool {
 	switch strings.ToLower(name) {
-	case aggCount, aggSum, aggSumSq, aggAvg, aggMin, aggMax, aggRange, aggDC, aggEstDCE,
+	case aggCount, aggSum, aggSumSq, aggAvg, aggMin, aggMax, aggRange, aggDC, aggEstDCE, aggMode,
 		aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
 		aggStdev, aggStdevP, aggVar, aggVarP:
 		return true
@@ -249,6 +250,12 @@ func MergePartialAggs(partials [][]*PartialAggGroup, spec *PartialAggSpec) []map
 							clone.States[j].DistinctSet[k] = true
 						}
 					}
+					if pg.States[j].ModeCounts != nil {
+						clone.States[j].ModeCounts = make(map[string]int64, len(pg.States[j].ModeCounts))
+						for k, v := range pg.States[j].ModeCounts {
+							clone.States[j].ModeCounts[k] = v
+						}
+					}
 					if pg.States[j].DistinctHLL != nil {
 						data := pg.States[j].DistinctHLL.MarshalBinary()
 						clone.States[j].DistinctHLL = UnmarshalHyperLogLog(data)
@@ -336,6 +343,12 @@ func MergePartialGroupsNoFinalize(groups []*PartialAggGroup, spec *PartialAggSpe
 					clone.States[j].DistinctSet = make(map[string]bool, len(pg.States[j].DistinctSet))
 					for k := range pg.States[j].DistinctSet {
 						clone.States[j].DistinctSet[k] = true
+					}
+				}
+				if pg.States[j].ModeCounts != nil {
+					clone.States[j].ModeCounts = make(map[string]int64, len(pg.States[j].ModeCounts))
+					for k, v := range pg.States[j].ModeCounts {
+						clone.States[j].ModeCounts[k] = v
 					}
 				}
 				if pg.States[j].DistinctHLL != nil {
@@ -711,6 +724,13 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 				}
 			}
 		}
+	case aggMode:
+		if !val.IsNull() {
+			if s.ModeCounts == nil {
+				s.ModeCounts = make(map[string]int64)
+			}
+			s.ModeCounts[val.String()]++
+		}
 	case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if f, ok := vm.ValueToFloat(val); ok {
 			if s.Digest == nil {
@@ -803,6 +823,16 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 		// Accumulate count as upper-bound fallback for the backfill path
 		// where the exact distinct set is lost but counts are preserved.
 		dst.Count += src.Count
+	case aggMode:
+		if src.ModeCounts == nil {
+			return
+		}
+		if dst.ModeCounts == nil {
+			dst.ModeCounts = make(map[string]int64, len(src.ModeCounts))
+		}
+		for value, count := range src.ModeCounts {
+			dst.ModeCounts[value] += count
+		}
 	case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if src.Digest != nil {
 			if dst.Digest == nil {
@@ -880,6 +910,8 @@ func finalizePartialState(s *PartialAggState, fn string) event.Value {
 		}
 
 		return event.FloatValue(0)
+	case aggMode:
+		return modeFromCounts(s.ModeCounts)
 	case aggPerc50:
 		return finalizeTDigest(s, 0.50)
 	case aggPerc75:

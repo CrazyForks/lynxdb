@@ -1119,6 +1119,7 @@ Used in `group compute`, `every compute`, `running`, `enrich`, `stats`, `timecha
 | `estdc(<field>)` | Estimated distinct count | `estdc(client_ip) as estimated_clients` |
 | `estdc_error(<field>)` | Estimated distinct-count error ratio | `estdc_error(client_ip) as estimated_client_error` |
 | `values(<field>)` | List of distinct values | `values(level) as seen_levels` |
+| `mode(<field>)` | Most frequent value | `mode(status) as common_status` |
 | `stdev(<field>)` | Standard deviation | `stdev(duration_ms) as stdev_latency` |
 | `stdevp(<field>)` | Population standard deviation | `stdevp(duration_ms) as stdevp_latency` |
 | `var(<field>)` | Sample variance | `var(duration_ms) as var_latency` |

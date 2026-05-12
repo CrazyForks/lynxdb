@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -72,6 +73,7 @@ const (
 	aggRange  = "range"
 	aggValues = "values"
 	aggList   = "list"
+	aggMode   = "mode"
 	aggDC     = "dc"
 	aggEstDCE = "estdc_error"
 	aggStdev  = "stdev"
@@ -118,6 +120,7 @@ type aggState struct {
 	max      event.Value
 	values   map[string]bool
 	all      []interface{}
+	mode     map[string]int64
 	first    event.Value
 	last     event.Value
 	hasFirst bool
@@ -638,6 +641,13 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value)
 		if !val.IsNull() && len(s.all) < maxValuesPerGroup {
 			s.all = append(s.all, val.String())
 		}
+	case aggMode:
+		if !val.IsNull() {
+			if s.mode == nil {
+				s.mode = make(map[string]int64)
+			}
+			s.mode[val.String()]++
+		}
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
 			s.first = val
@@ -926,6 +936,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeValuesFromRow(&group.states[j], row, agg.Alias)
 		case aggList:
 			a.mergeListFromRow(&group.states[j], row, agg.Alias)
+		case aggMode:
+			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
 		case aggStdev, aggStdevP, aggVar, aggVarP:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
 		case aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
@@ -1100,6 +1112,24 @@ func (a *AggregateIterator) mergeListFromRow(s *aggState, row map[string]event.V
 	}
 }
 
+func (a *AggregateIterator) mergeModeFromRow(s *aggState, row map[string]event.Value, alias string) {
+	countsVal, ok := row[alias+"__modecounts"]
+	if !ok || countsVal.IsNull() {
+		return
+	}
+	countsStr, _ := countsVal.TryAsString()
+	counts, err := decodeModeCounts(countsStr)
+	if err != nil {
+		return
+	}
+	if s.mode == nil {
+		s.mode = make(map[string]int64, len(counts))
+	}
+	for value, count := range counts {
+		s.mode[value] += count
+	}
+}
+
 // mergeStdevFromRow merges stdev state from a spill row's suffixed columns.
 // Uses the parallel variance formula: combined variance from (sum, count, sumSq) tuples.
 func (a *AggregateIterator) mergeStdevFromRow(s *aggState, row map[string]event.Value, alias string) {
@@ -1241,6 +1271,8 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		}
 
 		return event.StringValue(strings.Join(strs, "|||"))
+	case aggMode:
+		return modeFromCounts(s.mode)
 	case "first", "earliest":
 		return s.first
 	case "last", "latest":
@@ -1367,6 +1399,42 @@ func joinAllStrings(all []interface{}, sep string) string {
 	}
 
 	return strings.Join(strs, sep)
+}
+
+func modeFromCounts(counts map[string]int64) event.Value {
+	var best string
+	var bestCount int64
+	hasBest := false
+	for value, count := range counts {
+		if !hasBest || count > bestCount || (count == bestCount && value < best) {
+			best = value
+			bestCount = count
+			hasBest = true
+		}
+	}
+	if !hasBest || bestCount == 0 {
+		return event.NullValue()
+	}
+
+	return event.StringValue(best)
+}
+
+func encodeModeCounts(counts map[string]int64) string {
+	data, err := json.Marshal(counts)
+	if err != nil {
+		return "{}"
+	}
+
+	return string(data)
+}
+
+func decodeModeCounts(s string) (map[string]int64, error) {
+	counts := make(map[string]int64)
+	if err := json.Unmarshal([]byte(s), &counts); err != nil {
+		return nil, err
+	}
+
+	return counts, nil
 }
 
 // joinAllFloats joins interface{} values (expected float64) with a separator.

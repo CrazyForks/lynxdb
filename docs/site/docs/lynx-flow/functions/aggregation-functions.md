@@ -69,6 +69,14 @@ List of distinct values (returned as a multivalue field).
 | stats values(level) AS seen_levels by source
 ```
 
+## mode
+
+Most frequent value, compared as a string.
+
+```spl
+| stats mode(status) AS common_status by endpoint
+```
+
 ## stdev
 
 Standard deviation.

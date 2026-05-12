@@ -233,6 +233,7 @@
 {"nl": "Multiple eval assignments", "query": "| eval is_error=if(status>=500, 1, 0), is_warn=if(status>=400 AND status<500, 1, 0)", "category": "transform"}
 {"nl": "Stats and sort pipeline", "query": "| stats count, avg(duration_ms) as avg_dur by endpoint | sort -avg_dur | head 5", "category": "pipeline"}
 {"nl": "Extract JSON and aggregate", "query": "| unpack_json | stats count by level, service", "category": "pipeline"}
+{"nl": "Generate three test rows", "query": "| makeresults count=3", "category": "generate"}
 {"nl": "Logfmt parsing and filtering", "query": "| unpack_logfmt | where level=error | stats count by component", "category": "pipeline"}
 {"nl": "Full pipeline: filter, eval, aggregate, sort", "query": "source=nginx | eval is_error=if(status>=500, true, false) | stats count by is_error | sort -count", "category": "pipeline"}
 {"nl": "Cross-source correlation", "query": "search \"timeout\" | stats count by source, host | where count > 10 | sort -count", "category": "pipeline"}

@@ -911,6 +911,20 @@ func (c *UnrollCommand) String() string {
 	return fmt.Sprintf("unroll field=%s", c.Field)
 }
 
+// MakeresultsCommand represents: | makeresults [count=<n>].
+type MakeresultsCommand struct {
+	Count int
+}
+
+func (*MakeresultsCommand) commandNode() {}
+func (c *MakeresultsCommand) String() string {
+	if c.Count == 1 {
+		return "makeresults"
+	}
+
+	return fmt.Sprintf("makeresults count=%d", c.Count)
+}
+
 // TeeCommand represents: | tee "<destination>" — side-effect passthrough.
 // Writes each batch to a destination file, then yields the batch unchanged.
 type TeeCommand struct {

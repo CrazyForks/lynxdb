@@ -102,6 +102,7 @@ const (
 	TokenUnroll
 	TokenMvexpand
 	TokenExpand
+	TokenMakeresults
 	TokenPackJson
 	TokenTee
 
@@ -289,6 +290,7 @@ var tokenNames = map[TokenType]string{
 	TokenUnroll:            "UNROLL",
 	TokenMvexpand:          "MVEXPAND",
 	TokenExpand:            "EXPAND",
+	TokenMakeresults:       "MAKERESULTS",
 	TokenPackJson:          "PACK_JSON",
 	TokenTee:               "TEE",
 	TokenRegexMatch:        "REGEX_MATCH",
@@ -448,6 +450,7 @@ var keywords = map[string]TokenType{
 	"unroll":              TokenUnroll,
 	"mvexpand":            TokenMvexpand,
 	"expand":              TokenExpand,
+	"makeresults":         TokenMakeresults,
 	"pack_json":           TokenPackJson,
 	"tee":                 TokenTee,
 	"between":             TokenBetween,

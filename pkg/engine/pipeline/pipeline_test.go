@@ -265,6 +265,36 @@ func TestBuildFromSourceMvexpandCommand(t *testing.T) {
 	}
 }
 
+func TestBuildPipelineMakeresultsCommand(t *testing.T) {
+	query, err := spl2.Parse(`| makeresults count=3`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	iter, err := BuildPipeline(context.Background(), query, nil, 2)
+	if err != nil {
+		t.Fatalf("BuildPipeline: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	rows, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3", len(rows))
+	}
+	for i, row := range rows {
+		if row["_time"].IsNull() {
+			t.Fatalf("row %d _time is null", i)
+		}
+	}
+}
+
 func TestPipelineEndToEnd(t *testing.T) {
 	// FROM idx | WHERE status >= 500 | stats count
 	events := makeEvents(100)

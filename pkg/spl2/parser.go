@@ -452,6 +452,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseUnroll())
 	case TokenMvexpand, TokenExpand:
 		return singleCmd(p.parseMvexpand())
+	case TokenMakeresults:
+		return singleCmd(p.parseMakeresults())
 	case TokenPackJson:
 		return singleCmd(p.parsePackJson())
 	case TokenTee:
@@ -3956,12 +3958,50 @@ func (p *Parser) parseLimitOption(command string) (int, error) {
 	if err != nil {
 		return 0, fmt.Errorf("spl2: %s limit requires a number: %w", command, err)
 	}
-	limit, err := strconv.Atoi(tok.Literal)
-	if err != nil || limit < 0 {
-		return 0, fmt.Errorf("spl2: %s limit must be a non-negative integer", command)
+
+	return parseNonNegativeInt(tok.Literal, command+" limit")
+}
+
+// parseMakeresults parses SPL/SPL2 compatibility forms:
+// makeresults, makeresults count=<n>, and SPL2 positional makeresults <n>.
+func (p *Parser) parseMakeresults() (*MakeresultsCommand, error) {
+	p.advance() // consume "makeresults"
+
+	cmd := &MakeresultsCommand{Count: 1}
+	if p.peek().Type == TokenNumber {
+		count, err := parseNonNegativeInt(p.advance().Literal, "makeresults count")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Count = count
+
+		return cmd, nil
 	}
 
-	return limit, nil
+	if p.peek().Type == TokenIdent && strings.EqualFold(p.peek().Literal, "count") && p.peekAt(1).Type == TokenEq {
+		p.advance() // consume "count"
+		p.advance() // consume "="
+		tok, err := p.expect(TokenNumber)
+		if err != nil {
+			return nil, fmt.Errorf("spl2: makeresults count requires a number: %w", err)
+		}
+		count, err := parseNonNegativeInt(tok.Literal, "makeresults count")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Count = count
+	}
+
+	return cmd, nil
+}
+
+func parseNonNegativeInt(raw, name string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("spl2: %s must be a non-negative integer", name)
+	}
+
+	return value, nil
 }
 
 // parseExplode parses: explode <field>[, <field2>, ...] [as <alias>].

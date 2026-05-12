@@ -1273,6 +1273,7 @@ Every SPL2 command has a Lynx Flow counterpart. Both syntaxes are first-class.
 | `unpack_syslog` | `parse syslog(...)` | Unified parse syntax |
 | `UNROLL` | `explode` | Clearer name |
 | `MVEXPAND` | `mvexpand` / `expand` | Identical |
+| `MAKERESULTS` | `makeresults` | Generate temporary rows |
 | `PACK_JSON` | `pack ... into` | Clearer syntax |
 | `STREAMSTATS` | `running` | Clearer name |
 | `EVENTSTATS` | `enrich` | Clearer name |

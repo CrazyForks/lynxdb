@@ -682,6 +682,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Select"
 	case *spl2.UnrollCommand:
 		return "Unroll"
+	case *spl2.MakeresultsCommand:
+		return "Makeresults"
 	case *spl2.PackJsonCommand:
 		return "PackJson"
 	case *spl2.TeeCommand:
@@ -1263,6 +1265,19 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 
 	case *spl2.UnrollCommand:
 		return NewUnrollIteratorWithLimit(child, c.AllFields(), qc.batchSize, c.Limit), nil
+
+	case *spl2.MakeresultsCommand:
+		count := c.Count
+		if count < 0 {
+			count = 0
+		}
+		now := time.Now()
+		rows := make([]map[string]event.Value, count)
+		for i := range rows {
+			rows[i] = map[string]event.Value{"_time": event.TimestampValue(now)}
+		}
+
+		return NewRowScanIterator(rows, qc.batchSize), nil
 
 	case *spl2.PackJsonCommand:
 		return NewPackJsonIterator(child, c.Fields, c.Target), nil

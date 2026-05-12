@@ -1859,6 +1859,34 @@ func TestParse_ExpandCommand(t *testing.T) {
 	}
 }
 
+func TestParse_MakeresultsCommand(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  int
+	}{
+		{name: "default", query: `| makeresults`, want: 1},
+		{name: "count option", query: `| makeresults count=3`, want: 3},
+		{name: "positional count", query: `| makeresults 4`, want: 4},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := Parse(tc.query)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			cmd, ok := q.Commands[0].(*MakeresultsCommand)
+			if !ok {
+				t.Fatalf("expected MakeresultsCommand, got %T", q.Commands[0])
+			}
+			if cmd.Count != tc.want {
+				t.Errorf("count: got %d, want %d", cmd.Count, tc.want)
+			}
+		})
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

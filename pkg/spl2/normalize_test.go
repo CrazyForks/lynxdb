@@ -83,6 +83,10 @@ func TestNormalizeQuery(t *testing.T) {
 		{name: "source=nginx with known cmd", input: "source=nginx stats count", want: `FROM * | where _source="nginx" | stats count`},
 		{name: "SOURCE=nginx uppercase", input: "SOURCE=nginx | stats count", want: `FROM * | where _source="nginx" | stats count`},
 		{name: "source=quoted", input: `source="my-app" | stats count`, want: `FROM * | where _source="my-app" | stats count`},
+
+		// Search-prefix time modifiers use the default source.
+		{name: "earliest latest prefix", input: "earliest=-1h latest=now level=error", want: "FROM main[-1h..now] | search level=error"},
+		{name: "deprecated time prefix", input: "hoursago=2 level=error", want: "FROM main[-2h] | search level=error"},
 	}
 
 	for _, tt := range tests {
@@ -188,6 +192,11 @@ func TestNormalizeQuery_IndexTimeModifiers(t *testing.T) {
 			name:  "index latest only",
 			input: `index=nginx _index_latest=now() | stats count`,
 			want:  `FROM nginx | where _indextime <= "2025-03-23T14:00:00Z" | stats count`,
+		},
+		{
+			name:  "default source index time range",
+			input: `_index_earliest=-1h _index_latest=now level=error`,
+			want:  `FROM main | where _indextime BETWEEN "2025-03-23T13:00:00Z" AND "2025-03-23T14:00:00Z" | search level=error`,
 		},
 	}
 

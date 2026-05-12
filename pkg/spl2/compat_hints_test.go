@@ -126,8 +126,8 @@ func TestSplunkCompat_EarliestLatest(t *testing.T) {
 	for _, h := range hints {
 		if h.Pattern == "earliest=/latest=" {
 			found = true
-			if !strings.Contains(h.Suggestion, "--since") || !strings.Contains(h.Suggestion, "--from/--to") {
-				t.Errorf("expected CLI flag suggestion, got: %s", h.Suggestion)
+			if !strings.Contains(h.Suggestion, "normalize") || !strings.Contains(h.Suggestion, "--since") {
+				t.Errorf("expected normalization and CLI flag suggestion, got: %s", h.Suggestion)
 			}
 		}
 	}

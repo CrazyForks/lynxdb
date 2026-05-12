@@ -142,7 +142,7 @@ func DetectCompatHints(query string) []CompatHint {
 			seen["earliest/latest"] = true
 			hints = append(hints, CompatHint{
 				Pattern:    "earliest=/latest=",
-				Suggestion: "Inline time modifiers are not supported. Use CLI flags: --since 1h, or --from/--to.",
+				Suggestion: "Inline time modifiers normalize in source-prefix position; CLI flags --since or --from/--to are also available.",
 			})
 		}
 	}

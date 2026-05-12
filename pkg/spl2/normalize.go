@@ -89,6 +89,10 @@ func NormalizeQueryWithNow(q string, now time.Time) string {
 		return buildSourceFilter(sourceName, rest)
 	}
 
+	if mods, _ := extractTimeModifierPrefix(trimmed); hasSearchTimeModifier(mods) {
+		return buildFromWithRest("main", trimmed, now)
+	}
+
 	// Known command (search, stats, where, etc.) — prepend FROM main.
 	// "index" is excluded here because all valid index-as-source patterns
 	// (index=foo, index foo, index IN (...), index!=foo) are already handled
@@ -548,6 +552,11 @@ func normalizeTimeModifierValue(value string) string {
 	}
 
 	return value
+}
+
+func hasSearchTimeModifier(mods searchTimeModifiers) bool {
+	return mods.earliest != "" || mods.latest != "" ||
+		mods.indexEarliest != "" || mods.indexLatest != ""
 }
 
 func deprecatedAgoDuration(value, unit string) string {

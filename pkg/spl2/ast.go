@@ -884,6 +884,7 @@ type UnrollCommand struct {
 	Field       string   // primary field containing JSON array to explode
 	Alias       string   // optional output field name (Lynx Flow: explode tags as tag; single-field only)
 	ExtraFields []string // additional fields for zip-expansion (multi-field explode)
+	Limit       int      // optional per-row expansion limit; 0 means unlimited
 }
 
 // AllFields returns Field followed by ExtraFields.
@@ -902,6 +903,9 @@ func (c *UnrollCommand) String() string {
 	}
 	if c.Alias != "" {
 		return fmt.Sprintf("unroll field=%s as %s", c.Field, c.Alias)
+	}
+	if c.Limit > 0 {
+		return fmt.Sprintf("unroll field=%s limit=%d", c.Field, c.Limit)
 	}
 
 	return fmt.Sprintf("unroll field=%s", c.Field)

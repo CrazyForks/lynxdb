@@ -231,6 +231,40 @@ func TestBuildFromSourceRegexCommandNotMatchIncludesNull(t *testing.T) {
 	}
 }
 
+func TestBuildFromSourceMvexpandCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | mvexpand limit=2 tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{
+			"name": event.StringValue("alice"),
+			"tags": event.StringValue(`["admin","user","dev"]`),
+		},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d rows, want 2", len(results))
+	}
+	if got := results[1]["tags"].AsString(); got != "user" {
+		t.Errorf("second tag: got %q, want user", got)
+	}
+}
+
 func TestPipelineEndToEnd(t *testing.T) {
 	// FROM idx | WHERE status >= 500 | stats count
 	events := makeEvents(100)

@@ -80,6 +80,33 @@ func TestUnrollIterator_ArrayOfScalars(t *testing.T) {
 	}
 }
 
+func TestUnrollIterator_Limit(t *testing.T) {
+	rows := []map[string]event.Value{
+		{
+			"name": event.StringValue("alice"),
+			"tags": event.StringValue(`["admin","user","dev"]`),
+		},
+	}
+
+	child := NewRowScanIterator(rows, 1024)
+	iter := NewUnrollIteratorWithLimit(child, []string{"tags"}, 1024, 2)
+	results, err := CollectAll(context.Background(), iter)
+	if err != nil {
+		t.Fatalf("CollectAll: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(results))
+	}
+
+	expected := []string{"admin", "user"}
+	for i, r := range results {
+		if r["tags"].String() != expected[i] {
+			t.Errorf("row %d: tags = %q, want %q", i, r["tags"].String(), expected[i])
+		}
+	}
+}
+
 func TestUnrollIterator_NonArrayField(t *testing.T) {
 	rows := []map[string]event.Value{
 		{

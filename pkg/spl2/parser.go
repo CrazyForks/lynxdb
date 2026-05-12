@@ -450,6 +450,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseJsonCmd())
 	case TokenUnroll:
 		return singleCmd(p.parseUnroll())
+	case TokenMvexpand, TokenExpand:
+		return singleCmd(p.parseMvexpand())
 	case TokenPackJson:
 		return singleCmd(p.parsePackJson())
 	case TokenTee:
@@ -3910,6 +3912,56 @@ func (p *Parser) parseLynxParseBody() (Command, error) {
 	}
 
 	return cmd, nil
+}
+
+// parseMvexpand parses SPL2 mvexpand/expand compatibility forms:
+// mvexpand [limit=<n>] <field> and SPL mvexpand <field> [limit=<n>].
+func (p *Parser) parseMvexpand() (*UnrollCommand, error) {
+	p.advance() // consume "mvexpand" or "expand"
+
+	cmd := &UnrollCommand{}
+	if p.isLimitOption() {
+		limit, err := p.parseLimitOption("mvexpand")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Limit = limit
+	}
+
+	field, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: mvexpand requires a field name")
+	}
+	cmd.Field = field.Literal
+
+	if p.isLimitOption() {
+		limit, err := p.parseLimitOption("mvexpand")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Limit = limit
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) isLimitOption() bool {
+	return p.peek().Type == TokenIdent && strings.EqualFold(p.peek().Literal, "limit") && p.peekAt(1).Type == TokenEq
+}
+
+func (p *Parser) parseLimitOption(command string) (int, error) {
+	p.advance() // consume "limit"
+	p.advance() // consume "="
+	tok, err := p.expect(TokenNumber)
+	if err != nil {
+		return 0, fmt.Errorf("spl2: %s limit requires a number: %w", command, err)
+	}
+	limit, err := strconv.Atoi(tok.Literal)
+	if err != nil || limit < 0 {
+		return 0, fmt.Errorf("spl2: %s limit must be a non-negative integer", command)
+	}
+
+	return limit, nil
 }
 
 // parseExplode parses: explode <field>[, <field2>, ...] [as <alias>].

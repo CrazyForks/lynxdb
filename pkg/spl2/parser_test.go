@@ -1800,6 +1800,65 @@ func TestParse_FieldsGlobPattern(t *testing.T) {
 	}
 }
 
+func TestParse_MvexpandCommand(t *testing.T) {
+	q, err := Parse(`FROM main | mvexpand tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*UnrollCommand)
+	if !ok {
+		t.Fatalf("expected UnrollCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "tags" {
+		t.Errorf("field: got %q, want tags", cmd.Field)
+	}
+	if cmd.Limit != 0 {
+		t.Errorf("limit: got %d, want 0", cmd.Limit)
+	}
+}
+
+func TestParse_MvexpandLimitBeforeField(t *testing.T) {
+	q, err := Parse(`FROM main | mvexpand limit=2 tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd := q.Commands[0].(*UnrollCommand)
+	if cmd.Field != "tags" {
+		t.Errorf("field: got %q, want tags", cmd.Field)
+	}
+	if cmd.Limit != 2 {
+		t.Errorf("limit: got %d, want 2", cmd.Limit)
+	}
+}
+
+func TestParse_MvexpandLimitAfterField(t *testing.T) {
+	q, err := Parse(`FROM main | mvexpand tags limit=3`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd := q.Commands[0].(*UnrollCommand)
+	if cmd.Field != "tags" {
+		t.Errorf("field: got %q, want tags", cmd.Field)
+	}
+	if cmd.Limit != 3 {
+		t.Errorf("limit: got %d, want 3", cmd.Limit)
+	}
+}
+
+func TestParse_ExpandCommand(t *testing.T) {
+	q, err := Parse(`FROM main | expand records`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*UnrollCommand)
+	if !ok {
+		t.Fatalf("expected UnrollCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "records" {
+		t.Errorf("field: got %q, want records", cmd.Field)
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

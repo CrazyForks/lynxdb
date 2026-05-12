@@ -138,6 +138,8 @@
 {"nl": "Unpack JSON field", "query": "| unpack_json field=data", "category": "structured"}
 {"nl": "Unpack logfmt", "query": "| unpack_logfmt field=_raw", "category": "structured"}
 {"nl": "Unroll array field", "query": "| unroll tags", "category": "structured"}
+{"nl": "Expand multivalue field", "query": "| mvexpand tags", "category": "structured"}
+{"nl": "Expand first two multivalue values", "query": "| mvexpand limit=2 tags", "category": "structured"}
 {"nl": "Pack fields into JSON", "query": "| pack_json _time, source, level as event", "category": "structured"}
 {"nl": "Sessionize events", "query": "| sessionize maxspan=30m by user_id", "category": "session"}
 {"nl": "Sessionize with max pause", "query": "| sessionize maxspan=1h maxpause=5m by session_id", "category": "session"}

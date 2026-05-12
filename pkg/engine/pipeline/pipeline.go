@@ -1262,7 +1262,7 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		return NewJsonCmdIterator(child, field, c.Paths), nil
 
 	case *spl2.UnrollCommand:
-		return NewUnrollIterator(child, c.AllFields(), qc.batchSize), nil
+		return NewUnrollIteratorWithLimit(child, c.AllFields(), qc.batchSize, c.Limit), nil
 
 	case *spl2.PackJsonCommand:
 		return NewPackJsonIterator(child, c.Fields, c.Target), nil

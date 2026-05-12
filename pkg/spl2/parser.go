@@ -393,6 +393,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseJoin())
 	case TokenAppend:
 		return singleCmd(p.parseAppend())
+	case TokenAppendpipe:
+		return singleCmd(p.parseAppendpipe())
 	case TokenMultisearch:
 		return singleCmd(p.parseMultisearch())
 	case TokenUnion:
@@ -1724,6 +1726,27 @@ func (p *Parser) parseAppend() (*AppendCommand, error) {
 	}
 
 	return &AppendCommand{Subquery: sub}, nil
+}
+
+func (p *Parser) parseAppendpipe() (*AppendpipeCommand, error) {
+	p.advance() // consume "appendpipe"
+
+	if isIdentLike(p.peek().Type) && strings.EqualFold(p.peek().Literal, "run_in_preview") &&
+		p.peekAt(1).Type == TokenEq {
+		p.advance()
+		p.advance()
+		if p.peek().Type != TokenTrue && p.peek().Type != TokenFalse && !isIdentLike(p.peek().Type) {
+			return nil, fmt.Errorf("spl2: appendpipe run_in_preview requires a boolean value")
+		}
+		p.advance()
+	}
+
+	sub, err := p.parseSubsearch()
+	if err != nil {
+		return nil, err
+	}
+
+	return &AppendpipeCommand{Subquery: sub}, nil
 }
 
 func (p *Parser) parseMultisearch() (*MultisearchCommand, error) {
@@ -3418,7 +3441,7 @@ func isIdentLike(t TokenType) bool {
 		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
 		TokenImpact, TokenBaseline, TokenChanges, TokenExemplars,
 		// SPL2 keywords that can be field names in expression context.
-		TokenChart, TokenOver, TokenUnion, TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
+		TokenChart, TokenOver, TokenUnion, TokenAppendpipe, TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
 		return true
 	}

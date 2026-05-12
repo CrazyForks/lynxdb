@@ -15,7 +15,7 @@ export const BUILTIN_FIELDS: readonly string[] = [
 export const COMMANDS: readonly string[] = [
   "from", "index", "search", "where", "stats", "eval", "sort", "head", "tail", "reverse",
   "timechart", "chart", "rex", "regex", "replace", "fieldformat", "fields", "table", "dedup", "rename", "bin",
-  "streamstats", "eventstats", "join", "append", "multisearch", "union", "transaction",
+  "streamstats", "eventstats", "join", "append", "appendpipe", "multisearch", "union", "transaction",
   "xyseries", "untable", "top", "rare", "fillnull", "materialize", "views",
   "dropview", "unpack_json", "unpack_logfmt", "unpack_syslog", "unpack_combined",
   "unpack_clf", "unpack_nginx_error", "unpack_cef", "unpack_kv", "unpack_docker",
@@ -57,6 +57,7 @@ export const COMMAND_DOCS: Record<string, string> = {
   eventstats: "add aggregate fields",
   join: "join datasets",
   append: "append subsearch",
+  appendpipe: "append subpipe result",
   multisearch: "combine subsearches",
   union: "merge result sets",
   transaction: "group events",

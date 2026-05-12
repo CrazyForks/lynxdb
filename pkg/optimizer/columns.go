@@ -433,6 +433,13 @@ func commandAccessedFields(cmd spl2.Command, cols map[string]bool) {
 				commandAccessedFields(subcmd, cols)
 			}
 		}
+	case *spl2.AppendpipeCommand:
+		cols["*"] = true
+		if c.Subquery != nil {
+			for _, subcmd := range c.Subquery.Commands {
+				commandAccessedFields(subcmd, cols)
+			}
+		}
 	case *spl2.MultisearchCommand:
 		for _, sub := range c.Searches {
 			for _, subcmd := range sub.Commands {

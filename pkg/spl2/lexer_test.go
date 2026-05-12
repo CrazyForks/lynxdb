@@ -30,7 +30,7 @@ func TestLexer_SimpleTokens(t *testing.T) {
 }
 
 func TestLexer_Keywords(t *testing.T) {
-	input := `FROM where SEARCH stats eval sort head tail reverse timechart chart rex regex replace fieldformat fields table dedup xyseries untable mvexpand expand makeresults makemv mvcombine nomv union by over as and or xor not`
+	input := `FROM where SEARCH stats eval sort head tail reverse timechart chart rex regex replace fieldformat fields table dedup xyseries untable mvexpand expand makeresults makemv mvcombine nomv union appendpipe by over as and or xor not`
 	lexer := NewLexer(input)
 	tokens, err := lexer.Tokenize()
 	if err != nil {
@@ -40,7 +40,7 @@ func TestLexer_Keywords(t *testing.T) {
 	expected := []TokenType{
 		TokenFrom, TokenWhere, TokenSearch, TokenStats, TokenEval,
 		TokenSort, TokenHead, TokenTail, TokenReverse, TokenTimechart, TokenChart, TokenRex, TokenRegex, TokenReplace, TokenFieldformat,
-		TokenFields, TokenTable, TokenDedup, TokenXyseries, TokenUntable, TokenMvexpand, TokenExpand, TokenMakeresults, TokenMakemv, TokenMvcombine, TokenNomv, TokenUnion, TokenBy, TokenOver, TokenAs,
+		TokenFields, TokenTable, TokenDedup, TokenXyseries, TokenUntable, TokenMvexpand, TokenExpand, TokenMakeresults, TokenMakemv, TokenMvcombine, TokenNomv, TokenUnion, TokenAppendpipe, TokenBy, TokenOver, TokenAs,
 		TokenAnd, TokenOr, TokenXor, TokenNot, TokenEOF,
 	}
 

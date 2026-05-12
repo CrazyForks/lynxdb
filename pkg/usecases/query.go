@@ -225,6 +225,8 @@ func commandName(cmd spl2.Command) string {
 		return "join"
 	case *spl2.AppendCommand:
 		return "append"
+	case *spl2.AppendpipeCommand:
+		return "appendpipe"
 	case *spl2.MultisearchCommand:
 		return "multisearch"
 	case *spl2.UnionCommand:
@@ -641,6 +643,10 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 
 		case *spl2.AppendCommand:
 			// Append can introduce unknown fields from the subquery.
+			fieldsUnknown = true
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.AppendpipeCommand:
 			fieldsUnknown = true
 			stage.Description = truncateDesc(c.String(), 80)
 

@@ -17,7 +17,7 @@ command          = search_cmd | where_cmd | stats_cmd | eval_cmd | sort_cmd
                  | dedup_cmd | rex_cmd | regex_cmd | replace_cmd | fieldformat_cmd | bin_cmd | timechart_cmd
                  | chart_cmd
                  | top_cmd | rare_cmd | fillnull_cmd | streamstats_cmd
-                 | eventstats_cmd | join_cmd | append_cmd | union_cmd | transaction_cmd
+                 | eventstats_cmd | join_cmd | append_cmd | appendpipe_cmd | union_cmd | transaction_cmd
                  | xyseries_cmd | untable_cmd | materialize_cmd | from_cmd | views_cmd
                  | dropview_cmd | glimpse_cmd | describe_cmd | tee_cmd
                  | rollup_cmd | sessionize_cmd | correlate_cmd | topology_cmd
@@ -155,6 +155,7 @@ subsearch        = "[" ( query | cte_ref ) "]" ;
 (* ─── APPEND command ─── *)
 
 append_cmd       = "append" subsearch ;
+appendpipe_cmd   = "appendpipe" [ "run_in_preview" "=" ( "true" | "false" ) ] subsearch ;
 union_cmd        = "union" { union_option } ( union_source | subsearch )
                    { ","? ( union_source | subsearch ) } ;
 union_option     = ( "maxout" | "maxtime" | "timeout" ) "=" number ;

@@ -2110,6 +2110,23 @@ func TestParse_UnionCommand(t *testing.T) {
 	}
 }
 
+func TestParse_AppendpipeCommand(t *testing.T) {
+	q, err := Parse(`FROM main | appendpipe run_in_preview=false [stats count as total]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*AppendpipeCommand)
+	if !ok {
+		t.Fatalf("expected AppendpipeCommand, got %T", q.Commands[0])
+	}
+	if cmd.Subquery == nil || len(cmd.Subquery.Commands) != 1 {
+		t.Fatalf("subquery commands: got %+v, want one command", cmd.Subquery)
+	}
+	if _, ok := cmd.Subquery.Commands[0].(*StatsCommand); !ok {
+		t.Fatalf("subquery command: got %T, want StatsCommand", cmd.Subquery.Commands[0])
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

@@ -9,7 +9,7 @@ import (
 var knownCommands = []string{
 	"search", "where", "stats", "eval", "sort", "head", "tail", "reverse", "chart",
 	"timechart", "rex", "regex", "replace", "fieldformat", "fields", "table", "dedup", "rename",
-	"bin", "streamstats", "eventstats", "join", "append",
+	"bin", "streamstats", "eventstats", "join", "append", "appendpipe",
 	"multisearch", "union", "transaction", "xyseries", "untable", "top", "rare", "fillnull",
 	"limit", "from", "index", "materialize",
 	"unpack_json", "unpack_logfmt", "unpack_syslog", "unpack_combined",

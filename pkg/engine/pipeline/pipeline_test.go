@@ -689,6 +689,41 @@ func TestBuildFromSourceUnionSubsearch(t *testing.T) {
 	}
 }
 
+func TestBuildFromSourceAppendpipe(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | appendpipe [stats count as total]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("api")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("rows: got %d, want 3", len(results))
+	}
+	if got := results[2]["total"].AsInt(); got != 2 {
+		t.Errorf("total: got %d, want 2", got)
+	}
+	if got := results[0]["host"].AsString(); got != "web" {
+		t.Errorf("first original host: got %q, want web", got)
+	}
+}
+
 func TestPipelineEndToEnd(t *testing.T) {
 	// FROM idx | WHERE status >= 500 | stats count
 	events := makeEvents(100)

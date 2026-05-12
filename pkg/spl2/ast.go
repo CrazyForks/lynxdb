@@ -390,6 +390,16 @@ func (c *AppendCommand) String() string {
 	return "append [...]"
 }
 
+// AppendpipeCommand represents: APPENDPIPE [subpipe].
+type AppendpipeCommand struct {
+	Subquery *Query
+}
+
+func (*AppendpipeCommand) commandNode() {}
+func (c *AppendpipeCommand) String() string {
+	return "appendpipe [...]"
+}
+
 // MultisearchCommand represents: MULTISEARCH [search1] [search2] ...
 type MultisearchCommand struct {
 	Searches []*Query

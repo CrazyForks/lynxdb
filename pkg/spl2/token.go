@@ -58,6 +58,7 @@ const (
 	TokenEventstats
 	TokenJoin
 	TokenAppend
+	TokenAppendpipe
 	TokenMultisearch
 	TokenUnion
 	TokenTransaction
@@ -261,6 +262,7 @@ var tokenNames = map[TokenType]string{
 	TokenEventstats:        "EVENTSTATS",
 	TokenJoin:              "JOIN",
 	TokenAppend:            "APPEND",
+	TokenAppendpipe:        "APPENDPIPE",
 	TokenMultisearch:       "MULTISEARCH",
 	TokenUnion:             "UNION",
 	TokenTransaction:       "TRANSACTION",
@@ -424,6 +426,7 @@ var keywords = map[string]TokenType{
 	"eventstats":          TokenEventstats,
 	"join":                TokenJoin,
 	"append":              TokenAppend,
+	"appendpipe":          TokenAppendpipe,
 	"multisearch":         TokenMultisearch,
 	"union":               TokenUnion,
 	"transaction":         TokenTransaction,

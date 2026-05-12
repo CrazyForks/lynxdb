@@ -1285,6 +1285,7 @@ Every SPL2 command has a Lynx Flow counterpart. Both syntaxes are first-class.
 | `EVENTSTATS` | `enrich` | Clearer name |
 | `JOIN` | `join` | Identical |
 | `APPEND` | `append` | Identical |
+| `APPENDPIPE` | `appendpipe` | Append subpipe results |
 | `MULTISEARCH` | `multisearch` | Identical |
 | `UNION` | `union` | Merge result sets |
 | `TRANSACTION` | `transaction` | Identical |

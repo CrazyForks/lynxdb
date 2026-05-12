@@ -646,6 +646,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Join"
 	case *spl2.AppendCommand:
 		return "Append"
+	case *spl2.AppendpipeCommand:
+		return "Appendpipe"
 	case *spl2.MultisearchCommand:
 		return "Multisearch"
 	case *spl2.UnionCommand:
@@ -1093,6 +1095,23 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		}
 
 		return NewUnionIterator([]Iterator{child, appendIter}), nil
+
+	case *spl2.AppendpipeCommand:
+		if c.Subquery == nil {
+			return child, nil
+		}
+		buildSubpipe := func(source Iterator, commands []spl2.Command) (Iterator, error) {
+			iter := source
+			for _, subcmd := range commands {
+				var err error
+				iter, err = qc.buildCommand(iter, subcmd)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return iter, nil
+		}
+		return NewAppendpipeIterator(child, c.Subquery.Commands, qc.batchSize, buildSubpipe), nil
 
 	case *spl2.MultisearchCommand:
 		children := make([]Iterator, 0, len(c.Searches))

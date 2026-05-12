@@ -172,7 +172,7 @@ func TestLintQuery_IndexRewrite(t *testing.T) {
 		{
 			name:      "quoted index equals",
 			query:     `index="main" error`,
-			wantCodes: []string{LintIndexRewrite},
+			wantCodes: []string{LintIndexRewrite, LintDoubleQuotedName},
 		},
 		{
 			name:      "canonical from",
@@ -228,6 +228,62 @@ func TestLintQuery_RawExactCompare(t *testing.T) {
 		{
 			name:      "other field equality",
 			query:     `from app | where message = "panic"`,
+			wantCodes: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lints, err := LintQuery(tt.query)
+			if err != nil {
+				t.Fatalf("LintQuery: %v", err)
+			}
+			if len(lints) != len(tt.wantCodes) {
+				t.Fatalf("lints: got %+v, want codes %v", lints, tt.wantCodes)
+			}
+			for i, want := range tt.wantCodes {
+				if lints[i].Code != want {
+					t.Fatalf("lints[%d].Code: got %q, want %q", i, lints[i].Code, want)
+				}
+			}
+		})
+	}
+}
+
+func TestLintQuery_DoubleQuotedNames(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantCodes []string
+	}{
+		{
+			name:      "quoted source",
+			query:     `from "my logs" | stats count()`,
+			wantCodes: []string{LintDoubleQuotedName},
+		},
+		{
+			name:      "quoted index equals",
+			query:     `index="my logs" | stats count()`,
+			wantCodes: []string{LintIndexRewrite, LintDoubleQuotedName},
+		},
+		{
+			name:      "field option",
+			query:     `from app | json field="message"`,
+			wantCodes: []string{LintDoubleQuotedName},
+		},
+		{
+			name:      "unpack field list",
+			query:     `from app | unpack_json fields ("host")`,
+			wantCodes: []string{LintDoubleQuotedName},
+		},
+		{
+			name:      "string value",
+			query:     `from app | where level = "ERROR"`,
+			wantCodes: nil,
+		},
+		{
+			name:      "single quoted source",
+			query:     `from 'my logs' | stats count()`,
 			wantCodes: nil,
 		},
 	}

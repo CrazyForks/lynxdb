@@ -14,6 +14,7 @@ const (
 	LintDefaultSource      = "L002"
 	LintIndexRewrite       = "L003"
 	LintRawExactCompare    = "L005"
+	LintDoubleQuotedName   = "L012"
 	LintCountWithoutParens = "L013"
 	LintMixedSearchAndOr   = "L030"
 	LintDeepSearchNesting  = "L031"
@@ -46,6 +47,7 @@ func LintProgram(input string, prog *Program) ([]QueryLint, error) {
 	lints = append(lints, lintLeadingWildcards(prog)...)
 	lints = append(lints, lintRawExactCompare(prog)...)
 	lints = append(lints, lintIndexRewrite(tokens)...)
+	lints = append(lints, lintDoubleQuotedNames(tokens)...)
 	lints = append(lints, lintCountWithoutParens(tokens)...)
 	lints = append(lints, lintMixedSearchAndOr(input, tokens)...)
 	lints = append(lints, lintDeepSearchNesting(prog)...)
@@ -69,6 +71,61 @@ func lintDefaultSource(prog *Program, tokens []Token) []QueryLint {
 		Message:  "Default source `main` is used; add `FROM` for clarity",
 		Position: pos,
 	}}
+}
+
+func lintDoubleQuotedNames(tokens []Token) []QueryLint {
+	var lints []QueryLint
+	add := func(pos int) {
+		lints = append(lints, QueryLint{
+			Code:     LintDoubleQuotedName,
+			Message:  "Canon: single quotes `'my-field'` for names with special characters",
+			Position: pos,
+		})
+	}
+
+	for i := 0; i < len(tokens); i++ {
+		tok := tokens[i]
+		switch tok.Type {
+		case TokenFrom:
+			if peekTokenType(tokens, i+1) == TokenString {
+				add(tokens[i+1].Pos)
+			}
+		case TokenIndex:
+			if peekTokenType(tokens, i+1) == TokenString {
+				add(tokens[i+1].Pos)
+			} else if peekTokenType(tokens, i+1) == TokenEq && peekTokenType(tokens, i+2) == TokenString {
+				add(tokens[i+2].Pos)
+			}
+		case TokenAs:
+			if peekTokenType(tokens, i+1) == TokenString {
+				add(tokens[i+1].Pos)
+			}
+		case TokenFields:
+			if peekTokenType(tokens, i+1) == TokenLParen {
+				for j := i + 2; j < len(tokens) && tokens[j].Type != TokenRParen && tokens[j].Type != TokenEOF; j++ {
+					if tokens[j].Type == TokenString {
+						add(tokens[j].Pos)
+					}
+				}
+			}
+		case TokenIdent:
+			if isFieldNameOption(tok.Literal) && peekTokenType(tokens, i+1) == TokenEq && peekTokenType(tokens, i+2) == TokenString {
+				add(tokens[i+2].Pos)
+			}
+		}
+	}
+
+	return lints
+}
+
+func isFieldNameOption(name string) bool {
+	switch strings.ToLower(name) {
+	case "field", "source_field", "dest_field", "weight_field",
+		"trace_id", "span_id", "parent_id":
+		return true
+	default:
+		return false
+	}
 }
 
 func lintRawExactCompare(prog *Program) []QueryLint {

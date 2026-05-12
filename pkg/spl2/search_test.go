@@ -1,6 +1,7 @@
 package spl2
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
@@ -194,6 +195,16 @@ func TestSearchParserPrecedence(t *testing.T) {
 		if got != tt.expected {
 			t.Errorf("ParseSearchExpression(%q):\n  got  %s\n  want %s", tt.input, got, tt.expected)
 		}
+	}
+}
+
+func TestSearchParserRejectsXOR(t *testing.T) {
+	_, err := ParseSearchExpression(`error XOR timeout`)
+	if err == nil {
+		t.Fatal("expected SEARCH context to reject XOR")
+	}
+	if got := err.Error(); !strings.Contains(got, "XOR") {
+		t.Fatalf("error = %q, want XOR mention", got)
 	}
 }
 

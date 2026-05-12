@@ -224,6 +224,8 @@ func (l *SearchLexer) readWord() (SearchToken, error) {
 		return SearchToken{Type: STokAND, Literal: literal, Pos: startPos, End: l.pos}, nil
 	case "OR":
 		return SearchToken{Type: STokOR, Literal: literal, Pos: startPos, End: l.pos}, nil
+	case "XOR":
+		return SearchToken{}, fmt.Errorf("search: XOR is not supported in SEARCH context at position %d", startPos)
 	case "NOT":
 		return SearchToken{Type: STokNOT, Literal: literal, Pos: startPos, End: l.pos}, nil
 	case "IN":

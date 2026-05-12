@@ -305,6 +305,15 @@ func (c *compiler) compileBinary(e *spl2.BinaryExpr) error {
 		c.prog.PatchUint16(jumpTrue+1, uint16(trueLabel))
 		c.prog.PatchUint16(jumpEnd+1, uint16(endLabel))
 
+	case "xor":
+		if err := c.compileExpr(e.Left); err != nil {
+			return err
+		}
+		if err := c.compileExpr(e.Right); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpXor)
+
 	default:
 		return fmt.Errorf("unknown binary operator: %s", e.Op)
 	}

@@ -615,10 +615,10 @@ func (e *CompareExpr) String() string {
 	return fmt.Sprintf("(%s %s %s)", e.Left, e.Op, e.Right)
 }
 
-// BinaryExpr represents AND/OR.
+// BinaryExpr represents AND/OR/XOR.
 type BinaryExpr struct {
 	Left  Expr
-	Op    string // "and", "or"
+	Op    string // "and", "or", "xor"
 	Right Expr
 }
 

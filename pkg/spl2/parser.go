@@ -2428,18 +2428,36 @@ func (p *Parser) parseExpr() (Expr, error) {
 // parseNullCoalesce parses: expr ?? expr ?? expr ...
 // Desugars to nested coalesce() calls. Lower precedence than OR.
 func (p *Parser) parseNullCoalesce() (Expr, error) {
-	left, err := p.parseOr()
+	left, err := p.parseXor()
 	if err != nil {
 		return nil, err
 	}
 
 	for p.peek().Type == TokenDoubleQuestion {
 		p.advance()
-		right, err := p.parseOr()
+		right, err := p.parseXor()
 		if err != nil {
 			return nil, err
 		}
 		left = &FuncCallExpr{Name: "coalesce", Args: []Expr{left, right}}
+	}
+
+	return left, nil
+}
+
+func (p *Parser) parseXor() (Expr, error) {
+	left, err := p.parseOr()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.peek().Type == TokenXor {
+		p.advance()
+		right, err := p.parseOr()
+		if err != nil {
+			return nil, err
+		}
+		left = &BinaryExpr{Left: left, Op: "xor", Right: right}
 	}
 
 	return left, nil

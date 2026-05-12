@@ -101,6 +101,43 @@ func TestCompileBooleanExpr(t *testing.T) {
 	}
 }
 
+func TestCompileXorExpr(t *testing.T) {
+	tests := []struct {
+		name       string
+		left       string
+		right      string
+		wantResult bool
+	}{
+		{"true XOR true", "true", "true", false},
+		{"true XOR false", "true", "false", true},
+		{"false XOR true", "false", "true", true},
+		{"false XOR false", "false", "false", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := &spl2.BinaryExpr{
+				Left:  &spl2.LiteralExpr{Value: tt.left},
+				Op:    "xor",
+				Right: &spl2.LiteralExpr{Value: tt.right},
+			}
+			prog, err := CompilePredicate(expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			vm := &VM{}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.AsBool() != tt.wantResult {
+				t.Errorf("got %v, want %v", result.AsBool(), tt.wantResult)
+			}
+		})
+	}
+}
+
 func TestCompileNotExpr(t *testing.T) {
 	expr := &spl2.NotExpr{
 		Expr: &spl2.CompareExpr{

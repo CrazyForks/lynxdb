@@ -82,6 +82,7 @@ const (
 	OpAnd Opcode = 0x60
 	OpOr  Opcode = 0x61
 	OpNot Opcode = 0x62
+	OpXor Opcode = 0x63
 
 	// Control Flow.
 	OpJump        Opcode = 0x70
@@ -193,19 +194,20 @@ var definitions = map[Opcode]*Definition{
 	OpEndsWith:   {"OpEndsWith", nil},
 	OpContains:   {"OpContains", nil},
 
-	OpEq:     {"OpEq", nil},
-	OpNeq:    {"OpNeq", nil},
-	OpLt:     {"OpLt", nil},
-	OpLte:    {"OpLte", nil},
-	OpGt:     {"OpGt", nil},
-	OpGte:    {"OpGte", nil},
-	OpInList: {"OpInList", []int{2}},
-	OpLike:   {"OpLike", nil},
+	OpEq:                {"OpEq", nil},
+	OpNeq:               {"OpNeq", nil},
+	OpLt:                {"OpLt", nil},
+	OpLte:               {"OpLte", nil},
+	OpGt:                {"OpGt", nil},
+	OpGte:               {"OpGte", nil},
+	OpInList:            {"OpInList", []int{2}},
+	OpLike:              {"OpLike", nil},
 	OpBSIHandledCompare: {"OpBSIHandledCompare", []int{2, 2}},
 
 	OpAnd: {"OpAnd", nil},
 	OpOr:  {"OpOr", nil},
 	OpNot: {"OpNot", nil},
+	OpXor: {"OpXor", nil},
 
 	OpJump:        {"OpJump", []int{2}},
 	OpJumpIfFalse: {"OpJumpIfFalse", []int{2}},

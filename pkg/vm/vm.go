@@ -763,6 +763,12 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = event.BoolValue(IsTruthy(a) || IsTruthy(b))
 
+		case OpXor:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = event.BoolValue(IsTruthy(a) != IsTruthy(b))
+
 		case OpNot:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = event.BoolValue(!IsTruthy(a))

@@ -63,6 +63,7 @@ const (
 	TokenAs
 	TokenAnd
 	TokenOr
+	TokenXor
 	TokenNot
 	TokenIn
 	TokenSpan
@@ -246,6 +247,7 @@ var tokenNames = map[TokenType]string{
 	TokenAs:                "AS",
 	TokenAnd:               "AND",
 	TokenOr:                "OR",
+	TokenXor:               "XOR",
 	TokenNot:               "NOT",
 	TokenIn:                "IN",
 	TokenSpan:              "SPAN",
@@ -389,6 +391,7 @@ var keywords = map[string]TokenType{
 	"as":                  TokenAs,
 	"and":                 TokenAnd,
 	"or":                  TokenOr,
+	"xor":                 TokenXor,
 	"not":                 TokenNot,
 	"in":                  TokenIn,
 	"span":                TokenSpan,

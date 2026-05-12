@@ -292,6 +292,30 @@ func TestParse_BooleanExpr(t *testing.T) {
 	}
 }
 
+func TestParse_XorExpr(t *testing.T) {
+	input := `FROM main | where host = "web-01" or status >= 500 xor level = "ERROR"`
+	q, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	where := q.Commands[0].(*WhereCommand)
+	binExpr, ok := where.Expr.(*BinaryExpr)
+	if !ok {
+		t.Fatalf("expected BinaryExpr, got %T", where.Expr)
+	}
+	if binExpr.Op != "xor" {
+		t.Errorf("top-level op: got %q, want xor", binExpr.Op)
+	}
+	left, ok := binExpr.Left.(*BinaryExpr)
+	if !ok {
+		t.Fatalf("expected OR on left side, got %T", binExpr.Left)
+	}
+	if left.Op != "or" {
+		t.Errorf("left op: got %q, want or", left.Op)
+	}
+}
+
 func TestParse_NotExpr(t *testing.T) {
 	input := `FROM main | where not status = 200`
 	q, err := Parse(input)

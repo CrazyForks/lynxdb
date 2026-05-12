@@ -229,9 +229,10 @@ percentiles_cmd  = "percentiles" field { "," field } [ "by" ident_list ]
 slowest_cmd      = "slowest" [ number ] [ field ] [ "by" ident_list ] ;
 
 (* ─── Expressions ─── *)
-(* Operator precedence (low → high): OR, AND, NOT, comparison, +/-, *, unary *)
+(* Operator precedence (low → high): XOR, OR, AND, NOT, comparison, +/-, *, unary *)
 
-expr             = or_expr ;
+expr             = xor_expr ;
+xor_expr         = or_expr { "xor" or_expr } ;
 or_expr          = and_expr { "or" and_expr } ;
 and_expr         = not_expr { "and" not_expr } ;
 not_expr         = [ "not" ] comparison ;

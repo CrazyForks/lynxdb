@@ -80,7 +80,7 @@ type PartialAggState struct {
 // into partial aggregation + merge.
 func IsPushableAgg(name string) bool {
 	switch strings.ToLower(name) {
-	case aggCount, aggSum, aggAvg, aggMin, aggMax, aggRange, "dc",
+	case aggCount, aggSum, aggSumSq, aggAvg, aggMin, aggMax, aggRange, "dc",
 		aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
 		aggStdev:
 		return true
@@ -657,6 +657,11 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 			s.Sum += f
 			s.Count++
 		}
+	case aggSumSq:
+		if f, ok := vm.ValueToFloat(val); ok {
+			s.Sum += f * f
+			s.Count++
+		}
 	case aggAvg:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.Sum += f
@@ -730,7 +735,7 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		dst.Count += src.Count
-	case aggSum:
+	case aggSum, aggSumSq:
 		dst.Sum += src.Sum
 		dst.Count += src.Count
 	case aggAvg:
@@ -831,6 +836,8 @@ func finalizePartialState(s *PartialAggState, fn string) event.Value {
 	case aggCount:
 		return event.IntValue(s.Count)
 	case aggSum:
+		return event.FloatValue(s.Sum)
+	case aggSumSq:
 		return event.FloatValue(s.Sum)
 	case aggAvg:
 		if s.Count == 0 {

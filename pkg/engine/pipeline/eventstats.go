@@ -444,6 +444,10 @@ func updateAggState(s *aggState, fn string, val event.Value) {
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.sum += f
 		}
+	case aggSumSq:
+		if f, ok := vm.ValueToFloat(val); ok {
+			s.sum += f * f
+		}
 	case aggAvg:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.sum += f
@@ -481,6 +485,8 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 	case aggCount:
 		return event.IntValue(s.count)
 	case aggSum:
+		return event.FloatValue(s.sum)
+	case aggSumSq:
 		return event.FloatValue(s.sum)
 	case aggAvg:
 		if s.count == 0 {

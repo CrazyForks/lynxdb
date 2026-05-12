@@ -65,6 +65,7 @@ const (
 const (
 	aggCount  = "count"
 	aggSum    = "sum"
+	aggSumSq  = "sumsq"
 	aggAvg    = "avg"
 	aggMin    = "min"
 	aggMax    = "max"
@@ -572,6 +573,11 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value)
 			s.sum += f
 			s.count++
 		}
+	case aggSumSq:
+		if f, ok := vm.ValueToFloat(val); ok {
+			s.sum += f * f
+			s.count++
+		}
 	case aggAvg:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.sum += f
@@ -904,7 +910,7 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			if countF, ok := vm.ValueToFloat(countVal); ok {
 				group.states[j].count += int64(countF)
 			}
-		case aggSum:
+		case aggSum, aggSumSq:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
 			a.mergeSpilledValue(&group.states[j], agg.Name, sumVal)
@@ -942,7 +948,7 @@ func (a *AggregateIterator) mergeSpilledValue(s *aggState, fn string, val event.
 		if n, ok := vm.ValueToFloat(val); ok {
 			s.count += int64(n)
 		}
-	case aggSum:
+	case aggSum, aggSumSq:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.sum += f
 			s.count++ // track that we have at least one contribution
@@ -1181,6 +1187,8 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 	case aggCount:
 		return event.IntValue(s.count)
 	case aggSum:
+		return event.FloatValue(s.sum)
+	case aggSumSq:
 		return event.FloatValue(s.sum)
 	case aggAvg:
 		if s.count == 0 {

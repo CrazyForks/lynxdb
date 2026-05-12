@@ -161,6 +161,23 @@ func TestMergePartialAggs_Sum(t *testing.T) {
 	assertFloatField(t, rows[0], "total", 300)
 }
 
+func TestMergePartialAggs_SumSq(t *testing.T) {
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: "sumsq", Field: "v", Alias: "squares"}},
+	}
+	p1 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{Sum: 13, Count: 2}}},
+	}
+	p2 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{Sum: 16, Count: 1}}},
+	}
+	rows := MergePartialAggs([][]*PartialAggGroup{p1, p2}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertFloatField(t, rows[0], "squares", 29)
+}
+
 func TestMergePartialAggs_Avg(t *testing.T) {
 	spec := &PartialAggSpec{
 		Funcs: []PartialAggFunc{{Name: "avg", Field: "v", Alias: "avg_v"}},

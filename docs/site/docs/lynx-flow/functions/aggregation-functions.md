@@ -42,6 +42,14 @@ Minimum and maximum values.
 | stats min(duration_ms) AS fastest, max(duration_ms) AS slowest by uri
 ```
 
+## sumsq
+
+Sum of squared numeric values.
+
+```spl
+| stats sumsq(duration_ms) AS duration_squares by endpoint
+```
+
 ## dc (Distinct Count)
 
 Count of unique values.

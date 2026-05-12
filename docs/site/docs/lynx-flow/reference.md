@@ -1111,6 +1111,7 @@ Used in `group compute`, `every compute`, `running`, `enrich`, `stats`, `timecha
 | `count()` | Count all rows | `count() as total` |
 | `count(<field>)` | Count non-null values | `count(user_id) as users` |
 | `sum(<field>)` | Sum of values | `sum(bytes) as total_bytes` |
+| `sumsq(<field>)` | Sum of squared values | `sumsq(duration_ms) as duration_squares` |
 | `avg(<field>)` | Average (mean) | `avg(duration_ms) as avg_latency` |
 | `min(<field>)` | Minimum | `min(duration_ms) as fastest` |
 | `max(<field>)` | Maximum | `max(duration_ms) as slowest` |

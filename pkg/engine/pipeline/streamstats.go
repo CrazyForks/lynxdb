@@ -322,6 +322,13 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 				st.count++
 			}
 		}
+	case aggSumSq:
+		if v, ok := row[agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				st.sum += f * f
+				st.count++
+			}
+		}
 	case aggAvg:
 		if v, ok := row[agg.Field]; ok {
 			if f, fok := vm.ValueToFloat(v); fok {
@@ -371,6 +378,13 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 				st.count--
 			}
 		}
+	case aggSumSq:
+		if v, ok := row[agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				st.sum -= f * f
+				st.count--
+			}
+		}
 	case aggAvg:
 		if v, ok := row[agg.Field]; ok {
 			if f, fok := vm.ValueToFloat(v); fok {
@@ -415,6 +429,8 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 	case aggCount:
 		return event.IntValue(st.count)
 	case aggSum:
+		return event.FloatValue(st.sum)
+	case aggSumSq:
 		return event.FloatValue(st.sum)
 	case aggAvg:
 		if st.count == 0 {
@@ -503,6 +519,17 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 			if v, ok := item[agg.Field]; ok {
 				if f, fok := vm.ValueToFloat(v); fok {
 					sum += f
+				}
+			}
+		}
+
+		return event.FloatValue(sum)
+	case aggSumSq:
+		sum := 0.0
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok {
+				if f, fok := vm.ValueToFloat(v); fok {
+					sum += f * f
 				}
 			}
 		}

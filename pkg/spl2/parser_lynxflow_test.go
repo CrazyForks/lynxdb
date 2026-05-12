@@ -633,6 +633,23 @@ func TestLynxFlow_SortByDesc(t *testing.T) {
 	}
 }
 
+func TestParse_SortLegacyDirection(t *testing.T) {
+	q, err := Parse(`from app | sort status asc, duration_ms desc`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	sort := q.Commands[0].(*SortCommand)
+	if len(sort.Fields) != 2 {
+		t.Fatalf("Fields: got %d, want 2", len(sort.Fields))
+	}
+	if sort.Fields[0].Name != "status" || sort.Fields[0].Desc {
+		t.Errorf("Fields[0]: got %+v, want status asc", sort.Fields[0])
+	}
+	if sort.Fields[1].Name != "duration_ms" || !sort.Fields[1].Desc {
+		t.Errorf("Fields[1]: got %+v, want duration_ms desc", sort.Fields[1])
+	}
+}
+
 func TestLynxFlow_Take(t *testing.T) {
 	q, err := Parse(`from app | take 10`)
 	if err != nil {

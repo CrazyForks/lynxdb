@@ -722,11 +722,19 @@ func (p *Parser) parseSort() (*SortCommand, error) {
 		} else if isIdentLike(tok.Type) {
 			p.advance()
 			name := tok.Literal
+			desc := false
 			if strings.HasPrefix(name, "-") {
-				fields = append(fields, SortField{Name: name[1:], Desc: true})
-			} else {
-				fields = append(fields, SortField{Name: name})
+				name = name[1:]
+				desc = true
 			}
+			if p.peek().Type == TokenDesc {
+				p.advance()
+				desc = true
+			} else if p.peek().Type == TokenAsc {
+				p.advance()
+				desc = false
+			}
+			fields = append(fields, SortField{Name: name, Desc: desc})
 		} else if tok.Type == TokenNumber && strings.HasPrefix(tok.Literal, "-") {
 			// Handle sort -count where lexer reads it as negative number.
 			p.advance()

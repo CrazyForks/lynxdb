@@ -16,6 +16,7 @@ const (
 	LintRawExactCompare    = "L005"
 	LintDoubleQuotedName   = "L012"
 	LintCountWithoutParens = "L013"
+	LintDeprecatedSort     = "L022"
 	LintMixedSearchAndOr   = "L030"
 	LintDeepSearchNesting  = "L031"
 	LintDefaultMetricField = "L036"
@@ -49,6 +50,7 @@ func LintProgram(input string, prog *Program) ([]QueryLint, error) {
 	lints = append(lints, lintIndexRewrite(tokens)...)
 	lints = append(lints, lintDoubleQuotedNames(tokens)...)
 	lints = append(lints, lintCountWithoutParens(tokens)...)
+	lints = append(lints, lintDeprecatedSortSyntax(tokens)...)
 	lints = append(lints, lintMixedSearchAndOr(input, tokens)...)
 	lints = append(lints, lintDeepSearchNesting(prog)...)
 	lints = append(lints, lintDefaultMetricField(tokens)...)
@@ -168,6 +170,53 @@ func lintDefaultMetricField(tokens []Token) []QueryLint {
 	}
 
 	return lints
+}
+
+func lintDeprecatedSortSyntax(tokens []Token) []QueryLint {
+	var lints []QueryLint
+
+	for i := 0; i < len(tokens); i++ {
+		if tokens[i].Type != TokenSort {
+			continue
+		}
+		if peekTokenType(tokens, i+1) == TokenBy {
+			continue
+		}
+
+		for j := i + 1; j < len(tokens); j++ {
+			switch tokens[j].Type {
+			case TokenPipe, TokenRBracket, TokenSemicolon, TokenEOF:
+				j = len(tokens)
+				continue
+			case TokenComma:
+				continue
+			case TokenMinus, TokenPlus:
+				if isIdentLike(peekTokenType(tokens, j+1)) && isSortDirection(peekTokenType(tokens, j+2)) {
+					lints = append(lints, deprecatedSortLint(tokens[j+2].Pos))
+				}
+				j++
+			default:
+				if isIdentLike(tokens[j].Type) && isSortDirection(peekTokenType(tokens, j+1)) {
+					lints = append(lints, deprecatedSortLint(tokens[j+1].Pos))
+					j++
+				}
+			}
+		}
+	}
+
+	return lints
+}
+
+func isSortDirection(t TokenType) bool {
+	return t == TokenAsc || t == TokenDesc
+}
+
+func deprecatedSortLint(pos int) QueryLint {
+	return QueryLint{
+		Code:     LintDeprecatedSort,
+		Message:  "Canon: use prefix sort form such as `sort -field`",
+		Position: pos,
+	}
 }
 
 func lintDeepSearchNesting(prog *Program) []QueryLint {

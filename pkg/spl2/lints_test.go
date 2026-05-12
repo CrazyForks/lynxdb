@@ -347,6 +347,52 @@ func TestLintQuery_DefaultMetricField(t *testing.T) {
 	}
 }
 
+func TestLintQuery_DeprecatedSortSyntax(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantCodes []string
+	}{
+		{
+			name:      "sort field desc",
+			query:     `from app | sort duration_ms desc`,
+			wantCodes: []string{LintDeprecatedSort},
+		},
+		{
+			name:      "sort multiple fields",
+			query:     `from app | sort status asc, duration_ms desc`,
+			wantCodes: []string{LintDeprecatedSort, LintDeprecatedSort},
+		},
+		{
+			name:      "prefix canonical",
+			query:     `from app | sort -duration_ms, +status`,
+			wantCodes: nil,
+		},
+		{
+			name:      "sort by form",
+			query:     `from app | sort by duration_ms desc`,
+			wantCodes: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lints, err := LintQuery(tt.query)
+			if err != nil {
+				t.Fatalf("LintQuery: %v", err)
+			}
+			if len(lints) != len(tt.wantCodes) {
+				t.Fatalf("lints: got %+v, want codes %v", lints, tt.wantCodes)
+			}
+			for i, want := range tt.wantCodes {
+				if lints[i].Code != want {
+					t.Fatalf("lints[%d].Code: got %q, want %q", i, lints[i].Code, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLintProgram_RequiresSuccessfulParse(t *testing.T) {
 	_, err := LintQuery(`from app | stats count(`)
 	if err == nil {

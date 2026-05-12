@@ -16,6 +16,7 @@ const (
 	LintRawExactCompare    = "L005"
 	LintCountWithoutParens = "L013"
 	LintMixedSearchAndOr   = "L030"
+	LintDeepSearchNesting  = "L031"
 	LintDefaultMetricField = "L036"
 )
 
@@ -47,6 +48,7 @@ func LintProgram(input string, prog *Program) ([]QueryLint, error) {
 	lints = append(lints, lintIndexRewrite(tokens)...)
 	lints = append(lints, lintCountWithoutParens(tokens)...)
 	lints = append(lints, lintMixedSearchAndOr(input, tokens)...)
+	lints = append(lints, lintDeepSearchNesting(prog)...)
 	lints = append(lints, lintDefaultMetricField(tokens)...)
 
 	return lints, nil
@@ -109,6 +111,71 @@ func lintDefaultMetricField(tokens []Token) []QueryLint {
 	}
 
 	return lints
+}
+
+func lintDeepSearchNesting(prog *Program) []QueryLint {
+	if prog == nil {
+		return nil
+	}
+
+	var lints []QueryLint
+	for _, ds := range prog.Datasets {
+		lints = append(lints, lintDeepSearchNestingInQuery(ds.Query)...)
+	}
+	lints = append(lints, lintDeepSearchNestingInQuery(prog.Main)...)
+
+	return lints
+}
+
+func lintDeepSearchNestingInQuery(q *Query) []QueryLint {
+	if q == nil {
+		return nil
+	}
+
+	var lints []QueryLint
+	for _, cmd := range q.Commands {
+		switch c := cmd.(type) {
+		case *SearchCommand:
+			if c.Expression != nil && searchBooleanDepth(c.Expression) > 5 {
+				lints = append(lints, QueryLint{
+					Code:     LintDeepSearchNesting,
+					Message:  "Deep nesting is hard to read; consider CTEs or split into stages",
+					Position: 0,
+				})
+			}
+		case *JoinCommand:
+			lints = append(lints, lintDeepSearchNestingInQuery(c.Subquery)...)
+		case *AppendCommand:
+			lints = append(lints, lintDeepSearchNestingInQuery(c.Subquery)...)
+		case *MultisearchCommand:
+			for _, sub := range c.Searches {
+				lints = append(lints, lintDeepSearchNestingInQuery(sub)...)
+			}
+		}
+	}
+
+	return lints
+}
+
+func searchBooleanDepth(expr SearchExpr) int {
+	switch e := expr.(type) {
+	case *SearchAndExpr:
+		return 1 + maxInt(searchBooleanDepth(e.Left), searchBooleanDepth(e.Right))
+	case *SearchOrExpr:
+		return 1 + maxInt(searchBooleanDepth(e.Left), searchBooleanDepth(e.Right))
+	case *SearchNotExpr:
+		return 1 + searchBooleanDepth(e.Operand)
+	default:
+		return 0
+	}
+}
+
+func maxInt(a, b int) int {
+	if a > b {
+		return a
+	}
+
+	return b
 }
 
 func lintRawExactCompareInQuery(q *Query) []QueryLint {

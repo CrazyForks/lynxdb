@@ -353,3 +353,49 @@ func TestLintQuery_MixedSearchAndOr(t *testing.T) {
 		})
 	}
 }
+
+func TestLintQuery_DeepSearchNesting(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantCodes []string
+	}{
+		{
+			name:      "deep not chain",
+			query:     `from app | search NOT NOT NOT NOT NOT NOT error`,
+			wantCodes: []string{LintDeepSearchNesting},
+		},
+		{
+			name:      "deep binary tree",
+			query:     `from app | search a AND (b AND (c AND (d AND (e AND (f AND g)))))`,
+			wantCodes: []string{LintDeepSearchNesting},
+		},
+		{
+			name:      "shallow search",
+			query:     `from app | search error OR timeout`,
+			wantCodes: nil,
+		},
+		{
+			name:      "where context",
+			query:     `from app | where NOT NOT NOT NOT NOT NOT error`,
+			wantCodes: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lints, err := LintQuery(tt.query)
+			if err != nil {
+				t.Fatalf("LintQuery: %v", err)
+			}
+			if len(lints) != len(tt.wantCodes) {
+				t.Fatalf("lints: got %+v, want codes %v", lints, tt.wantCodes)
+			}
+			for i, want := range tt.wantCodes {
+				if lints[i].Code != want {
+					t.Fatalf("lints[%d].Code: got %q, want %q", i, lints[i].Code, want)
+				}
+			}
+		})
+	}
+}

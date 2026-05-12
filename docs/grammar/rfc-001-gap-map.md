@@ -2,7 +2,7 @@
 
 Status as of the current `feat/lynxflow_rfc` branch.
 
-Source contract: `tmp/researches/opus_ux_syntax/RFC.md`.
+Source contract: `docs/grammar/RFC.md`.
 
 ## Implemented
 

@@ -1921,6 +1921,51 @@ func TestParse_NomvCommand(t *testing.T) {
 	}
 }
 
+func TestParse_MakemvCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantField string
+		wantDelim string
+		wantTok   string
+		wantEmpty bool
+		wantSetSV bool
+	}{
+		{name: "default", query: `FROM main | makemv tags`, wantField: "tags", wantDelim: " "},
+		{name: "delim", query: `FROM main | makemv delim="," tags`, wantField: "tags", wantDelim: ","},
+		{name: "options after field", query: `FROM main | makemv tags delim="|" allowempty=true`, wantField: "tags", wantDelim: "|", wantEmpty: true},
+		{name: "tokenizer", query: `FROM main | makemv tokenizer="([^,]+),?" setsv=t tags`, wantField: "tags", wantDelim: " ", wantTok: "([^,]+),?", wantSetSV: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := Parse(tc.query)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			cmd, ok := q.Commands[0].(*MakemvCommand)
+			if !ok {
+				t.Fatalf("expected MakemvCommand, got %T", q.Commands[0])
+			}
+			if cmd.Field != tc.wantField {
+				t.Errorf("field: got %q, want %q", cmd.Field, tc.wantField)
+			}
+			if cmd.Delim != tc.wantDelim {
+				t.Errorf("delim: got %q, want %q", cmd.Delim, tc.wantDelim)
+			}
+			if cmd.Tokenizer != tc.wantTok {
+				t.Errorf("tokenizer: got %q, want %q", cmd.Tokenizer, tc.wantTok)
+			}
+			if cmd.AllowEmpty != tc.wantEmpty {
+				t.Errorf("allowempty: got %v, want %v", cmd.AllowEmpty, tc.wantEmpty)
+			}
+			if cmd.SetSV != tc.wantSetSV {
+				t.Errorf("setsv: got %v, want %v", cmd.SetSV, tc.wantSetSV)
+			}
+		})
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

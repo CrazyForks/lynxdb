@@ -456,6 +456,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseMvexpand())
 	case TokenMakeresults:
 		return singleCmd(p.parseMakeresults())
+	case TokenMakemv:
+		return singleCmd(p.parseMakemv())
 	case TokenNomv:
 		return singleCmd(p.parseNomv())
 	case TokenPackJson:
@@ -4036,6 +4038,112 @@ func (p *Parser) parseNomv() (*NomvCommand, error) {
 	}
 
 	return &NomvCommand{Field: field.Literal}, nil
+}
+
+func (p *Parser) parseMakemv() (*MakemvCommand, error) {
+	p.advance() // consume "makemv"
+
+	cmd := &MakemvCommand{Delim: " "}
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if p.isMakemvOption() {
+			if err := p.parseMakemvOption(cmd); err != nil {
+				return nil, err
+			}
+
+			continue
+		}
+		if cmd.Field != "" {
+			return nil, fmt.Errorf("spl2: makemv accepts one field")
+		}
+		field, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("spl2: makemv requires a field name")
+		}
+		cmd.Field = field.Literal
+	}
+	if cmd.Field == "" {
+		return nil, fmt.Errorf("spl2: makemv requires a field name")
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) isMakemvOption() bool {
+	if p.peekAt(1).Type != TokenEq {
+		return false
+	}
+	return isNamedOption(p.peek(), "delim", "tokenizer", "allowempty", "setsv")
+}
+
+func isNamedOption(tok Token, names ...string) bool {
+	if tok.Type != TokenIdent {
+		return false
+	}
+	for _, name := range names {
+		if strings.EqualFold(tok.Literal, name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *Parser) parseMakemvOption(cmd *MakemvCommand) error {
+	name := strings.ToLower(p.advance().Literal)
+	p.advance() // consume "="
+
+	switch name {
+	case "delim":
+		value, err := p.readStringOption("makemv delim")
+		if err != nil {
+			return err
+		}
+		cmd.Delim = value
+		cmd.Tokenizer = ""
+	case "tokenizer":
+		value, err := p.readStringOption("makemv tokenizer")
+		if err != nil {
+			return err
+		}
+		cmd.Tokenizer = value
+	case "allowempty":
+		value, err := p.readBoolOption("makemv allowempty")
+		if err != nil {
+			return err
+		}
+		cmd.AllowEmpty = value
+	case "setsv":
+		value, err := p.readBoolOption("makemv setsv")
+		if err != nil {
+			return err
+		}
+		cmd.SetSV = value
+	}
+
+	return nil
+}
+
+func (p *Parser) readStringOption(name string) (string, error) {
+	tok := p.peek()
+	if tok.Type != TokenString && tok.Type != TokenIdent {
+		return "", fmt.Errorf("spl2: %s requires a string value", name)
+	}
+	p.advance()
+
+	return tok.Literal, nil
+}
+
+func (p *Parser) readBoolOption(name string) (bool, error) {
+	tok := p.peek()
+	p.advance()
+	switch strings.ToLower(tok.Literal) {
+	case "true", "t", "1", "yes", "y":
+		return true, nil
+	case "false", "f", "0", "no", "n":
+		return false, nil
+	default:
+		return false, fmt.Errorf("spl2: %s requires a boolean value", name)
+	}
 }
 
 // parseExplode parses: explode <field>[, <field2>, ...] [as <alias>].

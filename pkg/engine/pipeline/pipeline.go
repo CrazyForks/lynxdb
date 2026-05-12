@@ -686,6 +686,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Unroll"
 	case *spl2.MakeresultsCommand:
 		return "Makeresults"
+	case *spl2.MakemvCommand:
+		return "Makemv"
 	case *spl2.NomvCommand:
 		return "Nomv"
 	case *spl2.PackJsonCommand:
@@ -1285,6 +1287,14 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		}
 
 		return NewRowScanIterator(rows, qc.batchSize), nil
+
+	case *spl2.MakemvCommand:
+		iter, err := NewMakemvIterator(child, c.Field, c.Delim, c.Tokenizer, c.AllowEmpty)
+		if err != nil {
+			return nil, fmt.Errorf("build makemv: %w", err)
+		}
+
+		return iter, nil
 
 	case *spl2.NomvCommand:
 		return NewNomvIterator(child, c.Field), nil

@@ -30,7 +30,6 @@ var unsupportedCommands = map[string]string{
 	"map":          "map is not yet supported.",
 	"tstats":       "tstats is not yet supported. Use stats with time-filtered queries.",
 	"datamodel":    "datamodel is not yet supported.",
-	"makemv":       "makemv is not yet supported. Use mvappend() eval function instead.",
 	"addinfo":      "addinfo is not yet supported.",
 	"return":       "return is not yet supported. Use head or fields to limit output.",
 	"format":       "format is not yet supported.",

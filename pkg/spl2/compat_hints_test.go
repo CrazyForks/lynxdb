@@ -154,19 +154,12 @@ func TestSplunkCompat_Bucket(t *testing.T) {
 	}
 }
 
-func TestSplunkCompat_Makemv(t *testing.T) {
+func TestSplunkCompat_MakemvNotFlagged(t *testing.T) {
 	hints := DetectCompatHints(`index=main | makemv delim="," field`)
-	found := false
 	for _, h := range hints {
-		if h.Pattern == "makemv" && h.Unsupported {
-			found = true
-			if !strings.Contains(h.Suggestion, "mvappend") {
-				t.Errorf("expected mvappend suggestion, got: %s", h.Suggestion)
-			}
+		if h.Pattern == "makemv" {
+			t.Fatalf("makemv should not trigger unsupported hint: %+v", h)
 		}
-	}
-	if !found {
-		t.Error("missing makemv hint")
 	}
 }
 

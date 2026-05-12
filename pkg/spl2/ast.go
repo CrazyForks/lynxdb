@@ -947,6 +947,20 @@ func (c *NomvCommand) String() string {
 	return fmt.Sprintf("nomv %s", c.Field)
 }
 
+// MakemvCommand represents: | makemv [delim=<s> | tokenizer=<re>] [allowempty=<bool>] [setsv=<bool>] <field>.
+type MakemvCommand struct {
+	Field      string
+	Delim      string
+	Tokenizer  string
+	AllowEmpty bool
+	SetSV      bool
+}
+
+func (*MakemvCommand) commandNode() {}
+func (c *MakemvCommand) String() string {
+	return fmt.Sprintf("makemv %s", c.Field)
+}
+
 // TeeCommand represents: | tee "<destination>" — side-effect passthrough.
 // Writes each batch to a destination file, then yields the batch unchanged.
 type TeeCommand struct {

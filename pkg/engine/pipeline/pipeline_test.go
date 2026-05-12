@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -372,6 +373,76 @@ func TestBuildFromSourceNomvCommand(t *testing.T) {
 	}
 	if got := results[2]["senders"].AsString(); got != "erin" {
 		t.Errorf("scalar senders: got %q, want erin", got)
+	}
+}
+
+func TestBuildFromSourceMakemvCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | makemv delim="," tags | nomv tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"tags": event.StringValue("red,blue,,green")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["tags"].AsString(); got != "red\nblue\ngreen" {
+		t.Errorf("tags: got %q, want %q", got, "red\nblue\ngreen")
+	}
+}
+
+func TestBuildFromSourceMakemvTokenizerCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | makemv tokenizer="([^,]+),?" allowempty=true tags | nomv tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"tags": event.StringValue("red,blue,green")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["tags"].AsString(); got != "red\nblue\ngreen" {
+		t.Errorf("tags: got %q, want %q", got, "red\nblue\ngreen")
+	}
+}
+
+func TestBuildFromSourceMakemvInvalidTokenizer(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | makemv tokenizer="(" tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	_, err = BuildFromSource(context.Background(), NewRowScanIterator(nil, 2), query.Commands, 2)
+	if err == nil {
+		t.Fatal("expected tokenizer compile error")
+	}
+	if !strings.Contains(err.Error(), "makemv") {
+		t.Fatalf("error %q missing makemv context", err)
 	}
 }
 

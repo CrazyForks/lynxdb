@@ -17,6 +17,7 @@ const (
 	LintOptionAfterArg     = "L010"
 	LintDoubleQuotedName   = "L012"
 	LintCountWithoutParens = "L013"
+	LintUnsupportedCommand = "L021"
 	LintDeprecatedSort     = "L022"
 	LintMixedSearchAndOr   = "L030"
 	LintDeepSearchNesting  = "L031"

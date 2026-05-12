@@ -17,8 +17,16 @@ var unsupportedCommands = map[string]string{
 	// Note: "lookup" is NOT listed here — it is a valid Lynx Flow command (desugars to left join).
 	"inputlookup":  "inputlookup is not yet supported. Use FROM $dataset with CTE syntax.",
 	"outputlookup": "outputlookup is not yet supported.",
-	"collect":      "collect is not yet supported.",
-	"sendemail":    "sendemail is not yet supported.",
+	"delete":       "delete is outside the query language profile.",
+	"collect":      "collect is outside the query language profile.",
+	"stash":        "stash is outside the query language profile.",
+	"sendemail":    "sendemail is outside the query language profile.",
+	"sendalert":    "sendalert is outside the query language profile.",
+	"localop":      "localop is outside the query language profile.",
+	"redistribute": "redistribute is outside the query language profile.",
+	"loadjob":      "loadjob is outside the query language profile.",
+	"savedsearch":  "savedsearch is outside the query language profile.",
+	"spl1":         "spl1 embedded SPL is not executed; rewrite as native SPL2 or LynxFlow.",
 	"map":          "map is not yet supported.",
 	"tstats":       "tstats is not yet supported. Use stats with time-filtered queries.",
 	"datamodel":    "datamodel is not yet supported.",
@@ -28,6 +36,11 @@ var unsupportedCommands = map[string]string{
 	"format":       "format is not yet supported.",
 	// Note: "bucket" is NOT listed here — it is a valid Lynx Flow command (desugars to bin).
 	"sistats": "sistats is not yet supported. Use stats instead.",
+}
+
+func unsupportedCommandHint(command string) (string, bool) {
+	hint, ok := unsupportedCommands[strings.ToLower(command)]
+	return hint, ok
 }
 
 // UnsupportedCommandError is returned when a query uses a Splunk command

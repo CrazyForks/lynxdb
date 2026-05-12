@@ -76,6 +76,42 @@ func TestParse_FromSearchStatsSort(t *testing.T) {
 	}
 }
 
+func TestParse_UnsupportedSplunkCommands(t *testing.T) {
+	tests := []string{"delete", "collect", "stash", "sendemail", "sendalert", "localop", "redistribute", "loadjob", "savedsearch", "spl1"}
+	for _, cmd := range tests {
+		t.Run(cmd, func(t *testing.T) {
+			_, err := Parse(`FROM main | ` + cmd)
+			if err == nil {
+				t.Fatalf("Parse(%q): expected error", cmd)
+			}
+			msg := err.Error()
+			for _, want := range []string{LintUnsupportedCommand, "unsupported command", cmd} {
+				if !strings.Contains(msg, want) {
+					t.Fatalf("error %q missing %q", msg, want)
+				}
+			}
+		})
+	}
+}
+
+func TestParse_UnsupportedCommandNameCanBeField(t *testing.T) {
+	q, err := Parse(`FROM main | delete=1`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	where, ok := q.Commands[0].(*WhereCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected WhereCommand, got %T", q.Commands[0])
+	}
+	cmp, ok := where.Expr.(*CompareExpr)
+	if !ok {
+		t.Fatalf("where expr: expected CompareExpr, got %T", where.Expr)
+	}
+	if got := cmp.Left.(*FieldExpr).Name; got != "delete" {
+		t.Errorf("field: got %q, want delete", got)
+	}
+}
+
 func TestParse_TimechartByIP(t *testing.T) {
 	input := `FROM security | search "auth failed" | timechart span=5m count() by src_ip`
 	q, err := Parse(input)

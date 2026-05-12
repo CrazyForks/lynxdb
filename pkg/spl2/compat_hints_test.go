@@ -25,6 +25,20 @@ func TestSplunkCompat_InputLookup(t *testing.T) {
 	}
 }
 
+func TestSplunkCompat_RFCUnsupportedCommands(t *testing.T) {
+	for _, cmd := range []string{"delete", "collect", "stash", "sendemail", "sendalert", "localop", "redistribute", "loadjob", "savedsearch", "spl1"} {
+		t.Run(cmd, func(t *testing.T) {
+			hints := DetectCompatHints(`FROM main | ` + cmd)
+			if len(hints) == 0 {
+				t.Fatalf("expected hint for %s", cmd)
+			}
+			if hints[0].Pattern != cmd || !hints[0].Unsupported {
+				t.Fatalf("hint: got %+v, want unsupported %s", hints[0], cmd)
+			}
+		})
+	}
+}
+
 func TestSplunkCompat_Chart(t *testing.T) {
 	hints := DetectCompatHints(`index=main | chart count by host`)
 	if len(hints) == 0 {

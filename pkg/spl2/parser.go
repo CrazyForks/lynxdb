@@ -557,7 +557,18 @@ func (p *Parser) parseCommand() ([]Command, error) {
 			if p.peekAt(1).Type == TokenLParen && unpack.IsFormat(tok.Literal) {
 				return singleCmd(p.parseLynxParseBody())
 			}
-			if isBareExprContinuation(p.peekAt(1).Type) || p.peekAt(1).Type == TokenLParen {
+			if isBareExprContinuation(p.peekAt(1).Type) {
+				expr, err := p.parseExpr()
+				if err != nil {
+					return nil, fmt.Errorf("spl2: unexpected token %s %q at position %d", tok.Type, tok.Literal, tok.Pos)
+				}
+
+				return []Command{&WhereCommand{Expr: expr}}, nil
+			}
+			if hint, ok := unsupportedCommandHint(tok.Literal); ok {
+				return nil, fmt.Errorf("spl2: %s unsupported command %q at position %d: %s", LintUnsupportedCommand, tok.Literal, tok.Pos, hint)
+			}
+			if p.peekAt(1).Type == TokenLParen {
 				expr, err := p.parseExpr()
 				if err != nil {
 					return nil, fmt.Errorf("spl2: unexpected token %s %q at position %d", tok.Type, tok.Literal, tok.Pos)

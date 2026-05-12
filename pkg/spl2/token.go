@@ -155,6 +155,7 @@ const (
 	TokenImpact
 	TokenBaseline
 	TokenChanges
+	TokenExemplars
 	TokenRollup
 
 	// Schema exploration.
@@ -325,6 +326,7 @@ var tokenNames = map[TokenType]string{
 	TokenImpact:            "IMPACT",
 	TokenBaseline:          "BASELINE",
 	TokenChanges:           "CHANGES",
+	TokenExemplars:         "EXEMPLARS",
 	TokenRollup:            "ROLLUP",
 	TokenGlimpse:           "GLIMPSE",
 	TokenDescribe:          "DESCRIBE",
@@ -470,6 +472,7 @@ var keywords = map[string]TokenType{
 	"impact":              TokenImpact,
 	"baseline":            TokenBaseline,
 	"changes":             TokenChanges,
+	"exemplars":           TokenExemplars,
 	"rollup":              TokenRollup,
 	"glimpse":             TokenGlimpse,
 	"describe":            TokenDescribe,

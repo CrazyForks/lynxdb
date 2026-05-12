@@ -1395,6 +1395,44 @@ func TestLynxFlow_Changes(t *testing.T) {
 	}
 }
 
+func TestLynxFlow_Exemplars(t *testing.T) {
+	q, err := Parse(`from app | exemplars 3 by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+	sort := q.Commands[0].(*SortCommand)
+	if len(sort.Fields) != 1 || sort.Fields[0].Name != "_time" || !sort.Fields[0].Desc {
+		t.Errorf("Sort fields: got %+v, want -_time", sort.Fields)
+	}
+	dedup, ok := q.Commands[1].(*DedupCommand)
+	if !ok {
+		t.Fatalf("command[1]: got %T, want DedupCommand", q.Commands[1])
+	}
+	if dedup.Limit != 3 || len(dedup.Fields) != 1 || dedup.Fields[0] != "service" {
+		t.Errorf("Dedup: got %+v, want limit 3 by service", dedup)
+	}
+}
+
+func TestLynxFlow_ExemplarsGlobal(t *testing.T) {
+	q, err := Parse(`from app | exemplars 5`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+	head, ok := q.Commands[1].(*HeadCommand)
+	if !ok {
+		t.Fatalf("command[1]: got %T, want HeadCommand", q.Commands[1])
+	}
+	if head.Count != 5 {
+		t.Errorf("Head count: got %d, want 5", head.Count)
+	}
+}
+
 func TestLynxFlow_Percentiles(t *testing.T) {
 	q, err := Parse(`from app | percentiles dur by service`)
 	if err != nil {
@@ -1801,6 +1839,7 @@ func TestLynxFlow_LexerKeywordsAsTokens(t *testing.T) {
 		{"impact", TokenImpact},
 		{"baseline", TokenBaseline},
 		{"changes", TokenChanges},
+		{"exemplars", TokenExemplars},
 		{"percentiles", TokenPercentiles},
 		{"slowest", TokenSlowest},
 	}
@@ -2165,7 +2204,7 @@ func TestLynxFlow_NormalizeKnownCommands(t *testing.T) {
 		"let", "keep", "omit", "select", "group", "every", "bucket",
 		"order", "take", "rank", "topby", "bottomby", "bottom",
 		"running", "enrich", "parse", "explode", "pack", "lookup",
-		"latency", "errors", "rate", "proportion", "impact", "baseline", "changes", "percentiles", "slowest",
+		"latency", "errors", "rate", "proportion", "impact", "baseline", "changes", "exemplars", "percentiles", "slowest",
 		"views", "dropview",
 	}
 	for _, cmd := range lfCommands {
@@ -2991,6 +3030,7 @@ func TestLynxFlow_NormalizerAllLynxFlowCommands(t *testing.T) {
 		{"impact by service", "FROM main | impact by service"},
 		{"baseline error_rate window=12", "FROM main | baseline error_rate window=12"},
 		{"changes version", "FROM main | changes version"},
+		{"exemplars 5", "FROM main | exemplars 5"},
 		{"views", "FROM main | views"},
 	}
 	for _, tt := range tests {

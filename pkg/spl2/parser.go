@@ -527,6 +527,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return p.parseBaselineCmd()
 	case TokenChanges:
 		return p.parseChangesCmd()
+	case TokenExemplars:
+		return p.parseExemplarsCmd()
 
 	case TokenEOF:
 		return nil, nil
@@ -3020,7 +3022,7 @@ func isIdentLike(t TokenType) bool {
 		TokenInto, TokenAsc, TokenDesc,
 		// Lynx Flow domain sugar keywords.
 		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
-		TokenImpact, TokenBaseline, TokenChanges,
+		TokenImpact, TokenBaseline, TokenChanges, TokenExemplars,
 		// SPL2 keywords that can be field names in expression context.
 		TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
@@ -4405,6 +4407,34 @@ func (p *Parser) parseChangesCmd() ([]Command, error) {
 			Right: &CompareExpr{Left: fieldExpr, Op: "!=", Right: previousExpr},
 		}},
 	}, nil
+}
+
+// parseExemplarsCmd parses: exemplars [N] [by <fields>].
+// Desugars to newest rows globally, or newest rows per group.
+func (p *Parser) parseExemplarsCmd() ([]Command, error) {
+	p.advance() // consume "exemplars"
+
+	n := 1
+	if p.peek().Type == TokenNumber {
+		tok := p.advance()
+		parsed, err := strconv.Atoi(tok.Literal)
+		if err != nil {
+			return nil, fmt.Errorf("spl2: exemplars: invalid count %q", tok.Literal)
+		}
+		n = parsed
+	}
+
+	sortCmd := &SortCommand{Fields: []SortField{{Name: "_time", Desc: true}}}
+	if p.peek().Type != TokenBy {
+		return []Command{sortCmd, &HeadCommand{Count: n}}, nil
+	}
+	p.advance()
+	groupBy, err := p.parseIdentListLF()
+	if err != nil {
+		return nil, err
+	}
+
+	return []Command{sortCmd, &DedupCommand{Fields: groupBy, Limit: n}}, nil
 }
 
 // parseIdentListLF parses a comma-separated list of identifiers, accepting

@@ -2848,9 +2848,9 @@ func (p *Parser) parseJsonCmd() (*JsonCommand, error) {
 	}
 done:
 	// Bare path syntax: | json items[*].price AS price, user.name
-	// When no keyword args matched and the next token is an ident,
-	// parse comma-separated dot-bracket paths with optional AS aliases.
-	for p.peek().Type == TokenIdent {
+	// When no keyword args matched and the next token is an ident or
+	// glob-like path, parse comma-separated dot-bracket paths with optional AS aliases.
+	for p.peek().Type == TokenIdent || p.peek().Type == TokenGlob {
 		path := p.parseBareDotPath()
 		if path == "" {
 			break
@@ -2878,11 +2878,11 @@ done:
 
 // parseBareDotPath consumes tokens to build a dotted-bracket path like
 // "items[*].price" or "user.name". Returns "" if the current token is
-// not an identifier. The lexer handles simple dot-paths as single ident
+// not an identifier or glob-like path. The lexer handles simple dot-paths as single ident
 // tokens (e.g., "user.name"); this helper stitches bracket-separated
 // segments back together (e.g., items + [*] + .price → "items[*].price").
 func (p *Parser) parseBareDotPath() string {
-	if p.peek().Type != TokenIdent {
+	if p.peek().Type != TokenIdent && p.peek().Type != TokenGlob {
 		return ""
 	}
 	tok := p.advance()

@@ -69,7 +69,7 @@ Official Splunk compatibility checked:
 
 | RFC area | Current state | Gap |
 |---|---|---|
-| Source selectors | `FROM`, `INDEX`, lists, globs, `*`, CTE refs, and compact time ranges parse | Negated source globs such as `FROM logs*,!logs-debug*` are not represented in `SourceClause` or planner selectors. |
+| Source selectors | `FROM`, `INDEX`, lists, RFC glob matching, source exclude globs, `*`, CTE refs, and compact time ranges parse | `_index_*` source-time planning and some source-scope diagnostics still need coverage against the RFC rewrite contract. |
 | Time modifiers | `earliest`, `latest`, `_index_earliest`, `_index_latest` compatibility is partly normalized | `_index_*` planning and diagnostics need coverage against the RFC rewrite contract. |
 | Rewrite transparency | `NormalizeQuery` rewrites source-less and Splunk-style forms | Rewrites are not yet recorded as structured `Rewrite{Before, After, Reason}` through CLI/TUI/REST metadata. |
 | Lints | Compatibility hints, parse suggestions, and post-parse `L001`/`L002`/`L003`/`L005`/`L010`/`L012`/`L013`/`L022`/`L030`/`L031`/`L034`/`L036` exist | Most RFC lint catalog entries `L001` through `L039` are not implemented yet. |
@@ -84,7 +84,6 @@ Official Splunk compatibility checked:
 
 | RFC requirement | Status | Reason |
 |---|---|---|
-| Bare source glob lexing for character classes and alternatives | Deferred | Search and source matching now support `*`, `?`, `**`, character classes, alternatives, escapes, and source exclude globs; unquoted `FROM logs-[ab]*` and `{api,web}` still need source lexer support beyond token-level `*`/`?` detection. |
 | Full duration grammar including calendar `M`/`y` units | Deferred | Current parser and runtime cover signed `s`/`m`/`h`/`d`/`w` relative ranges, snap suffixes, and week-start snap variants; calendar-aware units need a time arithmetic model beyond `time.Duration`. |
 | Broad-search lints and explain blocks `L032`, `L037`, source counts, skipped segments | Deferred | Requires planner and API metadata integration. |
 | Regex engine selection, PCRE2 diagnostics, and `L038`/`L039` | Deferred | Requires runtime regex engine configuration and planner literal-extraction diagnostics. |

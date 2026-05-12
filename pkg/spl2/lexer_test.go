@@ -156,6 +156,9 @@ func TestLexer_Identifiers(t *testing.T) {
 		{"_raw", TokenIdent, "_raw"},
 		{"response_time", TokenIdent, "response_time"},
 		{"web-*", TokenGlob, "web-*"},
+		{"logs-[ab]*", TokenGlob, "logs-[ab]*"},
+		{"{api,web}", TokenGlob, "{api,web}"},
+		{"api/**", TokenGlob, "api/**"},
 	}
 
 	for _, tt := range tests {

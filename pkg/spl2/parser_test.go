@@ -647,6 +647,48 @@ func TestParse_FromExcludeGlob(t *testing.T) {
 	}
 }
 
+func TestParse_FromBareAdvancedGlobs(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`FROM logs-[ab]* | stats count`, "logs-[ab]*"},
+		{`FROM {api,web} | stats count`, "{api,web}"},
+		{`FROM api/** | stats count`, "api/**"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if q.Source == nil || !q.Source.IsGlob {
+				t.Fatalf("expected glob source, got %#v", q.Source)
+			}
+			if q.Source.Index != tt.want {
+				t.Fatalf("Index: got %q, want %q", q.Source.Index, tt.want)
+			}
+			if got, want := q.Source.IncludeGlobs, []string{tt.want}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("IncludeGlobs: got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestParse_FromTimeRangeAfterName(t *testing.T) {
+	q, err := Parse(`FROM nginx[-1h] | stats count`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if q.Source == nil || q.Source.TimeRange == nil {
+		t.Fatalf("expected source time range, got %#v", q.Source)
+	}
+	if q.Source.Index != "nginx" || q.Source.TimeRange.Relative != "-1h" {
+		t.Fatalf("source/time range: got %#v", q.Source)
+	}
+}
+
 func TestParse_FromMulti(t *testing.T) {
 	input := `FROM nginx, postgres, redis | stats count by source`
 	q, err := Parse(input)

@@ -1148,7 +1148,7 @@ func (c *TopNCommand) String() string {
 
 // ContainsGlobWildcard reports whether s contains glob wildcard characters.
 func ContainsGlobWildcard(s string) bool {
-	return strings.ContainsAny(s, "*?")
+	return strings.ContainsAny(s, "*?[{")
 }
 
 // FieldListHasGlob returns true if any field in the list contains a glob wildcard.

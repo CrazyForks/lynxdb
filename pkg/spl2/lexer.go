@@ -206,6 +206,8 @@ func (l *Lexer) next() (Token, error) {
 			return l.readFString()
 		}
 		return l.readIdentOrGlob()
+	case ch == '{':
+		return l.readIdentOrGlob()
 	case isIdentStart(ch):
 		return l.readIdentOrGlob()
 	default:
@@ -421,14 +423,29 @@ func (l *Lexer) readNumber() (Token, error) {
 func (l *Lexer) readIdentOrGlob() (Token, error) {
 	startPos := l.pos
 
-	for l.pos < len(l.input) && isIdentPart(l.input[l.pos]) {
-		l.pos++
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		switch {
+		case isIdentPart(ch):
+			l.pos++
+		case ch == '[' && l.isGlobClassStart():
+			l.readGlobClass()
+		case ch == '{':
+			if !l.readGlobAlternatives() {
+				goto done
+			}
+		case ch == '/' && l.pos+1 < len(l.input) && l.input[l.pos+1] == '*':
+			l.pos++
+		default:
+			goto done
+		}
 	}
 
+done:
 	literal := l.input[startPos:l.pos]
 
-	// Wildcard characters → glob token.
-	if strings.ContainsAny(literal, "*?") {
+	// Wildcard characters -> glob token.
+	if ContainsGlobWildcard(literal) {
 		return Token{Type: TokenGlob, Literal: literal, Pos: startPos}, nil
 	}
 
@@ -439,6 +456,57 @@ func (l *Lexer) readIdentOrGlob() (Token, error) {
 	}
 
 	return Token{Type: TokenIdent, Literal: literal, Pos: startPos}, nil
+}
+
+func (l *Lexer) isGlobClassStart() bool {
+	if l.pos+1 >= len(l.input) {
+		return false
+	}
+	switch l.input[l.pos+1] {
+	case '-', '+', '@', '"', '\'':
+		return false
+	default:
+		return true
+	}
+}
+
+func (l *Lexer) readGlobClass() {
+	l.pos++ // [
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		l.pos++
+		if ch == '\\' && l.pos < len(l.input) {
+			l.pos++
+			continue
+		}
+		if ch == ']' {
+			return
+		}
+	}
+}
+
+func (l *Lexer) readGlobAlternatives() bool {
+	start := l.pos
+	l.pos++ // {
+	sawComma := false
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		l.pos++
+		if ch == '\\' && l.pos < len(l.input) {
+			l.pos++
+			continue
+		}
+		if ch == ',' {
+			sawComma = true
+			continue
+		}
+		if ch == '}' {
+			return sawComma
+		}
+	}
+	l.pos = start
+
+	return false
 }
 
 func (l *Lexer) skipWhitespace() {

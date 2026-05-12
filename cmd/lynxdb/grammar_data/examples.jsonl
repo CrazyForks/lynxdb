@@ -32,6 +32,7 @@
 {"nl": "List distinct values of a field", "query": "| stats values(status) by endpoint", "category": "aggregate"}
 {"nl": "First and last event per group", "query": "| stats earliest(_time), latest(_time) by source", "category": "aggregate"}
 {"nl": "Errors per source per level", "query": "level=error | stats count by source, level", "category": "aggregate"}
+{"nl": "Chart status counts by host", "query": "| chart count over host by status", "category": "aggregate"}
 {"nl": "Aggregate with alias", "query": "| stats count as event_count by source", "category": "aggregate"}
 {"nl": "Multi-field aggregation", "query": "| stats avg(duration_ms) as avg_dur, max(duration_ms) as max_dur by endpoint", "category": "aggregate"}
 {"nl": "Count events per 5 minutes", "query": "| timechart count span=5m", "category": "timeseries"}

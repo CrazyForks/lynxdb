@@ -401,6 +401,18 @@ func commandAccessedFields(cmd spl2.Command, cols map[string]bool) {
 		for _, f := range c.GroupBy {
 			cols[f] = true
 		}
+	case *spl2.ChartCommand:
+		for _, agg := range c.Aggregations {
+			for _, arg := range agg.Args {
+				collectExprFieldsForOpt(arg, cols)
+			}
+		}
+		if c.RowSplit != "" {
+			cols[c.RowSplit] = true
+		}
+		if c.ColumnSplit != "" {
+			cols[c.ColumnSplit] = true
+		}
 	case *spl2.TopCommand:
 		cols[c.Field] = true
 		if c.ByField != "" {

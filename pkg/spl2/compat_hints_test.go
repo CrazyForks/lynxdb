@@ -39,22 +39,12 @@ func TestSplunkCompat_RFCUnsupportedCommands(t *testing.T) {
 	}
 }
 
-func TestSplunkCompat_Chart(t *testing.T) {
+func TestSplunkCompat_ChartSupported(t *testing.T) {
 	hints := DetectCompatHints(`index=main | chart count by host`)
-	if len(hints) == 0 {
-		t.Fatal("expected hint for chart")
-	}
-	found := false
 	for _, h := range hints {
 		if h.Pattern == "chart" {
-			found = true
-			if !strings.Contains(h.Suggestion, "timechart") {
-				t.Errorf("expected timechart suggestion, got: %s", h.Suggestion)
-			}
+			t.Errorf("chart is supported and should not be flagged, got %+v", h)
 		}
-	}
-	if !found {
-		t.Error("missing chart hint")
 	}
 }
 

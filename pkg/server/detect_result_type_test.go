@@ -23,6 +23,11 @@ func TestDetectResultType(t *testing.T) {
 			want:     ResultTypeAggregate,
 		},
 		{
+			name:     "chart_returns_aggregate",
+			commands: []spl2.Command{&spl2.ChartCommand{}},
+			want:     ResultTypeAggregate,
+		},
+		{
 			name:     "top_returns_aggregate",
 			commands: []spl2.Command{&spl2.TopCommand{Field: "level"}},
 			want:     ResultTypeAggregate,

@@ -1261,6 +1261,7 @@ Every SPL2 command has a Lynx Flow counterpart. Both syntaxes are first-class.
 | `REVERSE` | `reverse` | Identical |
 | `TOP N field` | `top N field` | Identical |
 | `RARE N field` | `rare N field` / `bottom N field` | `rare` is alias for `bottom` |
+| `CHART` | `chart` | Chart-style aggregation |
 | `DEDUP` | `dedup` | Identical |
 | `FIELDS` | `keep` | Include mode |
 | `FIELDS -` | `omit` | Exclude mode |

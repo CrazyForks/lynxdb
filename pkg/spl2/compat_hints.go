@@ -109,7 +109,6 @@ func extractFirstToken(s string) string {
 
 // translationHints maps Splunk patterns to LynxDB suggestions.
 var translationHints = map[string]string{
-	"chart":                   "chart is similar to timechart or stats in LynxDB. Try: | timechart or | stats ... BY field",
 	"access_combined":         "sourcetype=access_combined is a Splunk default. In LynxDB, use sourcetype=nginx or sourcetype=clf",
 	"access_combined_wcookie": "sourcetype=access_combined_wcookie → use sourcetype=nginx in LynxDB",
 	"syslog":                  "sourcetype=syslog works in LynxDB if you have syslog-formatted data ingested",
@@ -133,14 +132,6 @@ func DetectCompatHints(query string) []CompatHint {
 					Unsupported: true,
 				})
 			}
-		}
-		// Check for "chart" (without "timechart").
-		if cmd == "chart" && !seen["chart"] {
-			seen["chart"] = true
-			hints = append(hints, CompatHint{
-				Pattern:    "chart",
-				Suggestion: translationHints["chart"],
-			})
 		}
 	}
 

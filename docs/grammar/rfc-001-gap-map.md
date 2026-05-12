@@ -20,6 +20,7 @@ Source contract: `docs/grammar/RFC.md`.
 | Aggregate `estdc_error(field)` executes with exact-path zero and HLL standard error reporting | `pkg/engine/pipeline/aggregate.go`, `pkg/engine/pipeline/partial_agg.go`, `pkg/engine/pipeline/streamstats.go`, `pkg/api/rest/server_test.go` |
 | Aggregate `mode(field)` executes as the most frequent string value | `pkg/engine/pipeline/aggregate.go`, `pkg/engine/pipeline/partial_agg.go`, `pkg/engine/pipeline/eventstats.go`, `pkg/engine/pipeline/streamstats.go`, `pkg/api/rest/server_test.go` |
 | Timechart aggregates `per_second(field)`, `per_minute(field)`, `per_hour(field)`, and `per_day(field)` scale numeric bucket totals by span | `pkg/engine/pipeline/aggregate.go`, `pkg/engine/pipeline/pipeline.go`, `pkg/api/rest/server_test.go` |
+| SPL `chart` executes grouped aggregation and pivots one aggregate with a column split | `pkg/spl2/parser.go`, `pkg/engine/pipeline/pipeline.go`, `pkg/engine/pipeline/pipeline_test.go` |
 | Time aggregates `earliest_time(field)`, `latest_time(field)`, and `rate(field)` execute from event-time order | `pkg/engine/pipeline/aggregate.go`, `pkg/api/rest/server_test.go` |
 | SPL2 `reverse` command reverses current row order without changing row contents | `pkg/spl2/parser.go`, `pkg/engine/pipeline/pipeline.go`, `pkg/engine/pipeline/pipeline_test.go` |
 | SPL `regex` command filters `_raw` by default and supports field `=` / `!=` patterns | `pkg/spl2/parser.go`, `pkg/engine/pipeline/pipeline.go`, `pkg/engine/pipeline/pipeline_test.go` |
@@ -42,6 +43,7 @@ Official Splunk compatibility checked:
 |---|---|
 | Boolean operator precedence and `XOR` support | Splunk docs say `search` evaluates `OR` before `AND` and does not support `XOR`; `where` and `eval` evaluate `AND`, then `OR`, then `XOR`. |
 | Time aggregate functions | Splunk docs limit `per_second`, `per_minute`, `per_hour`, and `per_day` to `timechart`; `rate` uses `latest`, `earliest`, `latest_time`, and `earliest_time` semantics. |
+| Chart command | Splunk docs define `chart` as a transforming command requiring a statistical function, with `OVER <row-split> BY <column-split>` equivalent to `BY <row-split> <column-split>` for row/column splits. LynxDB implements grouped aggregation and one-aggregate split pivots; advanced chart options are deferred. |
 | Reverse command | Splunk docs define `reverse` as reversing result row order without changing which rows are returned. |
 | Regex command | Splunk docs define `regex` as a streaming filter over `_raw` by default, with `field="pattern"` retaining matches and `field!="pattern"` retaining non-matches plus null field values. LynxDB uses the default linear regex engine unless PCRE2 is explicitly added later. |
 | Replace command | Splunk docs define `replace (<wc-string> WITH <wc-string>)... [IN <field-list>]` as a streaming value replacement command. Wildcards match value text, replacement wildcards reuse captures, and internal fields require explicit `IN`. |
@@ -63,7 +65,7 @@ Official Splunk compatibility checked:
 | Lints | Compatibility hints, parse suggestions, and post-parse `L001`/`L002`/`L003`/`L005`/`L010`/`L012`/`L013`/`L022`/`L030`/`L031`/`L034`/`L036` exist | Most RFC lint catalog entries `L001` through `L039` are not implemented yet. |
 | Quoted identifier canon | Single-quoted identifiers now parse as canonical names and double-quoted names remain accepted in legacy positions with `L012` | Some less-common double-quoted legacy name positions may still need coverage. |
 | Function catalog | Many eval and aggregate functions parse and execute; common aggregate aliases and time aggregates now normalize before planning | RFC aggregate/eval catalog needs a full parser, VM, and editor cross-check for missing functions and aliases. |
-| Command catalog | Native SPL2/LynxFlow commands plus several helpers parse; profile-excluded Splunk commands reject with `L021` | SPL compatibility commands such as `chart`, `union`, `appendcols`, `appendpipe`, and optional capability commands remain incomplete. |
+| Command catalog | Native SPL2/LynxFlow commands plus several helpers parse; profile-excluded Splunk commands reject with `L021` | SPL compatibility commands such as `union`, `appendcols`, `appendpipe`, and optional capability commands remain incomplete. |
 | Editor assistance | Autocomplete covers commands, fields, values, regex snippets, time values, and templates | Ranking reasons and disable switches are not surfaced as RFC `meta.suggestions` behavior. |
 | REST lint metadata | Sync, completed hybrid, async handles, and job completion responses expose `meta.lints` for implemented lints; `lint: false` disables them | Full lint output controls are not wired yet. |
 | CLI/TUI assistance | Shell autocomplete exists; `lynxdb query --no-lint` passes `lint:false`; server-mode CLI/TUI results render returned lints on stderr | Query-context autocomplete and rewrite preview are not aligned with the web catalog yet. |
@@ -76,6 +78,7 @@ Official Splunk compatibility checked:
 | SEARCH `L030` mixed `AND`/`OR` lint with parsed shape | Partial | The lint is implemented for explicit SEARCH commands and surfaces through REST metadata plus CLI/TUI stderr; bare-search normalization paths still need coverage. |
 | Broad-search lints and explain blocks `L032`, `L037`, source counts, skipped segments | Deferred | Requires planner and API metadata integration. |
 | Regex engine selection, PCRE2 diagnostics, and `L038`/`L039` | Deferred | Requires runtime regex engine configuration and planner literal-extraction diagnostics. |
+| `chart` advanced options and multi-aggregate split pivots | Deferred | Current execution covers grouped aggregation and one-aggregate row/column pivots; Splunk options such as `limit`, `format`, `sep`, `cont`, and split-series filtering need chart metadata and option parsing. |
 | `makeresults` `annotate`, `format`, and `data` options | Deferred | Current implementation covers generated row counts and `_time`; inline dataset formats require a richer generator parser. |
 | `fieldformat` render metadata | Deferred | Current `event.Value` has one representation per field; expressions parse and rows keep original values, but alternate display strings are not represented. |
 | `makemv` `setsv` dual representation | Deferred | Current `event.Value` has one representation per field; delimiter and tokenizer multivalue splitting are implemented, but parallel single-value display metadata is not represented. |

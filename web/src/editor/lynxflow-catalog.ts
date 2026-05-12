@@ -14,7 +14,7 @@ export const BUILTIN_FIELDS: readonly string[] = [
 
 export const COMMANDS: readonly string[] = [
   "from", "index", "search", "where", "stats", "eval", "sort", "head", "tail", "reverse",
-  "timechart", "rex", "regex", "replace", "fieldformat", "fields", "table", "dedup", "rename", "bin",
+  "timechart", "chart", "rex", "regex", "replace", "fieldformat", "fields", "table", "dedup", "rename", "bin",
   "streamstats", "eventstats", "join", "append", "multisearch", "transaction",
   "xyseries", "untable", "top", "rare", "fillnull", "materialize", "views",
   "dropview", "unpack_json", "unpack_logfmt", "unpack_syslog", "unpack_combined",
@@ -43,6 +43,7 @@ export const COMMAND_DOCS: Record<string, string> = {
   tail: "last rows",
   reverse: "reverse row order",
   timechart: "time-bucket aggregate",
+  chart: "chart-style aggregate",
   rex: "regex extraction",
   regex: "regex filter",
   replace: "replace field values",

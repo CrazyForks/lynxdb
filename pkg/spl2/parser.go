@@ -362,6 +362,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseReverse())
 	case TokenTimechart:
 		return singleCmd(p.parseTimechart())
+	case TokenChart:
+		return singleCmd(p.parseChart())
 	case TokenRex:
 		return singleCmd(p.parseRex())
 	case TokenRegex:
@@ -712,6 +714,76 @@ func (p *Parser) parseStats() (*StatsCommand, error) {
 	}
 
 	return &StatsCommand{Aggregations: aggs, GroupBy: groupBy}, nil
+}
+
+func (p *Parser) parseChart() (*ChartCommand, error) {
+	p.advance() // consume "chart"
+
+	aggs, err := p.parseAggList()
+	if err != nil {
+		return nil, err
+	}
+	if len(aggs) == 0 {
+		return nil, fmt.Errorf("spl2: chart requires at least one aggregation")
+	}
+
+	cmd := &ChartCommand{Aggregations: aggs}
+	if p.peek().Type == TokenOver {
+		p.advance()
+		row, err := p.parseChartSplitField("OVER")
+		if err != nil {
+			return nil, err
+		}
+		cmd.RowSplit = row
+		if p.peek().Type == TokenBy {
+			p.advance()
+			col, err := p.parseChartSplitField("BY")
+			if err != nil {
+				return nil, err
+			}
+			cmd.ColumnSplit = col
+		}
+		return cmd, nil
+	}
+
+	if p.peek().Type == TokenBy {
+		p.advance()
+		row, err := p.parseChartSplitField("BY")
+		if err != nil {
+			return nil, err
+		}
+		cmd.RowSplit = row
+		if p.peek().Type == TokenComma {
+			p.advance()
+			col, err := p.parseChartSplitField("BY")
+			if err != nil {
+				return nil, err
+			}
+			cmd.ColumnSplit = col
+		} else if p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+			if p.peek().Type == TokenBy {
+				return nil, fmt.Errorf("spl2: chart accepts only one BY clause")
+			}
+			if isIdentLike(p.peek().Type) || p.peek().Type == TokenString {
+				col, err := p.parseChartSplitField("BY")
+				if err != nil {
+					return nil, err
+				}
+				cmd.ColumnSplit = col
+			}
+		}
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseChartSplitField(clause string) (string, error) {
+	tok := p.peek()
+	if !isIdentLike(tok.Type) && tok.Type != TokenString {
+		return "", fmt.Errorf("spl2: chart %s requires a field name", clause)
+	}
+	p.advance()
+	return tok.Literal, nil
 }
 
 func (p *Parser) parseEval() (*EvalCommand, error) {
@@ -3095,6 +3167,7 @@ func (p *Parser) parseAggList() ([]AggExpr, error) {
 			isAgg := next.Type == TokenAs || next.Type == TokenComma ||
 				next.Type == TokenPipe || next.Type == TokenEOF ||
 				next.Type == TokenBy || next.Type == TokenRBracket ||
+				next.Type == TokenOver ||
 				next.Type == TokenSpan ||
 				(isIdentLike(next.Type) && strings.ToLower(next.Literal) == "span")
 			if !isAgg {
@@ -3289,7 +3362,7 @@ func isIdentLike(t TokenType) bool {
 		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
 		TokenImpact, TokenBaseline, TokenChanges, TokenExemplars,
 		// SPL2 keywords that can be field names in expression context.
-		TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
+		TokenChart, TokenOver, TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
 		return true
 	}

@@ -189,6 +189,8 @@ func commandName(cmd spl2.Command) string {
 		return "where"
 	case *spl2.StatsCommand:
 		return "stats"
+	case *spl2.ChartCommand:
+		return "chart"
 	case *spl2.EvalCommand:
 		return "eval"
 	case *spl2.HeadCommand:
@@ -404,6 +406,24 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 			added = newFields
 			setReplace(fields, newFields...)
 			fieldsUnknown = false
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.ChartCommand:
+			if c.ColumnSplit != "" {
+				fieldsUnknown = true
+			} else {
+				var newFields []string
+				if c.RowSplit != "" {
+					newFields = append(newFields, c.RowSplit)
+				}
+				for _, agg := range c.Aggregations {
+					newFields = append(newFields, aggOutputName(agg))
+				}
+				removed = diffFields(fields.order, newFields)
+				added = newFields
+				setReplace(fields, newFields...)
+				fieldsUnknown = false
+			}
 			stage.Description = truncateDesc(c.String(), 80)
 
 		case *spl2.TimechartCommand:

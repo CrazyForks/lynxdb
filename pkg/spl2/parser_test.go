@@ -2056,6 +2056,37 @@ func TestParse_FieldformatQuotedField(t *testing.T) {
 	}
 }
 
+func TestParse_ChartCommand(t *testing.T) {
+	q, err := Parse(`FROM main | chart count over host by status`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*ChartCommand)
+	if !ok {
+		t.Fatalf("expected ChartCommand, got %T", q.Commands[0])
+	}
+	if len(cmd.Aggregations) != 1 || cmd.Aggregations[0].Func != "count" {
+		t.Fatalf("aggs: got %+v, want count", cmd.Aggregations)
+	}
+	if cmd.RowSplit != "host" || cmd.ColumnSplit != "status" {
+		t.Errorf("splits: got row=%q column=%q, want host/status", cmd.RowSplit, cmd.ColumnSplit)
+	}
+}
+
+func TestParse_ChartCommandByTwoFields(t *testing.T) {
+	q, err := Parse(`FROM main | chart avg(duration_ms) by host,status`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*ChartCommand)
+	if !ok {
+		t.Fatalf("expected ChartCommand, got %T", q.Commands[0])
+	}
+	if cmd.RowSplit != "host" || cmd.ColumnSplit != "status" {
+		t.Errorf("splits: got row=%q column=%q, want host/status", cmd.RowSplit, cmd.ColumnSplit)
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

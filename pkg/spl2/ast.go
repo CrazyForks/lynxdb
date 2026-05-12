@@ -206,6 +206,24 @@ func (c *TimechartCommand) String() string {
 	return fmt.Sprintf("timechart span=%s <%d aggs>", c.Span, len(c.Aggregations))
 }
 
+// ChartCommand represents: chart <agg_funcs> [OVER <row>] [BY <column>].
+type ChartCommand struct {
+	Aggregations []AggExpr
+	RowSplit     string
+	ColumnSplit  string
+}
+
+func (*ChartCommand) commandNode() {}
+func (c *ChartCommand) String() string {
+	if c.ColumnSplit != "" {
+		return fmt.Sprintf("chart <%d aggs> over %s by %s", len(c.Aggregations), c.RowSplit, c.ColumnSplit)
+	}
+	if c.RowSplit != "" {
+		return fmt.Sprintf("chart <%d aggs> by %s", len(c.Aggregations), c.RowSplit)
+	}
+	return fmt.Sprintf("chart <%d aggs>", len(c.Aggregations))
+}
+
 // RexCommand represents: rex field=<field> "<regex>".
 type RexCommand struct {
 	Field   string // field to extract from (default: _raw)

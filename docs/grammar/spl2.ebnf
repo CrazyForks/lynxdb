@@ -15,6 +15,7 @@ cte_ref          = "$" ident ;
 command          = search_cmd | where_cmd | stats_cmd | eval_cmd | sort_cmd
                  | head_cmd | tail_cmd | reverse_cmd | table_cmd | fields_cmd | rename_cmd
                  | dedup_cmd | rex_cmd | regex_cmd | replace_cmd | fieldformat_cmd | bin_cmd | timechart_cmd
+                 | chart_cmd
                  | top_cmd | rare_cmd | fillnull_cmd | streamstats_cmd
                  | eventstats_cmd | join_cmd | append_cmd | transaction_cmd
                  | xyseries_cmd | untable_cmd | materialize_cmd | from_cmd | views_cmd
@@ -121,6 +122,8 @@ bin_cmd          = "bin" field [ "span" "=" span_value ] [ "as" ident ] ;
 
 timechart_cmd    = "timechart" [ "span" "=" span_value ] agg_list
                    [ "by" ident_list ] ;
+chart_cmd        = "chart" agg_list [ "over" field [ "by" field ]
+                   | "by" field [ [ "," ] field ] ] ;
 
 (* ─── TOP / RARE / RANK ─── *)
 

@@ -582,6 +582,81 @@ func TestBuildFromSourceFieldformatKeepsUnderlyingValue(t *testing.T) {
 	}
 }
 
+func TestBuildFromSourceChartByField(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | chart count by host`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("api")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int64{}
+	for _, row := range results {
+		counts[row["host"].AsString()] = row["count"].AsInt()
+	}
+	if counts["web"] != 2 || counts["api"] != 1 {
+		t.Errorf("counts: got %v, want web=2 api=1", counts)
+	}
+}
+
+func TestBuildFromSourceChartOverByPivotsOneAggregate(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | chart count over host by status`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web"), "status": event.StringValue("200")},
+		{"host": event.StringValue("web"), "status": event.StringValue("500")},
+		{"host": event.StringValue("web"), "status": event.StringValue("500")},
+		{"host": event.StringValue("api"), "status": event.StringValue("200")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHost := map[string]map[string]event.Value{}
+	for _, row := range results {
+		byHost[row["host"].AsString()] = row
+	}
+	if got := byHost["web"]["200"].AsInt(); got != 1 {
+		t.Errorf("web 200: got %d, want 1", got)
+	}
+	if got := byHost["web"]["500"].AsInt(); got != 2 {
+		t.Errorf("web 500: got %d, want 2", got)
+	}
+	if got := byHost["api"]["200"].AsInt(); got != 1 {
+		t.Errorf("api 200: got %d, want 1", got)
+	}
+}
+
 func TestPipelineEndToEnd(t *testing.T) {
 	// FROM idx | WHERE status >= 500 | stats count
 	events := makeEvents(100)

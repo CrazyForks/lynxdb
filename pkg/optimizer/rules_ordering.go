@@ -261,6 +261,7 @@ func orderingBehavior(cmd spl2.Command) OrderingBehavior {
 	// UnrollCommand changes cardinality (one row → N rows from array explosion),
 	// so the output ordering relative to the original stream is not preserved.
 	case *spl2.StatsCommand,
+		*spl2.ChartCommand,
 		*spl2.DedupCommand,
 		*spl2.TopCommand,
 		*spl2.RareCommand,

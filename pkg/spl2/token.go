@@ -44,6 +44,7 @@ const (
 	TokenTail
 	TokenReverse
 	TokenTimechart
+	TokenChart
 	TokenRex
 	TokenRegex
 	TokenReplace
@@ -71,6 +72,7 @@ const (
 	TokenXor
 	TokenNot
 	TokenIn
+	TokenOver
 	TokenSpan
 	TokenTrue
 	TokenFalse
@@ -244,6 +246,7 @@ var tokenNames = map[TokenType]string{
 	TokenTail:              "TAIL",
 	TokenReverse:           "REVERSE",
 	TokenTimechart:         "TIMECHART",
+	TokenChart:             "CHART",
 	TokenRex:               "REX",
 	TokenRegex:             "REGEX",
 	TokenReplace:           "REPLACE",
@@ -271,6 +274,7 @@ var tokenNames = map[TokenType]string{
 	TokenXor:               "XOR",
 	TokenNot:               "NOT",
 	TokenIn:                "IN",
+	TokenOver:              "OVER",
 	TokenSpan:              "SPAN",
 	TokenTrue:              "TRUE",
 	TokenFalse:             "FALSE",
@@ -404,6 +408,7 @@ var keywords = map[string]TokenType{
 	"tail":                TokenTail,
 	"reverse":             TokenReverse,
 	"timechart":           TokenTimechart,
+	"chart":               TokenChart,
 	"rex":                 TokenRex,
 	"regex":               TokenRegex,
 	"replace":             TokenReplace,
@@ -431,6 +436,7 @@ var keywords = map[string]TokenType{
 	"xor":                 TokenXor,
 	"not":                 TokenNot,
 	"in":                  TokenIn,
+	"over":                TokenOver,
 	"span":                TokenSpan,
 	"true":                TokenTrue,
 	"false":               TokenFalse,

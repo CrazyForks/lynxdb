@@ -662,6 +662,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Fillnull"
 	case *spl2.TimechartCommand:
 		return "Timechart"
+	case *spl2.ChartCommand:
+		return "Chart"
 	case *spl2.FromCommand:
 		return "From"
 	case *spl2.MaterializeCommand:
@@ -1210,6 +1212,21 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 			sortFields = append(sortFields, SortField{Name: g, Desc: false})
 		}
 		return NewSortIteratorWithSpill(tcIter, sortFields, qc.batchSize, qc.newCoordinatedAccount("timechart-sort", reservationSort), qc.spillMgr), nil
+
+	case *spl2.ChartCommand:
+		aggs := qc.convertAggs(c.Aggregations)
+		groupBy := make([]string, 0, 2)
+		if c.RowSplit != "" {
+			groupBy = append(groupBy, c.RowSplit)
+		}
+		if c.ColumnSplit != "" {
+			groupBy = append(groupBy, c.ColumnSplit)
+		}
+		aggIter := NewAggregateIteratorWithSpill(child, aggs, groupBy, qc.newCoordinatedAccount("chart", reservationAggregate), qc.spillMgr)
+		if c.ColumnSplit != "" && len(aggs) == 1 {
+			return NewXYSeriesIteratorWithSpill(aggIter, c.RowSplit, c.ColumnSplit, aggs[0].Alias, qc.batchSize, qc.newCoordinatedAccount("chart-xyseries", reservationAggregate), qc.spillMgr), nil
+		}
+		return aggIter, nil
 
 	case *spl2.FromCommand:
 		// System tables: FROM system.parts, system.merges, system.columns.

@@ -7,12 +7,13 @@ import (
 
 // Meta contains response metadata returned by the server.
 type Meta struct {
-	TookMS          float64      `json:"took_ms,omitempty"`
-	Scanned         int64        `json:"scanned,omitempty"`
-	QueryID         string       `json:"query_id,omitempty"`
-	SegmentsErrored int          `json:"segments_errored,omitempty"`
-	Stats           *SearchStats `json:"stats,omitempty"`
-	Lints           []QueryLint  `json:"lints,omitempty"`
+	TookMS          float64        `json:"took_ms,omitempty"`
+	Scanned         int64          `json:"scanned,omitempty"`
+	QueryID         string         `json:"query_id,omitempty"`
+	SegmentsErrored int            `json:"segments_errored,omitempty"`
+	Stats           *SearchStats   `json:"stats,omitempty"`
+	Lints           []QueryLint    `json:"lints,omitempty"`
+	Rewrites        []QueryRewrite `json:"rewrites,omitempty"`
 }
 
 // QueryLint is an advisory query warning returned in response metadata.
@@ -20,6 +21,13 @@ type QueryLint struct {
 	Code     string `json:"code"`
 	Message  string `json:"message"`
 	Position int    `json:"position"`
+}
+
+// QueryRewrite describes one visible server-side query normalization.
+type QueryRewrite struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
+	Reason string `json:"reason"`
 }
 
 // SearchStats holds detailed query execution statistics from the server.

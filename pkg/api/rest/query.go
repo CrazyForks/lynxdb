@@ -111,13 +111,14 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 
 		return
 	}
+	normalizedQuery, rewrites := spl2.NormalizeQueryWithRewrites(query)
 
 	mode, wait := mapQueryMode(req.Wait)
 	queryCfg := s.currentQueryConfig()
 	limit := clampLimit(req.Limit, queryCfg)
 
 	result, err := s.queryService.Submit(r.Context(), usecases.SubmitRequest{
-		Query:   query,
+		Query:   normalizedQuery,
 		From:    req.effectiveFrom(),
 		To:      req.effectiveTo(),
 		Limit:   limit,
@@ -139,9 +140,9 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 
 			return
 		}
-		writeSyncResultFromUsecase(w, result, limit, req.Offset)
+		writeSyncResultFromUsecase(w, result, limit, req.Offset, rewrites)
 	} else {
-		writeJobHandleFromUsecase(w, result)
+		writeJobHandleFromUsecase(w, result, rewrites)
 	}
 }
 
@@ -207,7 +208,7 @@ func handlePlanError(w http.ResponseWriter, err error) {
 }
 
 // writeSyncResultFromUsecase writes 200 with full results from a SubmitResult.
-func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int) {
+func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int, rewrites []spl2.QueryRewrite) {
 	var data interface{}
 	switch result.ResultType {
 	case server.ResultTypeAggregate, server.ResultTypeTimechart:
@@ -225,7 +226,8 @@ func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitRe
 		WithSegmentsErrored(result.Stats.SegmentsErrored),
 		WithSearchStats(searchStatsToMeta(&result.Stats)),
 		WithWarnings(result.Warnings),
-		WithLints(result.Lints))
+		WithLints(result.Lints),
+		WithRewrites(rewrites))
 }
 
 // searchStatsToMeta converts a server.SearchStats to the REST meta stats struct.
@@ -348,7 +350,7 @@ func searchStatsToMeta(ss *server.SearchStats) *metaStats {
 }
 
 // writeJobHandleFromUsecase writes 202 Accepted with a job handle from a SubmitResult.
-func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult) {
+func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, rewrites []spl2.QueryRewrite) {
 	data := map[string]interface{}{
 		"type":   "job",
 		"job_id": result.JobID,
@@ -360,7 +362,8 @@ func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitRes
 	respondData(w, http.StatusAccepted, data,
 		WithQueryID(result.JobID),
 		WithWarnings(result.Warnings),
-		WithLints(result.Lints))
+		WithLints(result.Lints),
+		WithRewrites(rewrites))
 }
 
 func buildEventsResponse(rows []spl2.ResultRow, limit, offset int) map[string]interface{} {

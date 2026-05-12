@@ -322,6 +322,42 @@ func TestServer_IngestAndQuery(t *testing.T) {
 		t.Error("missing query_id in meta")
 	}
 
+	rewriteQuery := "request"
+	rewriteBody, _ := json.Marshal(map[string]interface{}{
+		"q": rewriteQuery,
+	})
+	rewriteResp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(rewriteBody))
+	if err != nil {
+		t.Fatalf("POST rewrite query: %v", err)
+	}
+	defer rewriteResp.Body.Close()
+
+	if rewriteResp.StatusCode != 200 {
+		b, _ := io.ReadAll(rewriteResp.Body)
+		t.Fatalf("rewrite query status: %d, body: %s", rewriteResp.StatusCode, string(b))
+	}
+
+	var rewriteResult map[string]interface{}
+	json.NewDecoder(rewriteResp.Body).Decode(&rewriteResult)
+	rewriteMeta, _ := rewriteResult["meta"].(map[string]interface{})
+	if rewriteMeta == nil {
+		t.Fatal("missing meta in rewrite query response")
+	}
+	rewrites, _ := rewriteMeta["rewrites"].([]interface{})
+	if len(rewrites) != 1 {
+		t.Fatalf("meta.rewrites: got %#v, want one rewrite", rewriteMeta["rewrites"])
+	}
+	firstRewrite, _ := rewrites[0].(map[string]interface{})
+	if firstRewrite["before"] != rewriteQuery {
+		t.Fatalf("meta.rewrites[0].before: got %v, want %s", firstRewrite["before"], rewriteQuery)
+	}
+	if firstRewrite["after"] != spl2.NormalizeQuery(rewriteQuery) {
+		t.Fatalf("meta.rewrites[0].after: got %v, want %s", firstRewrite["after"], spl2.NormalizeQuery(rewriteQuery))
+	}
+	if firstRewrite["reason"] != "freehand-search" {
+		t.Fatalf("meta.rewrites[0].reason: got %v, want freehand-search", firstRewrite["reason"])
+	}
+
 	lintBody, _ := json.Marshal(map[string]interface{}{
 		"q": `FROM main | stats count`,
 	})

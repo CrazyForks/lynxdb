@@ -29,7 +29,7 @@ Aggregate: stats, chart, timechart, top, rare, eventstats, streamstats
 Transform: eval, rex, regex, replace, fieldformat, rename, table, fields, keep, omit, fillnull, bin, mvexpand, untable, makemv, mvcombine, nomv
 Generate:  makeresults
 Order:     sort, head, tail, reverse, take, dedup
-Join:      join, append, appendpipe, union
+Join:      join, append, appendcols, appendpipe, union
 Session:   transaction, sessionize
 Explore:   glimpse, describe
 Advanced:  materialize, from (views), correlate, topology, tee

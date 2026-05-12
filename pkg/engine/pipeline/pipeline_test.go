@@ -724,6 +724,72 @@ func TestBuildFromSourceAppendpipe(t *testing.T) {
 	}
 }
 
+func TestBuildFromSourceAppendcols(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | appendcols [makeresults count=1 | eval host="sub", extra="x", _internal="skip"]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("api")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["host"].AsString(); got != "web" {
+		t.Errorf("host: got %q, want web", got)
+	}
+	if got := results[0]["extra"].AsString(); got != "x" {
+		t.Errorf("extra: got %q, want x", got)
+	}
+	if _, ok := results[0]["_internal"]; ok {
+		t.Error("internal subsearch field should not be appended")
+	}
+	if got := results[1]["extra"]; !got.IsNull() {
+		t.Errorf("second row extra: got %v, want null", got)
+	}
+}
+
+func TestBuildFromSourceAppendcolsOverride(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | appendcols override=true [makeresults | eval host="sub"]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["host"].AsString(); got != "sub" {
+		t.Errorf("host: got %q, want sub", got)
+	}
+}
+
 func TestPipelineEndToEnd(t *testing.T) {
 	// FROM idx | WHERE status >= 500 | stats count
 	events := makeEvents(100)

@@ -267,6 +267,7 @@ func orderingBehavior(cmd spl2.Command) OrderingBehavior {
 		*spl2.RareCommand,
 		*spl2.JoinCommand,
 		*spl2.AppendCommand,
+		*spl2.AppendcolsCommand,
 		*spl2.AppendpipeCommand,
 		*spl2.MultisearchCommand,
 		*spl2.UnionCommand,

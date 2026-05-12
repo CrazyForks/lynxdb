@@ -2127,6 +2127,23 @@ func TestParse_AppendpipeCommand(t *testing.T) {
 	}
 }
 
+func TestParse_AppendcolsCommand(t *testing.T) {
+	q, err := Parse(`FROM main | appendcols override=true maxout=100 [stats count as total]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*AppendcolsCommand)
+	if !ok {
+		t.Fatalf("expected AppendcolsCommand, got %T", q.Commands[0])
+	}
+	if !cmd.Override {
+		t.Fatal("override: got false, want true")
+	}
+	if cmd.Subquery == nil || len(cmd.Subquery.Commands) != 1 {
+		t.Fatalf("subquery commands: got %+v, want one command", cmd.Subquery)
+	}
+}
+
 func TestParse_FieldsRemoveGlobPattern(t *testing.T) {
 	q, err := Parse(`FROM main | fields - pg.*`)
 	if err != nil {

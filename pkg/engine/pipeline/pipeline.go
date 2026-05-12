@@ -646,6 +646,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Join"
 	case *spl2.AppendCommand:
 		return "Append"
+	case *spl2.AppendcolsCommand:
+		return "Appendcols"
 	case *spl2.AppendpipeCommand:
 		return "Appendpipe"
 	case *spl2.MultisearchCommand:
@@ -1095,6 +1097,17 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		}
 
 		return NewUnionIterator([]Iterator{child, appendIter}), nil
+
+	case *spl2.AppendcolsCommand:
+		if c.Subquery == nil {
+			return child, nil
+		}
+		subIter, err := qc.buildQuery(qc.ctx, c.Subquery)
+		if err != nil {
+			return nil, fmt.Errorf("build APPENDCOLS subquery: %w", err)
+		}
+
+		return NewAppendcolsIterator(child, subIter, c.Override, qc.batchSize), nil
 
 	case *spl2.AppendpipeCommand:
 		if c.Subquery == nil {

@@ -393,6 +393,8 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseJoin())
 	case TokenAppend:
 		return singleCmd(p.parseAppend())
+	case TokenAppendcols:
+		return singleCmd(p.parseAppendcols())
 	case TokenAppendpipe:
 		return singleCmd(p.parseAppendpipe())
 	case TokenMultisearch:
@@ -1726,6 +1728,46 @@ func (p *Parser) parseAppend() (*AppendCommand, error) {
 	}
 
 	return &AppendCommand{Subquery: sub}, nil
+}
+
+func (p *Parser) parseAppendcols() (*AppendcolsCommand, error) {
+	p.advance() // consume "appendcols"
+	cmd := &AppendcolsCommand{}
+
+	for p.peek().Type != TokenLBracket {
+		if p.peek().Type == TokenPipe || p.peek().Type == TokenEOF || p.peek().Type == TokenRBracket {
+			return nil, fmt.Errorf("spl2: appendcols requires a subsearch")
+		}
+		if !isIdentLike(p.peek().Type) || p.peekAt(1).Type != TokenEq {
+			return nil, fmt.Errorf("spl2: appendcols expects options or a subsearch")
+		}
+		name := strings.ToLower(p.advance().Literal)
+		p.advance() // consume =
+		switch name {
+		case "override":
+			value := strings.ToLower(p.peek().Literal)
+			if p.peek().Type != TokenTrue && p.peek().Type != TokenFalse && value != "true" && value != "false" {
+				return nil, fmt.Errorf("spl2: appendcols override requires a boolean value")
+			}
+			cmd.Override = value == "true"
+			p.advance()
+		case "maxout", "maxtime", "timeout":
+			if p.peek().Type != TokenNumber && !isIdentLike(p.peek().Type) {
+				return nil, fmt.Errorf("spl2: appendcols option %s requires a value", name)
+			}
+			p.advance()
+		default:
+			return nil, fmt.Errorf("spl2: unsupported appendcols option %q", name)
+		}
+	}
+
+	sub, err := p.parseSubsearch()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Subquery = sub
+
+	return cmd, nil
 }
 
 func (p *Parser) parseAppendpipe() (*AppendpipeCommand, error) {
@@ -3441,7 +3483,7 @@ func isIdentLike(t TokenType) bool {
 		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
 		TokenImpact, TokenBaseline, TokenChanges, TokenExemplars,
 		// SPL2 keywords that can be field names in expression context.
-		TokenChart, TokenOver, TokenUnion, TokenAppendpipe, TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
+		TokenChart, TokenOver, TokenUnion, TokenAppendcols, TokenAppendpipe, TokenFieldformat, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
 		return true
 	}

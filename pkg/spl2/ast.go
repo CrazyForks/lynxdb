@@ -390,6 +390,17 @@ func (c *AppendCommand) String() string {
 	return "append [...]"
 }
 
+// AppendcolsCommand represents: APPENDCOLS [options] [subsearch].
+type AppendcolsCommand struct {
+	Subquery *Query
+	Override bool
+}
+
+func (*AppendcolsCommand) commandNode() {}
+func (c *AppendcolsCommand) String() string {
+	return "appendcols [...]"
+}
+
 // AppendpipeCommand represents: APPENDPIPE [subpipe].
 type AppendpipeCommand struct {
 	Subquery *Query

@@ -91,6 +91,7 @@
 {"nl": "Join two queries by field", "query": "| join type=inner client_ip [$threats]", "category": "join"}
 {"nl": "Left join with subsearch", "query": "| join type=left user_id [user_roles]", "category": "join"}
 {"nl": "Append another query", "query": "| append [| from other_index | where level=error]", "category": "join"}
+{"nl": "Append subsearch columns to current rows", "query": "| appendcols [| makeresults | eval threshold=30]", "category": "join"}
 {"nl": "Append a subtotal row from the current results", "query": "| appendpipe [stats count as total]", "category": "join"}
 {"nl": "Union current results with another query", "query": "| union [| from other_index | where level=error]", "category": "join"}
 {"nl": "Transaction grouping by field", "query": "| transaction session_id maxspan=30m", "category": "transaction"}

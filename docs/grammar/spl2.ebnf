@@ -198,7 +198,7 @@ dropview_cmd     = "dropview" quoted_string ;
 (* ─── Exploration commands ─── *)
 
 glimpse_cmd      = "glimpse" [ number ] ;
-describe_cmd     = "describe" [ field ] ;
+describe_cmd     = "describe" ;
 use_cmd          = "use" ( ident | "@" ident [ "/" ident ] ) ;
 outliers_cmd     = "outliers" "field" "=" field
                    [ "method" "=" ( "iqr" | "zscore" | "mad" ) ]
@@ -213,16 +213,20 @@ trace_cmd        = "trace" [ "trace_id" "=" field ]
 
 (* ─── Data transformation commands ─── *)
 
-tee_cmd          = "tee" quoted_string query ;
-rollup_cmd       = "rollup" field [ "span" "=" span_value ] agg_list
+tee_cmd          = "tee" quoted_string ;
+rollup_cmd       = "rollup" span_value { "," span_value }
                    [ "by" ident_list ] ;
-sessionize_cmd   = "sessionize" [ "maxspan" "=" span_value ]
-                   [ "maxpause" "=" span_value ] [ "by" ident_list ] ;
+sessionize_cmd   = "sessionize" [ "maxpause" "=" span_value ]
+                   [ "by" ident_list ] ;
 
 (* ─── Correlation / topology ─── *)
 
-correlate_cmd    = "correlate" field [ "by" ident_list ] ;
-topology_cmd     = "topology" field field [ "maxdepth" "=" number ] ;
+correlate_cmd    = "correlate" field field
+                   [ "method" "=" ( "pearson" | "spearman" ) ] ;
+topology_cmd     = "topology" [ "source_field" "=" field ]
+                   [ "dest_field" "=" field ]
+                   [ "weight_field" "=" field ]
+                   [ "max_nodes" "=" number ] ;
 
 (* ─── Structured data commands ─── *)
 

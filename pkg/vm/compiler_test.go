@@ -292,6 +292,38 @@ func TestCompileValidateFunction(t *testing.T) {
 	}
 }
 
+func TestCompileSearchMatch(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "searchmatch",
+		Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"sshd AND Accepted"`}},
+	}
+	prog, err := CompilePredicate(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, map[string]event.Value{
+		"_raw": event.StringValue("sshd[123]: Accepted password for admin"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.AsBool() {
+		t.Fatal("expected matching _raw to return true")
+	}
+
+	result, err = vm.Execute(prog, map[string]event.Value{
+		"_raw": event.StringValue("sshd[123]: Failed password for guest"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AsBool() {
+		t.Fatal("expected non-matching _raw to return false")
+	}
+}
+
 func TestCompileCoalesce(t *testing.T) {
 	expr := &spl2.FuncCallExpr{
 		Name: "coalesce",

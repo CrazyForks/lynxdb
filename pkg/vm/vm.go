@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 const StackSize = 256
@@ -1061,6 +1062,10 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = ipMaskValue(mask, ip)
 
+		case OpSearchMatch:
+			search := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = searchMatchValue(search, fields)
+
 		case OpJsonExtract:
 			// Stack: [..., field, path] → [..., result]
 			path := vm.stack[vm.sp-1]
@@ -2050,6 +2055,19 @@ func ipMaskValue(mask, ip event.Value) event.Value {
 	)
 
 	return event.StringValue(masked.String())
+}
+
+func searchMatchValue(search event.Value, fields map[string]event.Value) event.Value {
+	if search.IsNull() {
+		return event.BoolValue(false)
+	}
+	expr, err := spl2.ParseSearchExpression(valueToString(search))
+	if err != nil {
+		return event.BoolValue(false)
+	}
+	evaluator := spl2.NewSearchEvaluator(expr)
+
+	return event.BoolValue(evaluator.Evaluate(fields))
 }
 
 // splTimeReplacer converts SPL2 strftime format tokens to Go time layout tokens.

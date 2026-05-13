@@ -160,7 +160,7 @@ export const LATENCY_AGG_SHORTHANDS: readonly string[] = [
 ];
 
 export const EVAL_FUNCTIONS: readonly string[] = [
-  "if()", "case()", "validate()", "coalesce()", "null()", "nullif()", "in()",
+  "if()", "case()", "validate()", "coalesce()", "null()", "nullif()", "in()", "searchmatch()",
   "match()", "like()", "cidrmatch()", "isnull()", "isnotnull()", "isnum()",
   "isnumeric()", "isint()", "isstr()", "isbool()", "typeof()", "tonumber()",
   "tostring()", "toint()", "todouble()", "tobool()", "printf()", "ipmask()", "abs()", "ceil()",

@@ -427,6 +427,14 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return fmt.Errorf("nullif expects 2 arguments, got %d", len(e.Args))
 		}
 		return c.compileNullIf(e.Args[0], e.Args[1])
+	case "searchmatch":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("searchmatch expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpSearchMatch)
 	case "in":
 		if len(e.Args) < 2 {
 			return fmt.Errorf("in expects at least 2 arguments, got %d", len(e.Args))

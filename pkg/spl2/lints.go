@@ -15,23 +15,24 @@ type QueryLint struct {
 }
 
 const (
-	LintLeadingWildcard    = "L001"
-	LintDefaultSource      = "L002"
-	LintIndexRewrite       = "L003"
-	LintStatsCountWide     = "L004"
-	LintRawExactCompare    = "L005"
-	LintOptionAfterArg     = "L010"
-	LintAmbiguousDedupArgs = "L011"
-	LintDoubleQuotedName   = "L012"
-	LintCountWithoutParens = "L013"
-	LintUnsupportedCommand = "L021"
-	LintDeprecatedSort     = "L022"
-	LintMixedSearchAndOr   = "L030"
-	LintDeepSearchNesting  = "L031"
-	LintUnquotedOpValue    = "L033"
-	LintReservedFieldName  = "L034"
-	LintTautologicalSearch = "L035"
-	LintDefaultMetricField = "L036"
+	LintLeadingWildcard      = "L001"
+	LintDefaultSource        = "L002"
+	LintIndexRewrite         = "L003"
+	LintStatsCountWide       = "L004"
+	LintRawExactCompare      = "L005"
+	LintOptionAfterArg       = "L010"
+	LintAmbiguousDedupArgs   = "L011"
+	LintDoubleQuotedName     = "L012"
+	LintCountWithoutParens   = "L013"
+	LintUnsupportedCommand   = "L021"
+	LintDeprecatedSort       = "L022"
+	LintMixedSearchAndOr     = "L030"
+	LintDeepSearchNesting    = "L031"
+	LintUnquotedOpValue      = "L033"
+	LintReservedFieldName    = "L034"
+	LintTautologicalSearch   = "L035"
+	LintDefaultMetricField   = "L036"
+	LintNoExtractablePattern = "L038"
 )
 
 const (
@@ -76,7 +77,7 @@ func PrepareQueryLints(lints []QueryLint) []QueryLint {
 
 func lintReason(code string) string {
 	switch code {
-	case LintLeadingWildcard, LintTautologicalSearch:
+	case LintLeadingWildcard, LintTautologicalSearch, LintNoExtractablePattern:
 		return "slow"
 	case LintDefaultSource, LintIndexRewrite, LintUnsupportedCommand, LintMixedSearchAndOr, LintDefaultMetricField:
 		return "compat"
@@ -91,7 +92,7 @@ func lintReason(code string) string {
 
 func lintSeverity(code string) string {
 	switch code {
-	case LintLeadingWildcard, LintStatsCountWide, LintRawExactCompare, LintMixedSearchAndOr, LintDeepSearchNesting, LintTautologicalSearch:
+	case LintLeadingWildcard, LintStatsCountWide, LintRawExactCompare, LintMixedSearchAndOr, LintDeepSearchNesting, LintTautologicalSearch, LintNoExtractablePattern:
 		return LintSeverityWarning
 	default:
 		return LintSeverityNotice
@@ -178,6 +179,7 @@ func LintProgram(input string, prog *Program) ([]QueryLint, error) {
 	lints = append(lints, lintReservedFieldNames(tokens)...)
 	lints = append(lints, lintTautologicalSearchWideRange(prog)...)
 	lints = append(lints, lintDefaultMetricField(tokens)...)
+	lints = append(lints, lintNoExtractablePatterns(prog)...)
 
 	return lints, nil
 }
@@ -993,6 +995,260 @@ func rawExactCompareLint() QueryLint {
 	return QueryLint{
 		Code:     LintRawExactCompare,
 		Message:  "For substring search use `_raw LIKE \"%x%\"` or `search \"x\"`",
+		Position: 0,
+	}
+}
+
+func lintNoExtractablePatterns(prog *Program) []QueryLint {
+	if prog == nil {
+		return nil
+	}
+
+	var lints []QueryLint
+	for _, ds := range prog.Datasets {
+		lints = append(lints, lintNoExtractablePatternsInQuery(ds.Query)...)
+	}
+	lints = append(lints, lintNoExtractablePatternsInQuery(prog.Main)...)
+
+	return lints
+}
+
+func lintNoExtractablePatternsInQuery(q *Query) []QueryLint {
+	if q == nil {
+		return nil
+	}
+
+	var lints []QueryLint
+	for _, cmd := range q.Commands {
+		switch c := cmd.(type) {
+		case *SearchCommand:
+			if c.Expression != nil {
+				lints = append(lints, lintNoExtractablePatternsInSearch(c.Expression)...)
+			}
+		case *WhereCommand:
+			lints = append(lints, lintNoExtractablePatternsInExpr(c.Expr)...)
+		case *JoinCommand:
+			lints = append(lints, lintNoExtractablePatternsInQuery(c.Subquery)...)
+		case *AppendCommand:
+			lints = append(lints, lintNoExtractablePatternsInQuery(c.Subquery)...)
+		case *MultisearchCommand:
+			for _, sub := range c.Searches {
+				lints = append(lints, lintNoExtractablePatternsInQuery(sub)...)
+			}
+		}
+	}
+
+	return lints
+}
+
+func lintNoExtractablePatternsInSearch(expr SearchExpr) []QueryLint {
+	switch e := expr.(type) {
+	case *SearchAndExpr:
+		lints := lintNoExtractablePatternsInSearch(e.Left)
+		return append(lints, lintNoExtractablePatternsInSearch(e.Right)...)
+	case *SearchOrExpr:
+		lints := lintNoExtractablePatternsInSearch(e.Left)
+		return append(lints, lintNoExtractablePatternsInSearch(e.Right)...)
+	case *SearchNotExpr:
+		return lintNoExtractablePatternsInSearch(e.Operand)
+	case *SearchKeywordExpr:
+		if e.Value != "*" && e.HasWildcard && !globHasExtractableLiteral(e.Value) {
+			return []QueryLint{noExtractablePatternLint()}
+		}
+	case *SearchCompareExpr:
+		if e.Value != "*" && e.Field == "_raw" && e.HasWildcard && !globHasExtractableLiteral(e.Value) {
+			return []QueryLint{noExtractablePatternLint()}
+		}
+	case *SearchInExpr:
+		if e.Field != "_raw" {
+			return nil
+		}
+		var lints []QueryLint
+		for _, value := range e.Values {
+			if value.Value != "*" && value.HasWildcard && !globHasExtractableLiteral(value.Value) {
+				lints = append(lints, noExtractablePatternLint())
+			}
+		}
+		return lints
+	}
+
+	return nil
+}
+
+func lintNoExtractablePatternsInExpr(expr Expr) []QueryLint {
+	switch e := expr.(type) {
+	case *BinaryExpr:
+		lints := lintNoExtractablePatternsInExpr(e.Left)
+		return append(lints, lintNoExtractablePatternsInExpr(e.Right)...)
+	case *NotExpr:
+		return lintNoExtractablePatternsInExpr(e.Expr)
+	case *CompareExpr:
+		var lints []QueryLint
+		lints = append(lints, lintNoExtractablePatternsInExpr(e.Left)...)
+		lints = append(lints, lintNoExtractablePatternsInExpr(e.Right)...)
+		if !isRawFieldExpr(e.Left) {
+			return lints
+		}
+		switch strings.ToLower(e.Op) {
+		case "=~", "!~":
+			if pattern, ok := literalExprValue(e.Right); ok && !regexHasExtractableLiteral(pattern) {
+				lints = append(lints, noExtractablePatternLint())
+			}
+		case "like", "not like":
+			if pattern, ok := literalExprValue(e.Right); ok && !likeHasExtractableLiteral(pattern) {
+				lints = append(lints, noExtractablePatternLint())
+			}
+		case "=", "!=":
+			if pattern, ok := globExprPattern(e.Right); ok && pattern != "*" && !globHasExtractableLiteral(pattern) {
+				lints = append(lints, noExtractablePatternLint())
+			}
+		}
+		return lints
+	case *InExpr:
+		var lints []QueryLint
+		lints = append(lints, lintNoExtractablePatternsInExpr(e.Field)...)
+		for _, value := range e.Values {
+			lints = append(lints, lintNoExtractablePatternsInExpr(value)...)
+		}
+		return lints
+	case *ArithExpr:
+		lints := lintNoExtractablePatternsInExpr(e.Left)
+		return append(lints, lintNoExtractablePatternsInExpr(e.Right)...)
+	case *FuncCallExpr:
+		var lints []QueryLint
+		for _, arg := range e.Args {
+			lints = append(lints, lintNoExtractablePatternsInExpr(arg)...)
+		}
+		return lints
+	}
+
+	return nil
+}
+
+func literalExprValue(expr Expr) (string, bool) {
+	lit, ok := expr.(*LiteralExpr)
+	if !ok {
+		return "", false
+	}
+	return lit.Value, true
+}
+
+func globExprPattern(expr Expr) (string, bool) {
+	glob, ok := expr.(*GlobExpr)
+	if !ok {
+		return "", false
+	}
+	return glob.Pattern, true
+}
+
+func regexHasExtractableLiteral(pattern string) bool {
+	return hasExtractableLiteralRun(pattern, func(ch byte, escaped bool, inClass bool) (bool, bool) {
+		if inClass {
+			return false, ch == ']'
+		}
+		if escaped {
+			switch ch {
+			case 'b', 'B', 'd', 'D', 's', 'S', 'w', 'W', 'A', 'z', 'Z':
+				return false, false
+			default:
+				return isLiteralByte(ch), false
+			}
+		}
+		if ch == '[' {
+			return false, true
+		}
+		switch ch {
+		case '.', '^', '$', '*', '+', '?', '(', ')', '{', '}', '|':
+			return false, false
+		default:
+			return isLiteralByte(ch), false
+		}
+	})
+}
+
+func globHasExtractableLiteral(pattern string) bool {
+	return hasExtractableLiteralRun(pattern, func(ch byte, escaped bool, inClass bool) (bool, bool) {
+		if escaped {
+			return isLiteralByte(ch), false
+		}
+		if inClass {
+			return false, ch == ']'
+		}
+		if ch == '[' {
+			return false, true
+		}
+		switch ch {
+		case '*', '?', '{', '}', ',', '!':
+			return false, false
+		default:
+			return isLiteralByte(ch), false
+		}
+	})
+}
+
+func likeHasExtractableLiteral(pattern string) bool {
+	return hasExtractableLiteralRun(pattern, func(ch byte, escaped bool, inClass bool) (bool, bool) {
+		if escaped {
+			return isLiteralByte(ch), false
+		}
+		switch ch {
+		case '%', '_':
+			return false, false
+		default:
+			return isLiteralByte(ch), false
+		}
+	})
+}
+
+func hasExtractableLiteralRun(pattern string, classify func(ch byte, escaped bool, inClass bool) (literal bool, closeClass bool)) bool {
+	const minExtractableNgram = 3
+
+	run := 0
+	escaped := false
+	inClass := false
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		if !escaped && ch == '\\' {
+			escaped = true
+			run = 0
+			continue
+		}
+		if !escaped && !inClass && ch == '[' {
+			inClass = true
+			run = 0
+			continue
+		}
+
+		literal, closeClass := classify(ch, escaped, inClass)
+		escaped = false
+		if closeClass {
+			inClass = false
+		}
+
+		if literal {
+			run++
+			if run >= minExtractableNgram {
+				return true
+			}
+			continue
+		}
+		run = 0
+	}
+
+	return false
+}
+
+func isLiteralByte(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '_'
+}
+
+func noExtractablePatternLint() QueryLint {
+	return QueryLint{
+		Code:     LintNoExtractablePattern,
+		Message:  "Pattern cannot be prefiltered efficiently; add a literal anchor if possible",
 		Position: 0,
 	}
 }

@@ -73,7 +73,7 @@ Official Splunk compatibility checked:
 | RFC area | Current state | Gap |
 |---|---|---|
 | Source selectors | `FROM`, `INDEX`, lists, RFC glob matching, source exclude globs, `*`, CTE refs, and compact time ranges parse | Some source-scope diagnostics still need coverage against the RFC rewrite contract. |
-| Lints | Compatibility hints, parse suggestions, and post-parse `L001`/`L002`/`L003`/`L004`/`L005`/`L010`/`L011`/`L012`/`L013`/`L022`/`L030`/`L031`/`L033`/`L034`/`L035`/`L036` exist | Most RFC lint catalog entries `L001` through `L039` are not implemented yet. |
+| Lints | Compatibility hints, parse suggestions, and post-parse `L001`/`L002`/`L003`/`L004`/`L005`/`L010`/`L011`/`L012`/`L013`/`L022`/`L030`/`L031`/`L033`/`L034`/`L035`/`L036`/`L038` exist | Most RFC lint catalog entries `L001` through `L039` are not implemented yet. |
 | Quoted identifier canon | Single-quoted identifiers now parse as canonical names and double-quoted names remain accepted in legacy positions with `L012` | Some less-common double-quoted legacy name positions may still need coverage. |
 | Function catalog | Many eval and aggregate functions parse and execute; common aggregate aliases and time aggregates now normalize before planning | RFC aggregate/eval catalog needs a full parser, VM, and editor cross-check for missing functions and aliases. |
 | Command catalog | Native SPL2/LynxFlow commands, several helpers, and optional capability command syntax parse; profile-excluded Splunk commands reject with `L021` | Optional capability command execution semantics remain deferred. |
@@ -87,7 +87,7 @@ Official Splunk compatibility checked:
 |---|---|---|
 | Full duration grammar including calendar `M`/`y` units | Deferred | Current parser and runtime cover signed `s`/`m`/`h`/`d`/`w` relative ranges, snap suffixes, and week-start snap variants; calendar-aware units need a time arithmetic model beyond `time.Duration`. |
 | Broad-search lints and explain blocks `L032`, `L037`, source counts, skipped segments | Deferred | Requires planner and API metadata integration. |
-| Regex engine selection, PCRE2 diagnostics, and `L038`/`L039` | Deferred | Requires runtime regex engine configuration and planner literal-extraction diagnostics. |
+| Regex engine selection, PCRE2 diagnostics, and `L039` | Deferred | Static `L038` no-literal pattern lint exists; runtime engine selection, PCRE2 opt-in diagnostics, and planner literal-extraction metadata still require execution planning integration. |
 | `chart` advanced options and multi-aggregate split pivots | Deferred | Current execution covers grouped aggregation and one-aggregate row/column pivots; Splunk options such as `limit`, `format`, `sep`, `cont`, and split-series filtering need chart metadata and option parsing. |
 | `union` time limits and `_time` interleaving | Deferred | Branch `maxout` is implemented; `maxtime` and `timeout` parse for compatibility but need branch execution cancellation. Splunk-style time interleaving needs a merge iterator keyed by `_time`. |
 | `appendcols` `maxtime` and `timeout` limits | Deferred | Row-wise merge, `override`, and `maxout` are implemented; time-budget options parse for compatibility but need branch execution cancellation. |

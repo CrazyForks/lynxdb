@@ -726,6 +726,62 @@ func TestLintQuery_UnquotedOperatorValues(t *testing.T) {
 	}
 }
 
+func TestLintQuery_NoExtractablePattern(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantCodes []string
+	}{
+		{
+			name:      "raw regex wildcard only",
+			query:     `from app | where _raw =~ ".*"`,
+			wantCodes: []string{LintNoExtractablePattern},
+		},
+		{
+			name:      "raw regex character class only",
+			query:     `from app | where _raw =~ "^[0-9]+$"`,
+			wantCodes: []string{LintNoExtractablePattern},
+		},
+		{
+			name:      "raw regex with literal",
+			query:     `from app | where _raw =~ ".*error.*"`,
+			wantCodes: nil,
+		},
+		{
+			name:      "field regex without literal is not raw",
+			query:     `from app | where message =~ ".*"`,
+			wantCodes: nil,
+		},
+		{
+			name:      "search raw glob without ngram",
+			query:     `from app | search *e*`,
+			wantCodes: []string{LintLeadingWildcard, LintNoExtractablePattern},
+		},
+		{
+			name:      "raw like without ngram",
+			query:     `from app | where _raw like "%e%"`,
+			wantCodes: []string{LintNoExtractablePattern},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lints, err := LintQuery(tt.query)
+			if err != nil {
+				t.Fatalf("LintQuery: %v", err)
+			}
+			if len(lints) != len(tt.wantCodes) {
+				t.Fatalf("lints: got %+v, want codes %v", lints, tt.wantCodes)
+			}
+			for i, want := range tt.wantCodes {
+				if lints[i].Code != want {
+					t.Fatalf("lints[%d].Code: got %q, want %q", i, lints[i].Code, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLintProgram_RequiresSuccessfulParse(t *testing.T) {
 	_, err := LintQuery(`from app | stats count(`)
 	if err == nil {

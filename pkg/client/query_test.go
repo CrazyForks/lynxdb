@@ -72,6 +72,9 @@ func TestQuery_LintOptionAndMetadata(t *testing.T) {
 		if !req.LintFull {
 			t.Fatal("LintFull = false, want true")
 		}
+		if req.Suggestions == nil || *req.Suggestions {
+			t.Fatalf("Suggestions = %v, want false", req.Suggestions)
+		}
 
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{
 			"data": map[string]interface{}{
@@ -93,8 +96,9 @@ func TestQuery_LintOptionAndMetadata(t *testing.T) {
 	defer srv.Close()
 
 	lint := false
+	suggestions := false
 	c := NewClient(WithBaseURL(srv.URL))
-	result, err := c.Query(context.Background(), QueryRequest{Q: "error", Lint: &lint, LintLimit: 2, LintFull: true})
+	result, err := c.Query(context.Background(), QueryRequest{Q: "error", Lint: &lint, Suggestions: &suggestions, LintLimit: 2, LintFull: true})
 	if err != nil {
 		t.Fatal(err)
 	}

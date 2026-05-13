@@ -1852,23 +1852,33 @@ func TestQuery_SuggestionsMetadata(t *testing.T) {
 	srv, cleanup := startTestServer(t)
 	defer cleanup()
 
-	body, _ := json.Marshal(map[string]interface{}{
-		"q": `from main | where level IN ("error", "fatal") | stats count() by service`,
-	})
-	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
-	if err != nil {
-		t.Fatalf("POST: %v", err)
-	}
-	defer resp.Body.Close()
+	post := func(body map[string]interface{}) map[string]interface{} {
+		t.Helper()
+		if _, ok := body["q"]; !ok {
+			body["q"] = `from main | where level IN ("error", "fatal") | stats count() by service`
+		}
+		raw, _ := json.Marshal(body)
+		resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(raw))
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(b))
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(b))
+		}
+
+		var result map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&result)
+		meta, _ := result["meta"].(map[string]interface{})
+		if meta == nil {
+			t.Fatal("missing meta")
+		}
+		return meta
 	}
 
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	meta, _ := result["meta"].(map[string]interface{})
+	meta := post(map[string]interface{}{})
 	suggestions, _ := meta["suggestions"].([]interface{})
 	if len(suggestions) != 1 {
 		t.Fatalf("meta.suggestions: got %#v, want one suggestion", meta["suggestions"])
@@ -1879,6 +1889,22 @@ func TestQuery_SuggestionsMetadata(t *testing.T) {
 	}
 	if first["reason"] != "shortcut" || first["source_code"] != spl2.LintShortcutAvailable {
 		t.Fatalf("suggestion metadata: got %#v", first)
+	}
+
+	noLintMeta := post(map[string]interface{}{"lint": false})
+	if _, ok := noLintMeta["lints"]; ok {
+		t.Fatalf("meta.lints present despite lint=false: %#v", noLintMeta["lints"])
+	}
+	if suggestions, _ := noLintMeta["suggestions"].([]interface{}); len(suggestions) != 1 {
+		t.Fatalf("meta.suggestions with lint=false: got %#v, want one suggestion", noLintMeta["suggestions"])
+	}
+
+	noSuggestionMeta := post(map[string]interface{}{"suggestions": false})
+	if _, ok := noSuggestionMeta["suggestions"]; ok {
+		t.Fatalf("meta.suggestions present despite suggestions=false: %#v", noSuggestionMeta["suggestions"])
+	}
+	if lints, _ := noSuggestionMeta["lints"].([]interface{}); len(lints) == 0 {
+		t.Fatalf("meta.lints missing when suggestions=false: %#v", noSuggestionMeta["lints"])
 	}
 }
 

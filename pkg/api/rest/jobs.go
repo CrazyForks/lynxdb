@@ -10,7 +10,6 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/auth"
 	"github.com/lynxbase/lynxdb/pkg/server"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 func normalizeJobStatusFilter(raw string) (string, error) {
@@ -64,7 +63,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 			WithQueryID(snap.ID),
 			WithWarnings(snap.Warnings),
 			WithLints(snap.Lints),
-			WithSuggestions(spl2.SuggestionsFromLints(snap.Lints)),
+			WithSuggestions(snap.Suggestions),
 			WithRewrites(snap.Rewrites))
 
 		return
@@ -84,7 +83,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 			WithQueryID(snap.ID),
 			WithWarnings(snap.Warnings),
 			WithLints(snap.Lints),
-			WithSuggestions(spl2.SuggestionsFromLints(snap.Lints)),
+			WithSuggestions(snap.Suggestions),
 			WithRewrites(snap.Rewrites))
 
 		return
@@ -118,7 +117,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		WithSearchStats(searchStatsToMeta(&snap.Stats)),
 		WithWarnings(snap.Warnings),
 		WithLints(snap.Lints),
-		WithSuggestions(spl2.SuggestionsFromLints(snap.Lints)),
+		WithSuggestions(snap.Suggestions),
 		WithRewrites(snap.Rewrites))
 }
 

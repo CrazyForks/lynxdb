@@ -938,17 +938,24 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 	if plan.Hints != nil && len(plan.Hints.Warnings) > 0 {
 		warnings = plan.Hints.Warnings
 	}
+	var analysisLints []spl2.QueryLint
+	if !req.NoLint || !req.NoSuggestions {
+		var lintErr error
+		analysisLints, lintErr = spl2.LintQuery(req.Query)
+		if lintErr != nil {
+			analysisLints, _ = spl2.LintProgram(plan.RawQuery, plan.Program)
+		}
+		analysisLints = spl2.PrepareQueryLints(analysisLints)
+	}
 	var lints []spl2.QueryLint
 	if !req.NoLint {
-		var lintErr error
-		lints, lintErr = spl2.LintQuery(req.Query)
-		if lintErr != nil {
-			lints, _ = spl2.LintProgram(plan.RawQuery, plan.Program)
-		}
-		lints = spl2.PrepareQueryLints(lints)
-		lints = applyLintOutputLimit(lints, req.LintLimit, req.LintFull)
+		lints = applyLintOutputLimit(analysisLints, req.LintLimit, req.LintFull)
 	}
-	job.SetAdvisoryMetadata(warnings, lints, req.Rewrites)
+	var suggestions []spl2.QuerySuggestion
+	if !req.NoSuggestions {
+		suggestions = spl2.SuggestionsFromLints(analysisLints)
+	}
+	job.SetAdvisoryMetadata(warnings, lints, suggestions, req.Rewrites)
 
 	switch req.Mode {
 	case QueryModeSync:
@@ -963,6 +970,7 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 			r := buildSyncResult(job, limit, req.Offset)
 			r.Warnings = warnings
 			r.Lints = lints
+			r.Suggestions = suggestions
 			r.Rewrites = req.Rewrites
 			return r, nil
 		case <-timer.C:
@@ -982,6 +990,7 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 			r := buildSyncResult(job, limit, req.Offset)
 			r.Warnings = warnings
 			r.Lints = lints
+			r.Suggestions = suggestions
 			r.Rewrites = req.Rewrites
 			return r, nil
 		case <-timer.C:
@@ -1232,12 +1241,13 @@ func applyLintOutputLimit(lints []spl2.QueryLint, limit int, full bool) []spl2.Q
 func buildJobHandle(job *server.SearchJob) *SubmitResult {
 	snap := job.Snapshot()
 	r := &SubmitResult{
-		Done:     false,
-		JobID:    job.ID,
-		Status:   "running",
-		Warnings: snap.Warnings,
-		Lints:    snap.Lints,
-		Rewrites: snap.Rewrites,
+		Done:        false,
+		JobID:       job.ID,
+		Status:      "running",
+		Warnings:    snap.Warnings,
+		Lints:       snap.Lints,
+		Suggestions: snap.Suggestions,
+		Rewrites:    snap.Rewrites,
 	}
 	if p := job.Progress.Load(); p != nil {
 		r.Progress = p

@@ -29,8 +29,18 @@ func TestLexer_SimpleTokens(t *testing.T) {
 	}
 }
 
+func TestLexer_InvalidLeadingGlobBraceReturnsError(t *testing.T) {
+	input := "{eareh (EventID=4625 \xfa\x00\x00\xfaNOT SubStatus=\"0xC0000064\")"
+	lexer := NewLexer(input)
+
+	_, err := lexer.Tokenize()
+	if err == nil {
+		t.Fatal("expected invalid leading glob brace to return an error")
+	}
+}
+
 func TestLexer_Keywords(t *testing.T) {
-	input := `FROM where SEARCH stats eval sort head tail timechart rex fields table dedup by as and or not`
+	input := `FROM where SEARCH stats eval sort head tail reverse timechart chart rex regex replace fieldformat fields table dedup xyseries untable mvexpand expand makeresults makemv mvcombine nomv union appendcols appendpipe by over as and or xor not`
 	lexer := NewLexer(input)
 	tokens, err := lexer.Tokenize()
 	if err != nil {
@@ -39,9 +49,9 @@ func TestLexer_Keywords(t *testing.T) {
 
 	expected := []TokenType{
 		TokenFrom, TokenWhere, TokenSearch, TokenStats, TokenEval,
-		TokenSort, TokenHead, TokenTail, TokenTimechart, TokenRex,
-		TokenFields, TokenTable, TokenDedup, TokenBy, TokenAs,
-		TokenAnd, TokenOr, TokenNot, TokenEOF,
+		TokenSort, TokenHead, TokenTail, TokenReverse, TokenTimechart, TokenChart, TokenRex, TokenRegex, TokenReplace, TokenFieldformat,
+		TokenFields, TokenTable, TokenDedup, TokenXyseries, TokenUntable, TokenMvexpand, TokenExpand, TokenMakeresults, TokenMakemv, TokenMvcombine, TokenNomv, TokenUnion, TokenAppendcols, TokenAppendpipe, TokenBy, TokenOver, TokenAs,
+		TokenAnd, TokenOr, TokenXor, TokenNot, TokenEOF,
 	}
 
 	if len(tokens) != len(expected) {
@@ -156,6 +166,9 @@ func TestLexer_Identifiers(t *testing.T) {
 		{"_raw", TokenIdent, "_raw"},
 		{"response_time", TokenIdent, "response_time"},
 		{"web-*", TokenGlob, "web-*"},
+		{"logs-[ab]*", TokenGlob, "logs-[ab]*"},
+		{"{api,web}", TokenGlob, "{api,web}"},
+		{"api/**", TokenGlob, "api/**"},
 	}
 
 	for _, tt := range tests {
@@ -171,6 +184,32 @@ func TestLexer_Identifiers(t *testing.T) {
 		}
 		if tokens[0].Literal != tt.literal {
 			t.Errorf("%q: got %q, want %q", tt.input, tokens[0].Literal, tt.literal)
+		}
+	}
+}
+
+func TestLexer_SingleQuotedIdentifiers(t *testing.T) {
+	tests := []struct {
+		input   string
+		literal string
+	}{
+		{`'user-id'`, "user-id"},
+		{`'user id'`, "user id"},
+		{`'sort'`, "sort"},
+		{`'can\'t'`, "can't"},
+	}
+
+	for _, tt := range tests {
+		lexer := NewLexer(tt.input)
+		tokens, err := lexer.Tokenize()
+		if err != nil {
+			t.Fatalf("Tokenize(%q): %v", tt.input, err)
+		}
+		if tokens[0].Type != TokenIdent {
+			t.Errorf("%q: got %s, want IDENT", tt.input, tokens[0].Type)
+		}
+		if tokens[0].Literal != tt.literal {
+			t.Errorf("%q: got literal %q, want %q", tt.input, tokens[0].Literal, tt.literal)
 		}
 	}
 }
@@ -266,6 +305,18 @@ func TestLexer_NewKeywords(t *testing.T) {
 		{"IS", TokenIs},
 		{"null", TokenNull},
 		{"NULL", TokenNull},
+		{"type", TokenTypeKeyword},
+		{"TYPE", TokenTypeKeyword},
+		{"window", TokenWindow},
+		{"WINDOW", TokenWindow},
+		{"current", TokenCurrent},
+		{"CURRENT", TokenCurrent},
+		{"maxspan", TokenMaxspan},
+		{"MAXSPAN", TokenMaxspan},
+		{"startswith", TokenStartswith},
+		{"STARTSWITH", TokenStartswith},
+		{"endswith", TokenEndswith},
+		{"ENDSWITH", TokenEndswith},
 	}
 
 	for _, tt := range tests {
@@ -282,9 +333,12 @@ func TestLexer_NewKeywords(t *testing.T) {
 
 func TestLexer_BangAlone(t *testing.T) {
 	lexer := NewLexer(`!`)
-	_, err := lexer.Tokenize()
-	if err == nil {
-		t.Error("expected error for bare '!'")
+	tokens, err := lexer.Tokenize()
+	if err != nil {
+		t.Fatalf("Tokenize: %v", err)
+	}
+	if tokens[0].Type != TokenNot {
+		t.Fatalf("token: got %s, want %s", tokens[0].Type, TokenNot)
 	}
 }
 

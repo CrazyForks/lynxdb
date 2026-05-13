@@ -15,6 +15,7 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/config"
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 func startTestServer(t *testing.T) (*Server, func()) {
@@ -39,6 +40,21 @@ func startTestServer(t *testing.T) (*Server, func()) {
 	return srv, func() {
 		cancel()
 		time.Sleep(50 * time.Millisecond)
+	}
+}
+
+func assertLintMeta(t *testing.T, meta map[string]interface{}, wantCode string) {
+	t.Helper()
+	if meta == nil {
+		t.Fatal("missing meta")
+	}
+	lints, _ := meta["lints"].([]interface{})
+	if len(lints) != 1 {
+		t.Fatalf("meta.lints: got %#v, want one lint", meta["lints"])
+	}
+	firstLint, _ := lints[0].(map[string]interface{})
+	if firstLint["code"] != wantCode {
+		t.Fatalf("meta.lints[0].code: got %v, want %s", firstLint["code"], wantCode)
 	}
 }
 
@@ -80,6 +96,24 @@ func startTestServerWithConfig(t *testing.T, cfg Config) (*Server, func()) {
 	}
 }
 
+func assertRewriteMeta(t *testing.T, meta map[string]interface{}, wantAfter, wantReason string) {
+	t.Helper()
+	if meta == nil {
+		t.Fatal("missing meta")
+	}
+	rewrites, _ := meta["rewrites"].([]interface{})
+	if len(rewrites) != 1 {
+		t.Fatalf("meta.rewrites: got %#v, want one rewrite", meta["rewrites"])
+	}
+	firstRewrite, _ := rewrites[0].(map[string]interface{})
+	if firstRewrite["after"] != wantAfter {
+		t.Fatalf("meta.rewrites[0].after: got %v, want %s", firstRewrite["after"], wantAfter)
+	}
+	if firstRewrite["reason"] != wantReason {
+		t.Fatalf("meta.rewrites[0].reason: got %v, want %s", firstRewrite["reason"], wantReason)
+	}
+}
+
 func waitTestServerReady(t *testing.T, srv *Server, errCh <-chan error) {
 	t.Helper()
 	select {
@@ -116,6 +150,53 @@ func ingestTestEvents(t *testing.T, addr string, n, hostCount int) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("ingest status: %d", resp.StatusCode)
 	}
+}
+
+func ingestIndexedTestEvents(t *testing.T, addr string, indexCount int) {
+	t.Helper()
+	for i := 0; i < indexCount; i++ {
+		index := fmt.Sprintf("idx-%02d", i)
+		req, err := http.NewRequest(http.MethodPost,
+			fmt.Sprintf("http://%s/api/v1/ingest/raw", addr),
+			strings.NewReader(fmt.Sprintf("source=%s msg=\"request %d\"\n", index, i)))
+		if err != nil {
+			t.Fatalf("new indexed ingest request: %v", err)
+		}
+		req.Header.Set("Content-Type", "text/plain")
+		req.Header.Set("X-Index", index)
+		req.Header.Set("X-Source", index)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("POST indexed raw events: %v", err)
+		}
+		resp.Body.Close()
+		if resp.StatusCode != 200 {
+			t.Fatalf("indexed raw ingest status: %d", resp.StatusCode)
+		}
+	}
+}
+
+func metaLintCodes(meta map[string]interface{}) []string {
+	lints, _ := meta["lints"].([]interface{})
+	codes := make([]string, 0, len(lints))
+	for _, raw := range lints {
+		lint, _ := raw.(map[string]interface{})
+		if code, _ := lint["code"].(string); code != "" {
+			codes = append(codes, code)
+		}
+	}
+
+	return codes
+}
+
+func lintCodesContain(codes []string, want string) bool {
+	for _, code := range codes {
+		if code == want {
+			return true
+		}
+	}
+
+	return false
 }
 
 func TestServer_Health(t *testing.T) {
@@ -304,6 +385,97 @@ func TestServer_IngestAndQuery(t *testing.T) {
 	}
 	if _, ok := meta["query_id"]; !ok {
 		t.Error("missing query_id in meta")
+	}
+
+	rewriteQuery := "request"
+	rewriteBody, _ := json.Marshal(map[string]interface{}{
+		"q": rewriteQuery,
+	})
+	rewriteResp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(rewriteBody))
+	if err != nil {
+		t.Fatalf("POST rewrite query: %v", err)
+	}
+	defer rewriteResp.Body.Close()
+
+	if rewriteResp.StatusCode != 200 {
+		b, _ := io.ReadAll(rewriteResp.Body)
+		t.Fatalf("rewrite query status: %d, body: %s", rewriteResp.StatusCode, string(b))
+	}
+
+	var rewriteResult map[string]interface{}
+	json.NewDecoder(rewriteResp.Body).Decode(&rewriteResult)
+	rewriteMeta, _ := rewriteResult["meta"].(map[string]interface{})
+	if rewriteMeta == nil {
+		t.Fatal("missing meta in rewrite query response")
+	}
+	rewrites, _ := rewriteMeta["rewrites"].([]interface{})
+	if len(rewrites) != 1 {
+		t.Fatalf("meta.rewrites: got %#v, want one rewrite", rewriteMeta["rewrites"])
+	}
+	firstRewrite, _ := rewrites[0].(map[string]interface{})
+	if firstRewrite["before"] != rewriteQuery {
+		t.Fatalf("meta.rewrites[0].before: got %v, want %s", firstRewrite["before"], rewriteQuery)
+	}
+	if firstRewrite["after"] != spl2.NormalizeQuery(rewriteQuery) {
+		t.Fatalf("meta.rewrites[0].after: got %v, want %s", firstRewrite["after"], spl2.NormalizeQuery(rewriteQuery))
+	}
+	if firstRewrite["reason"] != "freehand-search" {
+		t.Fatalf("meta.rewrites[0].reason: got %v, want freehand-search", firstRewrite["reason"])
+	}
+
+	lintBody, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats count by host`,
+	})
+	lintResp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(lintBody))
+	if err != nil {
+		t.Fatalf("POST lint query: %v", err)
+	}
+	defer lintResp.Body.Close()
+
+	if lintResp.StatusCode != 200 {
+		b, _ := io.ReadAll(lintResp.Body)
+		t.Fatalf("lint query status: %d, body: %s", lintResp.StatusCode, string(b))
+	}
+
+	var lintResult map[string]interface{}
+	json.NewDecoder(lintResp.Body).Decode(&lintResult)
+	lintMeta, _ := lintResult["meta"].(map[string]interface{})
+	if lintMeta == nil {
+		t.Fatal("missing meta in lint query response")
+	}
+	lints, _ := lintMeta["lints"].([]interface{})
+	if len(lints) != 1 {
+		t.Fatalf("meta.lints: got %#v, want one lint", lintMeta["lints"])
+	}
+	firstLint, _ := lints[0].(map[string]interface{})
+	if firstLint["code"] != spl2.LintCountWithoutParens {
+		t.Fatalf("meta.lints[0].code: got %v, want %s", firstLint["code"], spl2.LintCountWithoutParens)
+	}
+
+	disabled := false
+	noLintBody, _ := json.Marshal(map[string]interface{}{
+		"q":    `FROM main | stats count by host`,
+		"lint": disabled,
+	})
+	noLintResp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(noLintBody))
+	if err != nil {
+		t.Fatalf("POST no-lint query: %v", err)
+	}
+	defer noLintResp.Body.Close()
+
+	if noLintResp.StatusCode != 200 {
+		b, _ := io.ReadAll(noLintResp.Body)
+		t.Fatalf("no-lint query status: %d, body: %s", noLintResp.StatusCode, string(b))
+	}
+
+	var noLintResult map[string]interface{}
+	json.NewDecoder(noLintResp.Body).Decode(&noLintResult)
+	noLintMeta, _ := noLintResult["meta"].(map[string]interface{})
+	if noLintMeta == nil {
+		t.Fatal("missing meta in no-lint query response")
+	}
+	if _, ok := noLintMeta["lints"]; ok {
+		t.Fatalf("meta.lints present despite lint=false: %#v", noLintMeta["lints"])
 	}
 }
 
@@ -553,6 +725,373 @@ func TestServer_StatsQuery(t *testing.T) {
 	}
 }
 
+func TestServer_StatsAggregateAliases(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	now := time.Now()
+	durations := []float64{20, 20, 20}
+	users := []string{"alice", "bob", "alice"}
+	events := make([]*event.Event, 0, len(durations))
+	for i, duration := range durations {
+		ev := event.NewEvent(now.Add(time.Duration(i)*time.Second), fmt.Sprintf("duration_ms=%v user=%s", duration, users[i]))
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+		ev.SetField("duration_ms", event.FloatValue(duration))
+		ev.SetField("user", event.StringValue(users[i]))
+		events = append(events, ev)
+	}
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	searchBody, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats mean(duration_ms) as avg_dur, median(duration_ms) as p50_dur, distinct_count(user) as users, estdc(user) as estimated_users, estdc_error(user) as estimated_user_error, mode(user) as common_user`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(searchBody))
+	if err != nil {
+		t.Fatalf("POST query: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	colIndex := func(name string) int {
+		t.Helper()
+		for i, col := range cols {
+			if fmt.Sprint(col) == name {
+				return i
+			}
+		}
+		t.Fatalf("missing column %q in %v", name, cols)
+		return -1
+	}
+
+	if got := row[colIndex("avg_dur")].(float64); got != 20 {
+		t.Errorf("avg_dur: got %v, want 20", got)
+	}
+	if got := row[colIndex("p50_dur")].(float64); got != 20 {
+		t.Errorf("p50_dur: got %v, want 20", got)
+	}
+	if got := row[colIndex("users")].(float64); got != 2 {
+		t.Errorf("users: got %v, want 2", got)
+	}
+	if got := row[colIndex("estimated_users")].(float64); got != 2 {
+		t.Errorf("estimated_users: got %v, want 2", got)
+	}
+	if got := row[colIndex("estimated_user_error")].(float64); got != 0 {
+		t.Errorf("estimated_user_error: got %v, want 0", got)
+	}
+	if got := row[colIndex("common_user")].(string); got != "alice" {
+		t.Errorf("common_user: got %v, want alice", got)
+	}
+}
+
+func TestServer_StatsPercentileSuffixAliases(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	now := time.Now()
+	events := make([]*event.Event, 0, 3)
+	for i := 0; i < 3; i++ {
+		ev := event.NewEvent(now.Add(time.Duration(i)*time.Second), "duration_ms=20")
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+		ev.SetField("duration_ms", event.FloatValue(20))
+		events = append(events, ev)
+	}
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats percentile95(duration_ms) as p95, exactperc95(duration_ms) as exact_p95, upperperc95(duration_ms) as upper_p95, percentile(duration_ms, 95) as generic_p95`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST query: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	for _, name := range []string{"p95", "exact_p95", "upper_p95", "generic_p95"} {
+		found := false
+		for i, col := range cols {
+			if fmt.Sprint(col) == name {
+				found = true
+				if got := row[i].(float64); got != 20 {
+					t.Errorf("%s: got %v, want 20", name, got)
+				}
+			}
+		}
+		if !found {
+			t.Fatalf("missing column %q in %v", name, cols)
+		}
+	}
+}
+
+func TestServer_StatsRangeAggregate(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	now := time.Now()
+	durations := []float64{10, 25, 40}
+	events := make([]*event.Event, 0, len(durations))
+	for i, duration := range durations {
+		ev := event.NewEvent(now.Add(time.Duration(i)*time.Second), fmt.Sprintf("duration_ms=%v", duration))
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+		ev.SetField("duration_ms", event.FloatValue(duration))
+		events = append(events, ev)
+	}
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats range(duration_ms) as duration_range`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST query: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	for i, col := range cols {
+		if fmt.Sprint(col) == "duration_range" {
+			if got := row[i].(float64); got != 30 {
+				t.Fatalf("duration_range: got %v, want 30", got)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing duration_range column in %v", cols)
+}
+
+func TestServer_StatsSumSqAggregate(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	now := time.Now()
+	durations := []float64{2, 3, 4}
+	events := make([]*event.Event, 0, len(durations))
+	for i, duration := range durations {
+		ev := event.NewEvent(now.Add(time.Duration(i)*time.Second), fmt.Sprintf("duration_ms=%v", duration))
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+		ev.SetField("duration_ms", event.FloatValue(duration))
+		events = append(events, ev)
+	}
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats sumsq(duration_ms) as duration_squares`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST query: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	for i, col := range cols {
+		if fmt.Sprint(col) == "duration_squares" {
+			if got := row[i].(float64); got != 29 {
+				t.Fatalf("duration_squares: got %v, want 29", got)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing duration_squares column in %v", cols)
+}
+
+func TestServer_StatsVarianceAggregates(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	now := time.Now()
+	durations := []float64{0, 2}
+	events := make([]*event.Event, 0, len(durations))
+	for i, duration := range durations {
+		ev := event.NewEvent(now.Add(time.Duration(i)*time.Second), fmt.Sprintf("duration_ms=%v", duration))
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+		ev.SetField("duration_ms", event.FloatValue(duration))
+		events = append(events, ev)
+	}
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats stdevp(duration_ms) as stdevp_duration, var(duration_ms) as sample_var, varp(duration_ms) as population_var`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST query: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	values := map[string]float64{}
+	for i, col := range cols {
+		values[fmt.Sprint(col)] = row[i].(float64)
+	}
+	if got := values["stdevp_duration"]; got != 1 {
+		t.Fatalf("stdevp_duration: got %v, want 1", got)
+	}
+	if got := values["sample_var"]; got != 2 {
+		t.Fatalf("sample_var: got %v, want 2", got)
+	}
+	if got := values["population_var"]; got != 1 {
+		t.Fatalf("population_var: got %v, want 1", got)
+	}
+}
+
+func TestServer_StatsListAggregatePreservesDuplicates(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	now := time.Now()
+	users := []string{"alice", "bob", "alice"}
+	events := make([]*event.Event, 0, len(users))
+	for i, user := range users {
+		ev := event.NewEvent(now.Add(time.Duration(i)*time.Second), fmt.Sprintf("user=%s", user))
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+		ev.SetField("user", event.StringValue(user))
+		events = append(events, ev)
+	}
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats list(user) as user_list, values(user) as user_values`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST query: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	values := map[string]string{}
+	for i, col := range cols {
+		values[fmt.Sprint(col)] = row[i].(string)
+	}
+	if got := values["user_list"]; got != "alice|||bob|||alice" {
+		t.Fatalf("user_list: got %q, want alice|||bob|||alice", got)
+	}
+	if got := values["user_values"]; got != "alice|||bob" {
+		t.Fatalf("user_values: got %q, want alice|||bob", got)
+	}
+}
+
 // New Three-Mode Query Tests
 
 func TestQuery_SyncMode(t *testing.T) {
@@ -599,8 +1138,9 @@ func TestQuery_AsyncMode(t *testing.T) {
 	ingestTestEvents(t, srv.Addr(), 20, 2)
 
 	wait := float64(0)
+	query := `stats count by host`
 	body, _ := json.Marshal(map[string]interface{}{
-		"q": `FROM main | head 5`, "wait": wait,
+		"q": query, "wait": wait,
 	})
 	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -624,6 +1164,9 @@ func TestQuery_AsyncMode(t *testing.T) {
 	if data["status"] != "running" {
 		t.Errorf("status: %v", data["status"])
 	}
+	meta := result["meta"].(map[string]interface{})
+	assertLintMeta(t, meta, spl2.LintCountWithoutParens)
+	assertRewriteMeta(t, meta, spl2.NormalizeQuery(query), "default-source")
 
 	// Poll until done.
 	for i := 0; i < 50; i++ {
@@ -640,12 +1183,11 @@ func TestQuery_AsyncMode(t *testing.T) {
 		dtype, _ := d["type"].(string)
 		dstatus, _ := d["status"].(string)
 		if dstatus == "done" || (dtype != "" && dtype != "job") {
-			// Completed
-			if dtype == "events" {
-				events := d["events"].([]interface{})
-				if len(events) != 5 {
-					t.Errorf("events: got %d, want 5", len(events))
-				}
+			meta := jr["meta"].(map[string]interface{})
+			assertLintMeta(t, meta, spl2.LintCountWithoutParens)
+			assertRewriteMeta(t, meta, spl2.NormalizeQuery(query), "default-source")
+			if explain, _ := meta["explain"].(map[string]interface{}); explain == nil {
+				t.Fatalf("job meta.explain missing: %#v", meta)
 			}
 
 			return
@@ -767,6 +1309,153 @@ func TestQuery_TimechartResult(t *testing.T) {
 	totalRows := data["total_rows"].(float64)
 	if int(totalRows) != len(rows) {
 		t.Errorf("total_rows: got %v, want %d", totalRows, len(rows))
+	}
+}
+
+func TestQuery_TimechartPerMinuteAggregate(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	events := []*event.Event{
+		event.NewEvent(base, "bytes=60"),
+		event.NewEvent(base.Add(30*time.Second), "bytes=120"),
+	}
+	for _, ev := range events {
+		ev.Index = "main"
+		ev.Host = "web-00"
+		ev.Source = "/var/log/app.log"
+		ev.SourceType = "json"
+	}
+	events[0].SetField("bytes", event.IntValue(60))
+	events[1].SetField("bytes", event.IntValue(120))
+	if err := srv.engine.Ingest(events); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | timechart span=1h per_minute(bytes) as bytes_per_minute`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	colIndex := -1
+	for i, col := range cols {
+		if fmt.Sprint(col) == "bytes_per_minute" {
+			colIndex = i
+			break
+		}
+	}
+	if colIndex < 0 {
+		t.Fatalf("missing bytes_per_minute column in %v", cols)
+	}
+	got := rows[0].([]interface{})[colIndex].(float64)
+	if got != 3 {
+		t.Errorf("bytes_per_minute: got %v, want 3", got)
+	}
+}
+
+func TestQuery_StatsTimeAggregates(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	base := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	events := []map[string]interface{}{
+		{
+			"time":       float64(base.Add(10 * time.Second).Unix()),
+			"event":      `host=web-00 level=INFO counter=25 status=late msg="late"`,
+			"host":       "web-00",
+			"source":     "/var/log/app.log",
+			"sourcetype": "json",
+			"index":      "main",
+		},
+		{
+			"time":       float64(base.Unix()),
+			"event":      `host=web-00 level=INFO counter=10 status=early msg="early"`,
+			"host":       "web-00",
+			"source":     "/var/log/app.log",
+			"sourcetype": "json",
+			"index":      "main",
+		},
+	}
+	ingestBody, _ := json.Marshal(events)
+	ingestResp, err := http.Post(fmt.Sprintf("http://%s/api/v1/ingest", srv.Addr()), "application/json", bytes.NewReader(ingestBody))
+	if err != nil {
+		t.Fatalf("POST ingest: %v", err)
+	}
+	ingestResp.Body.Close()
+	if ingestResp.StatusCode != 200 {
+		t.Fatalf("ingest status: %d", ingestResp.StatusCode)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | stats earliest(status) as first_status, latest(status) as last_status, earliest_time(counter) as first_ts, latest_time(counter) as last_ts, rate(counter) as counter_rate`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	data := result["data"].(map[string]interface{})
+	cols := data["columns"].([]interface{})
+	rows := data["rows"].([]interface{})
+	if len(rows) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(rows))
+	}
+	row := rows[0].([]interface{})
+	colIndex := func(name string) int {
+		t.Helper()
+		for i, col := range cols {
+			if fmt.Sprint(col) == name {
+				return i
+			}
+		}
+		t.Fatalf("missing column %q in %v", name, cols)
+		return -1
+	}
+
+	if got := row[colIndex("first_status")].(string); got != "early" {
+		t.Errorf("first_status: got %q, want early", got)
+	}
+	if got := row[colIndex("last_status")].(string); got != "late" {
+		t.Errorf("last_status: got %q, want late", got)
+	}
+	if got := row[colIndex("first_ts")].(float64); got != float64(base.Unix()) {
+		t.Errorf("first_ts: got %v, want %v", got, base.Unix())
+	}
+	if got := row[colIndex("last_ts")].(float64); got != float64(base.Add(10*time.Second).Unix()) {
+		t.Errorf("last_ts: got %v, want %v", got, base.Add(10*time.Second).Unix())
+	}
+	if got := row[colIndex("counter_rate")].(float64); got != 1.5 {
+		t.Errorf("counter_rate: got %v, want 1.5", got)
 	}
 }
 
@@ -1109,6 +1798,35 @@ func TestQuery_ParseError(t *testing.T) {
 	}
 }
 
+func TestQuery_UnsupportedTimeFormat(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `index=main timeformat="%b %d %Y" starttime="Mar 23 2025"`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusBadRequest {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got %d, want 400, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	errObj := result["error"].(map[string]interface{})
+	if errObj["code"] != string(ErrCodeUnsupportedCommand) {
+		t.Fatalf("code: got %v, want %s", errObj["code"], ErrCodeUnsupportedCommand)
+	}
+	if suggestion, _ := errObj["suggestion"].(string); !strings.Contains(suggestion, "%Y-%m-%d") {
+		t.Fatalf("suggestion missing supported format example: %q", suggestion)
+	}
+}
+
 func TestQuery_MissingQuery(t *testing.T) {
 	srv, cleanup := startTestServer(t)
 	defer cleanup()
@@ -1122,6 +1840,278 @@ func TestQuery_MissingQuery(t *testing.T) {
 
 	if resp.StatusCode != http.StatusBadRequest {
 		t.Fatalf("status: got %d, want 400", resp.StatusCode)
+	}
+}
+
+func TestQuery_LintOutputControls(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	query := `FROM main | search NOT NOT NOT NOT NOT NOT *error OR timeout AND fatal | where _raw = "panic" | fields order | sort status asc, duration_ms desc`
+	post := func(body map[string]interface{}) map[string]interface{} {
+		t.Helper()
+		raw, _ := json.Marshal(body)
+		resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(raw))
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(b))
+		}
+
+		var result map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&result)
+		meta, _ := result["meta"].(map[string]interface{})
+		if meta == nil {
+			t.Fatal("missing meta")
+		}
+
+		return meta
+	}
+
+	defaultMeta := post(map[string]interface{}{"q": query})
+	defaultLints, _ := defaultMeta["lints"].([]interface{})
+	if len(defaultLints) != 5 {
+		t.Fatalf("default meta.lints: got %d, want 5 (%#v)", len(defaultLints), defaultMeta["lints"])
+	}
+	firstLint, _ := defaultLints[0].(map[string]interface{})
+	if reason, _ := firstLint["reason"].(string); reason == "" {
+		t.Fatalf("default meta.lints[0] missing reason: %#v", firstLint)
+	}
+	if severity, _ := firstLint["severity"].(string); severity == "" {
+		t.Fatalf("default meta.lints[0] missing severity: %#v", firstLint)
+	}
+
+	limitedMeta := post(map[string]interface{}{"q": query, "lint_limit": 2})
+	limitedLints, _ := limitedMeta["lints"].([]interface{})
+	if len(limitedLints) != 2 {
+		t.Fatalf("limited meta.lints: got %d, want 2 (%#v)", len(limitedLints), limitedMeta["lints"])
+	}
+
+	fullMeta := post(map[string]interface{}{"q": query, "lint_full": true})
+	fullLints, _ := fullMeta["lints"].([]interface{})
+	if len(fullLints) <= len(defaultLints) {
+		t.Fatalf("full meta.lints: got %d, want more than default %d", len(fullLints), len(defaultLints))
+	}
+}
+
+func TestQuery_SuggestionsMetadata(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	post := func(body map[string]interface{}) map[string]interface{} {
+		t.Helper()
+		if _, ok := body["q"]; !ok {
+			body["q"] = `from main | where level IN ("error", "fatal") | stats count() by service`
+		}
+		raw, _ := json.Marshal(body)
+		resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(raw))
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		defer resp.Body.Close()
+
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(b))
+		}
+
+		var result map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&result)
+		meta, _ := result["meta"].(map[string]interface{})
+		if meta == nil {
+			t.Fatal("missing meta")
+		}
+		return meta
+	}
+
+	meta := post(map[string]interface{}{})
+	suggestions, _ := meta["suggestions"].([]interface{})
+	if len(suggestions) != 1 {
+		t.Fatalf("meta.suggestions: got %#v, want one suggestion", meta["suggestions"])
+	}
+	first, _ := suggestions[0].(map[string]interface{})
+	if first["text"] != "errors by service" {
+		t.Fatalf("suggestion text: got %v, want errors by service", first["text"])
+	}
+	if first["reason"] != "shortcut" || first["source_code"] != spl2.LintShortcutAvailable {
+		t.Fatalf("suggestion metadata: got %#v", first)
+	}
+
+	noLintMeta := post(map[string]interface{}{"lint": false})
+	if _, ok := noLintMeta["lints"]; ok {
+		t.Fatalf("meta.lints present despite lint=false: %#v", noLintMeta["lints"])
+	}
+	if suggestions, _ := noLintMeta["suggestions"].([]interface{}); len(suggestions) != 1 {
+		t.Fatalf("meta.suggestions with lint=false: got %#v, want one suggestion", noLintMeta["suggestions"])
+	}
+
+	noSuggestionMeta := post(map[string]interface{}{"suggestions": false})
+	if _, ok := noSuggestionMeta["suggestions"]; ok {
+		t.Fatalf("meta.suggestions present despite suggestions=false: %#v", noSuggestionMeta["suggestions"])
+	}
+	if lints, _ := noSuggestionMeta["lints"].([]interface{}); len(lints) == 0 {
+		t.Fatalf("meta.lints missing when suggestions=false: %#v", noSuggestionMeta["lints"])
+	}
+}
+
+func TestQuery_ExplainMetadata(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ingestTestEvents(t, srv.Addr(), 20, 2)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | regex "request" | head 3`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	meta, _ := result["meta"].(map[string]interface{})
+	explain, _ := meta["explain"].(map[string]interface{})
+	if explain == nil {
+		t.Fatalf("missing meta.explain: %#v", meta)
+	}
+	sourceScope, _ := explain["source_scope"].(map[string]interface{})
+	if sourceScope == nil || int(sourceScope["count"].(float64)) == 0 {
+		t.Fatalf("meta.explain.source_scope: %#v", explain["source_scope"])
+	}
+	segments, _ := explain["segments"].(map[string]interface{})
+	if segments == nil || int(segments["total"].(float64)) == 0 {
+		t.Fatalf("meta.explain.segments: %#v", explain["segments"])
+	}
+	if rows, ok := explain["candidate_rows"].(float64); !ok || rows == 0 {
+		t.Fatalf("meta.explain.candidate_rows: %#v", explain["candidate_rows"])
+	}
+	if _, ok := explain["literal_extraction"].(bool); !ok {
+		t.Fatalf("meta.explain.literal_extraction missing: %#v", explain)
+	}
+	if explain["regex_engine"] != "linear" {
+		t.Fatalf("meta.explain.regex_engine: got %#v, want linear", explain["regex_engine"])
+	}
+}
+
+func TestQuery_BroadScopeLints(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ingestIndexedTestEvents(t, srv.Addr(), config.DefaultConfig().Query.BroadSourceLintThreshold+1)
+
+	post := func(body map[string]interface{}) map[string]interface{} {
+		t.Helper()
+		raw, _ := json.Marshal(body)
+		resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(raw))
+		if err != nil {
+			t.Fatalf("POST: %v", err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+			b, _ := io.ReadAll(resp.Body)
+			t.Fatalf("status: got %d, body: %s", resp.StatusCode, string(b))
+		}
+		var result map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&result)
+		meta, _ := result["meta"].(map[string]interface{})
+		if meta == nil {
+			t.Fatal("missing meta")
+		}
+
+		return meta
+	}
+
+	allSourceMeta := post(map[string]interface{}{"q": `FROM * | head 1`})
+	if codes := metaLintCodes(allSourceMeta); !lintCodesContain(codes, spl2.LintAllSourcesHigh) {
+		t.Fatalf("all-source lint codes: got %v, want %s", codes, spl2.LintAllSourcesHigh)
+	}
+
+	broadSearchMeta := post(map[string]interface{}{"q": `FROM * | search request | head 1`})
+	if codes := metaLintCodes(broadSearchMeta); !lintCodesContain(codes, spl2.LintBroadSearch) {
+		t.Fatalf("broad-search lint codes: got %v, want %s", codes, spl2.LintBroadSearch)
+	}
+
+	noLintMeta := post(map[string]interface{}{"q": `FROM * | search request | head 1`, "lint": false})
+	if _, ok := noLintMeta["lints"]; ok {
+		t.Fatalf("meta.lints present despite lint=false: %#v", noLintMeta["lints"])
+	}
+
+	wait := float64(0)
+	raw, _ := json.Marshal(map[string]interface{}{
+		"q":    `FROM * | search "request 1" | head 1`,
+		"wait": wait,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("POST async: %v", err)
+	}
+	var submitted map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&submitted)
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusAccepted {
+		t.Fatalf("async status: got %d, want 202", resp.StatusCode)
+	}
+	jobID := submitted["data"].(map[string]interface{})["job_id"].(string)
+	for i := 0; i < 50; i++ {
+		time.Sleep(50 * time.Millisecond)
+		resp, err = http.Get(fmt.Sprintf("http://%s/api/v1/query/jobs/%s", srv.Addr(), jobID))
+		if err != nil {
+			t.Fatalf("GET job: %v", err)
+		}
+		var jobResult map[string]interface{}
+		json.NewDecoder(resp.Body).Decode(&jobResult)
+		resp.Body.Close()
+
+		data := jobResult["data"].(map[string]interface{})
+		if status, _ := data["status"].(string); status == "done" {
+			meta := jobResult["meta"].(map[string]interface{})
+			if codes := metaLintCodes(meta); !lintCodesContain(codes, spl2.LintBroadSearch) {
+				t.Fatalf("async broad-search lint codes: got %v, want %s", codes, spl2.LintBroadSearch)
+			}
+
+			return
+		}
+	}
+	t.Fatal("timeout waiting for broad-search async job")
+}
+
+func TestQuery_BroadScopeLintThresholdConfig(t *testing.T) {
+	queryCfg := config.DefaultConfig().Query
+	queryCfg.SpillDir = t.TempDir()
+	queryCfg.BroadSourceLintThreshold = 3
+	queryCfg.BroadSegmentLintThreshold = 1000
+	srv, cleanup := startTestServerWithConfig(t, Config{Query: queryCfg})
+	defer cleanup()
+
+	ingestIndexedTestEvents(t, srv.Addr(), 3)
+
+	raw, _ := json.Marshal(map[string]interface{}{"q": `FROM * | head 1`})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(raw))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	meta, _ := result["meta"].(map[string]interface{})
+	if codes := metaLintCodes(meta); !lintCodesContain(codes, spl2.LintAllSourcesHigh) {
+		t.Fatalf("configured broad-source lint codes: got %v, want %s", codes, spl2.LintAllSourcesHigh)
 	}
 }
 

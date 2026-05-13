@@ -17,17 +17,27 @@ var unsupportedCommands = map[string]string{
 	// Note: "lookup" is NOT listed here — it is a valid Lynx Flow command (desugars to left join).
 	"inputlookup":  "inputlookup is not yet supported. Use FROM $dataset with CTE syntax.",
 	"outputlookup": "outputlookup is not yet supported.",
-	"collect":      "collect is not yet supported.",
-	"sendemail":    "sendemail is not yet supported.",
+	"delete":       "delete is outside the query language profile.",
+	"collect":      "collect is outside the query language profile.",
+	"stash":        "stash is outside the query language profile.",
+	"sendemail":    "sendemail is outside the query language profile.",
+	"sendalert":    "sendalert is outside the query language profile.",
+	"localop":      "localop is outside the query language profile.",
+	"redistribute": "redistribute is outside the query language profile.",
+	"loadjob":      "loadjob is outside the query language profile.",
+	"savedsearch":  "savedsearch is outside the query language profile.",
+	"spl1":         "spl1 embedded SPL is not executed; rewrite as native SPL2 or LynxFlow.",
 	"map":          "map is not yet supported.",
-	"tstats":       "tstats is not yet supported. Use stats with time-filtered queries.",
 	"datamodel":    "datamodel is not yet supported.",
-	"makemv":       "makemv is not yet supported. Use mvappend() eval function instead.",
-	"addinfo":      "addinfo is not yet supported.",
 	"return":       "return is not yet supported. Use head or fields to limit output.",
 	"format":       "format is not yet supported.",
 	// Note: "bucket" is NOT listed here — it is a valid Lynx Flow command (desugars to bin).
 	"sistats": "sistats is not yet supported. Use stats instead.",
+}
+
+func unsupportedCommandHint(command string) (string, bool) {
+	hint, ok := unsupportedCommands[strings.ToLower(command)]
+	return hint, ok
 }
 
 // UnsupportedCommandError is returned when a query uses a Splunk command
@@ -44,6 +54,13 @@ func (e *UnsupportedCommandError) Error() string {
 // CheckUnsupportedCommands returns an UnsupportedCommandError if the query
 // contains any unsupported Splunk commands, or nil if all commands are supported.
 func CheckUnsupportedCommands(query string) *UnsupportedCommandError {
+	if format, ok := unsupportedTimeFormat(query); ok {
+		return &UnsupportedCommandError{
+			Command: "timeformat=" + format,
+			Hint:    unsupportedTimeFormatHint,
+		}
+	}
+
 	for _, seg := range pipeSegments(query) {
 		cmd := strings.ToLower(seg)
 		if hint, ok := unsupportedCommands[cmd]; ok {
@@ -63,6 +80,10 @@ func pipeSegments(query string) []string {
 	var inSingle, inDouble bool
 	start := 0
 	for i := 0; i < len(query); i++ {
+		if query[i] == '\\' && (inSingle || inDouble) && i+1 < len(query) {
+			i++
+			continue
+		}
 		switch {
 		case query[i] == '\'' && !inDouble:
 			inSingle = !inSingle
@@ -97,11 +118,12 @@ func extractFirstToken(s string) string {
 
 // translationHints maps Splunk patterns to LynxDB suggestions.
 var translationHints = map[string]string{
-	"chart":                   "chart is similar to timechart or stats in LynxDB. Try: | timechart or | stats ... BY field",
 	"access_combined":         "sourcetype=access_combined is a Splunk default. In LynxDB, use sourcetype=nginx or sourcetype=clf",
 	"access_combined_wcookie": "sourcetype=access_combined_wcookie → use sourcetype=nginx in LynxDB",
 	"syslog":                  "sourcetype=syslog works in LynxDB if you have syslog-formatted data ingested",
 }
+
+const unsupportedTimeFormatHint = "timeformat supports %Y, %m, %d, %H, %M, and %S. Use ISO-style formats such as timeformat=\"%Y-%m-%d\" or omit timeformat for %m/%d/%Y:%H:%M:%S."
 
 // DetectCompatHints scans a query string for common Splunk-only patterns
 // and returns hints about LynxDB equivalents.
@@ -122,12 +144,15 @@ func DetectCompatHints(query string) []CompatHint {
 				})
 			}
 		}
-		// Check for "chart" (without "timechart").
-		if cmd == "chart" && !seen["chart"] {
-			seen["chart"] = true
+	}
+
+	for _, format := range timeFormatModifiers(query) {
+		if _, ok := splunkTimeLayout(format); !ok && !seen["timeformat"] {
+			seen["timeformat"] = true
 			hints = append(hints, CompatHint{
-				Pattern:    "chart",
-				Suggestion: translationHints["chart"],
+				Pattern:     "timeformat=" + format,
+				Suggestion:  unsupportedTimeFormatHint,
+				Unsupported: true,
 			})
 		}
 	}
@@ -141,7 +166,7 @@ func DetectCompatHints(query string) []CompatHint {
 			seen["earliest/latest"] = true
 			hints = append(hints, CompatHint{
 				Pattern:    "earliest=/latest=",
-				Suggestion: "Inline time modifiers are not supported. Use CLI flags: --since 1h, or --from/--to.",
+				Suggestion: "Inline time modifiers normalize in source-prefix position; CLI flags --since or --from/--to are also available.",
 			})
 		}
 	}
@@ -184,6 +209,33 @@ func DetectCompatHints(query string) []CompatHint {
 	}
 
 	return hints
+}
+
+func unsupportedTimeFormat(query string) (string, bool) {
+	for _, format := range timeFormatModifiers(query) {
+		if _, ok := splunkTimeLayout(format); !ok {
+			return format, true
+		}
+	}
+
+	return "", false
+}
+
+func timeFormatModifiers(query string) []string {
+	var formats []string
+	remaining := query
+	for {
+		lower := strings.ToLower(remaining)
+		idx := strings.Index(lower, "timeformat=")
+		if idx < 0 {
+			return formats
+		}
+		value, next := extractValue(remaining[idx+len("timeformat="):])
+		if value != "" {
+			formats = append(formats, value)
+		}
+		remaining = next
+	}
 }
 
 // DetectScopeHint returns a hint when the query has no explicit source/index

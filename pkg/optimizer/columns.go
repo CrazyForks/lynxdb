@@ -368,6 +368,8 @@ func commandAccessedFields(cmd spl2.Command, cols map[string]bool) {
 		for _, r := range c.Renames {
 			cols[r.Old] = true
 		}
+	case *spl2.CapabilityCommand:
+		cols["*"] = true
 	case *spl2.StreamstatsCommand:
 		for _, agg := range c.Aggregations {
 			for _, arg := range agg.Args {
@@ -401,6 +403,18 @@ func commandAccessedFields(cmd spl2.Command, cols map[string]bool) {
 		for _, f := range c.GroupBy {
 			cols[f] = true
 		}
+	case *spl2.ChartCommand:
+		for _, agg := range c.Aggregations {
+			for _, arg := range agg.Args {
+				collectExprFieldsForOpt(arg, cols)
+			}
+		}
+		if c.RowSplit != "" {
+			cols[c.RowSplit] = true
+		}
+		if c.ColumnSplit != "" {
+			cols[c.ColumnSplit] = true
+		}
 	case *spl2.TopCommand:
 		cols[c.Field] = true
 		if c.ByField != "" {
@@ -421,9 +435,30 @@ func commandAccessedFields(cmd spl2.Command, cols map[string]bool) {
 				commandAccessedFields(subcmd, cols)
 			}
 		}
+	case *spl2.AppendcolsCommand:
+		cols["*"] = true
+		if c.Subquery != nil {
+			for _, subcmd := range c.Subquery.Commands {
+				commandAccessedFields(subcmd, cols)
+			}
+		}
+	case *spl2.AppendpipeCommand:
+		cols["*"] = true
+		if c.Subquery != nil {
+			for _, subcmd := range c.Subquery.Commands {
+				commandAccessedFields(subcmd, cols)
+			}
+		}
 	case *spl2.MultisearchCommand:
 		for _, sub := range c.Searches {
 			for _, subcmd := range sub.Commands {
+				commandAccessedFields(subcmd, cols)
+			}
+		}
+	case *spl2.UnionCommand:
+		cols["*"] = true
+		for _, branch := range c.Branches {
+			for _, subcmd := range branch.Commands {
 				commandAccessedFields(subcmd, cols)
 			}
 		}
@@ -431,11 +466,28 @@ func commandAccessedFields(cmd spl2.Command, cols map[string]bool) {
 		cols[c.SourceField] = true
 	case *spl2.JsonCommand:
 		cols[c.SourceField] = true
+	case *spl2.ReplaceCommand:
+		if len(c.Fields) == 0 {
+			cols["*"] = true
+		}
+		for _, f := range c.Fields {
+			cols[f] = true
+		}
+	case *spl2.FieldformatCommand:
+		collectExprFieldsForOpt(c.Expr, cols)
 	case *spl2.UnrollCommand:
 		cols[c.Field] = true
 		for _, f := range c.ExtraFields {
 			cols[f] = true
 		}
+	case *spl2.UntableCommand:
+		cols["*"] = true
+	case *spl2.MakemvCommand:
+		cols[c.Field] = true
+	case *spl2.MvcombineCommand:
+		cols["*"] = true
+	case *spl2.NomvCommand:
+		cols[c.Field] = true
 	case *spl2.PackJsonCommand:
 		for _, f := range c.Fields {
 			cols[f] = true

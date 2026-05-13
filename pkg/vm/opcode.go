@@ -64,6 +64,9 @@ const (
 	OpStartsWith Opcode = 0x59
 	OpEndsWith   Opcode = 0x5A
 	OpContains   Opcode = 0x5B
+	OpTrim       Opcode = 0x5D
+	OpLTrim      Opcode = 0x5E
+	OpRTrim      Opcode = 0x5F
 
 	// Comparison (pop 2, push bool).
 	OpEq     Opcode = 0x50
@@ -82,6 +85,7 @@ const (
 	OpAnd Opcode = 0x60
 	OpOr  Opcode = 0x61
 	OpNot Opcode = 0x62
+	OpXor Opcode = 0x63
 
 	// Control Flow.
 	OpJump        Opcode = 0x70
@@ -95,12 +99,20 @@ const (
 	OpToBool   Opcode = 0x83
 
 	// Math Functions.
-	OpRound Opcode = 0x90
-	OpLn    Opcode = 0x91
-	OpAbs   Opcode = 0x92
-	OpCeil  Opcode = 0x93
-	OpFloor Opcode = 0x94
-	OpSqrt  Opcode = 0x95
+	OpRound      Opcode = 0x90
+	OpLn         Opcode = 0x91
+	OpAbs        Opcode = 0x92
+	OpCeil       Opcode = 0x93
+	OpFloor      Opcode = 0x94
+	OpSqrt       Opcode = 0x95
+	OpExp        Opcode = 0x96
+	OpPow        Opcode = 0x97
+	OpLog        Opcode = 0x98
+	OpMax        Opcode = 0x99
+	OpMin        Opcode = 0x9A
+	OpMathUnary  Opcode = 0x9B
+	OpMathBinary Opcode = 0x9C
+	OpRandom     Opcode = 0x9D
 
 	// Multivalue Operations.
 	OpMvAppend Opcode = 0xA0
@@ -114,11 +126,24 @@ const (
 	OpIsNotNull Opcode = 0xB2
 
 	// Type Checks (pop 1, push bool).
-	OpIsNum Opcode = 0xB3
-	OpIsInt Opcode = 0xB4
+	OpIsNum    Opcode = 0xB3
+	OpIsInt    Opcode = 0xB4
+	OpIsBool   Opcode = 0xB5
+	OpTypeOf   Opcode = 0xB6
+	OpIsArray  Opcode = 0xB7
+	OpIsObject Opcode = 0xB8
 
 	// Time Functions.
-	OpStrftime Opcode = 0xC0
+	OpStrftime    Opcode = 0xC0
+	OpURLDecode   Opcode = 0xC1
+	OpMD5         Opcode = 0xC2
+	OpSHA1        Opcode = 0xC3
+	OpSHA256      Opcode = 0xC4
+	OpSHA512      Opcode = 0xC5
+	OpPrintf      Opcode = 0xC6
+	OpIPMask      Opcode = 0xC7
+	OpStrptime    Opcode = 0xC8
+	OpSearchMatch Opcode = 0xC9
 
 	// Network (operand: 2-byte CIDR pool index).
 	OpCIDRMatch Opcode = 0xE0 // net.IPNet.Contains
@@ -136,6 +161,23 @@ const (
 	OpJsonMerge    Opcode = 0xD9 // pop json2, pop json1, push merged JSON
 
 	OpReturn Opcode = 0xFF
+)
+
+const (
+	mathFnAcos = iota
+	mathFnAcosh
+	mathFnAsin
+	mathFnAsinh
+	mathFnAtan
+	mathFnAtanh
+	mathFnCos
+	mathFnCosh
+	mathFnSin
+	mathFnSinh
+	mathFnTan
+	mathFnTanh
+	mathFnAtan2
+	mathFnHypot
 )
 
 // Definition describes an opcode's name and operand widths.
@@ -192,20 +234,24 @@ var definitions = map[Opcode]*Definition{
 	OpStartsWith: {"OpStartsWith", nil},
 	OpEndsWith:   {"OpEndsWith", nil},
 	OpContains:   {"OpContains", nil},
+	OpTrim:       {"OpTrim", nil},
+	OpLTrim:      {"OpLTrim", nil},
+	OpRTrim:      {"OpRTrim", nil},
 
-	OpEq:     {"OpEq", nil},
-	OpNeq:    {"OpNeq", nil},
-	OpLt:     {"OpLt", nil},
-	OpLte:    {"OpLte", nil},
-	OpGt:     {"OpGt", nil},
-	OpGte:    {"OpGte", nil},
-	OpInList: {"OpInList", []int{2}},
-	OpLike:   {"OpLike", nil},
+	OpEq:                {"OpEq", nil},
+	OpNeq:               {"OpNeq", nil},
+	OpLt:                {"OpLt", nil},
+	OpLte:               {"OpLte", nil},
+	OpGt:                {"OpGt", nil},
+	OpGte:               {"OpGte", nil},
+	OpInList:            {"OpInList", []int{2}},
+	OpLike:              {"OpLike", nil},
 	OpBSIHandledCompare: {"OpBSIHandledCompare", []int{2, 2}},
 
 	OpAnd: {"OpAnd", nil},
 	OpOr:  {"OpOr", nil},
 	OpNot: {"OpNot", nil},
+	OpXor: {"OpXor", nil},
 
 	OpJump:        {"OpJump", []int{2}},
 	OpJumpIfFalse: {"OpJumpIfFalse", []int{2}},
@@ -216,12 +262,20 @@ var definitions = map[Opcode]*Definition{
 	OpToString: {"OpToString", nil},
 	OpToBool:   {"OpToBool", nil},
 
-	OpRound: {"OpRound", nil},
-	OpLn:    {"OpLn", nil},
-	OpAbs:   {"OpAbs", nil},
-	OpCeil:  {"OpCeil", nil},
-	OpFloor: {"OpFloor", nil},
-	OpSqrt:  {"OpSqrt", nil},
+	OpRound:      {"OpRound", nil},
+	OpLn:         {"OpLn", nil},
+	OpAbs:        {"OpAbs", nil},
+	OpCeil:       {"OpCeil", nil},
+	OpFloor:      {"OpFloor", nil},
+	OpSqrt:       {"OpSqrt", nil},
+	OpExp:        {"OpExp", nil},
+	OpPow:        {"OpPow", nil},
+	OpLog:        {"OpLog", nil},
+	OpMax:        {"OpMax", []int{2}},
+	OpMin:        {"OpMin", []int{2}},
+	OpMathUnary:  {"OpMathUnary", []int{2}},
+	OpMathBinary: {"OpMathBinary", []int{2}},
+	OpRandom:     {"OpRandom", nil},
 
 	OpMvAppend: {"OpMvAppend", []int{2}},
 	OpMvJoin:   {"OpMvJoin", nil},
@@ -233,8 +287,21 @@ var definitions = map[Opcode]*Definition{
 	OpIsNotNull: {"OpIsNotNull", nil},
 	OpIsNum:     {"OpIsNum", nil},
 	OpIsInt:     {"OpIsInt", nil},
+	OpIsBool:    {"OpIsBool", nil},
+	OpTypeOf:    {"OpTypeOf", nil},
+	OpIsArray:   {"OpIsArray", nil},
+	OpIsObject:  {"OpIsObject", nil},
 
-	OpStrftime: {"OpStrftime", nil},
+	OpStrftime:    {"OpStrftime", nil},
+	OpURLDecode:   {"OpURLDecode", nil},
+	OpMD5:         {"OpMD5", nil},
+	OpSHA1:        {"OpSHA1", nil},
+	OpSHA256:      {"OpSHA256", nil},
+	OpSHA512:      {"OpSHA512", nil},
+	OpPrintf:      {"OpPrintf", []int{2}},
+	OpIPMask:      {"OpIPMask", nil},
+	OpStrptime:    {"OpStrptime", nil},
+	OpSearchMatch: {"OpSearchMatch", nil},
 
 	OpCIDRMatch: {"OpCIDRMatch", []int{2}},
 

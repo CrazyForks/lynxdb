@@ -57,6 +57,90 @@ func TestQuery_SyncEvents(t *testing.T) {
 	}
 }
 
+func TestQuery_LintOptionAndMetadata(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req QueryRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			t.Fatal(err)
+		}
+		if req.Lint == nil || *req.Lint {
+			t.Fatalf("Lint = %v, want pointer to false", req.Lint)
+		}
+		if req.LintLimit != 2 {
+			t.Fatalf("LintLimit = %d, want 2", req.LintLimit)
+		}
+		if !req.LintFull {
+			t.Fatal("LintFull = false, want true")
+		}
+		if req.Suggestions == nil || *req.Suggestions {
+			t.Fatalf("Suggestions = %v, want false", req.Suggestions)
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"data": map[string]interface{}{
+				"type":     "events",
+				"events":   []map[string]interface{}{},
+				"total":    0,
+				"has_more": false,
+			},
+			"meta": map[string]interface{}{
+				"lints": []map[string]interface{}{
+					{"code": "L002", "message": "Default source", "position": 0},
+				},
+				"suggestions": []map[string]interface{}{
+					{"text": "errors by service", "reason": "shortcut", "source_code": "L020"},
+				},
+				"explain": map[string]interface{}{
+					"source_scope":       map[string]interface{}{"selected": []string{"main"}, "count": 1},
+					"segments":           map[string]interface{}{"total": 2, "scanned": 1, "skipped": 1, "skipped_time": 1},
+					"candidate_rows":     10,
+					"literal_extraction": true,
+					"regex_engine":       "linear",
+				},
+			},
+		})
+	}))
+	defer srv.Close()
+
+	lint := false
+	suggestions := false
+	c := NewClient(WithBaseURL(srv.URL))
+	result, err := c.Query(context.Background(), QueryRequest{Q: "error", Lint: &lint, Suggestions: &suggestions, LintLimit: 2, LintFull: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Meta.Lints) != 1 {
+		t.Fatalf("len(Meta.Lints) = %d, want 1", len(result.Meta.Lints))
+	}
+	if result.Meta.Lints[0].Code != "L002" {
+		t.Errorf("lint code = %q, want L002", result.Meta.Lints[0].Code)
+	}
+	if len(result.Meta.Suggestions) != 1 {
+		t.Fatalf("len(Meta.Suggestions) = %d, want 1", len(result.Meta.Suggestions))
+	}
+	if result.Meta.Suggestions[0].Text != "errors by service" {
+		t.Errorf("suggestion text = %q, want errors by service", result.Meta.Suggestions[0].Text)
+	}
+	if result.Meta.Explain == nil {
+		t.Fatal("Meta.Explain is nil")
+	}
+	if result.Meta.Explain.SourceScope == nil || result.Meta.Explain.SourceScope.Count != 1 {
+		t.Fatalf("Explain.SourceScope = %#v, want count 1", result.Meta.Explain.SourceScope)
+	}
+	if result.Meta.Explain.Segments == nil || result.Meta.Explain.Segments.SkippedTime != 1 {
+		t.Fatalf("Explain.Segments = %#v, want skipped_time 1", result.Meta.Explain.Segments)
+	}
+	if result.Meta.Explain.CandidateRows == nil || *result.Meta.Explain.CandidateRows != 10 {
+		t.Fatalf("Explain.CandidateRows = %#v, want 10", result.Meta.Explain.CandidateRows)
+	}
+	if result.Meta.Explain.LiteralExtraction == nil || !*result.Meta.Explain.LiteralExtraction {
+		t.Fatalf("Explain.LiteralExtraction = %#v, want true", result.Meta.Explain.LiteralExtraction)
+	}
+	if result.Meta.Explain.RegexEngine != "linear" {
+		t.Fatalf("Explain.RegexEngine = %q, want linear", result.Meta.Explain.RegexEngine)
+	}
+}
+
 func TestQuery_SyncAggregate(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]interface{}{

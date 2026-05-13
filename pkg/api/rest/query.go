@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/api/apicontracts"
@@ -111,20 +112,26 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 
 		return
 	}
+	normalizedQuery, rewrites := spl2.NormalizeQueryWithRewrites(query)
 
 	mode, wait := mapQueryMode(req.Wait)
 	queryCfg := s.currentQueryConfig()
 	limit := clampLimit(req.Limit, queryCfg)
 
 	result, err := s.queryService.Submit(r.Context(), usecases.SubmitRequest{
-		Query:   query,
-		From:    req.effectiveFrom(),
-		To:      req.effectiveTo(),
-		Limit:   limit,
-		Offset:  req.Offset,
-		Mode:    mode,
-		Wait:    wait,
-		Profile: req.Profile,
+		Query:         normalizedQuery,
+		From:          req.effectiveFrom(),
+		To:            req.effectiveTo(),
+		Limit:         limit,
+		Offset:        req.Offset,
+		Mode:          mode,
+		Wait:          wait,
+		Profile:       req.Profile,
+		NoLint:        req.Lint != nil && !*req.Lint,
+		NoSuggestions: req.Suggestions != nil && !*req.Suggestions,
+		LintLimit:     req.LintLimit,
+		LintFull:      req.LintFull,
+		Rewrites:      rewrites,
 	})
 	if err != nil {
 		handlePlanError(w, err)
@@ -138,7 +145,8 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 
 			return
 		}
-		writeSyncResultFromUsecase(w, result, limit, req.Offset)
+		writeSyncResultFromUsecase(w, result, limit, req.Offset, normalizedQuery, queryCfg,
+			!(req.Lint != nil && !*req.Lint), req.LintLimit, req.LintFull)
 	} else {
 		writeJobHandleFromUsecase(w, result)
 	}
@@ -206,7 +214,7 @@ func handlePlanError(w http.ResponseWriter, err error) {
 }
 
 // writeSyncResultFromUsecase writes 200 with full results from a SubmitResult.
-func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int) {
+func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int, query string, queryCfg config.QueryConfig, lintsEnabled bool, lintLimit int, lintFull bool) {
 	var data interface{}
 	switch result.ResultType {
 	case server.ResultTypeAggregate, server.ResultTypeTimechart:
@@ -217,13 +225,205 @@ func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitRe
 		data = buildEventsResponse(result.Results, limit, offset)
 	}
 
+	lints := lintsWithBroadScope(result.Lints, query, &result.Stats, queryCfg, lintsEnabled, lintLimit, lintFull)
 	respondData(w, http.StatusOK, data,
 		WithTookMS(result.Stats.ElapsedMS),
 		WithScanned(result.Stats.RowsScanned),
 		WithQueryID(result.QueryID),
 		WithSegmentsErrored(result.Stats.SegmentsErrored),
 		WithSearchStats(searchStatsToMeta(&result.Stats)),
-		WithWarnings(result.Warnings))
+		WithWarnings(result.Warnings),
+		WithLints(lints),
+		WithSuggestions(result.Suggestions),
+		WithRewrites(result.Rewrites),
+		WithExplain(explainFromSearchStats(&result.Stats, query)))
+}
+
+const restDefaultLintLimit = 5
+
+func lintsWithBroadScope(lints []spl2.QueryLint, query string, stats *server.SearchStats, queryCfg config.QueryConfig, enabled bool, limit int, full bool) []spl2.QueryLint {
+	if !enabled || stats == nil {
+		return lints
+	}
+	extra := broadScopeLints(query, stats, queryCfg)
+	if len(extra) == 0 {
+		return lints
+	}
+
+	combined := append([]spl2.QueryLint(nil), lints...)
+	for _, lint := range extra {
+		if !hasLintCode(combined, lint.Code) {
+			combined = append(combined, lint)
+		}
+	}
+	combined = spl2.PrepareQueryLints(combined)
+	if full {
+		return combined
+	}
+	if limit <= 0 {
+		limit = restDefaultLintLimit
+	}
+	if len(combined) <= limit {
+		return combined
+	}
+
+	return append([]spl2.QueryLint(nil), combined[:limit]...)
+}
+
+func broadScopeLints(query string, stats *server.SearchStats, queryCfg config.QueryConfig) []spl2.QueryLint {
+	allSources, hasSearch := broadScopeQueryShape(query)
+	if !allSources {
+		return nil
+	}
+	sourceCount := sourceScopeCount(stats)
+	segmentCount := stats.SegmentsTotal
+	sourceThreshold, segmentThreshold := broadLintThresholds(queryCfg)
+	if hasSearch && ((sourceThreshold > 0 && sourceCount >= sourceThreshold) || (segmentThreshold > 0 && segmentCount >= segmentThreshold)) {
+		return []spl2.QueryLint{{
+			Code:     spl2.LintBroadSearch,
+			Message:  fmt.Sprintf("Broad search over %d sources; narrow with `FROM`, `source=`, or a time range", sourceCount),
+			Position: 0,
+		}}
+	}
+	if sourceThreshold > 0 && sourceCount >= sourceThreshold {
+		return []spl2.QueryLint{{
+			Code:     spl2.LintAllSourcesHigh,
+			Message:  "Narrow the source with `FROM <source>` or `source=<name>`",
+			Position: 0,
+		}}
+	}
+
+	return nil
+}
+
+func broadLintThresholds(queryCfg config.QueryConfig) (sourceThreshold, segmentThreshold int) {
+	defaults := config.DefaultConfig().Query
+	sourceThreshold = queryCfg.BroadSourceLintThreshold
+	if sourceThreshold == 0 {
+		sourceThreshold = defaults.BroadSourceLintThreshold
+	}
+	segmentThreshold = queryCfg.BroadSegmentLintThreshold
+	if segmentThreshold == 0 {
+		segmentThreshold = defaults.BroadSegmentLintThreshold
+	}
+
+	return sourceThreshold, segmentThreshold
+}
+
+func broadScopeQueryShape(query string) (allSources bool, hasSearch bool) {
+	prog, err := spl2.ParseProgram(query)
+	if err != nil || prog == nil {
+		return strings.Contains(strings.ToUpper(query), "FROM *"), queryUsesRegex(query) || strings.Contains(strings.ToLower(query), "| search")
+	}
+
+	var checkQuery func(q *spl2.Query)
+	checkQuery = func(q *spl2.Query) {
+		if q == nil {
+			return
+		}
+		if q.Source != nil && q.Source.IsAllSources() {
+			allSources = true
+		}
+		for _, cmd := range q.Commands {
+			switch c := cmd.(type) {
+			case *spl2.SearchCommand, *spl2.RegexCommand:
+				hasSearch = true
+			case *spl2.JoinCommand:
+				checkQuery(c.Subquery)
+			case *spl2.AppendCommand:
+				checkQuery(c.Subquery)
+			case *spl2.MultisearchCommand:
+				for _, sub := range c.Searches {
+					checkQuery(sub)
+				}
+			}
+		}
+	}
+	checkQuery(prog.Main)
+	for _, ds := range prog.Datasets {
+		checkQuery(ds.Query)
+	}
+
+	return allSources, hasSearch
+}
+
+func sourceScopeCount(stats *server.SearchStats) int {
+	if len(stats.SourcesScanned) > 0 {
+		return len(stats.SourcesScanned)
+	}
+
+	return len(stats.IndexesUsed)
+}
+
+func hasLintCode(lints []spl2.QueryLint, code string) bool {
+	for _, lint := range lints {
+		if lint.Code == code {
+			return true
+		}
+	}
+
+	return false
+}
+
+func explainFromSearchStats(ss *server.SearchStats, query string) *metaExplain {
+	if ss == nil {
+		return nil
+	}
+
+	sources := ss.SourcesScanned
+	if len(sources) == 0 {
+		sources = ss.IndexesUsed
+	}
+	skipped := ss.SegmentsSkippedIdx + ss.SegmentsSkippedTime + ss.SegmentsSkippedStat +
+		ss.SegmentsSkippedBF + ss.SegmentsSkippedRange
+	hasSegments := ss.SegmentsTotal > 0 || ss.SegmentsScanned > 0 || skipped > 0
+	if len(sources) == 0 && !hasSegments && ss.RowsScanned == 0 && ss.ProcessedBytes == 0 && ss.ElapsedMS == 0 {
+		return nil
+	}
+
+	candidates := ss.RowsScanned
+	if ss.RowsInRange > 0 {
+		candidates = ss.RowsInRange
+	}
+	literalExtraction := ss.InvertedIndexHits > 0
+	explain := &metaExplain{
+		CandidateRows:     &candidates,
+		LiteralExtraction: &literalExtraction,
+		WallClockMS:       ss.ElapsedMS,
+		ScannedBytes:      ss.ProcessedBytes,
+	}
+	if len(sources) > 0 {
+		explain.SourceScope = &metaExplainSourceScope{
+			Selected: append([]string(nil), sources...),
+			Count:    len(sources),
+		}
+	}
+	if hasSegments {
+		explain.Segments = &metaExplainSegments{
+			Total:        ss.SegmentsTotal,
+			Scanned:      ss.SegmentsScanned,
+			Skipped:      skipped,
+			SkippedIndex: ss.SegmentsSkippedIdx,
+			SkippedTime:  ss.SegmentsSkippedTime,
+			SkippedStats: ss.SegmentsSkippedStat,
+			SkippedBloom: ss.SegmentsSkippedBF,
+			SkippedRange: ss.SegmentsSkippedRange,
+		}
+	}
+	if queryUsesRegex(query) {
+		explain.RegexEngine = "linear"
+	}
+
+	return explain
+}
+
+func queryUsesRegex(query string) bool {
+	lower := strings.ToLower(query)
+
+	return strings.Contains(lower, "| regex ") ||
+		strings.Contains(lower, " regex ") ||
+		strings.Contains(query, "=~") ||
+		strings.Contains(query, "!~")
 }
 
 // searchStatsToMeta converts a server.SearchStats to the REST meta stats struct.
@@ -355,7 +555,12 @@ func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitRes
 	if result.Progress != nil {
 		data["progress"] = result.Progress
 	}
-	respondData(w, http.StatusAccepted, data, WithQueryID(result.JobID))
+	respondData(w, http.StatusAccepted, data,
+		WithQueryID(result.JobID),
+		WithWarnings(result.Warnings),
+		WithLints(result.Lints),
+		WithSuggestions(result.Suggestions),
+		WithRewrites(result.Rewrites))
 }
 
 func buildEventsResponse(rows []spl2.ResultRow, limit, offset int) map[string]interface{} {

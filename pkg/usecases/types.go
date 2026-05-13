@@ -19,14 +19,19 @@ const (
 
 // SubmitRequest is the domain input for query submission.
 type SubmitRequest struct {
-	Query   string
-	From    string
-	To      string
-	Limit   int
-	Offset  int
-	Mode    QueryMode
-	Wait    time.Duration // used in hybrid mode
-	Profile string        // "basic", "full", "trace" — passed to engine for profiling
+	Query         string
+	From          string
+	To            string
+	Limit         int
+	Offset        int
+	Mode          QueryMode
+	Wait          time.Duration       // used in hybrid mode
+	Profile       string              // "basic", "full", "trace" — passed to engine for profiling
+	NoLint        bool                // disables advisory query lints
+	NoSuggestions bool                // disables advisory query suggestions
+	LintLimit     int                 // max lints to return; default 5
+	LintFull      bool                // true returns all advisory lints
+	Rewrites      []spl2.QueryRewrite // visible query normalizer rewrites
 }
 
 // SubmitResult is the domain output for query submission.
@@ -49,6 +54,15 @@ type SubmitResult struct {
 
 	// Warnings holds user-facing warnings about the query (e.g., blocking operators).
 	Warnings []string
+
+	// Lints holds post-parse query warnings with stable RFC lint codes.
+	Lints []spl2.QueryLint
+
+	// Suggestions holds advisory query edit/template suggestions.
+	Suggestions []spl2.QuerySuggestion
+
+	// Rewrites holds visible query normalizer rewrites.
+	Rewrites []spl2.QueryRewrite
 }
 
 // StreamRequest is the domain input for streaming queries.
@@ -71,6 +85,7 @@ type ExplainResult struct {
 	Errors     []ExplainError
 	Parsed     *ExplainParsed
 	HasMVAccel bool
+	Rewrites   []spl2.QueryRewrite
 }
 
 // ExplainError represents a parse/validation error in an explain response.

@@ -24,6 +24,7 @@ type UnrollIterator struct {
 	child     Iterator
 	fields    []string
 	batchSize int
+	limit     int
 
 	// Buffer for expanded rows from the current batch.
 	buffer []map[string]event.Value
@@ -33,6 +34,10 @@ type UnrollIterator struct {
 // NewUnrollIterator creates an unroll operator that explodes the given fields.
 // When len(fields) == 1, behavior is identical to the original single-field unroll.
 func NewUnrollIterator(child Iterator, fields []string, batchSize int) *UnrollIterator {
+	return NewUnrollIteratorWithLimit(child, fields, batchSize, 0)
+}
+
+func NewUnrollIteratorWithLimit(child Iterator, fields []string, batchSize int, limit int) *UnrollIterator {
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
@@ -41,6 +46,7 @@ func NewUnrollIterator(child Iterator, fields []string, batchSize int) *UnrollIt
 		child:     child,
 		fields:    fields,
 		batchSize: batchSize,
+		limit:     limit,
 	}
 }
 
@@ -113,6 +119,9 @@ func (u *UnrollIterator) unrollSingle(row map[string]event.Value, field string) 
 
 		return
 	}
+	if u.limit > 0 && len(arr) > u.limit {
+		arr = arr[:u.limit]
+	}
 
 	for _, elem := range arr {
 		newRow := cloneRow(row)
@@ -182,6 +191,9 @@ func (u *UnrollIterator) unrollMulti(row map[string]event.Value) {
 		u.buffer = append(u.buffer, row)
 
 		return
+	}
+	if u.limit > 0 && arrLen > u.limit {
+		arrLen = u.limit
 	}
 
 	// Zip-expand: for each index, create a row with element[i] from each field.

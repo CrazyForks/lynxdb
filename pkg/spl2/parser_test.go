@@ -1,6 +1,7 @@
 package spl2
 
 import (
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -73,6 +74,42 @@ func TestParse_FromSearchStatsSort(t *testing.T) {
 	}
 	if head.Count != 20 {
 		t.Errorf("head count: got %d, want 20", head.Count)
+	}
+}
+
+func TestParse_UnsupportedSplunkCommands(t *testing.T) {
+	tests := []string{"delete", "collect", "stash", "sendemail", "sendalert", "localop", "redistribute", "loadjob", "savedsearch", "spl1"}
+	for _, cmd := range tests {
+		t.Run(cmd, func(t *testing.T) {
+			_, err := Parse(`FROM main | ` + cmd)
+			if err == nil {
+				t.Fatalf("Parse(%q): expected error", cmd)
+			}
+			msg := err.Error()
+			for _, want := range []string{LintUnsupportedCommand, "unsupported command", cmd} {
+				if !strings.Contains(msg, want) {
+					t.Fatalf("error %q missing %q", msg, want)
+				}
+			}
+		})
+	}
+}
+
+func TestParse_UnsupportedCommandNameCanBeField(t *testing.T) {
+	q, err := Parse(`FROM main | delete=1`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	where, ok := q.Commands[0].(*WhereCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected WhereCommand, got %T", q.Commands[0])
+	}
+	cmp, ok := where.Expr.(*CompareExpr)
+	if !ok {
+		t.Fatalf("where expr: expected CompareExpr, got %T", where.Expr)
+	}
+	if got := cmp.Left.(*FieldExpr).Name; got != "delete" {
+		t.Errorf("field: got %q, want delete", got)
 	}
 }
 
@@ -239,6 +276,435 @@ func TestParse_DedupCommand(t *testing.T) {
 	}
 }
 
+func TestParse_DedupCompatibilityForms(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		fields []string
+		limit  int
+	}{
+		{
+			name:   "space separated fields",
+			input:  `FROM main | dedup host source`,
+			fields: []string{"host", "source"},
+		},
+		{
+			name:   "leading limit with space separated fields",
+			input:  `FROM main | dedup 2 host source`,
+			fields: []string{"host", "source"},
+			limit:  2,
+		},
+		{
+			name:   "trailing limit",
+			input:  `FROM main | dedup host source 2`,
+			fields: []string{"host", "source"},
+			limit:  2,
+		},
+		{
+			name:   "canonical comma fields",
+			input:  `FROM main | dedup 2 host, source`,
+			fields: []string{"host", "source"},
+			limit:  2,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			dedup, ok := q.Commands[0].(*DedupCommand)
+			if !ok {
+				t.Fatalf("expected DedupCommand, got %T", q.Commands[0])
+			}
+			if dedup.Limit != tt.limit {
+				t.Fatalf("Limit: got %d, want %d", dedup.Limit, tt.limit)
+			}
+			if len(dedup.Fields) != len(tt.fields) {
+				t.Fatalf("fields: got %v, want %v", dedup.Fields, tt.fields)
+			}
+			for i, want := range tt.fields {
+				if dedup.Fields[i] != want {
+					t.Fatalf("fields[%d]: got %q, want %q", i, dedup.Fields[i], want)
+				}
+			}
+		})
+	}
+}
+
+func TestParse_DoubleQuotedLegacyFieldLists(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(*testing.T, *Query)
+	}{
+		{
+			name:  "fields",
+			input: `FROM main | fields "user id", status`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*FieldsCommand)
+				if got, want := cmd.Fields, []string{"user id", "status"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("fields: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "table",
+			input: `FROM main | table _time, "user id"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*TableCommand)
+				if got, want := cmd.Fields, []string{"_time", "user id"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("table fields: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "dedup",
+			input: `FROM main | dedup 2 "user id", host`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*DedupCommand)
+				if got, want := cmd.Fields, []string{"user id", "host"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("dedup fields: got %v, want %v", got, want)
+				}
+				if cmd.Limit != 2 {
+					t.Fatalf("dedup limit: got %d, want 2", cmd.Limit)
+				}
+			},
+		},
+		{
+			name:  "stats by",
+			input: `FROM main | stats count() by "user id", host`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StatsCommand)
+				if got, want := cmd.GroupBy, []string{"user id", "host"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("stats group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "stats alias",
+			input: `FROM main | stats count() as "total count"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StatsCommand)
+				if got, want := cmd.Aggregations[0].Alias, "total count"; got != want {
+					t.Fatalf("stats alias: got %q, want %q", got, want)
+				}
+			},
+		},
+		{
+			name:  "eval target",
+			input: `FROM main | eval "display name"=status`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*EvalCommand)
+				if got, want := cmd.Field, "display name"; got != want {
+					t.Fatalf("eval field: got %q, want %q", got, want)
+				}
+			},
+		},
+		{
+			name:  "rename pair",
+			input: `FROM main | rename "old name" as "new name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*RenameCommand)
+				if len(cmd.Renames) != 1 || cmd.Renames[0].Old != "old name" || cmd.Renames[0].New != "new name" {
+					t.Fatalf("rename pairs: got %+v", cmd.Renames)
+				}
+			},
+		},
+		{
+			name:  "bin field",
+			input: `FROM main | bin "duration ms" span=100 as "duration bucket"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*BinCommand)
+				if cmd.Field != "duration ms" || cmd.Alias != "duration bucket" {
+					t.Fatalf("bin: got field=%q alias=%q", cmd.Field, cmd.Alias)
+				}
+			},
+		},
+		{
+			name:  "join field",
+			input: `FROM main | join type=inner "client ip" [FROM geo]`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*JoinCommand)
+				if cmd.Field != "client ip" {
+					t.Fatalf("join field: got %q, want client ip", cmd.Field)
+				}
+			},
+		},
+		{
+			name:  "transaction field",
+			input: `FROM main | transaction maxspan=30m "session id"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*TransactionCommand)
+				if cmd.Field != "session id" {
+					t.Fatalf("transaction field: got %q, want session id", cmd.Field)
+				}
+			},
+		},
+		{
+			name:  "sort fields",
+			input: `FROM main | sort -"duration ms", +"status code"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*SortCommand)
+				if len(cmd.Fields) != 2 {
+					t.Fatalf("sort fields: got %v", cmd.Fields)
+				}
+				if cmd.Fields[0].Name != "duration ms" || !cmd.Fields[0].Desc {
+					t.Fatalf("sort field[0]: got %+v", cmd.Fields[0])
+				}
+				if cmd.Fields[1].Name != "status code" || cmd.Fields[1].Desc {
+					t.Fatalf("sort field[1]: got %+v", cmd.Fields[1])
+				}
+			},
+		},
+		{
+			name:  "sort by field",
+			input: `FROM main | sort by "duration ms" desc`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*SortCommand)
+				if len(cmd.Fields) != 1 || cmd.Fields[0].Name != "duration ms" || !cmd.Fields[0].Desc {
+					t.Fatalf("sort by fields: got %+v", cmd.Fields)
+				}
+			},
+		},
+		{
+			name:  "xyseries fields",
+			input: `FROM main | xyseries "host name" "metric name" "metric value"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*XYSeriesCommand)
+				if cmd.XField != "host name" || cmd.YField != "metric name" || cmd.ValueField != "metric value" {
+					t.Fatalf("xyseries: got %+v", cmd)
+				}
+			},
+		},
+		{
+			name:  "untable fields",
+			input: `FROM main | untable "host name" "metric name" "metric value"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*UntableCommand)
+				if cmd.XField != "host name" || cmd.YNameField != "metric name" || cmd.YDataField != "metric value" {
+					t.Fatalf("untable: got %+v", cmd)
+				}
+			},
+		},
+		{
+			name:  "top fields",
+			input: `FROM main | top 5 "uri path" by "service name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*TopCommand)
+				if cmd.Field != "uri path" || cmd.ByField != "service name" {
+					t.Fatalf("top: got %+v", cmd)
+				}
+			},
+		},
+		{
+			name:  "rare fields",
+			input: `FROM main | rare 5 "uri path" by "service name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*RareCommand)
+				if cmd.Field != "uri path" || cmd.ByField != "service name" {
+					t.Fatalf("rare: got %+v", cmd)
+				}
+			},
+		},
+		{
+			name:  "rank field",
+			input: `FROM main | rank top 5 by "risk score"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*SortCommand)
+				if len(cmd.Fields) != 1 || cmd.Fields[0].Name != "risk score" || !cmd.Fields[0].Desc {
+					t.Fatalf("rank sort fields: got %+v", cmd.Fields)
+				}
+			},
+		},
+		{
+			name:  "topby field",
+			input: `FROM main | topby 5 "sku id" using avg(duration_ms)`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StatsCommand)
+				if got, want := cmd.GroupBy, []string{"sku id"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("topby group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "bottomby field",
+			input: `FROM main | bottomby 5 "sku id" using avg(duration_ms)`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StatsCommand)
+				if got, want := cmd.GroupBy, []string{"sku id"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("bottomby group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "select field",
+			input: `FROM main | select "user id" as "display name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*SelectCommand)
+				if len(cmd.Columns) != 1 || cmd.Columns[0].Name != "user id" || cmd.Columns[0].Alias != "display name" {
+					t.Fatalf("select columns: got %+v", cmd.Columns)
+				}
+			},
+		},
+		{
+			name:  "keep fields",
+			input: `FROM main | keep "user id", status`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*FieldsCommand)
+				if cmd.Remove {
+					t.Fatal("keep remove: got true, want false")
+				}
+				if got, want := cmd.Fields, []string{"user id", "status"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("keep fields: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "omit fields",
+			input: `FROM main | omit "debug field", trace_id`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*FieldsCommand)
+				if !cmd.Remove {
+					t.Fatal("omit remove: got false, want true")
+				}
+				if got, want := cmd.Fields, []string{"debug field", "trace_id"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("omit fields: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "lynxflow by field list",
+			input: `FROM main | rate by "service name", host`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*TimechartCommand)
+				if got, want := cmd.GroupBy, []string{"service name", "host"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("rate group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "lookup fields",
+			input: `FROM main | lookup "geo dataset" on "client ip"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*JoinCommand)
+				if cmd.Subquery == nil || cmd.Subquery.Source == nil || cmd.Subquery.Source.Index != "geo dataset" {
+					t.Fatalf("lookup dataset: got %+v", cmd.Subquery)
+				}
+				if cmd.Field != "client ip" {
+					t.Fatalf("lookup field: got %q, want client ip", cmd.Field)
+				}
+			},
+		},
+		{
+			name:  "correlate fields",
+			input: `FROM main | correlate "latency ms" "error rate"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*CorrelateCommand)
+				if cmd.Field1 != "latency ms" || cmd.Field2 != "error rate" {
+					t.Fatalf("correlate: got %+v", cmd)
+				}
+			},
+		},
+		{
+			name:  "latency field",
+			input: `FROM main | latency "duration ms" every 1m by "service name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*TimechartCommand)
+				if len(cmd.Aggregations) == 0 || len(cmd.Aggregations[0].Args) != 1 {
+					t.Fatalf("latency aggregations: got %+v", cmd.Aggregations)
+				}
+				field, ok := cmd.Aggregations[0].Args[0].(*FieldExpr)
+				if !ok || field.Name != "duration ms" {
+					t.Fatalf("latency field: got %#v", cmd.Aggregations[0].Args[0])
+				}
+				if got, want := cmd.GroupBy, []string{"service name"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("latency group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "percentiles field",
+			input: `FROM main | percentiles "duration ms" by "service name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StatsCommand)
+				if len(cmd.Aggregations) == 0 || len(cmd.Aggregations[0].Args) != 1 {
+					t.Fatalf("percentiles aggregations: got %+v", cmd.Aggregations)
+				}
+				field, ok := cmd.Aggregations[0].Args[0].(*FieldExpr)
+				if !ok || field.Name != "duration ms" {
+					t.Fatalf("percentiles field: got %#v", cmd.Aggregations[0].Args[0])
+				}
+				if got, want := cmd.GroupBy, []string{"service name"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("percentiles group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "baseline field",
+			input: `FROM main | baseline "error rate" window=12 by "service name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StreamstatsCommand)
+				if len(cmd.Aggregations) == 0 || len(cmd.Aggregations[0].Args) != 1 {
+					t.Fatalf("baseline aggregations: got %+v", cmd.Aggregations)
+				}
+				field, ok := cmd.Aggregations[0].Args[0].(*FieldExpr)
+				if !ok || field.Name != "error rate" {
+					t.Fatalf("baseline field: got %#v", cmd.Aggregations[0].Args[0])
+				}
+				if got, want := cmd.GroupBy, []string{"service name"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("baseline group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "changes field",
+			input: `FROM main | changes "version name" by "service name"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[1].(*StreamstatsCommand)
+				if len(cmd.Aggregations) != 1 || len(cmd.Aggregations[0].Args) != 1 {
+					t.Fatalf("changes aggregations: got %+v", cmd.Aggregations)
+				}
+				field, ok := cmd.Aggregations[0].Args[0].(*FieldExpr)
+				if !ok || field.Name != "version name" {
+					t.Fatalf("changes field: got %#v", cmd.Aggregations[0].Args[0])
+				}
+				if got, want := cmd.GroupBy, []string{"service name"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("changes group by: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "slowest fields",
+			input: `FROM main | slowest 5 "uri path" by "duration ms"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StatsCommand)
+				if got, want := cmd.GroupBy, []string{"uri path"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("slowest group by: got %v, want %v", got, want)
+				}
+				if len(cmd.Aggregations) != 1 || len(cmd.Aggregations[0].Args) != 1 {
+					t.Fatalf("slowest aggregations: got %+v", cmd.Aggregations)
+				}
+				field, ok := cmd.Aggregations[0].Args[0].(*FieldExpr)
+				if !ok || field.Name != "duration ms" {
+					t.Fatalf("slowest duration field: got %#v", cmd.Aggregations[0].Args[0])
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			tt.check(t, q)
+		})
+	}
+}
+
 func TestParse_TailCommand(t *testing.T) {
 	input := `FROM main | tail 50`
 	q, err := Parse(input)
@@ -252,6 +718,60 @@ func TestParse_TailCommand(t *testing.T) {
 	}
 	if tail.Count != 50 {
 		t.Errorf("tail count: got %d, want 50", tail.Count)
+	}
+}
+
+func TestParse_ReverseCommand(t *testing.T) {
+	input := `FROM main | reverse`
+	q, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	if _, ok := q.Commands[0].(*ReverseCommand); !ok {
+		t.Fatalf("expected ReverseCommand, got %T", q.Commands[0])
+	}
+}
+
+func TestParse_RegexCommandDefaultRaw(t *testing.T) {
+	q, err := Parse(`FROM main | regex "error|fatal"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	cmd, ok := q.Commands[0].(*RegexCommand)
+	if !ok {
+		t.Fatalf("expected RegexCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "_raw" {
+		t.Errorf("field: got %q, want _raw", cmd.Field)
+	}
+	if cmd.Pattern != "error|fatal" {
+		t.Errorf("pattern: got %q", cmd.Pattern)
+	}
+	if cmd.Negate {
+		t.Error("negate: got true, want false")
+	}
+}
+
+func TestParse_RegexCommandFieldNotMatch(t *testing.T) {
+	q, err := Parse(`FROM main | regex message!="^debug"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	cmd, ok := q.Commands[0].(*RegexCommand)
+	if !ok {
+		t.Fatalf("expected RegexCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "message" {
+		t.Errorf("field: got %q, want message", cmd.Field)
+	}
+	if cmd.Pattern != "^debug" {
+		t.Errorf("pattern: got %q", cmd.Pattern)
+	}
+	if !cmd.Negate {
+		t.Error("negate: got false, want true")
 	}
 }
 
@@ -289,6 +809,30 @@ func TestParse_BooleanExpr(t *testing.T) {
 	}
 	if binExpr.Op != "or" {
 		t.Errorf("top-level op: got %q, want or", binExpr.Op)
+	}
+}
+
+func TestParse_XorExpr(t *testing.T) {
+	input := `FROM main | where host = "web-01" or status >= 500 xor level = "ERROR"`
+	q, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	where := q.Commands[0].(*WhereCommand)
+	binExpr, ok := where.Expr.(*BinaryExpr)
+	if !ok {
+		t.Fatalf("expected BinaryExpr, got %T", where.Expr)
+	}
+	if binExpr.Op != "xor" {
+		t.Errorf("top-level op: got %q, want xor", binExpr.Op)
+	}
+	left, ok := binExpr.Left.(*BinaryExpr)
+	if !ok {
+		t.Fatalf("expected OR on left side, got %T", binExpr.Left)
+	}
+	if left.Op != "or" {
+		t.Errorf("left op: got %q, want or", left.Op)
 	}
 }
 
@@ -380,6 +924,7 @@ func TestParse_DigitPrefixedSourceName(t *testing.T) {
 		{"FROM bare number", "FROM 42 | stats count", "42"},
 		{"FROM normal ident", "FROM main | stats count", "main"},
 		{"FROM quoted name", `FROM "my-logs" | stats count`, "my-logs"},
+		{"FROM single quoted name", `FROM 'my logs' | stats count`, "my logs"},
 	}
 
 	for _, tt := range tests {
@@ -393,6 +938,66 @@ func TestParse_DigitPrefixedSourceName(t *testing.T) {
 			}
 			if q.Source.Index != tt.wantIndex {
 				t.Errorf("Source.Index = %q, want %q", q.Source.Index, tt.wantIndex)
+			}
+		})
+	}
+}
+
+func TestParse_SourceTimeRangeSignedDurations(t *testing.T) {
+	tests := []struct {
+		name         string
+		input        string
+		wantRelative string
+		wantEnd      string
+		wantSnapTo   string
+	}{
+		{
+			name:         "positive duration",
+			input:        "FROM jobs[+30m] | head 1",
+			wantRelative: "+30m",
+		},
+		{
+			name:         "signed range",
+			input:        "FROM jobs[-1h..+30m] | head 1",
+			wantRelative: "-1h",
+			wantEnd:      "+30m",
+		},
+		{
+			name:         "range ending now",
+			input:        "FROM jobs[-5m..now] | head 1",
+			wantRelative: "-5m",
+			wantEnd:      "now",
+		},
+		{
+			name:         "duration snap suffix",
+			input:        "FROM jobs[-1d@d] | head 1",
+			wantRelative: "-1d@d",
+			wantSnapTo:   "d",
+		},
+		{
+			name:       "week snap variant",
+			input:      "FROM jobs[@w1] | head 1",
+			wantSnapTo: "w1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if q.Source == nil || q.Source.TimeRange == nil {
+				t.Fatalf("missing source time range")
+			}
+			if q.Source.TimeRange.Relative != tt.wantRelative {
+				t.Fatalf("Relative: got %q, want %q", q.Source.TimeRange.Relative, tt.wantRelative)
+			}
+			if q.Source.TimeRange.End != tt.wantEnd {
+				t.Fatalf("End: got %q, want %q", q.Source.TimeRange.End, tt.wantEnd)
+			}
+			if q.Source.TimeRange.SnapTo != tt.wantSnapTo {
+				t.Fatalf("SnapTo: got %q, want %q", q.Source.TimeRange.SnapTo, tt.wantSnapTo)
 			}
 		})
 	}
@@ -448,6 +1053,74 @@ func TestParse_FromGlob(t *testing.T) {
 	}
 	if q.Source.Index != "logs*" {
 		t.Errorf("Index: got %q, want logs*", q.Source.Index)
+	}
+}
+
+func TestParse_FromExcludeGlob(t *testing.T) {
+	input := `FROM nginx,logs*,!logs-debug* | stats count by source`
+	q, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if q.Source == nil {
+		t.Fatal("expected source clause")
+	}
+	if !q.Source.IsGlob {
+		t.Fatal("expected IsGlob=true")
+	}
+	if q.Source.Index != "nginx" {
+		t.Fatalf("Index: got %q, want nginx", q.Source.Index)
+	}
+	if got, want := q.Source.Indices, []string{"nginx"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("Indices: got %v, want %v", got, want)
+	}
+	if got, want := q.Source.IncludeGlobs, []string{"logs*"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("IncludeGlobs: got %v, want %v", got, want)
+	}
+	if got, want := q.Source.ExcludeGlobs, []string{"logs-debug*"}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("ExcludeGlobs: got %v, want %v", got, want)
+	}
+}
+
+func TestParse_FromBareAdvancedGlobs(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+	}{
+		{`FROM logs-[ab]* | stats count`, "logs-[ab]*"},
+		{`FROM {api,web} | stats count`, "{api,web}"},
+		{`FROM api/** | stats count`, "api/**"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			if q.Source == nil || !q.Source.IsGlob {
+				t.Fatalf("expected glob source, got %#v", q.Source)
+			}
+			if q.Source.Index != tt.want {
+				t.Fatalf("Index: got %q, want %q", q.Source.Index, tt.want)
+			}
+			if got, want := q.Source.IncludeGlobs, []string{tt.want}; !reflect.DeepEqual(got, want) {
+				t.Fatalf("IncludeGlobs: got %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestParse_FromTimeRangeAfterName(t *testing.T) {
+	q, err := Parse(`FROM nginx[-1h] | stats count`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if q.Source == nil || q.Source.TimeRange == nil {
+		t.Fatalf("expected source time range, got %#v", q.Source)
+	}
+	if q.Source.Index != "nginx" || q.Source.TimeRange.Relative != "-1h" {
+		t.Fatalf("source/time range: got %#v", q.Source)
 	}
 }
 
@@ -533,6 +1206,36 @@ func TestParse_FromSingleUnchanged(t *testing.T) {
 	}
 	if !q.Source.IsSingleSource() {
 		t.Error("expected IsSingleSource()=true")
+	}
+}
+
+func TestParse_FromRegexSourceName(t *testing.T) {
+	q, err := Parse(`FROM regex | search *`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if q.Source == nil {
+		t.Fatal("expected source clause")
+	}
+	if q.Source.Index != "regex" {
+		t.Errorf("Index: got %q, want regex", q.Source.Index)
+	}
+}
+
+func TestParse_RexEscapedQuoteAlternation(t *testing.T) {
+	q, err := Parse(`FROM idx_openstack | REX "\"(?<http_method>GET|POST|PUT|DELETE|PATCH)" | WHERE isnotnull(http_method) | STATS count BY http_method | SORT - count`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 4 {
+		t.Fatalf("Commands: got %d, want 4", len(q.Commands))
+	}
+	rex, ok := q.Commands[0].(*RexCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: got %T, want RexCommand", q.Commands[0])
+	}
+	if rex.Pattern != `"(?<http_method>GET|POST|PUT|DELETE|PATCH)` {
+		t.Fatalf("Rex pattern: got %q", rex.Pattern)
 	}
 }
 
@@ -974,6 +1677,24 @@ func TestParse_PackJson_AllFields(t *testing.T) {
 	}
 	if pj.Target != "output_json" {
 		t.Errorf("target: got %q, want %q", pj.Target, "output_json")
+	}
+}
+
+func TestParse_EvalReplaceFunction(t *testing.T) {
+	q, err := Parse(`FROM main | eval clean=replace(source, "old-", "new-")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	eval, ok := q.Commands[0].(*EvalCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: got %T, want *EvalCommand", q.Commands[0])
+	}
+	call, ok := eval.Assignments[0].Expr.(*FuncCallExpr)
+	if !ok {
+		t.Fatalf("expr: got %T, want *FuncCallExpr", eval.Assignments[0].Expr)
+	}
+	if call.Name != "replace" {
+		t.Fatalf("function: got %q, want replace", call.Name)
 	}
 }
 
@@ -1539,6 +2260,108 @@ func TestParse_StatsPercentileAliases(t *testing.T) {
 	}
 }
 
+func TestParse_StatsAggregateAliases(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantFunc string
+	}{
+		{`| stats mean(duration) as mean_duration`, "avg"},
+		{`| stats median(duration) as median_duration`, "perc50"},
+		{`| stats distinct_count(user) as users`, "dc"},
+		{`| stats estdc(user) as estimated_users`, "dc"},
+		{`| stats estdc_error(user) as estimated_error`, "estdc_error"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tt.input, err)
+			}
+			if len(q.Commands) != 1 {
+				t.Fatalf("Commands: got %d, want 1", len(q.Commands))
+			}
+			stats, ok := q.Commands[0].(*StatsCommand)
+			if !ok {
+				t.Fatalf("cmd[0]: expected StatsCommand, got %T", q.Commands[0])
+			}
+			if len(stats.Aggregations) != 1 {
+				t.Fatalf("aggs: got %d, want 1", len(stats.Aggregations))
+			}
+			if got := stats.Aggregations[0].Func; got != tt.wantFunc {
+				t.Errorf("Func: got %q, want %q", got, tt.wantFunc)
+			}
+		})
+	}
+}
+
+func TestParse_StatsPercentileSuffixAliases(t *testing.T) {
+	var tests []struct {
+		input    string
+		wantFunc string
+	}
+	for _, prefix := range []string{"percentile", "exactperc", "upperperc"} {
+		for _, suffix := range []string{"25", "50", "75", "90", "95", "99"} {
+			tests = append(tests, struct {
+				input    string
+				wantFunc string
+			}{
+				input:    `| stats ` + prefix + suffix + `(duration) as p` + suffix,
+				wantFunc: "perc" + suffix,
+			})
+		}
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tt.input, err)
+			}
+			stats, ok := q.Commands[0].(*StatsCommand)
+			if !ok {
+				t.Fatalf("cmd[0]: expected StatsCommand, got %T", q.Commands[0])
+			}
+			if got := stats.Aggregations[0].Func; got != tt.wantFunc {
+				t.Errorf("Func: got %q, want %q", got, tt.wantFunc)
+			}
+		})
+	}
+}
+
+func TestParse_StatsGenericPercentileAliases(t *testing.T) {
+	tests := []struct {
+		input    string
+		wantFunc string
+	}{
+		{`| stats perc(duration, 95) as p95`, "perc95"},
+		{`| stats percentile(duration, 95) as p95`, "perc95"},
+		{`| stats exactperc(duration, 95) as p95`, "perc95"},
+		{`| stats upperperc(duration, 95) as p95`, "perc95"},
+		{`| stats percentile(duration, 25) as p25`, "perc25"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse(%q): %v", tt.input, err)
+			}
+			stats, ok := q.Commands[0].(*StatsCommand)
+			if !ok {
+				t.Fatalf("cmd[0]: expected StatsCommand, got %T", q.Commands[0])
+			}
+			agg := stats.Aggregations[0]
+			if agg.Func != tt.wantFunc {
+				t.Errorf("Func: got %q, want %q", agg.Func, tt.wantFunc)
+			}
+			if len(agg.Args) != 1 {
+				t.Fatalf("Args: got %d, want 1", len(agg.Args))
+			}
+		})
+	}
+}
+
 func TestParse_StatsMultiplePercentileAliases(t *testing.T) {
 	// Verify multiple percentile aliases in a single stats command.
 	q, err := Parse(`| stats p50(dur), p99(dur), count by service`)
@@ -1586,6 +2409,452 @@ func TestParse_FieldsGlobPattern(t *testing.T) {
 	}
 	if fc.Remove {
 		t.Error("expected Remove=false")
+	}
+}
+
+func TestParse_MvexpandCommand(t *testing.T) {
+	q, err := Parse(`FROM main | mvexpand tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*UnrollCommand)
+	if !ok {
+		t.Fatalf("expected UnrollCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "tags" {
+		t.Errorf("field: got %q, want tags", cmd.Field)
+	}
+	if cmd.Limit != 0 {
+		t.Errorf("limit: got %d, want 0", cmd.Limit)
+	}
+}
+
+func TestParse_MvexpandLimitBeforeField(t *testing.T) {
+	q, err := Parse(`FROM main | mvexpand limit=2 tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd := q.Commands[0].(*UnrollCommand)
+	if cmd.Field != "tags" {
+		t.Errorf("field: got %q, want tags", cmd.Field)
+	}
+	if cmd.Limit != 2 {
+		t.Errorf("limit: got %d, want 2", cmd.Limit)
+	}
+}
+
+func TestParse_MvexpandLimitAfterField(t *testing.T) {
+	q, err := Parse(`FROM main | mvexpand tags limit=3`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd := q.Commands[0].(*UnrollCommand)
+	if cmd.Field != "tags" {
+		t.Errorf("field: got %q, want tags", cmd.Field)
+	}
+	if cmd.Limit != 3 {
+		t.Errorf("limit: got %d, want 3", cmd.Limit)
+	}
+}
+
+func TestParse_ExpandCommand(t *testing.T) {
+	q, err := Parse(`FROM main | expand records`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*UnrollCommand)
+	if !ok {
+		t.Fatalf("expected UnrollCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "records" {
+		t.Errorf("field: got %q, want records", cmd.Field)
+	}
+}
+
+func TestParse_MakeresultsCommand(t *testing.T) {
+	tests := []struct {
+		name         string
+		query        string
+		want         int
+		wantAnnotate bool
+		wantServer   string
+		wantFormat   string
+		wantData     string
+	}{
+		{name: "default", query: `| makeresults`, want: 1},
+		{name: "count option", query: `| makeresults count=3`, want: 3},
+		{name: "positional count", query: `| makeresults 4`, want: 4},
+		{name: "annotate option", query: `| makeresults count=2 annotate=true splunk_server=local`, want: 2, wantAnnotate: true, wantServer: "local"},
+		{name: "inline data options", query: `| makeresults format=json data="[{\"name\":\"Ada\"}]"`, want: 1, wantFormat: "json", wantData: `[{"name":"Ada"}]`},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := Parse(tc.query)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			cmd, ok := q.Commands[0].(*MakeresultsCommand)
+			if !ok {
+				t.Fatalf("expected MakeresultsCommand, got %T", q.Commands[0])
+			}
+			if cmd.Count != tc.want {
+				t.Errorf("count: got %d, want %d", cmd.Count, tc.want)
+			}
+			if cmd.Annotate != tc.wantAnnotate {
+				t.Errorf("annotate: got %v, want %v", cmd.Annotate, tc.wantAnnotate)
+			}
+			if cmd.SplunkServer != tc.wantServer {
+				t.Errorf("splunk_server: got %q, want %q", cmd.SplunkServer, tc.wantServer)
+			}
+			if cmd.Format != tc.wantFormat {
+				t.Errorf("format: got %q, want %q", cmd.Format, tc.wantFormat)
+			}
+			if cmd.Data != tc.wantData {
+				t.Errorf("data: got %q, want %q", cmd.Data, tc.wantData)
+			}
+		})
+	}
+}
+
+func TestParse_UntableCommand(t *testing.T) {
+	q, err := Parse(`FROM main | untable host metric value`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*UntableCommand)
+	if !ok {
+		t.Fatalf("expected UntableCommand, got %T", q.Commands[0])
+	}
+	if cmd.XField != "host" {
+		t.Errorf("x field: got %q, want host", cmd.XField)
+	}
+	if cmd.YNameField != "metric" {
+		t.Errorf("y name field: got %q, want metric", cmd.YNameField)
+	}
+	if cmd.YDataField != "value" {
+		t.Errorf("y data field: got %q, want value", cmd.YDataField)
+	}
+}
+
+func TestParse_NomvCommand(t *testing.T) {
+	q, err := Parse(`FROM main | nomv senders`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*NomvCommand)
+	if !ok {
+		t.Fatalf("expected NomvCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "senders" {
+		t.Errorf("field: got %q, want senders", cmd.Field)
+	}
+}
+
+func TestParse_MakemvCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantField string
+		wantDelim string
+		wantTok   string
+		wantEmpty bool
+		wantSetSV bool
+	}{
+		{name: "default", query: `FROM main | makemv tags`, wantField: "tags", wantDelim: " "},
+		{name: "delim", query: `FROM main | makemv delim="," tags`, wantField: "tags", wantDelim: ","},
+		{name: "options after field", query: `FROM main | makemv tags delim="|" allowempty=true`, wantField: "tags", wantDelim: "|", wantEmpty: true},
+		{name: "tokenizer", query: `FROM main | makemv tokenizer="([^,]+),?" setsv=t tags`, wantField: "tags", wantDelim: " ", wantTok: "([^,]+),?", wantSetSV: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := Parse(tc.query)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			cmd, ok := q.Commands[0].(*MakemvCommand)
+			if !ok {
+				t.Fatalf("expected MakemvCommand, got %T", q.Commands[0])
+			}
+			if cmd.Field != tc.wantField {
+				t.Errorf("field: got %q, want %q", cmd.Field, tc.wantField)
+			}
+			if cmd.Delim != tc.wantDelim {
+				t.Errorf("delim: got %q, want %q", cmd.Delim, tc.wantDelim)
+			}
+			if cmd.Tokenizer != tc.wantTok {
+				t.Errorf("tokenizer: got %q, want %q", cmd.Tokenizer, tc.wantTok)
+			}
+			if cmd.AllowEmpty != tc.wantEmpty {
+				t.Errorf("allowempty: got %v, want %v", cmd.AllowEmpty, tc.wantEmpty)
+			}
+			if cmd.SetSV != tc.wantSetSV {
+				t.Errorf("setsv: got %v, want %v", cmd.SetSV, tc.wantSetSV)
+			}
+		})
+	}
+}
+
+func TestParse_MvcombineCommand(t *testing.T) {
+	tests := []struct {
+		name      string
+		query     string
+		wantField string
+		wantDelim string
+	}{
+		{name: "default", query: `FROM main | mvcombine host`, wantField: "host", wantDelim: " "},
+		{name: "delim", query: `FROM main | mvcombine delim="," host`, wantField: "host", wantDelim: ","},
+		{name: "delim after field", query: `FROM main | mvcombine host delim=":"`, wantField: "host", wantDelim: ":"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := Parse(tc.query)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			cmd, ok := q.Commands[0].(*MvcombineCommand)
+			if !ok {
+				t.Fatalf("expected MvcombineCommand, got %T", q.Commands[0])
+			}
+			if cmd.Field != tc.wantField {
+				t.Errorf("field: got %q, want %q", cmd.Field, tc.wantField)
+			}
+			if cmd.Delim != tc.wantDelim {
+				t.Errorf("delim: got %q, want %q", cmd.Delim, tc.wantDelim)
+			}
+		})
+	}
+}
+
+func TestParse_ReplaceCommand(t *testing.T) {
+	q, err := Parse(`FROM main | replace 0 WITH Critical, "* localhost" WITH "localhost *" IN msg_level host`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*ReplaceCommand)
+	if !ok {
+		t.Fatalf("expected ReplaceCommand, got %T", q.Commands[0])
+	}
+	if len(cmd.Pairs) != 2 {
+		t.Fatalf("pairs: got %d, want 2", len(cmd.Pairs))
+	}
+	if cmd.Pairs[0] != (ReplacePair{Old: "0", New: "Critical"}) {
+		t.Errorf("pair[0]: got %+v", cmd.Pairs[0])
+	}
+	if cmd.Pairs[1] != (ReplacePair{Old: "* localhost", New: "localhost *"}) {
+		t.Errorf("pair[1]: got %+v", cmd.Pairs[1])
+	}
+	if len(cmd.Fields) != 2 || cmd.Fields[0] != "msg_level" || cmd.Fields[1] != "host" {
+		t.Errorf("fields: got %v, want [msg_level host]", cmd.Fields)
+	}
+}
+
+func TestParse_FieldformatCommand(t *testing.T) {
+	q, err := Parse(`FROM main | fieldformat totalCount=tostring(totalCount, "commas")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*FieldformatCommand)
+	if !ok {
+		t.Fatalf("expected FieldformatCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "totalCount" {
+		t.Errorf("field: got %q, want totalCount", cmd.Field)
+	}
+	call, ok := cmd.Expr.(*FuncCallExpr)
+	if !ok {
+		t.Fatalf("expr: got %T, want FuncCallExpr", cmd.Expr)
+	}
+	if call.Name != "tostring" || len(call.Args) != 2 {
+		t.Fatalf("call: got %s with %d args, want tostring with 2 args", call.Name, len(call.Args))
+	}
+}
+
+func TestParse_FieldformatQuotedField(t *testing.T) {
+	q, err := Parse(`FROM main | fieldformat "First Event"=strftime(firstTime, "%c")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*FieldformatCommand)
+	if !ok {
+		t.Fatalf("expected FieldformatCommand, got %T", q.Commands[0])
+	}
+	if cmd.Field != "First Event" {
+		t.Errorf("field: got %q, want %q", cmd.Field, "First Event")
+	}
+}
+
+func TestParse_CapabilityCommands(t *testing.T) {
+	tests := []struct {
+		query string
+		name  string
+		args  int
+	}{
+		{`FROM main | addinfo`, "addinfo", 0},
+		{`FROM main | convert timeformat="%Y-%m-%d" ctime(_time)`, "convert", 7},
+		{`FROM main | fieldsummary maxvals=10`, "fieldsummary", 3},
+		{`FROM main | flatten payload`, "flatten", 1},
+		{`FROM main | iplocation ip`, "iplocation", 1},
+		{`FROM main | tags host`, "tags", 1},
+		{`FROM main | typer`, "typer", 0},
+		{`FROM main | thru audit`, "thru", 1},
+		{`FROM main | timewrap 1w`, "timewrap", 2},
+		{`FROM main | tstats count where index=main by host`, "tstats", 7},
+		{`FROM main | mstats avg(cpu) where index=metrics by host`, "mstats", 10},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			q, err := Parse(tc.query)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			cmd, ok := q.Commands[0].(*CapabilityCommand)
+			if !ok {
+				t.Fatalf("expected CapabilityCommand, got %T", q.Commands[0])
+			}
+			if cmd.Name != tc.name {
+				t.Errorf("name: got %q, want %q", cmd.Name, tc.name)
+			}
+			if len(cmd.Args) != tc.args {
+				t.Errorf("args: got %d (%v), want %d", len(cmd.Args), cmd.Args, tc.args)
+			}
+		})
+	}
+}
+
+func TestParse_CapabilityCommandNameCanBeBareFilterField(t *testing.T) {
+	q, err := Parse(`FROM main | tags="prod"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if _, ok := q.Commands[0].(*WhereCommand); !ok {
+		t.Fatalf("expected WhereCommand, got %T", q.Commands[0])
+	}
+}
+
+func TestParse_ChartCommand(t *testing.T) {
+	q, err := Parse(`FROM main | chart count over host by status`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*ChartCommand)
+	if !ok {
+		t.Fatalf("expected ChartCommand, got %T", q.Commands[0])
+	}
+	if len(cmd.Aggregations) != 1 || cmd.Aggregations[0].Func != "count" {
+		t.Fatalf("aggs: got %+v, want count", cmd.Aggregations)
+	}
+	if cmd.RowSplit != "host" || cmd.ColumnSplit != "status" {
+		t.Errorf("splits: got row=%q column=%q, want host/status", cmd.RowSplit, cmd.ColumnSplit)
+	}
+}
+
+func TestParse_ChartCommandByTwoFields(t *testing.T) {
+	q, err := Parse(`FROM main | chart avg(duration_ms) by host,status`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*ChartCommand)
+	if !ok {
+		t.Fatalf("expected ChartCommand, got %T", q.Commands[0])
+	}
+	if cmd.RowSplit != "host" || cmd.ColumnSplit != "status" {
+		t.Errorf("splits: got row=%q column=%q, want host/status", cmd.RowSplit, cmd.ColumnSplit)
+	}
+}
+
+func TestParse_UnionCommand(t *testing.T) {
+	q, err := Parse(`FROM main | union maxout=1000 maxtime=120 timeout=600 customers, orders [search error | stats count by source]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*UnionCommand)
+	if !ok {
+		t.Fatalf("expected UnionCommand, got %T", q.Commands[0])
+	}
+	if len(cmd.Branches) != 3 {
+		t.Fatalf("branches: got %d, want 3", len(cmd.Branches))
+	}
+	if cmd.Maxout != 1000 {
+		t.Fatalf("maxout: got %d, want 1000", cmd.Maxout)
+	}
+	if cmd.Maxtime != 120 {
+		t.Fatalf("maxtime: got %d, want 120", cmd.Maxtime)
+	}
+	if cmd.Timeout != 600 {
+		t.Fatalf("timeout: got %d, want 600", cmd.Timeout)
+	}
+	if cmd.Branches[0].Source == nil || cmd.Branches[0].Source.Index != "customers" {
+		t.Fatalf("branch[0] source: got %+v, want customers", cmd.Branches[0].Source)
+	}
+	if cmd.Branches[1].Source == nil || cmd.Branches[1].Source.Index != "orders" {
+		t.Fatalf("branch[1] source: got %+v, want orders", cmd.Branches[1].Source)
+	}
+	if len(cmd.Branches[2].Commands) != 2 {
+		t.Fatalf("branch[2] commands: got %d, want 2", len(cmd.Branches[2].Commands))
+	}
+}
+
+func TestParse_AppendpipeCommand(t *testing.T) {
+	q, err := Parse(`FROM main | appendpipe run_in_preview=false [stats count as total]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*AppendpipeCommand)
+	if !ok {
+		t.Fatalf("expected AppendpipeCommand, got %T", q.Commands[0])
+	}
+	if cmd.RunInPreview {
+		t.Fatal("run_in_preview: got true, want false")
+	}
+	if cmd.Subquery == nil || len(cmd.Subquery.Commands) != 1 {
+		t.Fatalf("subquery commands: got %+v, want one command", cmd.Subquery)
+	}
+	if _, ok := cmd.Subquery.Commands[0].(*StatsCommand); !ok {
+		t.Fatalf("subquery command: got %T, want StatsCommand", cmd.Subquery.Commands[0])
+	}
+}
+
+func TestParse_AppendpipeDefaultRunInPreview(t *testing.T) {
+	q, err := Parse(`FROM main | appendpipe [stats count as total]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*AppendpipeCommand)
+	if !ok {
+		t.Fatalf("expected AppendpipeCommand, got %T", q.Commands[0])
+	}
+	if !cmd.RunInPreview {
+		t.Fatal("run_in_preview: got false, want true")
+	}
+}
+
+func TestParse_AppendcolsCommand(t *testing.T) {
+	q, err := Parse(`FROM main | appendcols override=true maxout=100 maxtime=30 timeout=45 [stats count as total]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	cmd, ok := q.Commands[0].(*AppendcolsCommand)
+	if !ok {
+		t.Fatalf("expected AppendcolsCommand, got %T", q.Commands[0])
+	}
+	if !cmd.Override {
+		t.Fatal("override: got false, want true")
+	}
+	if cmd.Maxout != 100 {
+		t.Fatalf("maxout: got %d, want 100", cmd.Maxout)
+	}
+	if cmd.Maxtime != 30 {
+		t.Fatalf("maxtime: got %d, want 30", cmd.Maxtime)
+	}
+	if cmd.Timeout != 45 {
+		t.Fatalf("timeout: got %d, want 45", cmd.Timeout)
+	}
+	if cmd.Subquery == nil || len(cmd.Subquery.Commands) != 1 {
+		t.Fatalf("subquery commands: got %+v, want one command", cmd.Subquery)
 	}
 }
 
@@ -1744,6 +3013,26 @@ func TestParse_Trace(t *testing.T) {
 		}
 		if cmd.ParentIDField != "pid" {
 			t.Errorf("ParentIDField: got %q, want %q", cmd.ParentIDField, "pid")
+		}
+	})
+
+	t.Run("quoted custom fields", func(t *testing.T) {
+		q, err := Parse(`FROM main | trace trace_id="trace id" span_id="span id" parent_id="parent id"`)
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		cmd, ok := q.Commands[0].(*TraceCommand)
+		if !ok {
+			t.Fatalf("expected TraceCommand, got %T", q.Commands[0])
+		}
+		if cmd.TraceIDField != "trace id" {
+			t.Errorf("TraceIDField: got %q, want %q", cmd.TraceIDField, "trace id")
+		}
+		if cmd.SpanIDField != "span id" {
+			t.Errorf("SpanIDField: got %q, want %q", cmd.SpanIDField, "span id")
+		}
+		if cmd.ParentIDField != "parent id" {
+			t.Errorf("ParentIDField: got %q, want %q", cmd.ParentIDField, "parent id")
 		}
 	})
 }

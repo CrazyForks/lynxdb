@@ -358,10 +358,23 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseHead())
 	case TokenTail:
 		return singleCmd(p.parseTail())
+	case TokenReverse:
+		return singleCmd(p.parseReverse())
 	case TokenTimechart:
 		return singleCmd(p.parseTimechart())
+	case TokenChart:
+		return singleCmd(p.parseChart())
 	case TokenRex:
 		return singleCmd(p.parseRex())
+	case TokenRegex:
+		if p.peekAt(1).Type == TokenLParen {
+			return singleCmd(p.parseLynxParseBody())
+		}
+		return singleCmd(p.parseRegex())
+	case TokenReplace:
+		return singleCmd(p.parseReplace())
+	case TokenFieldformat:
+		return singleCmd(p.parseFieldformat())
 	case TokenFields:
 		return singleCmd(p.parseFields())
 	case TokenTable:
@@ -380,12 +393,20 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseJoin())
 	case TokenAppend:
 		return singleCmd(p.parseAppend())
+	case TokenAppendcols:
+		return singleCmd(p.parseAppendcols())
+	case TokenAppendpipe:
+		return singleCmd(p.parseAppendpipe())
 	case TokenMultisearch:
 		return singleCmd(p.parseMultisearch())
+	case TokenUnion:
+		return singleCmd(p.parseUnion())
 	case TokenTransaction:
 		return singleCmd(p.parseTransaction())
 	case TokenXyseries:
 		return singleCmd(p.parseXYSeries())
+	case TokenUntable:
+		return singleCmd(p.parseUntable())
 	case TokenTop:
 		return p.parseTopOrTopby()
 	case TokenRare:
@@ -443,6 +464,16 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return singleCmd(p.parseJsonCmd())
 	case TokenUnroll:
 		return singleCmd(p.parseUnroll())
+	case TokenMvexpand, TokenExpand:
+		return singleCmd(p.parseMvexpand())
+	case TokenMakeresults:
+		return singleCmd(p.parseMakeresults())
+	case TokenMakemv:
+		return singleCmd(p.parseMakemv())
+	case TokenMvcombine:
+		return singleCmd(p.parseMvcombine())
+	case TokenNomv:
+		return singleCmd(p.parseNomv())
 	case TokenPackJson:
 		return singleCmd(p.parsePackJson())
 	case TokenTee:
@@ -515,10 +546,20 @@ func (p *Parser) parseCommand() ([]Command, error) {
 		return p.parseErrorsCmd()
 	case TokenRate:
 		return singleCmd(p.parseRateCmd())
+	case TokenProportion:
+		return p.parseProportionCmd()
 	case TokenPercentiles:
 		return singleCmd(p.parsePercentilesCmd())
 	case TokenSlowest:
 		return p.parseSlowestCmd()
+	case TokenImpact:
+		return p.parseImpactCmd()
+	case TokenBaseline:
+		return p.parseBaselineCmd()
+	case TokenChanges:
+		return p.parseChangesCmd()
+	case TokenExemplars:
+		return p.parseExemplarsCmd()
 
 	case TokenEOF:
 		return nil, nil
@@ -547,7 +588,21 @@ func (p *Parser) parseCommand() ([]Command, error) {
 			if p.peekAt(1).Type == TokenLParen && unpack.IsFormat(tok.Literal) {
 				return singleCmd(p.parseLynxParseBody())
 			}
-			if isBareExprContinuation(p.peekAt(1).Type) || p.peekAt(1).Type == TokenLParen {
+			if isBareExprContinuation(p.peekAt(1).Type) {
+				expr, err := p.parseExpr()
+				if err != nil {
+					return nil, fmt.Errorf("spl2: unexpected token %s %q at position %d", tok.Type, tok.Literal, tok.Pos)
+				}
+
+				return []Command{&WhereCommand{Expr: expr}}, nil
+			}
+			if isCapabilityCommandName(tok.Literal) {
+				return singleCmd(p.parseCapabilityCommand())
+			}
+			if hint, ok := unsupportedCommandHint(tok.Literal); ok {
+				return nil, fmt.Errorf("spl2: %s unsupported command %q at position %d: %s", LintUnsupportedCommand, tok.Literal, tok.Pos, hint)
+			}
+			if p.peekAt(1).Type == TokenLParen {
 				expr, err := p.parseExpr()
 				if err != nil {
 					return nil, fmt.Errorf("spl2: unexpected token %s %q at position %d", tok.Type, tok.Literal, tok.Pos)
@@ -559,6 +614,27 @@ func (p *Parser) parseCommand() ([]Command, error) {
 
 		return nil, fmt.Errorf("spl2: unexpected command %s %q at position %d", tok.Type, tok.Literal, tok.Pos)
 	}
+}
+
+func isCapabilityCommandName(name string) bool {
+	switch strings.ToLower(name) {
+	case "addinfo", "convert", "fieldsummary", "flatten", "iplocation",
+		"tags", "typer", "thru", "timewrap", "tstats", "mstats":
+		return true
+	default:
+		return false
+	}
+}
+
+func (p *Parser) parseCapabilityCommand() (Command, error) {
+	name := strings.ToLower(p.advance().Literal)
+	cmd := &CapabilityCommand{Name: name}
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		tok := p.advance()
+		cmd.Args = append(cmd.Args, tok.Literal)
+	}
+
+	return cmd, nil
 }
 
 func (p *Parser) parseSearch() (Command, error) {
@@ -670,6 +746,76 @@ func (p *Parser) parseStats() (*StatsCommand, error) {
 	return &StatsCommand{Aggregations: aggs, GroupBy: groupBy}, nil
 }
 
+func (p *Parser) parseChart() (*ChartCommand, error) {
+	p.advance() // consume "chart"
+
+	aggs, err := p.parseAggList()
+	if err != nil {
+		return nil, err
+	}
+	if len(aggs) == 0 {
+		return nil, fmt.Errorf("spl2: chart requires at least one aggregation")
+	}
+
+	cmd := &ChartCommand{Aggregations: aggs}
+	if p.peek().Type == TokenOver {
+		p.advance()
+		row, err := p.parseChartSplitField("OVER")
+		if err != nil {
+			return nil, err
+		}
+		cmd.RowSplit = row
+		if p.peek().Type == TokenBy {
+			p.advance()
+			col, err := p.parseChartSplitField("BY")
+			if err != nil {
+				return nil, err
+			}
+			cmd.ColumnSplit = col
+		}
+		return cmd, nil
+	}
+
+	if p.peek().Type == TokenBy {
+		p.advance()
+		row, err := p.parseChartSplitField("BY")
+		if err != nil {
+			return nil, err
+		}
+		cmd.RowSplit = row
+		if p.peek().Type == TokenComma {
+			p.advance()
+			col, err := p.parseChartSplitField("BY")
+			if err != nil {
+				return nil, err
+			}
+			cmd.ColumnSplit = col
+		} else if p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+			if p.peek().Type == TokenBy {
+				return nil, fmt.Errorf("spl2: chart accepts only one BY clause")
+			}
+			if isIdentLike(p.peek().Type) || p.peek().Type == TokenString {
+				col, err := p.parseChartSplitField("BY")
+				if err != nil {
+					return nil, err
+				}
+				cmd.ColumnSplit = col
+			}
+		}
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseChartSplitField(clause string) (string, error) {
+	tok := p.peek()
+	if !isIdentLike(tok.Type) && tok.Type != TokenString {
+		return "", fmt.Errorf("spl2: chart %s requires a field name", clause)
+	}
+	p.advance()
+	return tok.Literal, nil
+}
+
 func (p *Parser) parseEval() (*EvalCommand, error) {
 	p.advance() // consume "eval"
 
@@ -696,7 +842,7 @@ func (p *Parser) parseSort() (*SortCommand, error) {
 		if tok.Type == TokenMinus {
 			p.advance()
 			name := p.peek()
-			if !isIdentLike(name.Type) {
+			if !isIdentLike(name.Type) && name.Type != TokenString {
 				return nil, fmt.Errorf("spl2: expected field name after - in sort, got %s", name.Type)
 			}
 			p.advance()
@@ -704,19 +850,27 @@ func (p *Parser) parseSort() (*SortCommand, error) {
 		} else if tok.Type == TokenPlus {
 			p.advance()
 			name := p.peek()
-			if !isIdentLike(name.Type) {
+			if !isIdentLike(name.Type) && name.Type != TokenString {
 				return nil, fmt.Errorf("spl2: expected field name after + in sort, got %s", name.Type)
 			}
 			p.advance()
 			fields = append(fields, SortField{Name: name.Literal})
-		} else if isIdentLike(tok.Type) {
+		} else if isIdentLike(tok.Type) || tok.Type == TokenString {
 			p.advance()
 			name := tok.Literal
+			desc := false
 			if strings.HasPrefix(name, "-") {
-				fields = append(fields, SortField{Name: name[1:], Desc: true})
-			} else {
-				fields = append(fields, SortField{Name: name})
+				name = name[1:]
+				desc = true
 			}
+			if p.peek().Type == TokenDesc {
+				p.advance()
+				desc = true
+			} else if p.peek().Type == TokenAsc {
+				p.advance()
+				desc = false
+			}
+			fields = append(fields, SortField{Name: name, Desc: desc})
 		} else if tok.Type == TokenNumber && strings.HasPrefix(tok.Literal, "-") {
 			// Handle sort -count where lexer reads it as negative number.
 			p.advance()
@@ -883,10 +1037,26 @@ func (p *Parser) parseCompare() (*CompareCommand, error) {
 	// Read duration (required).
 	if p.peek().Type == TokenDuration {
 		tok := p.advance()
-		return &CompareCommand{Shift: tok.Literal}, nil
+		return &CompareCommand{Shift: strings.TrimPrefix(tok.Literal, "-")}, nil
+	}
+	if p.peek().Type == TokenNumber {
+		tok := p.advance()
+		if p.peek().Type == TokenIdent && isDurationUnit(p.peek().Literal) {
+			unit := p.advance()
+			return &CompareCommand{Shift: tok.Literal + unit.Literal}, nil
+		}
 	}
 
 	return nil, fmt.Errorf("spl2: compare requires a duration, e.g., 'compare previous 1h' or 'compare 7d'")
+}
+
+func isDurationUnit(s string) bool {
+	switch s {
+	case "s", "m", "h", "d", "w":
+		return true
+	default:
+		return false
+	}
 }
 
 func (p *Parser) parsePatterns() (*PatternsCommand, error) {
@@ -966,31 +1136,31 @@ func (p *Parser) parseTrace() (*TraceCommand, error) {
 			if _, err := p.expect(TokenEq); err != nil {
 				return nil, err
 			}
-			tok := p.peek()
-			if tok.Type == TokenIdent {
-				p.advance()
-				cmd.TraceIDField = tok.Literal
+			tok, err := p.expectIdent()
+			if err != nil {
+				return nil, err
 			}
+			cmd.TraceIDField = tok.Literal
 		case "span_id":
 			p.advance()
 			if _, err := p.expect(TokenEq); err != nil {
 				return nil, err
 			}
-			tok := p.peek()
-			if tok.Type == TokenIdent {
-				p.advance()
-				cmd.SpanIDField = tok.Literal
+			tok, err := p.expectIdent()
+			if err != nil {
+				return nil, err
 			}
+			cmd.SpanIDField = tok.Literal
 		case "parent_id":
 			p.advance()
 			if _, err := p.expect(TokenEq); err != nil {
 				return nil, err
 			}
-			tok := p.peek()
-			if tok.Type == TokenIdent {
-				p.advance()
-				cmd.ParentIDField = tok.Literal
+			tok, err := p.expectIdent()
+			if err != nil {
+				return nil, err
 			}
+			cmd.ParentIDField = tok.Literal
 		default:
 			return cmd, nil
 		}
@@ -1081,8 +1251,11 @@ func (p *Parser) parseSessionize() (*SessionizeCommand, error) {
 		if _, err := p.expect(TokenEq); err != nil {
 			return nil, err
 		}
-		dur := p.advance()
-		cmd.MaxPause = dur.Literal
+		span := p.readSpanValue()
+		if span == "" {
+			return nil, fmt.Errorf("spl2: sessionize: expected duration after maxpause=")
+		}
+		cmd.MaxPause = span
 	}
 
 	if p.peek().Type == TokenBy {
@@ -1160,6 +1333,12 @@ func (p *Parser) parseTail() (*TailCommand, error) {
 	return &TailCommand{Count: count}, nil
 }
 
+func (p *Parser) parseReverse() (*ReverseCommand, error) {
+	p.advance()
+
+	return &ReverseCommand{}, nil
+}
+
 func (p *Parser) parseTimechart() (*TimechartCommand, error) {
 	p.advance() // consume "timechart"
 	cmd := &TimechartCommand{}
@@ -1228,6 +1407,138 @@ func (p *Parser) parseRex() (*RexCommand, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseRegex() (*RegexCommand, error) {
+	p.advance() // consume "regex"
+
+	cmd := &RegexCommand{Field: "_raw"}
+	if p.peek().Type == TokenString {
+		tok := p.advance()
+		cmd.Pattern = tok.Literal
+		return cmd, nil
+	}
+
+	field, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: regex expects a pattern string or field comparison: %w", err)
+	}
+	cmd.Field = field.Literal
+
+	switch p.peek().Type {
+	case TokenEq:
+		p.advance()
+	case TokenNeq:
+		p.advance()
+		cmd.Negate = true
+	default:
+		tok := p.peek()
+		return nil, fmt.Errorf("spl2: regex expects '=' or '!=' after field, got %s %q at position %d", tok.Type, tok.Literal, tok.Pos)
+	}
+
+	tok, err := p.expect(TokenString)
+	if err != nil {
+		return nil, fmt.Errorf("spl2: regex expects quoted pattern: %w", err)
+	}
+	cmd.Pattern = tok.Literal
+
+	return cmd, nil
+}
+
+func (p *Parser) parseReplace() (*ReplaceCommand, error) {
+	p.advance() // consume "replace"
+
+	cmd := &ReplaceCommand{}
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if p.peek().Type == TokenComma {
+			p.advance()
+			continue
+		}
+		if p.peek().Type == TokenIn {
+			p.advance()
+			fields, err := p.parseReplaceFields()
+			if err != nil {
+				return nil, err
+			}
+			cmd.Fields = fields
+			break
+		}
+
+		oldValue, err := p.readReplaceValue("replace old value")
+		if err != nil {
+			return nil, err
+		}
+		if !isNamedOption(p.peek(), "with") {
+			tok := p.peek()
+			return nil, fmt.Errorf("spl2: replace expects WITH after %q, got %s %q at position %d", oldValue, tok.Type, tok.Literal, tok.Pos)
+		}
+		p.advance()
+		newValue, err := p.readReplaceValue("replace new value")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Pairs = append(cmd.Pairs, ReplacePair{Old: oldValue, New: newValue})
+	}
+	if len(cmd.Pairs) == 0 {
+		return nil, fmt.Errorf("spl2: replace requires at least one old WITH new pair")
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseReplaceFields() ([]string, error) {
+	var fields []string
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if p.peek().Type == TokenComma {
+			p.advance()
+			continue
+		}
+		field, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("spl2: replace IN requires field names")
+		}
+		fields = append(fields, field.Literal)
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("spl2: replace IN requires at least one field")
+	}
+
+	return fields, nil
+}
+
+func (p *Parser) parseFieldformat() (*FieldformatCommand, error) {
+	p.advance() // consume "fieldformat"
+
+	fieldTok := p.peek()
+	if !isIdentLike(fieldTok.Type) && fieldTok.Type != TokenString {
+		return nil, fmt.Errorf("spl2: fieldformat requires a field name")
+	}
+	p.advance()
+
+	if _, err := p.expect(TokenEq); err != nil {
+		return nil, fmt.Errorf("spl2: fieldformat requires '=' after field %q", fieldTok.Literal)
+	}
+
+	expr, err := p.parseExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	return &FieldformatCommand{Field: fieldTok.Literal, Expr: expr}, nil
+}
+
+func (p *Parser) readReplaceValue(name string) (string, error) {
+	tok := p.peek()
+	switch tok.Type {
+	case TokenString, TokenIdent, TokenNumber, TokenGlob:
+		p.advance()
+		return tok.Literal, nil
+	case TokenStar:
+		p.advance()
+		return "*", nil
+	default:
+		return "", fmt.Errorf("spl2: %s requires a value", name)
+	}
+}
+
 func (p *Parser) parseFields() (*FieldsCommand, error) {
 	p.advance() // consume "fields"
 	cmd := &FieldsCommand{}
@@ -1288,9 +1599,34 @@ func (p *Parser) parseDedup() (*DedupCommand, error) {
 		limit = n
 	}
 
-	fields, err := p.parseIdentList()
-	if err != nil {
-		return nil, err
+	fields := []string{}
+	for {
+		tok := p.peek()
+		if tok.Type == TokenNumber && len(fields) > 0 {
+			tok = p.advance()
+			n, err := strconv.Atoi(tok.Literal)
+			if err != nil {
+				return nil, fmt.Errorf("invalid dedup limit: %s", tok.Literal)
+			}
+			limit = n
+			break
+		}
+		if !isIdentLike(tok.Type) && tok.Type != TokenGlob && tok.Type != TokenString {
+			break
+		}
+		p.advance()
+		fields = append(fields, tok.Literal)
+		if p.peek().Type == TokenComma {
+			p.advance()
+			continue
+		}
+		if p.peek().Type == TokenNumber || isIdentLike(p.peek().Type) || p.peek().Type == TokenGlob || p.peek().Type == TokenString {
+			continue
+		}
+		break
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("spl2: expected at least one identifier at position %d", p.peek().Pos)
 	}
 
 	return &DedupCommand{Fields: fields, Limit: limit}, nil
@@ -1428,7 +1764,7 @@ func (p *Parser) parseJoin() (*JoinCommand, error) {
 	cmd := &JoinCommand{JoinType: "inner"} // default
 
 	// Parse optional type=inner/left.
-	if p.peek().Type == TokenIdent && strings.ToLower(p.peek().Literal) == "type" &&
+	if p.peek().Type == TokenTypeKeyword &&
 		p.peekAt(1).Type == TokenEq {
 		p.advance()
 		p.advance() // consume =
@@ -1462,6 +1798,95 @@ func (p *Parser) parseAppend() (*AppendCommand, error) {
 	return &AppendCommand{Subquery: sub}, nil
 }
 
+func (p *Parser) parseAppendcols() (*AppendcolsCommand, error) {
+	p.advance() // consume "appendcols"
+	cmd := &AppendcolsCommand{Maxout: -1, Maxtime: -1, Timeout: -1}
+
+	for p.peek().Type != TokenLBracket {
+		if p.peek().Type == TokenPipe || p.peek().Type == TokenEOF || p.peek().Type == TokenRBracket {
+			return nil, fmt.Errorf("spl2: appendcols requires a subsearch")
+		}
+		if !isIdentLike(p.peek().Type) || p.peekAt(1).Type != TokenEq {
+			return nil, fmt.Errorf("spl2: appendcols expects options or a subsearch")
+		}
+		name := strings.ToLower(p.advance().Literal)
+		p.advance() // consume =
+		switch name {
+		case "override":
+			value := strings.ToLower(p.peek().Literal)
+			if p.peek().Type != TokenTrue && p.peek().Type != TokenFalse && value != "true" && value != "false" {
+				return nil, fmt.Errorf("spl2: appendcols override requires a boolean value")
+			}
+			cmd.Override = value == "true"
+			p.advance()
+		case "maxout":
+			tok, err := p.expect(TokenNumber)
+			if err != nil {
+				return nil, fmt.Errorf("spl2: appendcols maxout requires a number: %w", err)
+			}
+			value, err := parseNonNegativeInt(tok.Literal, "appendcols maxout")
+			if err != nil {
+				return nil, err
+			}
+			cmd.Maxout = value
+		case "maxtime":
+			tok, err := p.expect(TokenNumber)
+			if err != nil {
+				return nil, fmt.Errorf("spl2: appendcols maxtime requires a number: %w", err)
+			}
+			value, err := parseNonNegativeInt(tok.Literal, "appendcols maxtime")
+			if err != nil {
+				return nil, err
+			}
+			cmd.Maxtime = value
+		case "timeout":
+			tok, err := p.expect(TokenNumber)
+			if err != nil {
+				return nil, fmt.Errorf("spl2: appendcols timeout requires a number: %w", err)
+			}
+			value, err := parseNonNegativeInt(tok.Literal, "appendcols timeout")
+			if err != nil {
+				return nil, err
+			}
+			cmd.Timeout = value
+		default:
+			return nil, fmt.Errorf("spl2: unsupported appendcols option %q", name)
+		}
+	}
+
+	sub, err := p.parseSubsearch()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Subquery = sub
+
+	return cmd, nil
+}
+
+func (p *Parser) parseAppendpipe() (*AppendpipeCommand, error) {
+	p.advance() // consume "appendpipe"
+	cmd := &AppendpipeCommand{RunInPreview: true}
+
+	if isIdentLike(p.peek().Type) && strings.EqualFold(p.peek().Literal, "run_in_preview") &&
+		p.peekAt(1).Type == TokenEq {
+		p.advance()
+		p.advance()
+		value, err := p.parseBoolOption("appendpipe run_in_preview")
+		if err != nil {
+			return nil, err
+		}
+		cmd.RunInPreview = value
+	}
+
+	sub, err := p.parseSubsearch()
+	if err != nil {
+		return nil, err
+	}
+	cmd.Subquery = sub
+
+	return cmd, nil
+}
+
 func (p *Parser) parseMultisearch() (*MultisearchCommand, error) {
 	p.advance() // consume "multisearch"
 	cmd := &MultisearchCommand{}
@@ -1477,9 +1902,77 @@ func (p *Parser) parseMultisearch() (*MultisearchCommand, error) {
 	return cmd, nil
 }
 
+func (p *Parser) parseUnion() (*UnionCommand, error) {
+	p.advance() // consume "union"
+	cmd := &UnionCommand{Maxout: -1, Maxtime: -1, Timeout: -1}
+
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if p.peek().Type == TokenComma {
+			p.advance()
+			continue
+		}
+		if p.isUnionOption() {
+			name := strings.ToLower(p.advance().Literal)
+			if _, err := p.expect(TokenEq); err != nil {
+				return nil, err
+			}
+			tok, err := p.expect(TokenNumber)
+			if err != nil {
+				return nil, fmt.Errorf("spl2: union option %s requires a number: %w", name, err)
+			}
+			value, err := parseNonNegativeInt(tok.Literal, "union "+name)
+			if err != nil {
+				return nil, err
+			}
+			switch name {
+			case "maxout":
+				cmd.Maxout = value
+			case "maxtime":
+				cmd.Maxtime = value
+			case "timeout":
+				cmd.Timeout = value
+			}
+			continue
+		}
+		if p.peek().Type == TokenLBracket {
+			sub, err := p.parseSubsearch()
+			if err != nil {
+				return nil, err
+			}
+			cmd.Branches = append(cmd.Branches, sub)
+			continue
+		}
+
+		name, err := p.parseSourceName()
+		if err != nil {
+			return nil, fmt.Errorf("spl2: union requires dataset names or subsearches: %w", err)
+		}
+		cmd.Branches = append(cmd.Branches, &Query{Source: &SourceClause{Index: name}})
+	}
+	if len(cmd.Branches) == 0 {
+		return nil, fmt.Errorf("spl2: union requires at least one dataset or subsearch")
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) isUnionOption() bool {
+	if !isIdentLike(p.peek().Type) || p.peekAt(1).Type != TokenEq {
+		return false
+	}
+	switch strings.ToLower(p.peek().Literal) {
+	case "maxout", "maxtime", "timeout":
+		return true
+	default:
+		return false
+	}
+}
+
 func (p *Parser) parseTransaction() (*TransactionCommand, error) {
 	p.advance() // consume "transaction"
 	cmd := &TransactionCommand{}
+
+	p.parseTransactionOptions(cmd)
 
 	field, err := p.expectIdent()
 	if err != nil {
@@ -1487,28 +1980,39 @@ func (p *Parser) parseTransaction() (*TransactionCommand, error) {
 	}
 	cmd.Field = field.Literal
 
-	for p.peek().Type == TokenIdent {
+	p.parseTransactionOptions(cmd)
+
+	return cmd, nil
+}
+
+func (p *Parser) parseTransactionOptions(cmd *TransactionCommand) {
+	for isTransactionOptionName(p.peek()) && p.peekAt(1).Type == TokenEq {
 		name := strings.ToLower(p.peek().Literal)
-		if name == "maxspan" && p.peekAt(1).Type == TokenEq {
-			p.advance()
-			p.advance()
+		p.advance()
+		p.advance()
+		switch name {
+		case "maxspan":
 			cmd.MaxSpan = p.readSpanValue()
-		} else if name == "startswith" && p.peekAt(1).Type == TokenEq {
-			p.advance()
-			p.advance()
+		case "startswith":
 			tok := p.advance()
 			cmd.StartsWith = tok.Literal
-		} else if name == "endswith" && p.peekAt(1).Type == TokenEq {
-			p.advance()
-			p.advance()
+		case "endswith":
 			tok := p.advance()
 			cmd.EndsWith = tok.Literal
-		} else {
-			break
+		}
+	}
+}
+
+func isTransactionOptionName(tok Token) bool {
+	switch tok.Type {
+	case TokenIdent, TokenMaxspan, TokenStartswith, TokenEndswith:
+		switch strings.ToLower(tok.Literal) {
+		case "maxspan", "startswith", "endswith":
+			return true
 		}
 	}
 
-	return cmd, nil
+	return false
 }
 
 func (p *Parser) parseXYSeries() (*XYSeriesCommand, error) {
@@ -1528,6 +2032,25 @@ func (p *Parser) parseXYSeries() (*XYSeriesCommand, error) {
 	}
 
 	return &XYSeriesCommand{XField: x.Literal, YField: y.Literal, ValueField: v.Literal}, nil
+}
+
+func (p *Parser) parseUntable() (*UntableCommand, error) {
+	p.advance() // consume "untable"
+
+	x, err := p.expectIdent()
+	if err != nil {
+		return nil, err
+	}
+	yName, err := p.expectIdent()
+	if err != nil {
+		return nil, err
+	}
+	yData, err := p.expectIdent()
+	if err != nil {
+		return nil, err
+	}
+
+	return &UntableCommand{XField: x.Literal, YNameField: yName.Literal, YDataField: yData.Literal}, nil
 }
 
 // parseTop parses: top [N] <field> [by <field>].
@@ -1662,54 +2185,47 @@ func (p *Parser) parseFromCommand() (*FromCommand, error) {
 //   - FROM *                (all sources)
 //   - FROM logs*            (glob pattern)
 //   - FROM a, b, c          (comma-separated list)
+//   - FROM logs*,!debug*    (include and exclude glob list)
 //   - FROM "my-logs", web   (quoted names in list)
 func (p *Parser) parseSourceClause() (*SourceClause, error) {
-	// Handle FROM * (all sources).
-	if p.peek().Type == TokenStar {
-		p.advance()
-
-		return &SourceClause{Index: "*", IsGlob: true}, nil
-	}
-
-	// Handle FROM glob_pattern (e.g., logs*).
-	if p.peek().Type == TokenGlob {
-		tok := p.advance()
-
-		return &SourceClause{Index: tok.Literal, IsGlob: true}, nil
-	}
-
-	name, err := p.parseSourceName()
+	first, err := p.parseSourceSelector()
 	if err != nil {
 		return nil, err
 	}
 
-	// Check if the name contains wildcard characters (from a quoted string like "logs*").
-	if strings.Contains(name, "*") || strings.Contains(name, "?") {
-		return &SourceClause{Index: name, IsGlob: true}, nil
+	includes := []sourceSelector{}
+	excludes := []string{}
+	if first.exclude {
+		excludes = append(excludes, first.name)
+	} else {
+		includes = append(includes, first)
 	}
 
-	// Check for comma-separated list: FROM a, b, c
+	hasList := false
 	if p.peek().Type == TokenComma {
-		indices := []string{name}
 		for p.peek().Type == TokenComma {
+			hasList = true
 			p.advance() // consume comma
 
-			// Handle glob or star tokens in comma list.
-			if p.peek().Type == TokenGlob || p.peek().Type == TokenStar {
-				tok := p.advance()
-				indices = append(indices, tok.Literal)
-
-				continue
-			}
-
-			nextName, err := p.parseSourceName()
+			next, err := p.parseSourceSelector()
 			if err != nil {
 				return nil, fmt.Errorf("spl2: expected source name after comma in FROM: %w", err)
 			}
-			indices = append(indices, nextName)
+			if next.exclude {
+				excludes = append(excludes, next.name)
+			} else {
+				includes = append(includes, next)
+			}
 		}
+	}
+	if len(includes) == 0 {
+		return nil, fmt.Errorf("spl2: FROM source list must include at least one positive source")
+	}
 
-		return &SourceClause{Index: indices[0], Indices: indices}, nil
+	sc := sourceClauseFromSelectors(includes, excludes, hasList)
+
+	if hasList || len(excludes) > 0 || len(sc.IncludeGlobs) > 0 {
+		return sc, nil
 	}
 
 	// Check for inline time range: FROM name[-1h], FROM name[-7d..-1d], FROM name[@d]
@@ -1719,24 +2235,80 @@ func (p *Parser) parseSourceClause() (*SourceClause, error) {
 			return nil, err
 		}
 
-		return &SourceClause{Index: name, TimeRange: timeRange}, nil
+		sc.TimeRange = timeRange
+
+		return sc, nil
 	}
 
-	// Single source name.
-	return &SourceClause{Index: name}, nil
+	return sc, nil
+}
+
+type sourceSelector struct {
+	name    string
+	glob    bool
+	exclude bool
+}
+
+func (p *Parser) parseSourceSelector() (sourceSelector, error) {
+	exclude := false
+	if p.peek().Type == TokenNot && p.peek().Literal == "!" {
+		exclude = true
+		p.advance()
+	}
+
+	if p.peek().Type == TokenStar {
+		p.advance()
+
+		return sourceSelector{name: "*", glob: true, exclude: exclude}, nil
+	}
+	if p.peek().Type == TokenGlob {
+		tok := p.advance()
+
+		return sourceSelector{name: tok.Literal, glob: true, exclude: exclude}, nil
+	}
+
+	name, err := p.parseSourceName()
+	if err != nil {
+		return sourceSelector{}, err
+	}
+
+	return sourceSelector{name: name, glob: ContainsGlobWildcard(name), exclude: exclude}, nil
+}
+
+func sourceClauseFromSelectors(includes []sourceSelector, excludes []string, hasList bool) *SourceClause {
+	sc := &SourceClause{
+		Index:        includes[0].name,
+		ExcludeGlobs: excludes,
+	}
+
+	var concrete []string
+	for _, include := range includes {
+		if include.glob {
+			sc.IsGlob = true
+			sc.IncludeGlobs = append(sc.IncludeGlobs, include.name)
+		} else {
+			concrete = append(concrete, include.name)
+		}
+	}
+
+	if hasList || len(concrete) > 1 || (len(concrete) > 0 && len(sc.IncludeGlobs) > 0) || len(excludes) > 0 {
+		sc.Indices = concrete
+	}
+
+	return sc
 }
 
 // parseSourceTimeRange parses the contents of [...] after a source name:
 //   - [-1h]         → relative time "1 hour ago"
 //   - [-7d..-1d]    → range from 7 days ago to 1 day ago
-//   - [@d]          → snap-to (start of today)
-//   - [-1h@h]       → 1 hour ago, snapped to hour start
+//   - [@d]          -> snap-to (start of today)
+//   - [-1h@h]       -> 1 hour ago, snapped to hour start
 func (p *Parser) parseSourceTimeRange() (*SourceTimeRange, error) {
 	p.advance() // consume [
 
 	tr := &SourceTimeRange{}
 
-	// Handle @snap syntax: [@d], [@h], [@w]
+	// Handle @snap syntax: [@d], [@h], [@w], [@w0]
 	if p.peek().Type == TokenAt {
 		p.advance() // consume @
 		tok := p.peek()
@@ -1744,18 +2316,27 @@ func (p *Parser) parseSourceTimeRange() (*SourceTimeRange, error) {
 			p.advance()
 			tr.SnapTo = tok.Literal
 		} else {
-			return nil, fmt.Errorf("spl2: expected snap unit (d/h/w/m/s) after @ at position %d", tok.Pos)
+			return nil, fmt.Errorf("spl2: expected snap unit (d/h/w/w0-w6/m/s) after @ at position %d", tok.Pos)
 		}
 	} else if p.peek().Type == TokenDuration {
 		tok := p.advance()
 		tr.Relative = tok.Literal
+		tr.SnapTo = durationSnapUnit(tok.Literal)
 
-		if p.peek().Type == TokenDot && p.peekAt(1).Type == TokenDot {
-			p.advance() // consume first .
-			p.advance() // consume second .
+		if p.peek().Type == TokenDot {
+			dot := p.advance()
+			if dot.Literal != ".." {
+				if p.peek().Type != TokenDot {
+					return nil, fmt.Errorf("spl2: expected '..' in time range at position %d", dot.Pos)
+				}
+				p.advance()
+			}
 			if p.peek().Type == TokenDuration {
 				endTok := p.advance()
 				tr.End = endTok.Literal
+			} else if p.peek().Type == TokenIdent && strings.EqualFold(p.peek().Literal, "now") {
+				p.advance()
+				tr.End = "now"
 			} else if p.peek().Type == TokenAt {
 				// End is snap: -7d.@d
 				p.advance()
@@ -1780,7 +2361,24 @@ func (p *Parser) parseSourceTimeRange() (*SourceTimeRange, error) {
 }
 
 func isSnapUnit(s string) bool {
-	return s == "s" || s == "m" || s == "h" || s == "d" || s == "w"
+	if s == "s" || s == "m" || s == "h" || s == "d" || s == "w" {
+		return true
+	}
+
+	return len(s) == 2 && s[0] == 'w' && s[1] >= '0' && s[1] <= '6'
+}
+
+func durationSnapUnit(s string) string {
+	idx := strings.IndexByte(s, '@')
+	if idx < 0 || idx == len(s)-1 {
+		return ""
+	}
+	snap := s[idx+1:]
+	if !isSnapUnit(snap) {
+		return ""
+	}
+
+	return snap
 }
 
 // parseSourceName parses a source/index/view name which may start with a digit
@@ -1792,6 +2390,11 @@ func (p *Parser) parseSourceName() (string, error) {
 
 	switch {
 	case isIdentLike(tok.Type):
+		p.advance()
+
+		return tok.Literal, nil
+
+	case tok.Type == TokenRegex:
 		p.advance()
 
 		return tok.Literal, nil
@@ -1928,7 +2531,11 @@ func (p *Parser) readSpanValue() string {
 		}
 
 		return span
-	case TokenIdent:
+	case TokenIdent, TokenReplace:
+		p.advance()
+
+		return tok.Literal
+	case TokenString:
 		p.advance()
 
 		return tok.Literal
@@ -2281,9 +2888,9 @@ func (p *Parser) parseJsonCmd() (*JsonCommand, error) {
 	}
 done:
 	// Bare path syntax: | json items[*].price AS price, user.name
-	// When no keyword args matched and the next token is an ident,
-	// parse comma-separated dot-bracket paths with optional AS aliases.
-	for p.peek().Type == TokenIdent {
+	// When no keyword args matched and the next token is an ident or
+	// glob-like path, parse comma-separated dot-bracket paths with optional AS aliases.
+	for p.peek().Type == TokenIdent || p.peek().Type == TokenGlob {
 		path := p.parseBareDotPath()
 		if path == "" {
 			break
@@ -2311,11 +2918,11 @@ done:
 
 // parseBareDotPath consumes tokens to build a dotted-bracket path like
 // "items[*].price" or "user.name". Returns "" if the current token is
-// not an identifier. The lexer handles simple dot-paths as single ident
+// not an identifier or glob-like path. The lexer handles simple dot-paths as single ident
 // tokens (e.g., "user.name"); this helper stitches bracket-separated
 // segments back together (e.g., items + [*] + .price → "items[*].price").
 func (p *Parser) parseBareDotPath() string {
-	if p.peek().Type != TokenIdent {
+	if p.peek().Type != TokenIdent && p.peek().Type != TokenGlob {
 		return ""
 	}
 	tok := p.advance()
@@ -2428,18 +3035,36 @@ func (p *Parser) parseExpr() (Expr, error) {
 // parseNullCoalesce parses: expr ?? expr ?? expr ...
 // Desugars to nested coalesce() calls. Lower precedence than OR.
 func (p *Parser) parseNullCoalesce() (Expr, error) {
-	left, err := p.parseOr()
+	left, err := p.parseXor()
 	if err != nil {
 		return nil, err
 	}
 
 	for p.peek().Type == TokenDoubleQuestion {
 		p.advance()
-		right, err := p.parseOr()
+		right, err := p.parseXor()
 		if err != nil {
 			return nil, err
 		}
 		left = &FuncCallExpr{Name: "coalesce", Args: []Expr{left, right}}
+	}
+
+	return left, nil
+}
+
+func (p *Parser) parseXor() (Expr, error) {
+	left, err := p.parseOr()
+	if err != nil {
+		return nil, err
+	}
+
+	for p.peek().Type == TokenXor {
+		p.advance()
+		right, err := p.parseOr()
+		if err != nil {
+			return nil, err
+		}
+		left = &BinaryExpr{Left: left, Op: "xor", Right: right}
 	}
 
 	return left, nil
@@ -2855,6 +3480,7 @@ func (p *Parser) parseAggList() ([]AggExpr, error) {
 			isAgg := next.Type == TokenAs || next.Type == TokenComma ||
 				next.Type == TokenPipe || next.Type == TokenEOF ||
 				next.Type == TokenBy || next.Type == TokenRBracket ||
+				next.Type == TokenOver ||
 				next.Type == TokenSpan ||
 				(isIdentLike(next.Type) && strings.ToLower(next.Literal) == "span")
 			if !isAgg {
@@ -2862,7 +3488,7 @@ func (p *Parser) parseAggList() ([]AggExpr, error) {
 			}
 			// No-arg aggregation without parentheses (e.g., "count AS total").
 			p.advance()
-			agg := AggExpr{Func: funcName}
+			agg := AggExpr{Func: normalizeAggFuncName(funcName)}
 			if p.peek().Type == TokenAs {
 				p.advance()
 				alias, err := p.expectIdent()
@@ -2897,21 +3523,8 @@ func (p *Parser) parseAggList() ([]AggExpr, error) {
 		}
 		p.advance() // consume )
 
-		// Normalize shorthand percentile aliases: p50 → perc50, etc.
-		normalizedFunc := funcName
-		switch strings.ToLower(funcName) {
-		case "p50":
-			normalizedFunc = "perc50"
-		case "p75":
-			normalizedFunc = "perc75"
-		case "p90":
-			normalizedFunc = "perc90"
-		case "p95":
-			normalizedFunc = "perc95"
-		case "p99":
-			normalizedFunc = "perc99"
-		}
-		agg := AggExpr{Func: normalizedFunc, Args: args}
+		normalizedFunc, normalizedArgs := normalizeAggFuncAndArgs(funcName, args)
+		agg := AggExpr{Func: normalizedFunc, Args: normalizedArgs}
 
 		// Optional "as alias".
 		if p.peek().Type == TokenAs {
@@ -2933,12 +3546,78 @@ func (p *Parser) parseAggList() ([]AggExpr, error) {
 	return aggs, nil
 }
 
+func normalizeAggFuncName(name string) string {
+	lower := strings.ToLower(name)
+	switch lower {
+	case "mean":
+		return "avg"
+	case "median", "p50":
+		return "perc50"
+	case "distinct_count", "estdc":
+		return "dc"
+	case "p75":
+		return "perc75"
+	case "p90":
+		return "perc90"
+	case "p95":
+		return "perc95"
+	case "p99":
+		return "perc99"
+	default:
+		if suffix := supportedPercentileSuffix(lower); suffix != "" {
+			return "perc" + suffix
+		}
+		return name
+	}
+}
+
+func normalizeAggFuncAndArgs(name string, args []Expr) (string, []Expr) {
+	switch strings.ToLower(name) {
+	case "perc", "percentile", "exactperc", "upperperc":
+		if len(args) == 2 {
+			if suffix := supportedPercentileArg(args[1]); suffix != "" {
+				return "perc" + suffix, args[:1]
+			}
+		}
+	}
+
+	return normalizeAggFuncName(name), args
+}
+
+func supportedPercentileArg(expr Expr) string {
+	lit, ok := expr.(*LiteralExpr)
+	if !ok {
+		return ""
+	}
+
+	switch lit.Value {
+	case "25", "50", "75", "90", "95", "99":
+		return lit.Value
+	}
+
+	return ""
+}
+
+func supportedPercentileSuffix(name string) string {
+	for _, prefix := range []string{"percentile", "exactperc", "upperperc"} {
+		if strings.HasPrefix(name, prefix) {
+			suffix := strings.TrimPrefix(name, prefix)
+			switch suffix {
+			case "25", "50", "75", "90", "95", "99":
+				return suffix
+			}
+		}
+	}
+
+	return ""
+}
+
 func (p *Parser) parseIdentList() ([]string, error) {
 	var names []string
 
 	for {
 		tok := p.peek()
-		if !isIdentLike(tok.Type) && tok.Type != TokenGlob {
+		if !isIdentLike(tok.Type) && tok.Type != TokenGlob && tok.Type != TokenString {
 			break
 		}
 		p.advance()
@@ -2993,9 +3672,10 @@ func isIdentLike(t TokenType) bool {
 		TokenUsing, TokenExtract, TokenIfMissing, TokenPer, TokenOn,
 		TokenInto, TokenAsc, TokenDesc,
 		// Lynx Flow domain sugar keywords.
-		TokenLatency, TokenErrors, TokenRate, TokenPercentiles, TokenSlowest,
+		TokenLatency, TokenErrors, TokenRate, TokenProportion, TokenPercentiles, TokenSlowest,
+		TokenImpact, TokenBaseline, TokenChanges, TokenExemplars,
 		// SPL2 keywords that can be field names in expression context.
-		TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
+		TokenChart, TokenOver, TokenUnion, TokenAppendcols, TokenAppendpipe, TokenFieldformat, TokenReplace, TokenTypeKeyword, TokenCurrent, TokenWindow, TokenMaxspan,
 		TokenStartswith, TokenEndswith:
 		return true
 	}
@@ -3008,7 +3688,7 @@ func isIdentLike(t TokenType) bool {
 // as TokenJson but is a valid format name for the parse command.
 func isFormatKeyword(t TokenType) bool {
 	switch t {
-	case TokenJson, TokenIndex:
+	case TokenJson, TokenIndex, TokenRegex:
 		return true
 	}
 	return false
@@ -3018,7 +3698,7 @@ func isFormatKeyword(t TokenType) bool {
 // or an ident-like keyword token. Returns an error otherwise.
 func (p *Parser) expectIdent() (Token, error) {
 	tok := p.peek()
-	if isIdentLike(tok.Type) {
+	if isIdentLike(tok.Type) || tok.Type == TokenString {
 		return p.advance(), nil
 	}
 
@@ -3118,7 +3798,7 @@ func (p *Parser) parseSelectCmd() (*SelectCommand, error) {
 		if tok.Type == TokenStar {
 			p.advance()
 			cmd.Columns = append(cmd.Columns, SelectColumn{Name: "*"})
-		} else if isIdentLike(tok.Type) {
+		} else if isIdentLike(tok.Type) || tok.Type == TokenString {
 			p.advance()
 			col := SelectColumn{Name: tok.Literal}
 			if p.peek().Type == TokenAs {
@@ -3276,7 +3956,7 @@ func (p *Parser) parseOrderByFields() (*SortCommand, error) {
 			p.advance()
 			tok = p.peek()
 		}
-		if !isIdentLike(tok.Type) {
+		if !isIdentLike(tok.Type) && tok.Type != TokenString {
 			if desc {
 				return nil, fmt.Errorf("spl2: expected field name after '-' in order by at position %d", tok.Pos)
 			}
@@ -3516,7 +4196,7 @@ func (p *Parser) parseSingleAgg() (AggExpr, error) {
 
 	if p.peek().Type != TokenLParen {
 		// No-arg agg without parens.
-		agg := AggExpr{Func: funcTok.Literal}
+		agg := AggExpr{Func: normalizeAggFuncName(funcTok.Literal)}
 		if p.peek().Type == TokenAs {
 			p.advance()
 			alias, err := p.expectIdent()
@@ -3545,7 +4225,8 @@ func (p *Parser) parseSingleAgg() (AggExpr, error) {
 	}
 	p.advance() // consume )
 
-	agg := AggExpr{Func: funcTok.Literal, Args: args}
+	normalizedFunc, normalizedArgs := normalizeAggFuncAndArgs(funcTok.Literal, args)
+	agg := AggExpr{Func: normalizedFunc, Args: normalizedArgs}
 	if p.peek().Type == TokenAs {
 		p.advance()
 		alias, err := p.expectIdent()
@@ -3743,6 +4424,307 @@ func (p *Parser) parseLynxParseBody() (Command, error) {
 		} else {
 			break
 		}
+	}
+
+	return cmd, nil
+}
+
+// parseMvexpand parses SPL2 mvexpand/expand compatibility forms:
+// mvexpand [limit=<n>] <field> and SPL mvexpand <field> [limit=<n>].
+func (p *Parser) parseMvexpand() (*UnrollCommand, error) {
+	p.advance() // consume "mvexpand" or "expand"
+
+	cmd := &UnrollCommand{}
+	if p.isLimitOption() {
+		limit, err := p.parseLimitOption("mvexpand")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Limit = limit
+	}
+
+	field, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: mvexpand requires a field name")
+	}
+	cmd.Field = field.Literal
+
+	if p.isLimitOption() {
+		limit, err := p.parseLimitOption("mvexpand")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Limit = limit
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) isLimitOption() bool {
+	return p.peek().Type == TokenIdent && strings.EqualFold(p.peek().Literal, "limit") && p.peekAt(1).Type == TokenEq
+}
+
+func (p *Parser) parseLimitOption(command string) (int, error) {
+	p.advance() // consume "limit"
+	p.advance() // consume "="
+	tok, err := p.expect(TokenNumber)
+	if err != nil {
+		return 0, fmt.Errorf("spl2: %s limit requires a number: %w", command, err)
+	}
+
+	return parseNonNegativeInt(tok.Literal, command+" limit")
+}
+
+// parseMakeresults parses SPL/SPL2 compatibility forms:
+// makeresults, makeresults count=<n>, SPL2 positional makeresults <n>, and
+// supported Splunk options such as annotate=<bool>.
+func (p *Parser) parseMakeresults() (*MakeresultsCommand, error) {
+	p.advance() // consume "makeresults"
+
+	cmd := &MakeresultsCommand{Count: 1}
+	if p.peek().Type == TokenNumber {
+		count, err := parseNonNegativeInt(p.advance().Literal, "makeresults count")
+		if err != nil {
+			return nil, err
+		}
+		cmd.Count = count
+
+	}
+
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if !isIdentLike(p.peek().Type) || p.peekAt(1).Type != TokenEq {
+			return nil, fmt.Errorf("spl2: makeresults expects option=value, got %q", p.peek().Literal)
+		}
+		name := strings.ToLower(p.advance().Literal)
+		p.advance() // consume "="
+		switch name {
+		case "count":
+			tok, err := p.expect(TokenNumber)
+			if err != nil {
+				return nil, fmt.Errorf("spl2: makeresults count requires a number: %w", err)
+			}
+			count, err := parseNonNegativeInt(tok.Literal, "makeresults count")
+			if err != nil {
+				return nil, err
+			}
+			cmd.Count = count
+		case "annotate":
+			value, err := p.parseBoolOption("makeresults annotate")
+			if err != nil {
+				return nil, err
+			}
+			cmd.Annotate = value
+		case "splunk_server":
+			value, err := p.parseMakeresultsOptionValue(name)
+			if err != nil {
+				return nil, err
+			}
+			cmd.SplunkServer = value
+		case "splunk_server_group":
+			value, err := p.parseMakeresultsOptionValue(name)
+			if err != nil {
+				return nil, err
+			}
+			cmd.SplunkServerGroups = append(cmd.SplunkServerGroups, value)
+		case "format":
+			value, err := p.parseMakeresultsOptionValue(name)
+			if err != nil {
+				return nil, err
+			}
+			switch strings.ToLower(value) {
+			case "csv", "json":
+				cmd.Format = strings.ToLower(value)
+			default:
+				return nil, fmt.Errorf("spl2: makeresults format must be csv or json")
+			}
+		case "data":
+			value, err := p.parseMakeresultsOptionValue(name)
+			if err != nil {
+				return nil, err
+			}
+			cmd.Data = value
+		default:
+			return nil, fmt.Errorf("spl2: unsupported makeresults option %q", name)
+		}
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) parseBoolOption(name string) (bool, error) {
+	tok := p.advance()
+	switch {
+	case tok.Type == TokenTrue || strings.EqualFold(tok.Literal, "true"):
+		return true, nil
+	case tok.Type == TokenFalse || strings.EqualFold(tok.Literal, "false"):
+		return false, nil
+	default:
+		return false, fmt.Errorf("spl2: %s requires a boolean value", name)
+	}
+}
+
+func (p *Parser) parseMakeresultsOptionValue(name string) (string, error) {
+	tok := p.advance()
+	if tok.Type == TokenString || tok.Type == TokenNumber || tok.Type == TokenTrue || tok.Type == TokenFalse ||
+		isIdentLike(tok.Type) || isFormatKeyword(tok.Type) {
+		return tok.Literal, nil
+	}
+	return "", fmt.Errorf("spl2: makeresults %s requires a value", name)
+}
+
+func parseNonNegativeInt(raw, name string) (int, error) {
+	value, err := strconv.Atoi(raw)
+	if err != nil || value < 0 {
+		return 0, fmt.Errorf("spl2: %s must be a non-negative integer", name)
+	}
+
+	return value, nil
+}
+
+func (p *Parser) parseNomv() (*NomvCommand, error) {
+	p.advance() // consume "nomv"
+
+	field, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: nomv requires a field name")
+	}
+
+	return &NomvCommand{Field: field.Literal}, nil
+}
+
+func (p *Parser) parseMakemv() (*MakemvCommand, error) {
+	p.advance() // consume "makemv"
+
+	cmd := &MakemvCommand{Delim: " "}
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if p.isMakemvOption() {
+			if err := p.parseMakemvOption(cmd); err != nil {
+				return nil, err
+			}
+
+			continue
+		}
+		if cmd.Field != "" {
+			return nil, fmt.Errorf("spl2: makemv accepts one field")
+		}
+		field, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("spl2: makemv requires a field name")
+		}
+		cmd.Field = field.Literal
+	}
+	if cmd.Field == "" {
+		return nil, fmt.Errorf("spl2: makemv requires a field name")
+	}
+
+	return cmd, nil
+}
+
+func (p *Parser) isMakemvOption() bool {
+	if p.peekAt(1).Type != TokenEq {
+		return false
+	}
+	return isNamedOption(p.peek(), "delim", "tokenizer", "allowempty", "setsv")
+}
+
+func isNamedOption(tok Token, names ...string) bool {
+	if tok.Type != TokenIdent {
+		return false
+	}
+	for _, name := range names {
+		if strings.EqualFold(tok.Literal, name) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (p *Parser) parseMakemvOption(cmd *MakemvCommand) error {
+	name := strings.ToLower(p.advance().Literal)
+	p.advance() // consume "="
+
+	switch name {
+	case "delim":
+		value, err := p.readStringOption("makemv delim")
+		if err != nil {
+			return err
+		}
+		cmd.Delim = value
+		cmd.Tokenizer = ""
+	case "tokenizer":
+		value, err := p.readStringOption("makemv tokenizer")
+		if err != nil {
+			return err
+		}
+		cmd.Tokenizer = value
+	case "allowempty":
+		value, err := p.readBoolOption("makemv allowempty")
+		if err != nil {
+			return err
+		}
+		cmd.AllowEmpty = value
+	case "setsv":
+		value, err := p.readBoolOption("makemv setsv")
+		if err != nil {
+			return err
+		}
+		cmd.SetSV = value
+	}
+
+	return nil
+}
+
+func (p *Parser) readStringOption(name string) (string, error) {
+	tok := p.peek()
+	if tok.Type != TokenString && tok.Type != TokenIdent {
+		return "", fmt.Errorf("spl2: %s requires a string value", name)
+	}
+	p.advance()
+
+	return tok.Literal, nil
+}
+
+func (p *Parser) readBoolOption(name string) (bool, error) {
+	tok := p.peek()
+	p.advance()
+	switch strings.ToLower(tok.Literal) {
+	case "true", "t", "1", "yes", "y":
+		return true, nil
+	case "false", "f", "0", "no", "n":
+		return false, nil
+	default:
+		return false, fmt.Errorf("spl2: %s requires a boolean value", name)
+	}
+}
+
+func (p *Parser) parseMvcombine() (*MvcombineCommand, error) {
+	p.advance() // consume "mvcombine"
+
+	cmd := &MvcombineCommand{Delim: " "}
+	for p.peek().Type != TokenPipe && p.peek().Type != TokenEOF && p.peek().Type != TokenRBracket {
+		if p.peekAt(1).Type == TokenEq && isNamedOption(p.peek(), "delim") {
+			p.advance()
+			p.advance()
+			delim, err := p.readStringOption("mvcombine delim")
+			if err != nil {
+				return nil, err
+			}
+			cmd.Delim = delim
+
+			continue
+		}
+		if cmd.Field != "" {
+			return nil, fmt.Errorf("spl2: mvcombine accepts one field")
+		}
+		field, err := p.expectIdent()
+		if err != nil {
+			return nil, fmt.Errorf("spl2: mvcombine requires a field name")
+		}
+		cmd.Field = field.Literal
+	}
+	if cmd.Field == "" {
+		return nil, fmt.Errorf("spl2: mvcombine requires a field name")
 	}
 
 	return cmd, nil
@@ -4043,6 +5025,81 @@ func (p *Parser) parseRateCmd() (*TimechartCommand, error) {
 	return cmd, nil
 }
 
+// parseProportionCmd parses:
+// proportion <where_expr> AS <alias> [every <span>] [by <fields>].
+// Desugars to optional bin, stats count(eval(expr)) + count(), then eval ratio.
+func (p *Parser) parseProportionCmd() ([]Command, error) {
+	p.advance() // consume "proportion"
+
+	predicate, err := p.parseExpr()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: proportion: expected predicate: %w", err)
+	}
+	if p.peek().Type != TokenAs {
+		return nil, fmt.Errorf("spl2: proportion: expected 'as' after predicate at position %d", p.peek().Pos)
+	}
+	p.advance()
+	alias, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: proportion: expected alias after 'as'")
+	}
+
+	var span string
+	if p.peek().Type == TokenEvery {
+		p.advance()
+		span = p.readSpanValue()
+		if span == "" {
+			return nil, fmt.Errorf("spl2: proportion: expected time span after 'every'")
+		}
+	}
+
+	var groupBy []string
+	if p.peek().Type == TokenBy {
+		p.advance()
+		groupBy, err = p.parseIdentListLF()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	aliasName := alias.Literal
+	numAlias := aliasName + "_num"
+	denAlias := aliasName + "_den"
+
+	statsGroupBy := append([]string{}, groupBy...)
+	if span != "" {
+		statsGroupBy = append(statsGroupBy, "_time")
+	}
+
+	commands := make([]Command, 0, 3)
+	if span != "" {
+		commands = append(commands, &BinCommand{Field: "_time", Span: span})
+	}
+	commands = append(commands, &StatsCommand{
+		Aggregations: []AggExpr{
+			{Func: "count", Args: []Expr{&FuncCallExpr{Name: "eval", Args: []Expr{predicate}}}, Alias: numAlias},
+			{Func: "count", Alias: denAlias},
+		},
+		GroupBy: statsGroupBy,
+	})
+	ratioExpr := &ArithExpr{
+		Left: &ArithExpr{
+			Left:  &FieldExpr{Name: numAlias},
+			Op:    "*",
+			Right: &LiteralExpr{Value: "1.0"},
+		},
+		Op:    "/",
+		Right: &FieldExpr{Name: denAlias},
+	}
+	commands = append(commands, &EvalCommand{
+		Field:       aliasName,
+		Expr:        ratioExpr,
+		Assignments: []EvalAssignment{{Field: aliasName, Expr: ratioExpr}},
+	})
+
+	return commands, nil
+}
+
 // parsePercentilesCmd parses: percentiles <field> [by <group>].
 // Desugars to StatsCommand with perc50/75/90/95/99.
 func (p *Parser) parsePercentilesCmd() (*StatsCommand, error) {
@@ -4091,8 +5148,8 @@ func (p *Parser) parseSlowestCmd() ([]Command, error) {
 	var groupField string
 	durField := "duration_ms" // default
 
-	// Peek: if next token is an ident and it's NOT "by", it's the group field.
-	if isIdentLike(p.peek().Type) && p.peek().Type != TokenBy {
+	// Peek: if next token is a field name and it's NOT "by", it's the group field.
+	if (isIdentLike(p.peek().Type) || p.peek().Type == TokenString) && p.peek().Type != TokenBy {
 		groupField = p.advance().Literal
 	}
 
@@ -4127,6 +5184,212 @@ func (p *Parser) parseSlowestCmd() ([]Command, error) {
 	return []Command{statsCmd, sortCmd, headCmd}, nil
 }
 
+// parseImpactCmd parses: impact [agg()] by <fields>.
+// Desugars to stats, eventstats total, eval pct, sort descending by pct.
+func (p *Parser) parseImpactCmd() ([]Command, error) {
+	p.advance() // consume "impact"
+
+	var agg AggExpr
+	if p.peek().Type == TokenBy {
+		agg = AggExpr{Func: "count", Alias: "n"}
+	} else {
+		var err error
+		agg, err = p.parseSingleAgg()
+		if err != nil {
+			return nil, fmt.Errorf("spl2: impact: expected aggregate or 'by'")
+		}
+		if agg.Alias == "" {
+			agg.Alias = aggAlias(agg)
+		}
+	}
+
+	if p.peek().Type != TokenBy {
+		return nil, fmt.Errorf("spl2: impact: expected 'by' at position %d", p.peek().Pos)
+	}
+	p.advance()
+	groupBy, err := p.parseIdentListLF()
+	if err != nil {
+		return nil, err
+	}
+
+	totalAlias := "total_" + agg.Alias
+	pctAlias := "pct_" + agg.Alias
+	ratioExpr := &ArithExpr{
+		Left: &ArithExpr{
+			Left:  &FieldExpr{Name: agg.Alias},
+			Op:    "*",
+			Right: &LiteralExpr{Value: "1.0"},
+		},
+		Op:    "/",
+		Right: &FieldExpr{Name: totalAlias},
+	}
+
+	return []Command{
+		&StatsCommand{Aggregations: []AggExpr{agg}, GroupBy: groupBy},
+		&EventstatsCommand{
+			Aggregations: []AggExpr{{Func: "sum", Args: []Expr{&FieldExpr{Name: agg.Alias}}, Alias: totalAlias}},
+		},
+		&EvalCommand{
+			Field:       pctAlias,
+			Expr:        ratioExpr,
+			Assignments: []EvalAssignment{{Field: pctAlias, Expr: ratioExpr}},
+		},
+		&SortCommand{Fields: []SortField{{Name: pctAlias, Desc: true}}},
+	}, nil
+}
+
+func aggAlias(agg AggExpr) string {
+	if len(agg.Args) == 0 {
+		return agg.Func
+	}
+	return agg.Func + "_" + strings.ReplaceAll(agg.Args[0].String(), ".", "_")
+}
+
+// parseBaselineCmd parses: baseline <field> window=N [by <fields>].
+// Desugars to streamstats baseline/stdev fields, then eval delta and z-score.
+func (p *Parser) parseBaselineCmd() ([]Command, error) {
+	p.advance() // consume "baseline"
+
+	field, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: baseline requires a field name")
+	}
+	if p.peek().Type != TokenWindow && !(p.peek().Type == TokenIdent && strings.EqualFold(p.peek().Literal, "window")) {
+		return nil, fmt.Errorf("spl2: baseline: expected 'window' at position %d", p.peek().Pos)
+	}
+	p.advance()
+	if _, err := p.expect(TokenEq); err != nil {
+		return nil, fmt.Errorf("spl2: baseline: expected '=' after window")
+	}
+	windowTok, err := p.expect(TokenNumber)
+	if err != nil {
+		return nil, fmt.Errorf("spl2: baseline: expected numeric window")
+	}
+	window, err := strconv.Atoi(windowTok.Literal)
+	if err != nil {
+		return nil, fmt.Errorf("spl2: baseline: invalid window %q", windowTok.Literal)
+	}
+
+	var groupBy []string
+	if p.peek().Type == TokenBy {
+		p.advance()
+		groupBy, err = p.parseIdentListLF()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	name := strings.ReplaceAll(field.Literal, ".", "_")
+	baselineAlias := "baseline_" + name
+	stdevAlias := "stdev_" + name
+	deltaAlias := "delta_" + name
+	zAlias := "z_" + name
+
+	fieldExpr := &FieldExpr{Name: field.Literal}
+	deltaExpr := &ArithExpr{
+		Left:  &FieldExpr{Name: field.Literal},
+		Op:    "-",
+		Right: &FieldExpr{Name: baselineAlias},
+	}
+	zExpr := &FuncCallExpr{
+		Name: "if",
+		Args: []Expr{
+			&CompareExpr{Left: &FieldExpr{Name: stdevAlias}, Op: ">", Right: &LiteralExpr{Value: "0"}},
+			&ArithExpr{Left: &FieldExpr{Name: deltaAlias}, Op: "/", Right: &FieldExpr{Name: stdevAlias}},
+			&FuncCallExpr{Name: "null"},
+		},
+	}
+
+	return []Command{
+		&StreamstatsCommand{
+			Current: false,
+			Window:  window,
+			Aggregations: []AggExpr{
+				{Func: "avg", Args: []Expr{fieldExpr}, Alias: baselineAlias},
+				{Func: "stdev", Args: []Expr{fieldExpr}, Alias: stdevAlias},
+			},
+			GroupBy: groupBy,
+		},
+		&EvalCommand{
+			Field: deltaAlias,
+			Expr:  deltaExpr,
+			Assignments: []EvalAssignment{
+				{Field: deltaAlias, Expr: deltaExpr},
+				{Field: zAlias, Expr: zExpr},
+			},
+		},
+	}, nil
+}
+
+// parseChangesCmd parses: changes <field> [by <fields>].
+// Desugars to sort +_time, streamstats previous value, then where changed.
+func (p *Parser) parseChangesCmd() ([]Command, error) {
+	p.advance() // consume "changes"
+
+	field, err := p.expectIdent()
+	if err != nil {
+		return nil, fmt.Errorf("spl2: changes requires a field name")
+	}
+
+	var groupBy []string
+	if p.peek().Type == TokenBy {
+		p.advance()
+		groupBy, err = p.parseIdentListLF()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	name := strings.ReplaceAll(field.Literal, ".", "_")
+	previousAlias := "previous_" + name
+	fieldExpr := &FieldExpr{Name: field.Literal}
+	previousExpr := &FieldExpr{Name: previousAlias}
+
+	return []Command{
+		&SortCommand{Fields: []SortField{{Name: "_time"}}},
+		&StreamstatsCommand{
+			Current: false,
+			Aggregations: []AggExpr{
+				{Func: "last", Args: []Expr{fieldExpr}, Alias: previousAlias},
+			},
+			GroupBy: groupBy,
+		},
+		&WhereCommand{Expr: &BinaryExpr{
+			Left:  &FuncCallExpr{Name: "isnotnull", Args: []Expr{previousExpr}},
+			Op:    "and",
+			Right: &CompareExpr{Left: fieldExpr, Op: "!=", Right: previousExpr},
+		}},
+	}, nil
+}
+
+// parseExemplarsCmd parses: exemplars [N] [by <fields>].
+// Desugars to newest rows globally, or newest rows per group.
+func (p *Parser) parseExemplarsCmd() ([]Command, error) {
+	p.advance() // consume "exemplars"
+
+	n := 1
+	if p.peek().Type == TokenNumber {
+		tok := p.advance()
+		parsed, err := strconv.Atoi(tok.Literal)
+		if err != nil {
+			return nil, fmt.Errorf("spl2: exemplars: invalid count %q", tok.Literal)
+		}
+		n = parsed
+	}
+
+	sortCmd := &SortCommand{Fields: []SortField{{Name: "_time", Desc: true}}}
+	if p.peek().Type != TokenBy {
+		return []Command{sortCmd, &HeadCommand{Count: n}}, nil
+	}
+	p.advance()
+	groupBy, err := p.parseIdentListLF()
+	if err != nil {
+		return nil, err
+	}
+
+	return []Command{sortCmd, &DedupCommand{Fields: groupBy, Limit: n}}, nil
+}
+
 // parseIdentListLF parses a comma-separated list of identifiers, accepting
 // ident-like keyword tokens (Lynx Flow compatible).
 func (p *Parser) parseIdentListLF() ([]string, error) {
@@ -4134,7 +5397,7 @@ func (p *Parser) parseIdentListLF() ([]string, error) {
 
 	for {
 		tok := p.peek()
-		if !isIdentLike(tok.Type) && tok.Type != TokenGlob {
+		if !isIdentLike(tok.Type) && tok.Type != TokenGlob && tok.Type != TokenString {
 			break
 		}
 		p.advance()

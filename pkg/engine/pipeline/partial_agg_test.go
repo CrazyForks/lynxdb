@@ -161,6 +161,23 @@ func TestMergePartialAggs_Sum(t *testing.T) {
 	assertFloatField(t, rows[0], "total", 300)
 }
 
+func TestMergePartialAggs_SumSq(t *testing.T) {
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: "sumsq", Field: "v", Alias: "squares"}},
+	}
+	p1 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{Sum: 13, Count: 2}}},
+	}
+	p2 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{Sum: 16, Count: 1}}},
+	}
+	rows := MergePartialAggs([][]*PartialAggGroup{p1, p2}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertFloatField(t, rows[0], "squares", 29)
+}
+
 func TestMergePartialAggs_Avg(t *testing.T) {
 	spec := &PartialAggSpec{
 		Funcs: []PartialAggFunc{{Name: "avg", Field: "v", Alias: "avg_v"}},
@@ -210,6 +227,23 @@ func TestMergePartialAggs_MinMax(t *testing.T) {
 	if rows[0]["max_v"] != event.IntValue(100) {
 		t.Errorf("max_v: expected 100, got %v", rows[0]["max_v"])
 	}
+}
+
+func TestMergePartialAggs_Range(t *testing.T) {
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: "range", Field: "v", Alias: "range_v"}},
+	}
+	p1 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{Min: event.FloatValue(5), Max: event.FloatValue(50), Count: 2}}},
+	}
+	p2 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{Min: event.FloatValue(3), Max: event.FloatValue(100), Count: 2}}},
+	}
+	rows := MergePartialAggs([][]*PartialAggGroup{p1, p2}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertFloatField(t, rows[0], "range_v", 97)
 }
 
 func TestMergePartialAggs_EmptyPartials(t *testing.T) {
@@ -320,6 +354,24 @@ func assertIntField(t *testing.T, row map[string]event.Value, field string, expe
 	}
 	if v.AsInt() != expected {
 		t.Errorf("field %q: expected %d, got %d", field, expected, v.AsInt())
+	}
+}
+
+func assertStringField(t *testing.T, row map[string]event.Value, field, expected string) {
+	t.Helper()
+	v, ok := row[field]
+	if !ok {
+		t.Errorf("field %q not found in row", field)
+
+		return
+	}
+	if v.Type() != event.FieldTypeString {
+		t.Errorf("field %q: expected string, got %s (%v)", field, v.Type(), v)
+
+		return
+	}
+	if v.AsString() != expected {
+		t.Errorf("field %q: expected %q, got %q", field, expected, v.AsString())
 	}
 }
 
@@ -648,6 +700,54 @@ func TestPartialAgg_DC_BelowThreshold_Exact(t *testing.T) {
 	assertIntField(t, rows[0], "dc_user", 25)
 }
 
+func TestPartialAgg_EstDCError_BelowThreshold_Exact(t *testing.T) {
+	var fieldSets []map[string]event.Value
+	for i := 0; i < 50; i++ {
+		fieldSets = append(fieldSets, map[string]event.Value{
+			"user": event.StringValue(fmt.Sprintf("user-%d", i%25)),
+		})
+	}
+	events := makePartialAggEvents(fieldSets...)
+
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: aggEstDCE, Field: "user", Alias: "user_error"}},
+	}
+	partials := ComputePartialAgg(events, spec)
+	if len(partials) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(partials))
+	}
+	if partials[0].States[0].DistinctHLL != nil {
+		t.Fatal("expected exact mode below threshold")
+	}
+
+	rows := MergePartialAggs([][]*PartialAggGroup{partials}, spec)
+	assertFloatField(t, rows[0], "user_error", 0)
+}
+
+func TestPartialAgg_EstDCError_HLLPromotion(t *testing.T) {
+	var fieldSets []map[string]event.Value
+	for i := 0; i < dcHLLThreshold+100; i++ {
+		fieldSets = append(fieldSets, map[string]event.Value{
+			"user": event.StringValue(fmt.Sprintf("user-%d", i)),
+		})
+	}
+	events := makePartialAggEvents(fieldSets...)
+
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: aggEstDCE, Field: "user", Alias: "user_error"}},
+	}
+	partials := ComputePartialAgg(events, spec)
+	if len(partials) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(partials))
+	}
+	if partials[0].States[0].DistinctHLL == nil {
+		t.Fatal("expected HLL mode above threshold")
+	}
+
+	rows := MergePartialAggs([][]*PartialAggGroup{partials}, spec)
+	assertFloatFieldApprox(t, rows[0], "user_error", NewHyperLogLog().StandardError())
+}
+
 // --- Percentile partial aggregation tests ---
 
 func TestIsPushableAgg_Percentiles(t *testing.T) {
@@ -657,7 +757,7 @@ func TestIsPushableAgg_Percentiles(t *testing.T) {
 		}
 	}
 	// Non-pushable should still return false.
-	for _, name := range []string{"values", "first", "last"} {
+	for _, name := range []string{"values", "first", "last", "earliest_time", "latest_time", "rate", "per_second"} {
 		if IsPushableAgg(name) {
 			t.Errorf("IsPushableAgg(%q) = true, want false", name)
 		}
@@ -850,6 +950,73 @@ func TestMergePartialAggs_Stdev(t *testing.T) {
 	if math.Abs(got-math.Sqrt(32.0/7.0)) > 0.01 {
 		t.Errorf("merged stdev: expected ~2.138, got %f", got)
 	}
+}
+
+func TestMergePartialAggs_VarianceFamily(t *testing.T) {
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{
+			{Name: "stdevp", Field: "v", Alias: "stdevp_v"},
+			{Name: "var", Field: "v", Alias: "var_v"},
+			{Name: "varp", Field: "v", Alias: "varp_v"},
+		},
+	}
+	p1 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{
+			{Count: 1, StdevMean: 0, StdevM2: 0},
+			{Count: 1, StdevMean: 0, StdevM2: 0},
+			{Count: 1, StdevMean: 0, StdevM2: 0},
+		}},
+	}
+	p2 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{
+			{Count: 1, StdevMean: 2, StdevM2: 0},
+			{Count: 1, StdevMean: 2, StdevM2: 0},
+			{Count: 1, StdevMean: 2, StdevM2: 0},
+		}},
+	}
+	rows := MergePartialAggs([][]*PartialAggGroup{p1, p2}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertFloatField(t, rows[0], "stdevp_v", 1)
+	assertFloatField(t, rows[0], "var_v", 2)
+	assertFloatField(t, rows[0], "varp_v", 1)
+}
+
+func TestPartialAgg_Mode(t *testing.T) {
+	events := makePartialAggEvents(
+		map[string]event.Value{"status": event.StringValue("200")},
+		map[string]event.Value{"status": event.StringValue("500")},
+		map[string]event.Value{"status": event.StringValue("200")},
+		map[string]event.Value{"status": event.StringValue("404")},
+	)
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: aggMode, Field: "status", Alias: "common_status"}},
+	}
+	partials := ComputePartialAgg(events, spec)
+	rows := MergePartialAggs([][]*PartialAggGroup{partials}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertStringField(t, rows[0], "common_status", "200")
+}
+
+func TestMergePartialAggs_Mode(t *testing.T) {
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: aggMode, Field: "status", Alias: "common_status"}},
+	}
+	p1 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{ModeCounts: map[string]int64{"200": 2, "500": 1}}}},
+	}
+	p2 := []*PartialAggGroup{
+		{Key: map[string]event.Value{}, States: []PartialAggState{{ModeCounts: map[string]int64{"500": 2, "404": 1}}}},
+	}
+
+	rows := MergePartialAggs([][]*PartialAggGroup{p1, p2}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	assertStringField(t, rows[0], "common_status", "500")
 }
 
 func TestPartialAgg_Stdev_SingleValue(t *testing.T) {

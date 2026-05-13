@@ -42,6 +42,14 @@ Minimum and maximum values.
 | stats min(duration_ms) AS fastest, max(duration_ms) AS slowest by uri
 ```
 
+## sumsq
+
+Sum of squared numeric values.
+
+```spl
+| stats sumsq(duration_ms) AS duration_squares by endpoint
+```
+
 ## dc (Distinct Count)
 
 Count of unique values.
@@ -49,6 +57,8 @@ Count of unique values.
 ```spl
 | stats dc(user_id) AS unique_users by endpoint
 | stats dc(source) AS source_count
+| stats estdc(user_id) AS estimated_unique_users
+| stats estdc_error(user_id) AS estimated_unique_error
 ```
 
 ## values
@@ -59,12 +69,42 @@ List of distinct values (returned as a multivalue field).
 | stats values(level) AS seen_levels by source
 ```
 
+## mode
+
+Most frequent value, compared as a string.
+
+```spl
+| stats mode(status) AS common_status by endpoint
+```
+
+## per_second / per_minute / per_hour / per_day
+
+Scale numeric bucket totals to a fixed time period in `timechart`.
+
+```spl
+| timechart span=5m per_minute(bytes) AS bytes_per_minute
+```
+
+## earliest_time / latest_time / rate
+
+Return timestamp bounds or per-second counter change by event time.
+
+```spl
+| stats earliest_time(counter) AS first_seen,
+        latest_time(counter) AS last_seen,
+        rate(counter) AS counter_rate
+  by host
+```
+
 ## stdev
 
 Standard deviation.
 
 ```spl
 | stats stdev(duration_ms) AS latency_stddev by endpoint
+| stats stdevp(duration_ms) AS population_stddev,
+        var(duration_ms) AS sample_variance,
+        varp(duration_ms) AS population_variance
 ```
 
 ## Percentiles
@@ -79,7 +119,7 @@ Compute percentile values with the fixed percentile aggregations: `perc25`, `per
   by endpoint
 ```
 
-`perc50` is the median. Percentiles use the t-digest algorithm for memory-efficient approximate computation. Variable-percentile syntax such as `percentile(duration_ms, 99.9)` is not currently supported.
+`perc50` is the median. Generic forms such as `perc(duration_ms, 95)` and `percentile(duration_ms, 95)` normalize to the fixed percentile aggregations when the percentile is one of the supported values. Arbitrary variable-percentile syntax such as `percentile(duration_ms, 99.9)` is not currently supported.
 
 ## earliest / latest
 

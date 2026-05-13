@@ -188,6 +188,48 @@ func TestSuggestFunction(t *testing.T) {
 	if hint == "" {
 		t.Error("expected a hint for 'avrage'")
 	}
+
+	hint = SuggestFunction("ceilling")
+	if !strings.Contains(hint, "Did you mean: ceiling?") {
+		t.Errorf("expected 'Did you mean: ceiling?', got: %s", hint)
+	}
+
+	hint = SuggestFunction("replce")
+	if !strings.Contains(hint, "Did you mean: replace?") {
+		t.Errorf("expected 'Did you mean: replace?', got: %s", hint)
+	}
+
+	hint = SuggestFunction("splt")
+	if !strings.Contains(hint, "Did you mean: split?") {
+		t.Errorf("expected 'Did you mean: split?', got: %s", hint)
+	}
+
+	hint = SuggestFunction("spth")
+	if !strings.Contains(hint, "Did you mean: spath?") {
+		t.Errorf("expected 'Did you mean: spath?', got: %s", hint)
+	}
+}
+
+func TestKnownAggregateFunctionsIncludesSupportedAggregates(t *testing.T) {
+	have := make(map[string]bool)
+	for _, fn := range KnownAggregateFunctions() {
+		have[fn] = true
+	}
+
+	for _, fn := range []string{"min", "max", "p50", "p75", "p90", "p95", "p99"} {
+		if !have[fn] {
+			t.Fatalf("missing aggregate alias %q", fn)
+		}
+	}
+
+	for _, prefix := range []string{"percentile", "exactperc", "upperperc"} {
+		for _, suffix := range []string{"25", "50", "75", "90", "95", "99"} {
+			fn := prefix + suffix
+			if !have[fn] {
+				t.Fatalf("missing percentile suffix aggregate %q", fn)
+			}
+		}
+	}
 }
 
 func TestSuggestTypeMismatch(t *testing.T) {

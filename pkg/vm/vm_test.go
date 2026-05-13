@@ -600,6 +600,24 @@ func TestVMSubstring(t *testing.T) {
 	}
 }
 
+func TestCompileSubstrOptionalLength(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "substr",
+		Args: []spl2.Expr{
+			&spl2.LiteralExpr{Value: `"hello"`},
+			&spl2.LiteralExpr{Value: "2"},
+		},
+	}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatalf("CompileExpr: %v", err)
+	}
+	result := runProgram(t, prog, nil)
+	if result.AsString() != "ello" {
+		t.Errorf("got %q, want %q", result.AsString(), "ello")
+	}
+}
+
 func TestVMRound(t *testing.T) {
 	// round(3.14159, 2) → 3.14
 	p := &Program{}
@@ -696,6 +714,64 @@ func TestVMMathFunctions(t *testing.T) {
 		result := runProgram(t, p, nil)
 		if math.Abs(result.AsFloat()-5.0) > 1e-10 {
 			t.Errorf("got %v, want 5.0", result)
+		}
+	})
+
+	t.Run("exp(1)=e", func(t *testing.T) {
+		p := &Program{}
+		p.AddConstant(event.FloatValue(1))
+		p.EmitOp(OpConstFloat, 0)
+		p.EmitOp(OpExp)
+		p.EmitOp(OpReturn)
+
+		result := runProgram(t, p, nil)
+		if math.Abs(result.AsFloat()-math.E) > 1e-10 {
+			t.Errorf("got %v, want %v", result.AsFloat(), math.E)
+		}
+	})
+
+	t.Run("pow(2,3)=8", func(t *testing.T) {
+		p := &Program{}
+		p.AddConstant(event.FloatValue(2))
+		p.AddConstant(event.FloatValue(3))
+		p.EmitOp(OpConstFloat, 0)
+		p.EmitOp(OpConstFloat, 1)
+		p.EmitOp(OpPow)
+		p.EmitOp(OpReturn)
+
+		result := runProgram(t, p, nil)
+		if math.Abs(result.AsFloat()-8) > 1e-10 {
+			t.Errorf("got %v, want 8.0", result.AsFloat())
+		}
+	})
+
+	t.Run("log(8,2)=3", func(t *testing.T) {
+		p := &Program{}
+		p.AddConstant(event.FloatValue(8))
+		p.AddConstant(event.FloatValue(2))
+		p.EmitOp(OpConstFloat, 0)
+		p.EmitOp(OpConstFloat, 1)
+		p.EmitOp(OpLog)
+		p.EmitOp(OpReturn)
+
+		result := runProgram(t, p, nil)
+		if math.Abs(result.AsFloat()-3) > 1e-10 {
+			t.Errorf("got %v, want 3.0", result.AsFloat())
+		}
+	})
+
+	t.Run("log invalid domain is null", func(t *testing.T) {
+		p := &Program{}
+		p.AddConstant(event.FloatValue(8))
+		p.AddConstant(event.FloatValue(1))
+		p.EmitOp(OpConstFloat, 0)
+		p.EmitOp(OpConstFloat, 1)
+		p.EmitOp(OpLog)
+		p.EmitOp(OpReturn)
+
+		result := runProgram(t, p, nil)
+		if !result.IsNull() {
+			t.Errorf("got %v, want null", result)
 		}
 	})
 }
@@ -2032,6 +2108,101 @@ func TestCompileIsStr(t *testing.T) {
 	}
 }
 
+func TestCompileIsBoolAndTypeOf(t *testing.T) {
+	isBoolExpr := &spl2.FuncCallExpr{
+		Name: "isbool",
+		Args: []spl2.Expr{&spl2.FieldExpr{Name: "flag"}},
+	}
+	isBoolProg, err := CompileExpr(isBoolExpr)
+	if err != nil {
+		t.Fatalf("CompileExpr isbool: %v", err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(isBoolProg, map[string]event.Value{"flag": event.BoolValue(false)})
+	if err != nil {
+		t.Fatalf("Execute isbool bool: %v", err)
+	}
+	if !result.AsBool() {
+		t.Fatal("expected isbool(false) to be true")
+	}
+
+	result, err = vm.Execute(isBoolProg, map[string]event.Value{"flag": event.StringValue("false")})
+	if err != nil {
+		t.Fatalf("Execute isbool string: %v", err)
+	}
+	if result.AsBool() {
+		t.Fatal("expected isbool(string) to be false")
+	}
+
+	typeOfExpr := &spl2.FuncCallExpr{
+		Name: "typeof",
+		Args: []spl2.Expr{&spl2.FieldExpr{Name: "flag"}},
+	}
+	typeOfProg, err := CompileExpr(typeOfExpr)
+	if err != nil {
+		t.Fatalf("CompileExpr typeof: %v", err)
+	}
+	result, err = vm.Execute(typeOfProg, map[string]event.Value{"flag": event.BoolValue(true)})
+	if err != nil {
+		t.Fatalf("Execute typeof: %v", err)
+	}
+	if result.AsString() != "bool" {
+		t.Fatalf("typeof: got %q, want bool", result.AsString())
+	}
+}
+
+func TestCompileIsArrayAndIsObject(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *spl2.FuncCallExpr
+		row  map[string]event.Value
+		want bool
+	}{
+		{
+			name: "array",
+			expr: &spl2.FuncCallExpr{Name: "isarray", Args: []spl2.Expr{&spl2.FieldExpr{Name: "value"}}},
+			row:  map[string]event.Value{"value": event.StringValue(`[1,2,3]`)},
+			want: true,
+		},
+		{
+			name: "array rejects object",
+			expr: &spl2.FuncCallExpr{Name: "isarray", Args: []spl2.Expr{&spl2.FieldExpr{Name: "value"}}},
+			row:  map[string]event.Value{"value": event.StringValue(`{"a":1}`)},
+			want: false,
+		},
+		{
+			name: "object",
+			expr: &spl2.FuncCallExpr{Name: "isobject", Args: []spl2.Expr{&spl2.FieldExpr{Name: "value"}}},
+			row:  map[string]event.Value{"value": event.StringValue(`{"a":1}`)},
+			want: true,
+		},
+		{
+			name: "object rejects invalid json",
+			expr: &spl2.FuncCallExpr{Name: "isobject", Args: []spl2.Expr{&spl2.FieldExpr{Name: "value"}}},
+			row:  map[string]event.Value{"value": event.StringValue(`{bad`)},
+			want: false,
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			result, err := vm.Execute(prog, tt.row)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if result.AsBool() != tt.want {
+				t.Fatalf("got %v, want %v", result.AsBool(), tt.want)
+			}
+		})
+	}
+}
+
 func TestCompileILike(t *testing.T) {
 	expr := &spl2.FuncCallExpr{
 		Name: "ilike",
@@ -2062,6 +2233,97 @@ func TestCompileILike(t *testing.T) {
 	}
 	if result.AsBool() != false {
 		t.Error("expected false for non-matching ilike")
+	}
+}
+
+func TestCompileRFCConversionAliases(t *testing.T) {
+	tests := []struct {
+		name  string
+		expr  *spl2.FuncCallExpr
+		check func(*testing.T, event.Value)
+	}{
+		{
+			name: "toint",
+			expr: &spl2.FuncCallExpr{Name: "toint", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"42"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if got.AsInt() != 42 {
+					t.Fatalf("toint: got %v, want 42", got)
+				}
+			},
+		},
+		{
+			name: "todouble",
+			expr: &spl2.FuncCallExpr{Name: "todouble", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"3.5"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if got.AsFloat() != 3.5 {
+					t.Fatalf("todouble: got %v, want 3.5", got)
+				}
+			},
+		},
+		{
+			name: "tobool",
+			expr: &spl2.FuncCallExpr{Name: "tobool", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"true"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if !got.AsBool() {
+					t.Fatalf("tobool: got %v, want true", got)
+				}
+			},
+		},
+		{
+			name: "tobool false",
+			expr: &spl2.FuncCallExpr{Name: "tobool", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"false"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if got.AsBool() {
+					t.Fatalf("tobool false: got %v, want false", got)
+				}
+			},
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			got, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			tt.check(t, got)
+		})
+	}
+}
+
+func TestCompileLikeFunction(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "like",
+		Args: []spl2.Expr{
+			&spl2.FieldExpr{Name: "host"},
+			&spl2.LiteralExpr{Value: `"web-%"`},
+		},
+	}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatalf("CompileExpr: %v", err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, map[string]event.Value{"host": event.StringValue("web-01")})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.AsBool() {
+		t.Fatal("expected true for matching LIKE")
+	}
+
+	result, err = vm.Execute(prog, map[string]event.Value{"host": event.StringValue("db-01")})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.AsBool() {
+		t.Fatal("expected false for non-matching LIKE")
 	}
 }
 

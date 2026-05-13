@@ -6,27 +6,37 @@
 
 program          = { dataset_def } query ;
 dataset_def      = "$" ident "=" query [ ";" ] ;
-query            = [ "from" source ] [ "where" expr ] { "|" command } ;
-source           = cte_ref | ident ;
+query            = [ ( "from" | "index" ) source_list [ time_range ] ] [ "where" expr ] { "|" command } ;
+source_list      = source { "," source } ;
+source           = cte_ref | ident | quoted_ident | glob | negated_glob | "*" ;
+negated_glob     = "!" glob ;
 cte_ref          = "$" ident ;
+time_range       = "[" duration_literal [ ".." duration_literal ] "]" ;
 
 (* ─── Commands ─── *)
 
 command          = search_cmd | where_cmd | stats_cmd | eval_cmd | sort_cmd
-                 | head_cmd | tail_cmd | table_cmd | fields_cmd | rename_cmd
-                 | dedup_cmd | rex_cmd | bin_cmd | timechart_cmd
+                 | head_cmd | tail_cmd | reverse_cmd | table_cmd | fields_cmd | rename_cmd
+                 | dedup_cmd | rex_cmd | regex_cmd | replace_cmd | fieldformat_cmd | bin_cmd | timechart_cmd
+                 | chart_cmd
                  | top_cmd | rare_cmd | fillnull_cmd | streamstats_cmd
-                 | eventstats_cmd | join_cmd | append_cmd | transaction_cmd
-                 | xyseries_cmd | materialize_cmd | from_cmd | views_cmd
-                 | dropview_cmd | glimpse_cmd | describe_cmd | tee_cmd
+                 | eventstats_cmd | join_cmd | append_cmd | appendcols_cmd | appendpipe_cmd
+                 | multisearch_cmd | union_cmd | transaction_cmd
+                 | xyseries_cmd | untable_cmd | materialize_cmd | from_cmd | views_cmd
+                 | dropview_cmd | glimpse_cmd | describe_cmd | use_cmd | outliers_cmd
+                 | compare_cmd | patterns_cmd | trace_cmd | tee_cmd
                  | rollup_cmd | sessionize_cmd | correlate_cmd | topology_cmd
-                 | unpack_json_cmd | unpack_logfmt_cmd | json_cmd | unroll_cmd
-                 | pack_json_cmd | select_cmd | take_cmd | keep_cmd | omit_cmd
+                 | unpack_cmd | json_cmd | unroll_cmd
+                 | mvexpand_cmd | makeresults_cmd | makemv_cmd | mvcombine_cmd | nomv_cmd | pack_json_cmd
+                 | capability_cmd
+                 | select_cmd | take_cmd | keep_cmd | omit_cmd
                  | let_cmd | group_cmd | every_cmd | bucket_cmd | order_cmd
                  | rank_cmd | topby_cmd | bottomby_cmd | bottom_cmd
                  | running_cmd | enrich_cmd | parse_cmd | explode_cmd
                  | pack_cmd | lookup_cmd | latency_cmd | errors_cmd
-                 | rate_cmd | percentiles_cmd | slowest_cmd ;
+                 | rate_cmd | proportion_cmd | impact_cmd | baseline_cmd | changes_cmd
+                 | exemplars_cmd
+                 | percentiles_cmd | slowest_cmd ;
 
 (* ─── Search command (implicit or explicit) ─── *)
 
@@ -60,10 +70,19 @@ stats_cmd        = "stats" agg_list [ "by" ident_list ] ;
 agg_list         = agg_expr { [ "," ] agg_expr } ;
 agg_expr         = agg_func "(" [ expr_list ] ")" [ "as" ident ]
                  | agg_func [ "(" ")" ] [ "as" ident ] ;
-agg_func         = "count" | "sum" | "avg" | "min" | "max" | "dc"
-                 | "values" | "first" | "last" | "stdev"
-                 | "percentile" | "perc50" | "perc75" | "perc90"
-                 | "perc95" | "perc99" | "earliest" | "latest" ;
+agg_func         = "count" | "sum" | "sumsq" | "avg" | "mean" | "min" | "max"
+                 | "dc" | "distinct_count" | "estdc" | "estdc_error"
+                 | "values" | "list" | "mode" | "first" | "last"
+                 | "stdev" | "stdevp" | "var" | "varp" | "range"
+                 | "earliest_time" | "latest_time" | "per_second" | "per_minute" | "per_hour" | "per_day" | "rate"
+                 | "perc" | "percentile" | "exactperc" | "upperperc"
+                 | "perc25" | "perc50" | "perc75" | "perc90"
+                 | "p50" | "p75" | "p90" | "p95" | "p99"
+                 | "perc95" | "perc99"
+                 | "percentile25" | "percentile50" | "percentile75" | "percentile90" | "percentile95" | "percentile99"
+                 | "exactperc25" | "exactperc50" | "exactperc75" | "exactperc90" | "exactperc95" | "exactperc99"
+                 | "upperperc25" | "upperperc50" | "upperperc75" | "upperperc90" | "upperperc95" | "upperperc99"
+                 | "earliest" | "latest" | "earliest_time" | "latest_time" | "rate" ;
 
 (* ─── EVAL command ─── *)
 
@@ -79,6 +98,7 @@ sort_field       = [ "+" | "-" ] field ;
 
 head_cmd         = "head" [ number ] ;
 tail_cmd         = "tail" [ number ] ;
+reverse_cmd      = "reverse" ;
 take_cmd         = "take" number ;
 select_cmd       = "select" ident_list ;
 
@@ -101,6 +121,9 @@ dedup_cmd        = "dedup" [ number ] ident_list ;
 (* ─── REX command (regex extraction) ─── *)
 
 rex_cmd          = "rex" [ "field" "=" field ] quoted_string ;
+regex_cmd        = "regex" ( quoted_string | field ( "=" | "!=" ) quoted_string ) ;
+replace_cmd      = "replace" replace_pair { "," replace_pair } [ "in" ident_list ] ;
+replace_pair     = ( quoted_string | ident | number ) "with" ( quoted_string | ident | number ) ;
 
 (* ─── BIN command (bucketing) ─── *)
 
@@ -110,6 +133,8 @@ bin_cmd          = "bin" field [ "span" "=" span_value ] [ "as" ident ] ;
 
 timechart_cmd    = "timechart" [ "span" "=" span_value ] agg_list
                    [ "by" ident_list ] ;
+chart_cmd        = "chart" agg_list [ "over" field [ "by" field ]
+                   | "by" field [ [ "," ] field ] ] ;
 
 (* ─── TOP / RARE / RANK ─── *)
 
@@ -141,6 +166,15 @@ subsearch        = "[" ( query | cte_ref ) "]" ;
 (* ─── APPEND command ─── *)
 
 append_cmd       = "append" subsearch ;
+appendcols_cmd   = "appendcols" { appendcols_option } subsearch ;
+appendcols_option = ( "override" "=" ( "true" | "false" ) )
+                  | ( ( "maxout" | "maxtime" | "timeout" ) "=" number ) ;
+appendpipe_cmd   = "appendpipe" [ "run_in_preview" "=" ( "true" | "false" ) ] subsearch ;
+multisearch_cmd  = "multisearch" { subsearch } ;
+union_cmd        = "union" { union_option } ( union_source | subsearch )
+                   { ","? ( union_source | subsearch ) } ;
+union_option     = ( "maxout" | "maxtime" | "timeout" ) "=" number ;
+union_source     = field | quoted_string ;
 
 (* ─── TRANSACTION command ─── *)
 
@@ -152,6 +186,7 @@ transaction_cmd  = "transaction" field
 (* ─── XYSERIES command ─── *)
 
 xyseries_cmd     = "xyseries" field field field ;
+untable_cmd      = "untable" field field field ;
 
 (* ─── Materialized views ─── *)
 
@@ -165,28 +200,78 @@ dropview_cmd     = "dropview" quoted_string ;
 (* ─── Exploration commands ─── *)
 
 glimpse_cmd      = "glimpse" [ number ] ;
-describe_cmd     = "describe" [ field ] ;
+describe_cmd     = "describe" ;
+use_cmd          = "use" ( ident | "@" ident [ "/" ident ] ) ;
+outliers_cmd     = "outliers" "field" "=" field
+                   [ "method" "=" ( "iqr" | "zscore" | "mad" ) ]
+                   [ "threshold" "=" number ] ;
+compare_cmd      = "compare" [ "previous" ] span_value ;
+patterns_cmd     = "patterns" [ "field" "=" field ]
+                   [ "max_templates" "=" number ]
+                   [ "similarity" "=" number ] ;
+trace_cmd        = "trace" [ "trace_id" "=" field ]
+                   [ "span_id" "=" field ]
+                   [ "parent_id" "=" field ] ;
 
 (* ─── Data transformation commands ─── *)
 
-tee_cmd          = "tee" quoted_string query ;
-rollup_cmd       = "rollup" field [ "span" "=" span_value ] agg_list
+tee_cmd          = "tee" quoted_string ;
+rollup_cmd       = "rollup" span_value { "," span_value }
                    [ "by" ident_list ] ;
-sessionize_cmd   = "sessionize" [ "maxspan" "=" span_value ]
-                   [ "maxpause" "=" span_value ] [ "by" ident_list ] ;
+sessionize_cmd   = "sessionize" [ "maxpause" "=" span_value ]
+                   [ "by" ident_list ] ;
 
 (* ─── Correlation / topology ─── *)
 
-correlate_cmd    = "correlate" field [ "by" ident_list ] ;
-topology_cmd     = "topology" field field [ "maxdepth" "=" number ] ;
+correlate_cmd    = "correlate" field field
+                   [ "method" "=" ( "pearson" | "spearman" ) ] ;
+topology_cmd     = "topology" [ "source_field" "=" field ]
+                   [ "dest_field" "=" field ]
+                   [ "weight_field" "=" field ]
+                   [ "max_nodes" "=" number ] ;
 
 (* ─── Structured data commands ─── *)
 
-unpack_json_cmd  = "unpack_json" [ "field" "=" field ] [ "prefix" "=" ident ] ;
-unpack_logfmt_cmd = "unpack_logfmt" [ "field" "=" field ] [ "prefix" "=" ident ] ;
-json_cmd         = "json" [ "field" "=" field ] ;
-unroll_cmd       = "unroll" field ;
-pack_json_cmd    = "pack_json" ident_list [ "as" ident ] ;
+unpack_cmd       = unpack_format { unpack_option }
+                 | "unpack_pattern" quoted_string { unpack_option } ;
+unpack_format    = "unpack_json" | "unpack_logfmt" | "unpack_syslog"
+                 | "unpack_combined" | "unpack_clf" | "unpack_nginx_error"
+                 | "unpack_cef" | "unpack_kv" | "unpack_docker"
+                 | "unpack_redis" | "unpack_apache_error" | "unpack_postgres"
+                 | "unpack_mysql_slow" | "unpack_haproxy" | "unpack_leef"
+                 | "unpack_w3c" ;
+unpack_option    = "from" field
+                 | "fields" "(" ident_list ")"
+                 | "prefix" ( ident | quoted_string )
+                 | "keep_original"
+                 | "delim" "=" quoted_string
+                 | "assign" "=" quoted_string
+                 | "quote" "=" quoted_string
+                 | "header" "=" quoted_string ;
+json_cmd         = "json" { json_option } [ json_path_list ] ;
+json_option      = "field" "=" field
+                 | "path" "=" quoted_string [ "as" ident ]
+                 | "paths" "=" quoted_string ;
+json_path_list   = json_path [ "as" ident ] { "," json_path [ "as" ident ] } ;
+json_path        = ident | glob ;
+unroll_cmd       = "unroll" [ "field" "=" ] field ;
+mvexpand_cmd     = ( "mvexpand" | "expand" ) [ "limit" "=" number ] field [ "limit" "=" number ] ;
+makeresults_cmd  = "makeresults" [ number ]
+                   { "count" "=" number
+                   | "annotate" "=" ( "true" | "false" )
+                   | "splunk_server" "=" value
+                   | "splunk_server_group" "=" value
+                   | "format" "=" ( "csv" | "json" )
+                   | "data" "=" quoted_string } ;
+makemv_cmd       = "makemv" [ ( "delim" | "tokenizer" ) "=" quoted_string ]
+                   [ "allowempty" "=" ( "true" | "false" ) ] [ "setsv" "=" ( "true" | "false" ) ] field ;
+mvcombine_cmd    = "mvcombine" [ "delim" "=" quoted_string ] field ;
+nomv_cmd         = "nomv" field ;
+fieldformat_cmd  = "fieldformat" field "=" expr ;
+capability_cmd   = ( "addinfo" | "convert" | "fieldsummary" | "flatten" | "iplocation"
+                 | "tags" | "typer" | "thru" | "timewrap" | "tstats" | "mstats" )
+                    { ident | quoted_string | number | "=" | "," | "*" | "(" | ")" } ;
+pack_json_cmd    = "pack_json" [ ident_list ] "into" ident ;
 
 (* ─── Grouping / bucketing ─── *)
 
@@ -208,30 +293,37 @@ running_cmd      = "running" agg_list [ "by" ident_list ] ;
 
 (* ─── Enrichment / lookup ─── *)
 
-enrich_cmd       = "enrich" ident "on" field ;
-lookup_cmd       = "lookup" ident field [ "as" ident ] ;
+enrich_cmd       = "enrich" agg_list [ "by" ident_list ] ;
+lookup_cmd       = "lookup" ident "on" field ;
 
 (* ─── Parsing ─── *)
 
-parse_cmd        = "parse" field quoted_string "as" ident_list ;
-explode_cmd      = "explode" field [ "delim" "=" quoted_string ] ;
-pack_cmd         = "pack" ident_list [ "as" ident ] ;
+parse_cmd        = "parse" ident "(" field [ "," quoted_string ] ")"
+                   [ "as" ident ] [ "extract" "(" ident_list ")" ] [ "if_missing" ] ;
+explode_cmd      = "explode" ident_list [ "as" ident ] ;
+pack_cmd         = "pack" [ ident_list ] "into" ident ;
 
 (* ─── Analytics shortcuts ─── *)
 
-latency_cmd      = "latency" [ field ] [ "by" ident_list ]
-                   [ "percentiles" "=" number_list ] ;
-errors_cmd       = "errors" [ field ] [ "by" ident_list ] ;
-rate_cmd         = "rate" [ field ] [ "span" "=" span_value ]
-                   [ "by" ident_list ] ;
-percentiles_cmd  = "percentiles" field { "," field } [ "by" ident_list ]
-                   [ "p" "=" number_list ] ;
+latency_cmd      = "latency" field "every" span_value [ "by" ident_list ]
+                   [ "compute" latency_agg_list ] ;
+latency_agg_list = ident { "," ident } ;
+errors_cmd       = "errors" [ "by" ident_list ] [ "compute" agg_list ] ;
+rate_cmd         = "rate" [ "per" span_value ] [ "by" ident_list ] ;
+proportion_cmd   = "proportion" expr "as" field
+                   [ "every" span_value ] [ "by" ident_list ] ;
+impact_cmd       = "impact" [ agg_expr ] "by" ident_list ;
+baseline_cmd     = "baseline" field "window" "=" number [ "by" ident_list ] ;
+changes_cmd      = "changes" field [ "by" ident_list ] ;
+exemplars_cmd    = "exemplars" [ number ] [ "by" ident_list ] ;
+percentiles_cmd  = "percentiles" field [ "by" ident_list ] ;
 slowest_cmd      = "slowest" [ number ] [ field ] [ "by" ident_list ] ;
 
 (* ─── Expressions ─── *)
-(* Operator precedence (low → high): OR, AND, NOT, comparison, +/-, *, unary *)
+(* Operator precedence (low → high): XOR, OR, AND, NOT, comparison, +/-, *, unary *)
 
-expr             = or_expr ;
+expr             = xor_expr ;
+xor_expr         = or_expr { "xor" or_expr } ;
 or_expr          = and_expr { "or" and_expr } ;
 and_expr         = not_expr { "and" not_expr } ;
 not_expr         = [ "not" ] comparison ;
@@ -256,18 +348,20 @@ bool_value       = "true" | "false" ;
 null_value       = "null" ;
 number           = [ "-" ] digit { digit } [ "." digit { digit } ] ;
 quoted_string    = '"' { char | escape_seq } '"' ;
+quoted_ident     = "'" { char | ident_escape_seq } "'" ;
 escape_seq       = "\" ( '"' | "\" | "n" | "t" | "r" ) ;
+ident_escape_seq = "\" ( "'" | "\" ) ;
 
 (* ─── Identifiers ─── *)
 
 ident            = ( letter | "_" ) { letter | digit | "_" | "-" | "." | ":" } ;
-field            = ident ;
+field            = ident | quoted_ident ;
 glob             = ident_with_star ;
 ident_with_star  = ( letter | "_" | "*" ) { letter | digit | "_" | "-" | "." | "*" | "?" } ;
 
 (* ─── Lists ─── *)
 
-ident_list       = ident { "," ident } ;
+ident_list       = field { "," field } ;
 expr_list        = expr { "," expr } ;
 number_list      = number { "," number } ;
 
@@ -276,6 +370,8 @@ number_list      = number { "," number } ;
 span_value       = number span_unit ;
 span_unit        = "s" | "sec" | "m" | "min" | "h" | "hr" | "d" | "w" | "mon" ;
 duration_value   = number span_unit ;
+duration_literal = [ "+" | "-" ] digit { digit } span_unit [ "@" snap_unit ] ;
+snap_unit        = "s" | "m" | "h" | "d" | "w" | "w0" | "w1" | "w2" | "w3" | "w4" | "w5" | "w6" ;
 
 (* ─── Character classes ─── *)
 

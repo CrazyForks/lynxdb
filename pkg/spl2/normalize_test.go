@@ -46,6 +46,16 @@ func TestNormalizeQuery(t *testing.T) {
 		{name: "index=logs* glob", input: "index=logs*", want: "FROM logs*"},
 		{name: "index=logs* with pipe", input: "index=logs* | stats count by source", want: "FROM logs* | stats count by source"},
 		{name: "index=logs* with search", input: "index=logs* level=error", want: "FROM logs* | search level=error"},
+		{name: "index with earliest", input: "index=nginx earliest=-5m", want: "FROM nginx[-5m]"},
+		{name: "index with earliest latest now", input: "index=nginx earliest=-5m latest=now", want: "FROM nginx[-5m..now]"},
+		{name: "index with earliest latest now function", input: "index=nginx earliest=-5m latest=now()", want: "FROM nginx[-5m..now]"},
+		{name: "index with time modifiers and search", input: "index=nginx earliest=-4h latest=-2h status=500", want: "FROM nginx[-4h..-2h] | search status=500"},
+		{name: "index with daysago", input: "index=nginx daysago=7", want: "FROM nginx[-7d]"},
+		{name: "index with hoursago and endhoursago", input: "index=nginx hoursago=4 endhoursago=2 status=500", want: "FROM nginx[-4h..-2h] | search status=500"},
+		{name: "index with minutesago", input: "index=nginx minutesago=30 | stats count", want: "FROM nginx[-30m] | stats count"},
+		{name: "index with default starttime", input: `index=nginx starttime="03/23/2025:13:00:00"`, want: `FROM nginx | where _time >= "2025-03-23T13:00:00Z"`},
+		{name: "index with default starttime endtime", input: `index=nginx starttime="03/23/2025:13:00:00" endtime="03/23/2025:14:00:00"`, want: `FROM nginx | where _time >= "2025-03-23T13:00:00Z" AND _time < "2025-03-23T14:00:00Z"`},
+		{name: "index with custom timeformat", input: `index=nginx timeformat="%Y-%m-%d" starttime="2025-03-01" endtime="2025-03-02" level=error`, want: `FROM nginx | where _time >= "2025-03-01T00:00:00Z" AND _time < "2025-03-02T00:00:00Z" | search level=error`},
 
 		// index IN (...) rewriting
 		{name: "index IN quoted", input: `index IN ("nginx", "postgres")`, want: "FROM nginx, postgres"},
@@ -76,6 +86,10 @@ func TestNormalizeQuery(t *testing.T) {
 		{name: "source=nginx with known cmd", input: "source=nginx stats count", want: `FROM * | where _source="nginx" | stats count`},
 		{name: "SOURCE=nginx uppercase", input: "SOURCE=nginx | stats count", want: `FROM * | where _source="nginx" | stats count`},
 		{name: "source=quoted", input: `source="my-app" | stats count`, want: `FROM * | where _source="my-app" | stats count`},
+
+		// Search-prefix time modifiers use the default source.
+		{name: "earliest latest prefix", input: "earliest=-1h latest=now level=error", want: "FROM main[-1h..now] | search level=error"},
+		{name: "deprecated time prefix", input: "hoursago=2 level=error", want: "FROM main[-2h] | search level=error"},
 	}
 
 	for _, tt := range tests {
@@ -88,6 +102,66 @@ func TestNormalizeQuery(t *testing.T) {
 	}
 }
 
+func TestNormalizeQueryWithRewrites(t *testing.T) {
+	now := time.Date(2025, 3, 23, 14, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name       string
+		input      string
+		wantQuery  string
+		wantReason string
+	}{
+		{
+			name:       "freehand search",
+			input:      "error",
+			wantQuery:  "FROM main | search error",
+			wantReason: "freehand-search",
+		},
+		{
+			name:       "spl index",
+			input:      "index=nginx earliest=-1h error",
+			wantQuery:  "FROM nginx[-1h] | search error",
+			wantReason: "spl-index",
+		},
+		{
+			name:       "time modifier default source",
+			input:      "earliest=-1h level=error",
+			wantQuery:  "FROM main[-1h] | search level=error",
+			wantReason: "time-modifier",
+		},
+		{
+			name:       "pipe default source",
+			input:      "| stats count",
+			wantQuery:  "FROM main | stats count",
+			wantReason: "default-source",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, rewrites := NormalizeQueryWithRewritesNow(tt.input, now)
+			if got != tt.wantQuery {
+				t.Fatalf("normalized: got %q, want %q", got, tt.wantQuery)
+			}
+			if len(rewrites) != 1 {
+				t.Fatalf("rewrites: got %d, want 1", len(rewrites))
+			}
+			rw := rewrites[0]
+			if rw.Before != tt.input || rw.After != tt.wantQuery || rw.Reason != tt.wantReason {
+				t.Fatalf("rewrite: got %#v, want before=%q after=%q reason=%q", rw, tt.input, tt.wantQuery, tt.wantReason)
+			}
+		})
+	}
+
+	got, rewrites := NormalizeQueryWithRewritesNow("FROM main | stats count", now)
+	if got != "FROM main | stats count" {
+		t.Fatalf("unchanged normalized: got %q", got)
+	}
+	if len(rewrites) != 0 {
+		t.Fatalf("unchanged rewrites: got %#v, want none", rewrites)
+	}
+}
+
 func TestIsKnownCommand(t *testing.T) {
 	if !isKnownCommand("search") {
 		t.Error("expected 'search' to be a known command")
@@ -97,6 +171,9 @@ func TestIsKnownCommand(t *testing.T) {
 	}
 	if isKnownCommand("level") {
 		t.Error("'level' should not be a known command")
+	}
+	if isKnownCommand("limit") {
+		t.Error("'limit' is an option keyword, not a standalone command")
 	}
 	if isKnownCommand("") {
 		t.Error("empty string should not be a known command")
@@ -149,6 +226,61 @@ func TestResolveTimeLiterals_Between(t *testing.T) {
 			}
 			if !strings.Contains(got, "\" and \"") {
 				t.Errorf("expected 'and' with quoted timestamps, got: %s", got)
+			}
+		})
+	}
+}
+
+func TestNormalizeQuery_IndexTimeModifiers(t *testing.T) {
+	now := time.Date(2025, 3, 23, 14, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "index time range",
+			input: `index=nginx _index_earliest=-1h _index_latest=now`,
+			want:  `FROM nginx | where _indextime BETWEEN "2025-03-23T13:00:00Z" AND "2025-03-23T14:00:00Z"`,
+		},
+		{
+			name:  "index time range with event range and search",
+			input: `index=nginx earliest=-4h latest=-2h _index_earliest=-1h _index_latest=now status=500`,
+			want:  `FROM nginx[-4h..-2h] | where _indextime BETWEEN "2025-03-23T13:00:00Z" AND "2025-03-23T14:00:00Z" | search status=500`,
+		},
+		{
+			name:  "index earliest only",
+			input: `index=nginx _index_earliest=-30m | stats count`,
+			want:  `FROM nginx | where _indextime >= "2025-03-23T13:30:00Z" | stats count`,
+		},
+		{
+			name:  "index latest only",
+			input: `index=nginx _index_latest=now() | stats count`,
+			want:  `FROM nginx | where _indextime <= "2025-03-23T14:00:00Z" | stats count`,
+		},
+		{
+			name:  "default source index time range",
+			input: `_index_earliest=-1h _index_latest=now level=error`,
+			want:  `FROM main | where _indextime BETWEEN "2025-03-23T13:00:00Z" AND "2025-03-23T14:00:00Z" | search level=error`,
+		},
+		{
+			name:  "epoch earliest uses where predicate",
+			input: `index=nginx earliest=1 latest=now`,
+			want:  `FROM nginx | where _time BETWEEN "1" AND "2025-03-23T14:00:00Z"`,
+		},
+		{
+			name:  "latest only uses where predicate",
+			input: `index=nginx latest=now level=error`,
+			want:  `FROM nginx | where _time <= "2025-03-23T14:00:00Z" | search level=error`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeQueryWithNow(tt.input, now)
+			if got != tt.want {
+				t.Fatalf("NormalizeQueryWithNow(%q) = %q, want %q", tt.input, got, tt.want)
 			}
 		})
 	}

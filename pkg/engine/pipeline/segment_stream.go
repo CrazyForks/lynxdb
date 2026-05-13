@@ -3,7 +3,6 @@ package pipeline
 import (
 	"context"
 	"fmt"
-	"path"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
@@ -62,7 +61,9 @@ type SegmentStreamHints struct {
 
 	// Multi-source fields for wildcard/list queries.
 	SourceIndices      []string // from parser: FROM a, b, c
+	SourceIncludeGlobs []string // from parser: FROM logs*, api/**
 	SourceGlob         string   // from parser: FROM logs*
+	SourceExcludeGlobs []string // from parser: FROM logs*,!debug*
 	SourceScopeType    string   // from optimizer: "all", "single", "list", "glob"
 	SourceScopeSources []string // resolved source names for scope
 	SourceScopePattern string   // glob pattern for scope
@@ -831,6 +832,9 @@ func translateBitmap(src *roaring.Bitmap, delta uint32) *roaring.Bitmap {
 // query's source scope. Returns true if the segment should be scanned.
 func (s *SegmentStreamIterator) matchesStreamSourceScope(segIndex string) bool {
 	h := s.hints
+	if streamSourceMatchesAnyGlob(segIndex, h.SourceExcludeGlobs) {
+		return false
+	}
 
 	// Optimizer-resolved source scope.
 	switch h.SourceScopeType {
@@ -864,9 +868,7 @@ func (s *SegmentStreamIterator) matchesStreamSourceScope(segIndex string) bool {
 		return false
 	case "glob":
 		if h.SourceScopePattern != "" {
-			matched, _ := path.Match(h.SourceScopePattern, segIndex)
-
-			return matched
+			return spl2.MatchGlob(h.SourceScopePattern, segIndex, false)
 		}
 	}
 
@@ -877,16 +879,18 @@ func (s *SegmentStreamIterator) matchesStreamSourceScope(segIndex string) bool {
 				return true
 			}
 		}
-
-		return false
+		if len(h.SourceIncludeGlobs) == 0 {
+			return false
+		}
+	}
+	if streamSourceMatchesAnyGlob(segIndex, h.SourceIncludeGlobs) {
+		return true
 	}
 	if h.SourceGlob != "" {
 		if h.SourceGlob == "*" {
 			return true
 		}
-		matched, _ := path.Match(h.SourceGlob, segIndex)
-
-		return matched
+		return spl2.MatchGlob(h.SourceGlob, segIndex, false)
 	}
 
 	// Single IndexName exact match.
@@ -896,6 +900,16 @@ func (s *SegmentStreamIterator) matchesStreamSourceScope(segIndex string) bool {
 
 	// No filter — scan everything.
 	return true
+}
+
+func streamSourceMatchesAnyGlob(source string, patterns []string) bool {
+	for _, pattern := range patterns {
+		if spl2.MatchGlob(pattern, source, false) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (s *SegmentStreamIterator) shouldSkipByTime(seg *SegmentSource) bool {

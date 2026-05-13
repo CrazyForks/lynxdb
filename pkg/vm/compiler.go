@@ -2,6 +2,7 @@ package vm
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
@@ -305,6 +306,15 @@ func (c *compiler) compileBinary(e *spl2.BinaryExpr) error {
 		c.prog.PatchUint16(jumpTrue+1, uint16(trueLabel))
 		c.prog.PatchUint16(jumpEnd+1, uint16(endLabel))
 
+	case "xor":
+		if err := c.compileExpr(e.Left); err != nil {
+			return err
+		}
+		if err := c.compileExpr(e.Right); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpXor)
+
 	default:
 		return fmt.Errorf("unknown binary operator: %s", e.Op)
 	}
@@ -403,6 +413,8 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 		return c.compileIf(e)
 	case "case":
 		return c.compileCase(e)
+	case "validate":
+		return c.compileValidate(e)
 	case "coalesce":
 		return c.compileCoalesce(e)
 	case "null":
@@ -410,6 +422,32 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return fmt.Errorf("null expects 0 arguments, got %d", len(e.Args))
 		}
 		c.prog.EmitOp(OpConstNull)
+	case "nullif":
+		if len(e.Args) != 2 {
+			return fmt.Errorf("nullif expects 2 arguments, got %d", len(e.Args))
+		}
+		return c.compileNullIf(e.Args[0], e.Args[1])
+	case "searchmatch":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("searchmatch expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpSearchMatch)
+	case "in":
+		if len(e.Args) < 2 {
+			return fmt.Errorf("in expects at least 2 arguments, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		for _, arg := range e.Args[1:] {
+			if err := c.compileExpr(arg); err != nil {
+				return err
+			}
+		}
+		c.prog.EmitOp(OpInList, len(e.Args)-1)
 	case "isnull":
 		if len(e.Args) != 1 {
 			return fmt.Errorf("isnull expects 1 argument, got %d", len(e.Args))
@@ -426,14 +464,22 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpIsNotNull)
-	case "tonumber":
+	case "tonumber", "todouble":
 		if len(e.Args) != 1 {
-			return fmt.Errorf("tonumber expects 1 argument, got %d", len(e.Args))
+			return fmt.Errorf("%s expects 1 argument, got %d", name, len(e.Args))
 		}
 		if err := c.compileExpr(e.Args[0]); err != nil {
 			return err
 		}
 		c.prog.EmitOp(OpToFloat)
+	case "toint":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("toint expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpToInt)
 	case "tostring":
 		if len(e.Args) != 1 {
 			return fmt.Errorf("tostring expects 1 argument, got %d", len(e.Args))
@@ -442,6 +488,35 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpToString)
+	case "tobool":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("tobool expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpToBool)
+	case "printf":
+		if len(e.Args) < 1 {
+			return fmt.Errorf("printf expects at least 1 argument, got %d", len(e.Args))
+		}
+		for _, arg := range e.Args {
+			if err := c.compileExpr(arg); err != nil {
+				return err
+			}
+		}
+		c.prog.EmitOp(OpPrintf, len(e.Args))
+	case "ipmask":
+		if len(e.Args) != 2 {
+			return fmt.Errorf("ipmask expects 2 arguments, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		if err := c.compileExpr(e.Args[1]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpIPMask)
 	case "round":
 		if len(e.Args) < 1 || len(e.Args) > 2 {
 			return fmt.Errorf("round expects 1-2 arguments, got %d", len(e.Args))
@@ -466,6 +541,81 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpLn)
+	case "log":
+		if len(e.Args) < 1 || len(e.Args) > 2 {
+			return fmt.Errorf("log expects 1-2 arguments, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		if len(e.Args) == 1 {
+			idx := c.prog.AddConstant(event.FloatValue(10))
+			c.prog.EmitOp(OpConstFloat, idx)
+			c.prog.EmitOp(OpLog)
+		} else {
+			if err := c.compileExpr(e.Args[1]); err != nil {
+				return err
+			}
+			c.prog.EmitOp(OpLog)
+		}
+	case "exp":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("exp expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpExp)
+	case "pow":
+		if len(e.Args) != 2 {
+			return fmt.Errorf("pow expects 2 arguments, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		if err := c.compileExpr(e.Args[1]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpPow)
+	case "acos":
+		return c.compileUnaryMath(e, mathFnAcos)
+	case "acosh":
+		return c.compileUnaryMath(e, mathFnAcosh)
+	case "asin":
+		return c.compileUnaryMath(e, mathFnAsin)
+	case "asinh":
+		return c.compileUnaryMath(e, mathFnAsinh)
+	case "atan":
+		return c.compileUnaryMath(e, mathFnAtan)
+	case "atanh":
+		return c.compileUnaryMath(e, mathFnAtanh)
+	case "cos":
+		return c.compileUnaryMath(e, mathFnCos)
+	case "cosh":
+		return c.compileUnaryMath(e, mathFnCosh)
+	case "sin":
+		return c.compileUnaryMath(e, mathFnSin)
+	case "sinh":
+		return c.compileUnaryMath(e, mathFnSinh)
+	case "tan":
+		return c.compileUnaryMath(e, mathFnTan)
+	case "tanh":
+		return c.compileUnaryMath(e, mathFnTanh)
+	case "atan2":
+		return c.compileBinaryMath(e, mathFnAtan2)
+	case "hypot":
+		return c.compileBinaryMath(e, mathFnHypot)
+	case "pi":
+		if len(e.Args) != 0 {
+			return fmt.Errorf("pi expects 0 arguments, got %d", len(e.Args))
+		}
+		idx := c.prog.AddConstant(event.FloatValue(math.Pi))
+		c.prog.EmitOp(OpConstFloat, idx)
+	case "random":
+		if len(e.Args) != 0 {
+			return fmt.Errorf("random expects 0 arguments, got %d", len(e.Args))
+		}
+		c.prog.EmitOp(OpRandom)
 	case "abs":
 		if len(e.Args) != 1 {
 			return fmt.Errorf("abs expects 1 argument, got %d", len(e.Args))
@@ -523,13 +673,17 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 		}
 		c.prog.EmitOp(OpToUpper)
 	case "substr":
-		if len(e.Args) != 3 {
-			return fmt.Errorf("substr expects 3 arguments, got %d", len(e.Args))
+		if len(e.Args) < 2 || len(e.Args) > 3 {
+			return fmt.Errorf("substr expects 2-3 arguments, got %d", len(e.Args))
 		}
 		for _, arg := range e.Args {
 			if err := c.compileExpr(arg); err != nil {
 				return err
 			}
+		}
+		if len(e.Args) == 2 {
+			idx := c.prog.AddConstant(event.IntValue(math.MaxInt32))
+			c.prog.EmitOp(OpConstInt, idx)
 		}
 		c.prog.EmitOp(OpSubstr)
 	case "match":
@@ -591,6 +745,20 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpReplace, regIdx)
+	case "trim":
+		return c.compileTrim(e, OpTrim)
+	case "ltrim":
+		return c.compileTrim(e, OpLTrim)
+	case "rtrim":
+		return c.compileTrim(e, OpRTrim)
+	case "urldecode":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("urldecode expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpURLDecode)
 	case "split":
 		if len(e.Args) != 2 {
 			return fmt.Errorf("split expects 2 arguments, got %d", len(e.Args))
@@ -613,21 +781,38 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpStrftime)
+	case "strptime":
+		if len(e.Args) != 2 {
+			return fmt.Errorf("strptime expects 2 arguments, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		if err := c.compileExpr(e.Args[1]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpStrptime)
+	case "md5":
+		return c.compileHash(e, OpMD5)
+	case "sha1":
+		return c.compileHash(e, OpSHA1)
+	case "sha256":
+		return c.compileHash(e, OpSHA256)
+	case "sha512":
+		return c.compileHash(e, OpSHA512)
 	case "max":
-		if len(e.Args) != 2 {
-			return fmt.Errorf("max expects 2 arguments, got %d", len(e.Args))
+		if len(e.Args) < 2 {
+			return fmt.Errorf("max expects at least 2 arguments, got %d", len(e.Args))
 		}
-
-		return c.compileMaxMin(e.Args[0], e.Args[1], true)
+		return c.compileMaxMin(e.Args, true)
 	case "min":
-		if len(e.Args) != 2 {
-			return fmt.Errorf("min expects 2 arguments, got %d", len(e.Args))
+		if len(e.Args) < 2 {
+			return fmt.Errorf("min expects at least 2 arguments, got %d", len(e.Args))
 		}
-
-		return c.compileMaxMin(e.Args[0], e.Args[1], false)
-	case "json_extract":
+		return c.compileMaxMin(e.Args, false)
+	case "json_extract", "spath":
 		if len(e.Args) != 2 {
-			return fmt.Errorf("json_extract expects 2 arguments, got %d", len(e.Args))
+			return fmt.Errorf("%s expects 2 arguments, got %d", name, len(e.Args))
 		}
 		// Compile field (first arg), then path (second arg).
 		if err := c.compileExpr(e.Args[0]); err != nil {
@@ -815,6 +1000,30 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpIsInt)
+	case "isbool":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("isbool expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpIsBool)
+	case "isarray":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("isarray expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpIsArray)
+	case "isobject":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("isobject expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpIsObject)
 	case "isstr":
 		// In schema-on-read, all non-null values are strings.
 		if len(e.Args) != 1 {
@@ -824,11 +1033,19 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpIsNotNull)
+	case "typeof":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("typeof expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpTypeOf)
 
 	// LIKE as eval function (already case-insensitive).
-	case "ilike":
+	case "like", "ilike":
 		if len(e.Args) != 2 {
-			return fmt.Errorf("ilike expects 2 arguments, got %d", len(e.Args))
+			return fmt.Errorf("%s expects 2 arguments, got %d", name, len(e.Args))
 		}
 		if err := c.compileExpr(e.Args[0]); err != nil {
 			return err
@@ -909,6 +1126,34 @@ func (c *compiler) compileCase(e *spl2.FuncCallExpr) error {
 	return nil
 }
 
+func (c *compiler) compileValidate(e *spl2.FuncCallExpr) error {
+	if len(e.Args) == 0 || len(e.Args)%2 != 0 {
+		return fmt.Errorf("validate expects condition/value pairs, got %d arguments", len(e.Args))
+	}
+	var jumpEnds []int
+	for i := 0; i < len(e.Args); i += 2 {
+		if err := c.compileExpr(e.Args[i]); err != nil {
+			return err
+		}
+		jumpTrue := c.prog.EmitOp(OpJumpIfTrue, 0)
+		if err := c.compileExpr(e.Args[i+1]); err != nil {
+			return err
+		}
+		jumpEnd := c.prog.EmitOp(OpJump, 0)
+		jumpEnds = append(jumpEnds, jumpEnd)
+		nextCheck := c.prog.Len()
+		c.prog.PatchUint16(jumpTrue+1, uint16(nextCheck))
+	}
+	c.prog.EmitOp(OpConstNull)
+
+	endPos := c.prog.Len()
+	for _, je := range jumpEnds {
+		c.prog.PatchUint16(je+1, uint16(endPos))
+	}
+
+	return nil
+}
+
 func (c *compiler) compileCoalesce(e *spl2.FuncCallExpr) error {
 	for _, arg := range e.Args {
 		if err := c.compileExpr(arg); err != nil {
@@ -920,31 +1165,98 @@ func (c *compiler) compileCoalesce(e *spl2.FuncCallExpr) error {
 	return nil
 }
 
-func (c *compiler) compileMaxMin(a, b spl2.Expr, isMax bool) error {
-	// max(a, b) = IF(a > b, a, b)
+func (c *compiler) compileNullIf(a, b spl2.Expr) error {
 	if err := c.compileExpr(a); err != nil {
 		return err
 	}
 	if err := c.compileExpr(b); err != nil {
 		return err
 	}
-	if isMax {
-		c.prog.EmitOp(OpGt)
-	} else {
-		c.prog.EmitOp(OpLt)
-	}
+	c.prog.EmitOp(OpEq)
 	jumpFalse := c.prog.EmitOp(OpJumpIfFalse, 0)
-	if err := c.compileExpr(a); err != nil {
-		return err
-	}
+	c.prog.EmitOp(OpConstNull)
 	jumpEnd := c.prog.EmitOp(OpJump, 0)
 	elsePos := c.prog.Len()
-	if err := c.compileExpr(b); err != nil {
+	if err := c.compileExpr(a); err != nil {
 		return err
 	}
 	endPos := c.prog.Len()
 	c.prog.PatchUint16(jumpFalse+1, uint16(elsePos))
 	c.prog.PatchUint16(jumpEnd+1, uint16(endPos))
+
+	return nil
+}
+
+func (c *compiler) compileTrim(e *spl2.FuncCallExpr, op Opcode) error {
+	if len(e.Args) < 1 || len(e.Args) > 2 {
+		return fmt.Errorf("%s expects 1-2 arguments, got %d", strings.ToLower(e.Name), len(e.Args))
+	}
+	if err := c.compileExpr(e.Args[0]); err != nil {
+		return err
+	}
+	if len(e.Args) == 2 {
+		if err := c.compileExpr(e.Args[1]); err != nil {
+			return err
+		}
+	} else {
+		idx := c.prog.AddConstant(event.StringValue(" \t\r\n"))
+		c.prog.EmitOp(OpConstStr, idx)
+	}
+	c.prog.EmitOp(op)
+
+	return nil
+}
+
+func (c *compiler) compileHash(e *spl2.FuncCallExpr, op Opcode) error {
+	if len(e.Args) != 1 {
+		return fmt.Errorf("%s expects 1 argument, got %d", strings.ToLower(e.Name), len(e.Args))
+	}
+	if err := c.compileExpr(e.Args[0]); err != nil {
+		return err
+	}
+	c.prog.EmitOp(op)
+
+	return nil
+}
+
+func (c *compiler) compileUnaryMath(e *spl2.FuncCallExpr, fn int) error {
+	if len(e.Args) != 1 {
+		return fmt.Errorf("%s expects 1 argument, got %d", strings.ToLower(e.Name), len(e.Args))
+	}
+	if err := c.compileExpr(e.Args[0]); err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpMathUnary, fn)
+
+	return nil
+}
+
+func (c *compiler) compileBinaryMath(e *spl2.FuncCallExpr, fn int) error {
+	if len(e.Args) != 2 {
+		return fmt.Errorf("%s expects 2 arguments, got %d", strings.ToLower(e.Name), len(e.Args))
+	}
+	if err := c.compileExpr(e.Args[0]); err != nil {
+		return err
+	}
+	if err := c.compileExpr(e.Args[1]); err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpMathBinary, fn)
+
+	return nil
+}
+
+func (c *compiler) compileMaxMin(args []spl2.Expr, isMax bool) error {
+	for _, arg := range args {
+		if err := c.compileExpr(arg); err != nil {
+			return err
+		}
+	}
+	if isMax {
+		c.prog.EmitOp(OpMax, len(args))
+	} else {
+		c.prog.EmitOp(OpMin, len(args))
+	}
 
 	return nil
 }

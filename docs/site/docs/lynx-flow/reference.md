@@ -495,11 +495,12 @@ from nginx | order by status desc, uri asc, duration_ms desc
 take <N>           -- primary limit command
 head <N>           -- alias for take
 tail <N>           -- last N rows (blocking)
+reverse           -- reverse current row order (blocking)
 ```
 
-**SPL2:** `head <N>`, `tail <N>`
+**SPL2:** `head <N>`, `tail <N>`, `reverse`
 
-`take` and `head` are streaming (stop after N rows). `tail` is blocking (must buffer all input).
+`take` and `head` are streaming (stop after N rows). `tail` and `reverse` are blocking (must buffer all input).
 
 ### rank
 
@@ -1111,12 +1112,22 @@ Used in `group compute`, `every compute`, `running`, `enrich`, `stats`, `timecha
 | `count()` | Count all rows | `count() as total` |
 | `count(<field>)` | Count non-null values | `count(user_id) as users` |
 | `sum(<field>)` | Sum of values | `sum(bytes) as total_bytes` |
+| `sumsq(<field>)` | Sum of squared values | `sumsq(duration_ms) as duration_squares` |
 | `avg(<field>)` | Average (mean) | `avg(duration_ms) as avg_latency` |
 | `min(<field>)` | Minimum | `min(duration_ms) as fastest` |
 | `max(<field>)` | Maximum | `max(duration_ms) as slowest` |
 | `dc(<field>)` | Distinct count | `dc(client_ip) as unique_clients` |
+| `estdc(<field>)` | Estimated distinct count | `estdc(client_ip) as estimated_clients` |
+| `estdc_error(<field>)` | Estimated distinct-count error ratio | `estdc_error(client_ip) as estimated_client_error` |
 | `values(<field>)` | List of distinct values | `values(level) as seen_levels` |
+| `mode(<field>)` | Most frequent value | `mode(status) as common_status` |
+| `earliest_time(<field>)` / `latest_time(<field>)` | UNIX time of first or last field value by event time | `earliest_time(status) as first_seen` |
+| `rate(<field>)` | Per-second numeric counter change | `rate(counter) as counter_rate` |
+| `per_second(<field>)` / `per_minute(<field>)` / `per_hour(<field>)` / `per_day(<field>)` | Timechart rate scaling | `per_minute(bytes) as bytes_per_minute` |
 | `stdev(<field>)` | Standard deviation | `stdev(duration_ms) as stdev_latency` |
+| `stdevp(<field>)` | Population standard deviation | `stdevp(duration_ms) as stdevp_latency` |
+| `var(<field>)` | Sample variance | `var(duration_ms) as var_latency` |
+| `varp(<field>)` | Population variance | `varp(duration_ms) as varp_latency` |
 | `perc25(<field>)` | 25th percentile | `perc25(duration_ms) as p25` |
 | `perc50(<field>)` | Median (50th pct) | `perc50(duration_ms) as median` |
 | `perc75(<field>)` | 75th percentile | `perc75(duration_ms) as p75` |
@@ -1126,7 +1137,7 @@ Used in `group compute`, `every compute`, `running`, `enrich`, `stats`, `timecha
 | `earliest(<field>)` / `first(<field>)` | First value by time | `earliest(status) as first_status` |
 | `latest(<field>)` / `last(<field>)` | Last value by time | `latest(status) as last_status` |
 
-Only the fixed percentile aggregations above are supported. Variable-percentile syntax such as `percentile(field, 99.9)` is not currently implemented.
+Generic forms such as `perc(field, 95)` and `percentile(field, 95)` normalize to the fixed percentile aggregations above when the percentile is one of the supported values. Arbitrary variable-percentile syntax such as `percentile(field, 99.9)` is not currently implemented.
 
 All aggregation functions skip null values except `count()` (no argument).
 
@@ -1247,25 +1258,50 @@ Every SPL2 command has a Lynx Flow counterpart. Both syntaxes are first-class.
 | `SORT -field` | `order by field desc` | Explicit direction |
 | `HEAD N` | `take N` | Identical |
 | `TAIL N` | `tail N` | Identical |
+| `REVERSE` | `reverse` | Identical |
 | `TOP N field` | `top N field` | Identical |
 | `RARE N field` | `rare N field` / `bottom N field` | `rare` is alias for `bottom` |
+| `CHART` | `chart` | Chart-style aggregation |
 | `DEDUP` | `dedup` | Identical |
 | `FIELDS` | `keep` | Include mode |
 | `FIELDS -` | `omit` | Exclude mode |
 | `TABLE` | `table` | Identical |
 | `RENAME` | `rename` | Identical |
 | `REX` | `parse regex(...)` | Unified parse syntax |
+| `REGEX` | `regex` | Regex filter |
+| `REPLACE` | `replace` | Field value replacement |
+| `FIELDFORMAT` | `fieldformat` | Display-only formatting |
 | `unpack_json` | `parse json(...)` | Unified parse syntax |
 | `unpack_logfmt` | `parse logfmt(...)` | Unified parse syntax |
 | `unpack_syslog` | `parse syslog(...)` | Unified parse syntax |
 | `UNROLL` | `explode` | Clearer name |
+| `MVEXPAND` | `mvexpand` / `expand` | Identical |
+| `MAKERESULTS` | `makeresults` | Generate temporary rows |
+| `MAKEMV` | `makemv` | Split single value into multivalue |
+| `MVCOMBINE` | `mvcombine` | Combine rows into multivalue |
+| `NOMV` | `nomv` | Convert multivalue to single value |
+| `ADDINFO` | `addinfo` | Parse-compatible; requires search metadata capability |
+| `CONVERT` | `convert` | Parse-compatible; requires conversion capability |
+| `FIELDSUMMARY` | `fieldsummary` | Parse-compatible; requires field profiling capability |
+| `FLATTEN` | `flatten` | Parse-compatible; requires object flattening capability |
+| `IPLOCATION` | `iplocation` | Parse-compatible; requires GeoIP capability |
+| `TAGS` | `tags` | Parse-compatible; requires tags capability |
+| `TYPER` | `typer` | Parse-compatible; requires field typing capability |
+| `THRU` | `thru` | Parse-compatible; requires pass-through capability |
+| `TIMEWRAP` | `timewrap` | Parse-compatible; requires time comparison capability |
+| `TSTATS` | `tstats` | Parse-compatible; requires accelerated stats capability |
+| `MSTATS` | `mstats` | Parse-compatible; requires metrics stats capability |
 | `PACK_JSON` | `pack ... into` | Clearer syntax |
 | `STREAMSTATS` | `running` | Clearer name |
 | `EVENTSTATS` | `enrich` | Clearer name |
 | `JOIN` | `join` | Identical |
 | `APPEND` | `append` | Identical |
+| `APPENDCOLS` | `appendcols` | Append subsearch columns by row |
+| `APPENDPIPE` | `appendpipe` | Append subpipe results |
 | `MULTISEARCH` | `multisearch` | Identical |
+| `UNION` | `union` | Merge result sets |
 | `TRANSACTION` | `transaction` | Identical |
+| `UNTABLE` | `untable` | Identical |
 | `XYSERIES` | `xyseries` | Identical |
 | `FILLNULL` | `fillnull` | Lynx Flow adds `??` operator |
 | `MATERIALIZE` | `materialize` | Identical |

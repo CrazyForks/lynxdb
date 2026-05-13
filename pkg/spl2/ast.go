@@ -46,11 +46,13 @@ func (q *Query) GetAnnotation(key string) (interface{}, bool) {
 // SourceClause represents the FROM clause.
 // It supports single sources, comma-separated lists, and glob patterns.
 type SourceClause struct {
-	Index      string           // primary source name (e.g., "idx_backend")
-	Indices    []string         // multiple sources for FROM a, b, c syntax
-	IsVariable bool             // true if $variable reference
-	IsGlob     bool             // true if pattern contains wildcards (* or ?)
-	TimeRange  *SourceTimeRange // inline time range: from nginx[-1h]
+	Index        string           // primary source name (e.g., "idx_backend")
+	Indices      []string         // multiple concrete sources for FROM a, b, c syntax
+	IncludeGlobs []string         // source include globs from FROM logs*, api/**
+	ExcludeGlobs []string         // source exclude globs from FROM logs*,!logs-debug*
+	IsVariable   bool             // true if $variable reference
+	IsGlob       bool             // true if pattern contains wildcards (* or ?)
+	TimeRange    *SourceTimeRange // inline time range: from nginx[-1h]
 }
 
 // SourceTimeRange represents an inline time range on a FROM clause.
@@ -64,7 +66,7 @@ type SourceTimeRange struct {
 // IsSingleSource returns true if this clause references exactly one source
 // (not a glob, not a multi-source list, not a variable).
 func (sc *SourceClause) IsSingleSource() bool {
-	return !sc.IsVariable && !sc.IsGlob && len(sc.Indices) == 0
+	return !sc.IsVariable && !sc.IsGlob && len(sc.Indices) == 0 && len(sc.ExcludeGlobs) == 0
 }
 
 // IsAllSources returns true if this clause means "scan all sources" (FROM *).
@@ -77,10 +79,13 @@ func (sc *SourceClause) IsAllSources() bool {
 // For multi-source (FROM a, b, c), returns the Indices slice.
 // For globs, returns nil (must be resolved against a source registry).
 func (sc *SourceClause) SourceNames() []string {
+	if sc.IsGlob || len(sc.IncludeGlobs) > 0 || len(sc.ExcludeGlobs) > 0 {
+		return nil
+	}
 	if len(sc.Indices) > 0 {
 		return sc.Indices
 	}
-	if sc.Index != "" && !sc.IsGlob {
+	if sc.Index != "" {
 		return []string{sc.Index}
 	}
 
@@ -186,6 +191,14 @@ func (c *TailCommand) String() string {
 	return fmt.Sprintf("tail %d", c.Count)
 }
 
+// ReverseCommand represents: reverse.
+type ReverseCommand struct{}
+
+func (*ReverseCommand) commandNode() {}
+func (c *ReverseCommand) String() string {
+	return "reverse"
+}
+
 // TimechartCommand represents: timechart span=<interval> <agg_funcs> [by <field>].
 type TimechartCommand struct {
 	Span         string // e.g., "5m", "1h"
@@ -198,6 +211,24 @@ func (c *TimechartCommand) String() string {
 	return fmt.Sprintf("timechart span=%s <%d aggs>", c.Span, len(c.Aggregations))
 }
 
+// ChartCommand represents: chart <agg_funcs> [OVER <row>] [BY <column>].
+type ChartCommand struct {
+	Aggregations []AggExpr
+	RowSplit     string
+	ColumnSplit  string
+}
+
+func (*ChartCommand) commandNode() {}
+func (c *ChartCommand) String() string {
+	if c.ColumnSplit != "" {
+		return fmt.Sprintf("chart <%d aggs> over %s by %s", len(c.Aggregations), c.RowSplit, c.ColumnSplit)
+	}
+	if c.RowSplit != "" {
+		return fmt.Sprintf("chart <%d aggs> by %s", len(c.Aggregations), c.RowSplit)
+	}
+	return fmt.Sprintf("chart <%d aggs>", len(c.Aggregations))
+}
+
 // RexCommand represents: rex field=<field> "<regex>".
 type RexCommand struct {
 	Field   string // field to extract from (default: _raw)
@@ -207,6 +238,56 @@ type RexCommand struct {
 func (*RexCommand) commandNode() {}
 func (c *RexCommand) String() string {
 	return fmt.Sprintf("rex field=%s %q", c.Field, c.Pattern)
+}
+
+// RegexCommand represents: regex [<field>=|<field>!=] "<pattern>".
+type RegexCommand struct {
+	Field   string
+	Pattern string
+	Negate  bool
+}
+
+func (*RegexCommand) commandNode() {}
+func (c *RegexCommand) String() string {
+	field := c.Field
+	if field == "" {
+		field = "_raw"
+	}
+	op := "="
+	if c.Negate {
+		op = "!="
+	}
+	return fmt.Sprintf("regex %s%s%q", field, op, c.Pattern)
+}
+
+// ReplaceCommand represents: | replace old WITH new [, ...] [IN field, ...].
+type ReplaceCommand struct {
+	Pairs  []ReplacePair
+	Fields []string
+}
+
+type ReplacePair struct {
+	Old string
+	New string
+}
+
+func (*ReplaceCommand) commandNode() {}
+func (c *ReplaceCommand) String() string {
+	return fmt.Sprintf("replace <%d pairs>", len(c.Pairs))
+}
+
+// FieldformatCommand represents: | fieldformat <field>=<expr>.
+type FieldformatCommand struct {
+	Field string
+	Expr  Expr
+}
+
+func (*FieldformatCommand) commandNode() {}
+func (c *FieldformatCommand) String() string {
+	if c.Expr == nil {
+		return fmt.Sprintf("fieldformat %s=<nil>", c.Field)
+	}
+	return fmt.Sprintf("fieldformat %s=%s", c.Field, c.Expr.String())
 }
 
 // FieldsCommand represents: fields <field1>, <field2>, ...
@@ -314,6 +395,34 @@ func (c *AppendCommand) String() string {
 	return "append [...]"
 }
 
+// AppendcolsCommand represents: APPENDCOLS [options] [subsearch].
+type AppendcolsCommand struct {
+	Subquery *Query
+	Override bool
+	Maxout   int
+	Maxtime  int
+	Timeout  int
+}
+
+func (*AppendcolsCommand) commandNode() {}
+func (c *AppendcolsCommand) String() string {
+	return "appendcols [...]"
+}
+
+// AppendpipeCommand represents: APPENDPIPE [run_in_preview=<bool>] [subpipe].
+type AppendpipeCommand struct {
+	Subquery     *Query
+	RunInPreview bool
+}
+
+func (*AppendpipeCommand) commandNode() {}
+func (c *AppendpipeCommand) String() string {
+	if !c.RunInPreview {
+		return "appendpipe run_in_preview=false [...]"
+	}
+	return "appendpipe [...]"
+}
+
 // MultisearchCommand represents: MULTISEARCH [search1] [search2] ...
 type MultisearchCommand struct {
 	Searches []*Query
@@ -322,6 +431,19 @@ type MultisearchCommand struct {
 func (*MultisearchCommand) commandNode() {}
 func (c *MultisearchCommand) String() string {
 	return fmt.Sprintf("multisearch <%d searches>", len(c.Searches))
+}
+
+// UnionCommand represents: UNION <dataset-or-subsearch>...
+type UnionCommand struct {
+	Branches []*Query
+	Maxout   int
+	Maxtime  int
+	Timeout  int
+}
+
+func (*UnionCommand) commandNode() {}
+func (c *UnionCommand) String() string {
+	return fmt.Sprintf("union <%d branches>", len(c.Branches))
 }
 
 // TransactionCommand represents: TRANSACTION <field> [maxspan=<dur>] [startswith=<expr>] [endswith=<expr>].
@@ -347,6 +469,18 @@ type XYSeriesCommand struct {
 func (*XYSeriesCommand) commandNode() {}
 func (c *XYSeriesCommand) String() string {
 	return fmt.Sprintf("xyseries %s %s %s", c.XField, c.YField, c.ValueField)
+}
+
+// UntableCommand represents: UNTABLE <x_field> <y_name_field> <y_data_field>.
+type UntableCommand struct {
+	XField     string
+	YNameField string
+	YDataField string
+}
+
+func (*UntableCommand) commandNode() {}
+func (c *UntableCommand) String() string {
+	return fmt.Sprintf("untable %s %s %s", c.XField, c.YNameField, c.YDataField)
 }
 
 // TopCommand represents: top [N] <field> [by <field>].
@@ -615,10 +749,10 @@ func (e *CompareExpr) String() string {
 	return fmt.Sprintf("(%s %s %s)", e.Left, e.Op, e.Right)
 }
 
-// BinaryExpr represents AND/OR.
+// BinaryExpr represents AND/OR/XOR.
 type BinaryExpr struct {
 	Left  Expr
-	Op    string // "and", "or"
+	Op    string // "and", "or", "xor"
 	Right Expr
 }
 
@@ -856,6 +990,7 @@ type UnrollCommand struct {
 	Field       string   // primary field containing JSON array to explode
 	Alias       string   // optional output field name (Lynx Flow: explode tags as tag; single-field only)
 	ExtraFields []string // additional fields for zip-expansion (multi-field explode)
+	Limit       int      // optional per-row expansion limit; 0 means unlimited
 }
 
 // AllFields returns Field followed by ExtraFields.
@@ -875,8 +1010,83 @@ func (c *UnrollCommand) String() string {
 	if c.Alias != "" {
 		return fmt.Sprintf("unroll field=%s as %s", c.Field, c.Alias)
 	}
+	if c.Limit > 0 {
+		return fmt.Sprintf("unroll field=%s limit=%d", c.Field, c.Limit)
+	}
 
 	return fmt.Sprintf("unroll field=%s", c.Field)
+}
+
+// MakeresultsCommand represents: | makeresults [count=<n>] [annotate=<bool>].
+type MakeresultsCommand struct {
+	Count              int
+	Annotate           bool
+	SplunkServer       string
+	SplunkServerGroups []string
+	Format             string
+	Data               string
+}
+
+func (*MakeresultsCommand) commandNode() {}
+func (c *MakeresultsCommand) String() string {
+	parts := []string{"makeresults"}
+	if c.Count != 1 {
+		parts = append(parts, fmt.Sprintf("count=%d", c.Count))
+	}
+	if c.Annotate {
+		parts = append(parts, "annotate=true")
+	}
+	if c.Format != "" {
+		parts = append(parts, fmt.Sprintf("format=%s", c.Format))
+	}
+	return joinStrings(parts, " ")
+}
+
+// NomvCommand represents: | nomv <field>.
+type NomvCommand struct {
+	Field string
+}
+
+func (*NomvCommand) commandNode() {}
+func (c *NomvCommand) String() string {
+	return fmt.Sprintf("nomv %s", c.Field)
+}
+
+// MakemvCommand represents: | makemv [delim=<s> | tokenizer=<re>] [allowempty=<bool>] [setsv=<bool>] <field>.
+type MakemvCommand struct {
+	Field      string
+	Delim      string
+	Tokenizer  string
+	AllowEmpty bool
+	SetSV      bool
+}
+
+func (*MakemvCommand) commandNode() {}
+func (c *MakemvCommand) String() string {
+	return fmt.Sprintf("makemv %s", c.Field)
+}
+
+// MvcombineCommand represents: | mvcombine [delim=<s>] <field>.
+type MvcombineCommand struct {
+	Field string
+	Delim string
+}
+
+func (*MvcombineCommand) commandNode() {}
+func (c *MvcombineCommand) String() string {
+	return fmt.Sprintf("mvcombine %s", c.Field)
+}
+
+// CapabilityCommand represents a parsed command that requires an optional
+// deployment capability before it can execute.
+type CapabilityCommand struct {
+	Name string
+	Args []string
+}
+
+func (*CapabilityCommand) commandNode() {}
+func (c *CapabilityCommand) String() string {
+	return fmt.Sprintf("%s <%d args>", c.Name, len(c.Args))
 }
 
 // TeeCommand represents: | tee "<destination>" — side-effect passthrough.
@@ -938,7 +1148,7 @@ func (c *TopNCommand) String() string {
 
 // ContainsGlobWildcard reports whether s contains glob wildcard characters.
 func ContainsGlobWildcard(s string) bool {
-	return strings.ContainsAny(s, "*?")
+	return strings.ContainsAny(s, "*?[{")
 }
 
 // FieldListHasGlob returns true if any field in the list contains a glob wildcard.

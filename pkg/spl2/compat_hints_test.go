@@ -25,22 +25,81 @@ func TestSplunkCompat_InputLookup(t *testing.T) {
 	}
 }
 
-func TestSplunkCompat_Chart(t *testing.T) {
-	hints := DetectCompatHints(`index=main | chart count by host`)
-	if len(hints) == 0 {
-		t.Fatal("expected hint for chart")
-	}
-	found := false
-	for _, h := range hints {
-		if h.Pattern == "chart" {
-			found = true
-			if !strings.Contains(h.Suggestion, "timechart") {
-				t.Errorf("expected timechart suggestion, got: %s", h.Suggestion)
+func TestSplunkCompat_RFCUnsupportedCommands(t *testing.T) {
+	for _, cmd := range []string{"delete", "collect", "stash", "sendemail", "sendalert", "localop", "redistribute", "loadjob", "savedsearch", "spl1"} {
+		t.Run(cmd, func(t *testing.T) {
+			hints := DetectCompatHints(`FROM main | ` + cmd)
+			if len(hints) == 0 {
+				t.Fatalf("expected hint for %s", cmd)
 			}
+			if hints[0].Pattern != cmd || !hints[0].Unsupported {
+				t.Fatalf("hint: got %+v, want unsupported %s", hints[0], cmd)
+			}
+		})
+	}
+}
+
+func TestCheckUnsupportedCommands_IgnoresPipesInEscapedQuotedRegex(t *testing.T) {
+	query := `FROM idx_openstack | REX "\"(?<http_method>GET|POST|PUT|DELETE|PATCH)" | WHERE isnotnull(http_method)`
+	if err := CheckUnsupportedCommands(query); err != nil {
+		t.Fatalf("CheckUnsupportedCommands: got %v, want nil", err)
+	}
+}
+
+func TestSplunkCompat_CapabilityCommandsNotUnsupported(t *testing.T) {
+	for _, cmd := range []string{"addinfo", "tstats", "mstats"} {
+		t.Run(cmd, func(t *testing.T) {
+			if err := CheckUnsupportedCommands(`FROM main | ` + cmd); err != nil {
+				t.Fatalf("%s should parse as a capability command, got %v", cmd, err)
+			}
+			for _, hint := range DetectCompatHints(`FROM main | ` + cmd) {
+				if hint.Pattern == cmd && hint.Unsupported {
+					t.Fatalf("%s should not be unsupported, got %+v", cmd, hint)
+				}
+			}
+		})
+	}
+}
+
+func TestSplunkCompat_UnsupportedTimeFormat(t *testing.T) {
+	query := `index=main timeformat="%b %d %Y" starttime="Mar 23 2025"`
+
+	err := CheckUnsupportedCommands(query)
+	if err == nil {
+		t.Fatal("expected unsupported timeformat error")
+	}
+	if err.Command != `timeformat=%b %d %Y` {
+		t.Fatalf("command: got %q", err.Command)
+	}
+	if !strings.Contains(err.Hint, "%Y-%m-%d") {
+		t.Fatalf("hint missing supported format example: %s", err.Hint)
+	}
+
+	hints := DetectCompatHints(query)
+	if len(hints) == 0 || !hints[0].Unsupported {
+		t.Fatalf("expected unsupported compat hint, got %+v", hints)
+	}
+}
+
+func TestSplunkCompat_SupportedTimeFormat(t *testing.T) {
+	query := `index=main timeformat="%Y-%m-%d" starttime="2025-03-23"`
+
+	if err := CheckUnsupportedCommands(query); err != nil {
+		t.Fatalf("supported timeformat rejected: %v", err)
+	}
+	for _, hint := range DetectCompatHints(query) {
+		if strings.HasPrefix(hint.Pattern, "timeformat=") && hint.Unsupported {
+			t.Fatalf("supported timeformat produced unsupported hint: %+v", hint)
 		}
 	}
-	if !found {
-		t.Error("missing chart hint")
+}
+
+func TestSplunkCompat_ChartSupported(t *testing.T) {
+	hints := DetectCompatHints(`index=main | chart count by host`)
+	for _, h := range hints {
+		if h.Pattern == "chart" {
+			t.Errorf("chart is supported and should not be flagged, got %+v", h)
+		}
 	}
 }
 
@@ -107,8 +166,8 @@ func TestSplunkCompat_EarliestLatest(t *testing.T) {
 	for _, h := range hints {
 		if h.Pattern == "earliest=/latest=" {
 			found = true
-			if !strings.Contains(h.Suggestion, "--since") || !strings.Contains(h.Suggestion, "--from/--to") {
-				t.Errorf("expected CLI flag suggestion, got: %s", h.Suggestion)
+			if !strings.Contains(h.Suggestion, "normalize") || !strings.Contains(h.Suggestion, "--since") {
+				t.Errorf("expected normalization and CLI flag suggestion, got: %s", h.Suggestion)
 			}
 		}
 	}
@@ -140,19 +199,12 @@ func TestSplunkCompat_Bucket(t *testing.T) {
 	}
 }
 
-func TestSplunkCompat_Makemv(t *testing.T) {
+func TestSplunkCompat_MakemvNotFlagged(t *testing.T) {
 	hints := DetectCompatHints(`index=main | makemv delim="," field`)
-	found := false
 	for _, h := range hints {
-		if h.Pattern == "makemv" && h.Unsupported {
-			found = true
-			if !strings.Contains(h.Suggestion, "mvappend") {
-				t.Errorf("expected mvappend suggestion, got: %s", h.Suggestion)
-			}
+		if h.Pattern == "makemv" {
+			t.Fatalf("makemv should not trigger unsupported hint: %+v", h)
 		}
-	}
-	if !found {
-		t.Error("missing makemv hint")
 	}
 }
 

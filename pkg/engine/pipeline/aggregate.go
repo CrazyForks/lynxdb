@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
@@ -15,6 +16,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
@@ -27,6 +29,7 @@ type AggFunc struct {
 	Field   string      // field to aggregate (empty for count)
 	Alias   string      // output field name
 	Program *vm.Program // optional compiled expression for nested eval
+	Scale   float64     // optional multiplier applied at finalize time
 }
 
 // maxInMemoryGroups is a safety valve that prevents degenerate cases where
@@ -65,12 +68,27 @@ const (
 const (
 	aggCount  = "count"
 	aggSum    = "sum"
+	aggSumSq  = "sumsq"
 	aggAvg    = "avg"
 	aggMin    = "min"
 	aggMax    = "max"
+	aggRange  = "range"
 	aggValues = "values"
+	aggList   = "list"
+	aggMode   = "mode"
+	aggPerSec = "per_second"
+	aggPerMin = "per_minute"
+	aggPerHr  = "per_hour"
+	aggPerDay = "per_day"
+	aggEarT   = "earliest_time"
+	aggLatT   = "latest_time"
+	aggRate   = "rate"
 	aggDC     = "dc"
+	aggEstDCE = "estdc_error"
 	aggStdev  = "stdev"
+	aggStdevP = "stdevp"
+	aggVar    = "var"
+	aggVarP   = "varp"
 	aggPerc25 = "perc25"
 	aggPerc50 = "perc50"
 	aggPerc75 = "perc75"
@@ -111,9 +129,12 @@ type aggState struct {
 	max      event.Value
 	values   map[string]bool
 	all      []interface{}
+	mode     map[string]int64
 	first    event.Value
 	last     event.Value
 	hasFirst bool
+	firstTS  time.Time
+	lastTS   time.Time
 	hll      *HyperLogLog // for approximate dc when cardinality exceeds threshold
 	tdigest  *TDigest     // for approximate percentiles
 	sumSq    float64      // accumulated M2 (sum of squared deviations) for stdev after spill merge
@@ -125,7 +146,7 @@ func NewAggregateIterator(child Iterator, aggs []AggFunc, groupBy []string, acct
 	needsValues := make([]bool, len(aggs))
 	for i, a := range aggs {
 		switch strings.ToLower(a.Name) {
-		case aggDC, aggValues, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev:
+		case aggDC, aggEstDCE, aggValues, aggList, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev, aggStdevP, aggVar, aggVarP:
 			needsValues[i] = true
 		}
 	}
@@ -297,7 +318,7 @@ func (a *AggregateIterator) processBatch(batch *Batch) error {
 
 		for j, agg := range a.aggs {
 			val := a.extractValue(agg, row)
-			a.updateState(&group.states[j], agg.Name, val)
+			a.updateState(&group.states[j], agg.Name, val, row)
 		}
 	}
 
@@ -559,15 +580,20 @@ func (a *AggregateIterator) extractValue(agg AggFunc, row map[string]event.Value
 	return event.NullValue()
 }
 
-func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value) {
+func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value, row map[string]event.Value) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		if !val.IsNull() {
 			s.count++
 		}
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.sum += f
+			s.count++
+		}
+	case aggSumSq:
+		if f, ok := vm.ValueToFloat(val); ok {
+			s.sum += f * f
 			s.count++
 		}
 	case aggAvg:
@@ -587,7 +613,18 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value)
 				s.max = val
 			}
 		}
-	case aggDC:
+	case aggRange:
+		if f, ok := vm.ValueToFloat(val); ok {
+			v := event.FloatValue(f)
+			if s.count == 0 || vm.CompareValues(v, s.min) < 0 {
+				s.min = v
+			}
+			if s.count == 0 || vm.CompareValues(v, s.max) > 0 {
+				s.max = v
+			}
+			s.count++
+		}
+	case aggDC, aggEstDCE:
 		if !val.IsNull() {
 			str := val.String()
 			s.values[str] = true
@@ -611,6 +648,17 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value)
 				s.all = append(s.all, str)
 			}
 		}
+	case aggList:
+		if !val.IsNull() && len(s.all) < maxValuesPerGroup {
+			s.all = append(s.all, val.String())
+		}
+	case aggMode:
+		if !val.IsNull() {
+			if s.mode == nil {
+				s.mode = make(map[string]int64)
+			}
+			s.mode[val.String()]++
+		}
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
 			s.first = val
@@ -631,7 +679,7 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value)
 				s.all = append(s.all, f)
 			}
 		}
-	case aggStdev:
+	case aggStdev, aggStdevP, aggVar, aggVarP:
 		if f, ok := vm.ValueToFloat(val); ok {
 			if len(s.all) < maxValuesPerGroup {
 				s.all = append(s.all, f)
@@ -639,15 +687,58 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value)
 			s.sum += f
 			s.count++
 		}
-	case "earliest":
-		if !val.IsNull() && !s.hasFirst {
+	case "earliest", aggEarT:
+		a.updateChronoState(s, val, row, true)
+	case "latest", aggLatT:
+		a.updateChronoState(s, val, row, false)
+	case aggRate:
+		a.updateChronoState(s, val, row, true)
+		a.updateChronoState(s, val, row, false)
+	}
+}
+
+func (a *AggregateIterator) updateChronoState(s *aggState, val event.Value, row map[string]event.Value, earliest bool) {
+	if val.IsNull() {
+		return
+	}
+	ts, hasTS := rowTimestamp(row)
+	if earliest {
+		if !s.hasFirst || (hasTS && (s.firstTS.IsZero() || ts.Before(s.firstTS))) {
 			s.first = val
+			s.firstTS = ts
 			s.hasFirst = true
 		}
-	case "latest":
-		if !val.IsNull() {
-			s.last = val
+		return
+	}
+	if !s.hasFirst || (hasTS && (s.lastTS.IsZero() || ts.After(s.lastTS))) || (!hasTS && s.last.IsNull()) {
+		s.last = val
+		s.lastTS = ts
+		s.hasFirst = true
+	}
+}
+
+func rowTimestamp(row map[string]event.Value) (time.Time, bool) {
+	v, ok := row["_time"]
+	if !ok || v.IsNull() {
+		return time.Time{}, false
+	}
+	switch v.Type() {
+	case event.FieldTypeTimestamp:
+		return v.TryAsTimestamp()
+	case event.FieldTypeInt:
+		n, ok := v.TryAsInt()
+		if !ok {
+			return time.Time{}, false
 		}
+		return time.Unix(0, n), true
+	case event.FieldTypeString:
+		s, ok := v.TryAsString()
+		if !ok {
+			return time.Time{}, false
+		}
+		return tryParseTimestamp(s)
+	default:
+		return time.Time{}, false
 	}
 }
 
@@ -681,7 +772,7 @@ func (a *AggregateIterator) emitAllGroups() *Batch {
 		// No input, no group-by: emit one row with zero values.
 		row := make(map[string]event.Value, len(a.aggs))
 		for _, agg := range a.aggs {
-			row[agg.Alias] = a.finalizeState(&aggState{values: make(map[string]bool)}, agg.Name)
+			row[agg.Alias] = a.finalizeAgg(&aggState{values: make(map[string]bool)}, agg)
 		}
 		result.AddRow(row)
 
@@ -698,7 +789,7 @@ func (a *AggregateIterator) emitAllGroups() *Batch {
 				}
 			}
 			for j, agg := range a.aggs {
-				row[agg.Alias] = a.finalizeState(&group.states[j], agg.Name)
+				row[agg.Alias] = a.finalizeAgg(&group.states[j], agg)
 			}
 			result.AddRow(row)
 		}
@@ -741,7 +832,7 @@ func (a *AggregateIterator) buildResultPartitioned() *Batch {
 	if result.Len == 0 && len(a.groupBy) == 0 {
 		row := make(map[string]event.Value, len(a.aggs))
 		for _, agg := range a.aggs {
-			row[agg.Alias] = a.finalizeState(&aggState{values: make(map[string]bool)}, agg.Name)
+			row[agg.Alias] = a.finalizeAgg(&aggState{values: make(map[string]bool)}, agg)
 		}
 		result.AddRow(row)
 	}
@@ -861,7 +952,7 @@ func (a *AggregateIterator) mergeSpillFilesPartitioned() *Batch {
 	if result.Len == 0 && len(a.groupBy) == 0 {
 		row := make(map[string]event.Value, len(a.aggs))
 		for _, agg := range a.aggs {
-			row[agg.Alias] = a.finalizeState(&aggState{values: make(map[string]bool)}, agg.Name)
+			row[agg.Alias] = a.finalizeAgg(&aggState{values: make(map[string]bool)}, agg)
 		}
 		result.AddRow(row)
 	}
@@ -887,15 +978,31 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			if countF, ok := vm.ValueToFloat(countVal); ok {
 				group.states[j].count += int64(countF)
 			}
-		case aggSum:
+		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
 			a.mergeSpilledValue(&group.states[j], agg.Name, sumVal)
-		case aggDC:
+		case aggRange:
+			a.mergeRangeFromRow(&group.states[j], row, agg.Alias)
+		case aggDC, aggEstDCE:
 			a.mergeDCFromRow(&group.states[j], row, agg.Alias)
 		case aggValues:
 			a.mergeValuesFromRow(&group.states[j], row, agg.Alias)
-		case aggStdev:
+		case aggList:
+			a.mergeListFromRow(&group.states[j], row, agg.Alias)
+		case aggMode:
+			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
+		case "earliest":
+			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
+		case "latest":
+			a.mergeLatestValueFromRow(&group.states[j], row, agg.Alias)
+		case aggEarT:
+			a.mergeEarliestTimeFromRow(&group.states[j], row, agg.Alias)
+		case aggLatT:
+			a.mergeLatestTimeFromRow(&group.states[j], row, agg.Alias)
+		case aggRate:
+			a.mergeRateFromRow(&group.states[j], row, agg.Alias)
+		case aggStdev, aggStdevP, aggVar, aggVarP:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
 		case aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 			a.mergePercFromRow(&group.states[j], row, agg.Alias)
@@ -921,7 +1028,7 @@ func (a *AggregateIterator) mergeSpilledValue(s *aggState, fn string, val event.
 		if n, ok := vm.ValueToFloat(val); ok {
 			s.count += int64(n)
 		}
-	case aggSum:
+	case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.sum += f
 			s.count++ // track that we have at least one contribution
@@ -934,6 +1041,17 @@ func (a *AggregateIterator) mergeSpilledValue(s *aggState, fn string, val event.
 		if s.max.IsNull() || vm.CompareValues(val, s.max) > 0 {
 			s.max = val
 		}
+	case aggRange:
+		if f, ok := vm.ValueToFloat(val); ok {
+			v := event.FloatValue(f)
+			if s.count == 0 || vm.CompareValues(v, s.min) < 0 {
+				s.min = v
+			}
+			if s.count == 0 || vm.CompareValues(v, s.max) > 0 {
+				s.max = v
+			}
+			s.count++
+		}
 	case "first", "earliest":
 		if !s.hasFirst {
 			s.first = val
@@ -941,6 +1059,20 @@ func (a *AggregateIterator) mergeSpilledValue(s *aggState, fn string, val event.
 		}
 	case "last", "latest":
 		s.last = val
+	case aggEarT:
+		if f, ok := vm.ValueToFloat(val); ok {
+			ts := time.Unix(0, int64(f*float64(time.Second)))
+			if s.firstTS.IsZero() || ts.Before(s.firstTS) {
+				s.firstTS = ts
+			}
+		}
+	case aggLatT:
+		if f, ok := vm.ValueToFloat(val); ok {
+			ts := time.Unix(0, int64(f*float64(time.Second)))
+			if s.lastTS.IsZero() || ts.After(s.lastTS) {
+				s.lastTS = ts
+			}
+		}
 	}
 }
 
@@ -995,6 +1127,29 @@ func (a *AggregateIterator) mergeDCFromRow(s *aggState, row map[string]event.Val
 	}
 }
 
+func (a *AggregateIterator) mergeRangeFromRow(s *aggState, row map[string]event.Value, alias string) {
+	minVal := row[alias+"__min"]
+	maxVal := row[alias+"__max"]
+	countVal := row[alias+"__count"]
+	countF, ok := vm.ValueToFloat(countVal)
+	if !ok || countF == 0 {
+		return
+	}
+	if f, ok := vm.ValueToFloat(minVal); ok {
+		v := event.FloatValue(f)
+		if s.count == 0 || vm.CompareValues(v, s.min) < 0 {
+			s.min = v
+		}
+	}
+	if f, ok := vm.ValueToFloat(maxVal); ok {
+		v := event.FloatValue(f)
+		if s.count == 0 || vm.CompareValues(v, s.max) > 0 {
+			s.max = v
+		}
+	}
+	s.count += int64(countF)
+}
+
 // mergeValuesFromRow merges values() state from a spill row's suffixed columns.
 func (a *AggregateIterator) mergeValuesFromRow(s *aggState, row map[string]event.Value, alias string) {
 	valsVal, ok := row[alias+"__vals"]
@@ -1018,6 +1173,110 @@ func (a *AggregateIterator) mergeValuesFromRow(s *aggState, row map[string]event
 			s.all = append(s.all, p)
 		}
 	}
+}
+
+func (a *AggregateIterator) mergeListFromRow(s *aggState, row map[string]event.Value, alias string) {
+	valsVal, ok := row[alias+"__listvals"]
+	if !ok || valsVal.IsNull() {
+		return
+	}
+	valsStr, _ := valsVal.TryAsString()
+	parts := strings.Split(valsStr, "|||")
+	for _, p := range parts {
+		if len(s.all) >= maxValuesPerGroup {
+			break
+		}
+		s.all = append(s.all, p)
+	}
+}
+
+func (a *AggregateIterator) mergeModeFromRow(s *aggState, row map[string]event.Value, alias string) {
+	countsVal, ok := row[alias+"__modecounts"]
+	if !ok || countsVal.IsNull() {
+		return
+	}
+	countsStr, _ := countsVal.TryAsString()
+	counts, err := decodeModeCounts(countsStr)
+	if err != nil {
+		return
+	}
+	if s.mode == nil {
+		s.mode = make(map[string]int64, len(counts))
+	}
+	for value, count := range counts {
+		s.mode[value] += count
+	}
+}
+
+func (a *AggregateIterator) mergeEarliestValueFromRow(s *aggState, row map[string]event.Value, alias string) {
+	val := row[alias+"__first_value"]
+	if val.IsNull() {
+		return
+	}
+	if ts, ok := timeFromSecondsValue(row[alias+"__first_time"]); ok {
+		if !s.hasFirst || s.firstTS.IsZero() || ts.Before(s.firstTS) {
+			s.first = val
+			s.firstTS = ts
+			s.hasFirst = true
+		}
+		return
+	}
+	if !s.hasFirst {
+		s.first = val
+		s.hasFirst = true
+	}
+}
+
+func (a *AggregateIterator) mergeLatestValueFromRow(s *aggState, row map[string]event.Value, alias string) {
+	val := row[alias+"__last_value"]
+	if val.IsNull() {
+		return
+	}
+	if ts, ok := timeFromSecondsValue(row[alias+"__last_time"]); ok {
+		if !s.hasFirst || s.lastTS.IsZero() || ts.After(s.lastTS) {
+			s.last = val
+			s.lastTS = ts
+			s.hasFirst = true
+		}
+		return
+	}
+	s.last = val
+	s.hasFirst = true
+}
+
+func (a *AggregateIterator) mergeEarliestTimeFromRow(s *aggState, row map[string]event.Value, alias string) {
+	if ts, ok := timeFromSecondsValue(row[alias+"__earliest_time"]); ok && (s.firstTS.IsZero() || ts.Before(s.firstTS)) {
+		s.firstTS = ts
+	}
+}
+
+func (a *AggregateIterator) mergeLatestTimeFromRow(s *aggState, row map[string]event.Value, alias string) {
+	if ts, ok := timeFromSecondsValue(row[alias+"__latest_time"]); ok && (s.lastTS.IsZero() || ts.After(s.lastTS)) {
+		s.lastTS = ts
+	}
+}
+
+func (a *AggregateIterator) mergeRateFromRow(s *aggState, row map[string]event.Value, alias string) {
+	if ts, ok := timeFromSecondsValue(row[alias+"__first_time"]); ok && (s.firstTS.IsZero() || ts.Before(s.firstTS)) {
+		s.firstTS = ts
+		s.first = row[alias+"__first_value"]
+	}
+	if ts, ok := timeFromSecondsValue(row[alias+"__last_time"]); ok && (s.lastTS.IsZero() || ts.After(s.lastTS)) {
+		s.lastTS = ts
+		s.last = row[alias+"__last_value"]
+	}
+}
+
+func timeFromSecondsValue(v event.Value) (time.Time, bool) {
+	if v.IsNull() {
+		return time.Time{}, false
+	}
+	f, ok := vm.ValueToFloat(v)
+	if !ok {
+		return time.Time{}, false
+	}
+	sec, frac := math.Modf(f)
+	return time.Unix(int64(sec), int64(frac*1e9)), true
 }
 
 // mergeStdevFromRow merges stdev state from a spill row's suffixed columns.
@@ -1110,7 +1369,9 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		return event.IntValue(s.count)
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
+		return event.FloatValue(s.sum)
+	case aggSumSq:
 		return event.FloatValue(s.sum)
 	case aggAvg:
 		if s.count == 0 {
@@ -1122,12 +1383,29 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		return s.min
 	case aggMax:
 		return s.max
+	case aggRange:
+		if s.count == 0 {
+			return event.NullValue()
+		}
+		min, minOK := vm.ValueToFloat(s.min)
+		max, maxOK := vm.ValueToFloat(s.max)
+		if !minOK || !maxOK {
+			return event.NullValue()
+		}
+
+		return event.FloatValue(max - min)
 	case aggDC:
 		if s.hll != nil {
 			return event.IntValue(s.hll.Count())
 		}
 
 		return event.IntValue(int64(len(s.values)))
+	case aggEstDCE:
+		if s.hll != nil {
+			return event.FloatValue(s.hll.StandardError())
+		}
+
+		return event.FloatValue(0)
 	case aggValues:
 		var strs []string
 		for _, v := range s.all {
@@ -1135,10 +1413,39 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		}
 
 		return event.StringValue(strings.Join(strs, "|||"))
+	case aggList:
+		var strs []string
+		for _, v := range s.all {
+			strs = append(strs, fmt.Sprintf("%v", v))
+		}
+
+		return event.StringValue(strings.Join(strs, "|||"))
+	case aggMode:
+		return modeFromCounts(s.mode)
 	case "first", "earliest":
 		return s.first
 	case "last", "latest":
 		return s.last
+	case aggEarT:
+		if s.firstTS.IsZero() {
+			return event.NullValue()
+		}
+		return event.FloatValue(float64(s.firstTS.UnixNano()) / float64(time.Second))
+	case aggLatT:
+		if s.lastTS.IsZero() {
+			return event.NullValue()
+		}
+		return event.FloatValue(float64(s.lastTS.UnixNano()) / float64(time.Second))
+	case aggRate:
+		if s.firstTS.IsZero() || s.lastTS.IsZero() || !s.lastTS.After(s.firstTS) {
+			return event.NullValue()
+		}
+		first, firstOK := vm.ValueToFloat(s.first)
+		last, lastOK := vm.ValueToFloat(s.last)
+		if !firstOK || !lastOK {
+			return event.NullValue()
+		}
+		return event.FloatValue((last - first) / s.lastTS.Sub(s.firstTS).Seconds())
 	case aggPerc25:
 		if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
 			return event.FloatValue(s.tdigest.Quantile(0.25))
@@ -1176,26 +1483,57 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 
 		return percentile(s.all, 99)
 	case aggStdev:
-		if s.count < 2 {
-			return event.NullValue()
-		}
-		if len(s.all) == 0 {
-			// Merged state (after spill merge): M2 was accumulated via parallel variance formula.
-			return event.FloatValue(math.Sqrt(s.sumSq / float64(s.count-1)))
-		}
-		// Raw values: compute M2 from scratch.
-		mean := s.sum / float64(s.count)
-		var sumSqLocal float64
-		for _, v := range s.all {
-			f := v.(float64)
-			diff := f - mean
-			sumSqLocal += diff * diff
-		}
-
-		return event.FloatValue(math.Sqrt(sumSqLocal / float64(s.count-1)))
+		return finalizeVarianceState(s, false, true)
+	case aggStdevP:
+		return finalizeVarianceState(s, true, true)
+	case aggVar:
+		return finalizeVarianceState(s, false, false)
+	case aggVarP:
+		return finalizeVarianceState(s, true, false)
 	}
 
 	return event.NullValue()
+}
+
+func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
+	val := a.finalizeState(s, agg.Name)
+	if val.IsNull() || agg.Scale == 0 {
+		return val
+	}
+	switch strings.ToLower(agg.Name) {
+	case aggPerSec, aggPerMin, aggPerHr, aggPerDay:
+		if f, ok := vm.ValueToFloat(val); ok {
+			return event.FloatValue(f * agg.Scale)
+		}
+	}
+
+	return val
+}
+
+func finalizeVarianceState(s *aggState, population, root bool) event.Value {
+	if s.count == 0 || (!population && s.count < 2) {
+		return event.NullValue()
+	}
+	sumSq := s.sumSq
+	if len(s.all) > 0 {
+		mean := s.sum / float64(s.count)
+		sumSq = 0
+		for _, v := range s.all {
+			f := v.(float64)
+			diff := f - mean
+			sumSq += diff * diff
+		}
+	}
+	denom := float64(s.count)
+	if !population {
+		denom = float64(s.count - 1)
+	}
+	variance := sumSq / denom
+	if root {
+		return event.FloatValue(math.Sqrt(variance))
+	}
+
+	return event.FloatValue(variance)
 }
 
 func percentile(all []interface{}, pct float64) event.Value {
@@ -1245,6 +1583,42 @@ func joinAllStrings(all []interface{}, sep string) string {
 	}
 
 	return strings.Join(strs, sep)
+}
+
+func modeFromCounts(counts map[string]int64) event.Value {
+	var best string
+	var bestCount int64
+	hasBest := false
+	for value, count := range counts {
+		if !hasBest || count > bestCount || (count == bestCount && value < best) {
+			best = value
+			bestCount = count
+			hasBest = true
+		}
+	}
+	if !hasBest || bestCount == 0 {
+		return event.NullValue()
+	}
+
+	return event.StringValue(best)
+}
+
+func encodeModeCounts(counts map[string]int64) string {
+	data, err := json.Marshal(counts)
+	if err != nil {
+		return "{}"
+	}
+
+	return string(data)
+}
+
+func decodeModeCounts(s string) (map[string]int64, error) {
+	counts := make(map[string]int64)
+	if err := json.Unmarshal([]byte(s), &counts); err != nil {
+		return nil, err
+	}
+
+	return counts, nil
 }
 
 // joinAllFloats joins interface{} values (expected float64) with a separator.

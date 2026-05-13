@@ -440,9 +440,13 @@ func updateAggState(s *aggState, fn string, val event.Value) {
 		if !val.IsNull() {
 			s.count++
 		}
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.sum += f
+		}
+	case aggSumSq:
+		if f, ok := vm.ValueToFloat(val); ok {
+			s.sum += f * f
 		}
 	case aggAvg:
 		if f, ok := vm.ValueToFloat(val); ok {
@@ -457,9 +461,28 @@ func updateAggState(s *aggState, fn string, val event.Value) {
 		if !val.IsNull() && (s.max.IsNull() || vm.CompareValues(val, s.max) > 0) {
 			s.max = val
 		}
-	case "dc":
+	case "dc", aggEstDCE:
 		if !val.IsNull() {
 			s.values[val.String()] = true
+		}
+	case aggValues:
+		if !val.IsNull() {
+			str := val.String()
+			if !s.values[str] {
+				s.values[str] = true
+				s.all = append(s.all, str)
+			}
+		}
+	case aggList:
+		if !val.IsNull() {
+			s.all = append(s.all, val.String())
+		}
+	case aggMode:
+		if !val.IsNull() {
+			if s.mode == nil {
+				s.mode = make(map[string]int64)
+			}
+			s.mode[val.String()]++
 		}
 	}
 }
@@ -468,7 +491,9 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		return event.IntValue(s.count)
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
+		return event.FloatValue(s.sum)
+	case aggSumSq:
 		return event.FloatValue(s.sum)
 	case aggAvg:
 		if s.count == 0 {
@@ -482,6 +507,17 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 		return s.max
 	case "dc":
 		return event.IntValue(int64(len(s.values)))
+	case aggEstDCE:
+		return event.FloatValue(0)
+	case aggValues, aggList:
+		var strs []string
+		for _, v := range s.all {
+			strs = append(strs, fmt.Sprintf("%v", v))
+		}
+
+		return event.StringValue(strings.Join(strs, "|||"))
+	case aggMode:
+		return modeFromCounts(s.mode)
 	}
 
 	return event.NullValue()

@@ -18,21 +18,32 @@ You are an expert at translating natural language questions into LynxDB SPL2 que
 - Use pipe (|) to chain commands. First pipe is optional.
 - Strings use double quotes. Numbers are bare.
 - Field names are unquoted identifiers.
-- Aggregations: count, sum, avg, min, max, dc, values, stdev, perc50..perc99
-- Eval functions: if, case, coalesce, isnull, isnotnull, tonumber, tostring,
-  round, ceil, floor, abs, sqrt, ln, len, lower, upper, substr, match, like,
-  replace, split, strftime, mvappend, mvjoin, mvdedup, mvcount
+- Aggregations: count, sum, sumsq, avg, mean, min, max, dc, distinct_count,
+  values, list, mode, stdev, stdevp, var, varp, range, perc25, perc50,
+  perc75, perc90, perc95, perc99, p50..p99, percentile(field, n),
+  percentile25/50/75/90/95/99, exactperc25/50/75/90/95/99,
+  upperperc25/50/75/90/95/99, earliest, latest,
+  first, last, rate
+- Eval functions: if, case, validate, coalesce, null, nullif, in, searchmatch,
+  isnull, isnotnull, isnum, isnumeric, isint, isstr, isbool, isarray, isobject,
+  typeof, tonumber, toint, todouble, tostring, tobool, printf, ipmask, round,
+  ceil, ceiling, floor, abs, sqrt, ln, log, exp, pow, pi, random, len, lower,
+  upper, substr, match, like, ilike, cidrmatch, startswith, endswith, contains,
+  replace, split, trim, ltrim, rtrim, urldecode, strftime, strptime, mvappend,
+  mvjoin, mvdedup, mvcount, md5, sha1, sha256, sha512, json_extract, json_valid
 
 ## Commands
 Filter:    search, where
-Aggregate: stats, timechart, top, rare, eventstats, streamstats
-Transform: eval, rex, rename, table, fields, keep, omit, fillnull, bin
-Order:     sort, head, tail, take, dedup
-Join:      join, append
+Aggregate: stats, chart, timechart, top, rare, eventstats, streamstats
+Transform: eval, rex, regex, replace, fieldformat, rename, table, fields, keep, omit, fillnull, bin, mvexpand, untable, makemv, mvcombine, nomv
+Generate:  makeresults
+Order:     sort, head, tail, reverse, take, dedup
+Join:      join, append, appendcols, appendpipe, union
 Session:   transaction, sessionize
 Explore:   glimpse, describe
 Advanced:  materialize, from (views), correlate, topology, tee
 Structured: unpack_json, unpack_logfmt, json, unroll, pack_json, parse, explode, pack
+Capability: addinfo, convert, fieldsummary, flatten, iplocation, tags, typer, thru, timewrap, tstats, mstats parse, then require deployment enablement at execution
 
 ## Key syntax
 - Implicit search:  field=value field2=value2
@@ -141,8 +152,14 @@ The previous query had an error:
   Error: unknown function "percent" at position 42
   Hint: did you mean "percentile"?
 
-Available aggregation functions: count, sum, avg, min, max, dc, values, stdev,
-percentile, perc50, perc75, perc90, perc95, perc99, earliest, latest
+Available aggregation functions: count, sum, sumsq, avg, mean, min, max, dc, distinct_count, estdc, estdc_error,
+values, list, mode, stdev, stdevp, var, varp, range, first, last, earliest, latest,
+earliest_time, latest_time, per_second, per_minute, per_hour, per_day, rate,
+perc, percentile, exactperc, upperperc, perc25, perc50, perc75, perc90, perc95, perc99,
+percentile25, percentile50, percentile75, percentile90, percentile95, percentile99,
+exactperc25, exactperc50, exactperc75, exactperc90, exactperc95, exactperc99,
+upperperc25, upperperc50, upperperc75, upperperc90, upperperc95, upperperc99,
+p50, p75, p90, p95, p99
 
 Please correct the query.
 ```
@@ -157,7 +174,7 @@ Your previous SPL2 query was invalid:
   Suggestion: {hint_if_available}
 
 Common mistakes:
-- Use perc95() not percentile(95)
+- Use perc95(field), p95(field), or percentile(field, 95), not percentile(95)
 - Use dc() not distinct_count()
 - Use | not || for pipe
 - Field names are unquoted: source not "source"

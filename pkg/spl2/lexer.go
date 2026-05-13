@@ -78,6 +78,10 @@ func (l *Lexer) next() (Token, error) {
 
 		return Token{Type: TokenDollar, Literal: "$", Pos: startPos}, nil
 	case ch == '+':
+		// Duration literal: +Nd, +Nh, +Nm, +Ns, +Nw (e.g., +30m).
+		if dur, ok := l.tryReadDuration(); ok {
+			return dur, nil
+		}
 		l.pos++
 
 		return Token{Type: TokenPlus, Literal: "+", Pos: startPos}, nil
@@ -116,7 +120,7 @@ func (l *Lexer) next() (Token, error) {
 			return Token{Type: TokenRegexNotMatch, Literal: "!~", Pos: startPos}, nil
 		}
 
-		return Token{}, fmt.Errorf("unexpected character '!' at position %d (expected '=' or '~' after '!')", startPos)
+		return Token{Type: TokenNot, Literal: "!", Pos: startPos}, nil
 	case ch == '<':
 		l.pos++
 		if l.pos < len(l.input) && l.input[l.pos] == '=' {
@@ -137,6 +141,8 @@ func (l *Lexer) next() (Token, error) {
 		return Token{Type: TokenGt, Literal: ">", Pos: startPos}, nil
 	case ch == '"':
 		return l.readString()
+	case ch == '\'':
+		return l.readQuotedIdent()
 	case ch == '?':
 		l.pos++
 		if l.pos < len(l.input) && l.input[l.pos] == '?' {
@@ -199,6 +205,8 @@ func (l *Lexer) next() (Token, error) {
 		if l.pos+1 < len(l.input) && l.input[l.pos+1] == '"' {
 			return l.readFString()
 		}
+		return l.readIdentOrGlob()
+	case ch == '{':
 		return l.readIdentOrGlob()
 	case isIdentStart(ch):
 		return l.readIdentOrGlob()
@@ -273,6 +281,38 @@ func (l *Lexer) readString() (Token, error) {
 	}
 
 	return Token{}, fmt.Errorf("unterminated string at position %d", startPos)
+}
+
+func (l *Lexer) readQuotedIdent() (Token, error) {
+	startPos := l.pos
+	l.pos++ // skip opening quote
+
+	var sb strings.Builder
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		if ch == '\\' && l.pos+1 < len(l.input) {
+			l.pos++
+			switch l.input[l.pos] {
+			case '\'', '\\':
+				sb.WriteByte(l.input[l.pos])
+			default:
+				sb.WriteByte('\\')
+				sb.WriteByte(l.input[l.pos])
+			}
+			l.pos++
+
+			continue
+		}
+		if ch == '\'' {
+			l.pos++ // skip closing quote
+
+			return Token{Type: TokenIdent, Literal: sb.String(), Pos: startPos}, nil
+		}
+		sb.WriteByte(ch)
+		l.pos++
+	}
+
+	return Token{}, fmt.Errorf("unterminated quoted identifier at position %d", startPos)
 }
 
 func (l *Lexer) readFString() (Token, error) {
@@ -383,14 +423,33 @@ func (l *Lexer) readNumber() (Token, error) {
 func (l *Lexer) readIdentOrGlob() (Token, error) {
 	startPos := l.pos
 
-	for l.pos < len(l.input) && isIdentPart(l.input[l.pos]) {
-		l.pos++
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		switch {
+		case isIdentPart(ch):
+			l.pos++
+		case ch == '[' && l.isGlobClassStart():
+			l.readGlobClass()
+		case ch == '{':
+			if !l.readGlobAlternatives() {
+				goto done
+			}
+		case ch == '/' && l.pos+1 < len(l.input) && l.input[l.pos+1] == '*':
+			l.pos++
+		default:
+			goto done
+		}
+	}
+
+done:
+	if l.pos == startPos {
+		return Token{}, fmt.Errorf("unexpected character %q at position %d", l.input[startPos], startPos)
 	}
 
 	literal := l.input[startPos:l.pos]
 
-	// Wildcard characters → glob token.
-	if strings.ContainsAny(literal, "*?") {
+	// Wildcard characters -> glob token.
+	if ContainsGlobWildcard(literal) {
 		return Token{Type: TokenGlob, Literal: literal, Pos: startPos}, nil
 	}
 
@@ -401,6 +460,57 @@ func (l *Lexer) readIdentOrGlob() (Token, error) {
 	}
 
 	return Token{Type: TokenIdent, Literal: literal, Pos: startPos}, nil
+}
+
+func (l *Lexer) isGlobClassStart() bool {
+	if l.pos+1 >= len(l.input) {
+		return false
+	}
+	switch l.input[l.pos+1] {
+	case '-', '+', '@', '"', '\'':
+		return false
+	default:
+		return true
+	}
+}
+
+func (l *Lexer) readGlobClass() {
+	l.pos++ // [
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		l.pos++
+		if ch == '\\' && l.pos < len(l.input) {
+			l.pos++
+			continue
+		}
+		if ch == ']' {
+			return
+		}
+	}
+}
+
+func (l *Lexer) readGlobAlternatives() bool {
+	start := l.pos
+	l.pos++ // {
+	sawComma := false
+	for l.pos < len(l.input) {
+		ch := l.input[l.pos]
+		l.pos++
+		if ch == '\\' && l.pos < len(l.input) {
+			l.pos++
+			continue
+		}
+		if ch == ',' {
+			sawComma = true
+			continue
+		}
+		if ch == '}' {
+			return sawComma
+		}
+	}
+	l.pos = start
+
+	return false
 }
 
 func (l *Lexer) skipWhitespace() {
@@ -416,11 +526,11 @@ func (l *Lexer) skipLineComment() {
 	}
 }
 
-// tryReadDuration attempts to read a duration literal like -1h, -7d, -30m@h.
+// tryReadDuration attempts to read a duration literal like -1h, +30m, -7d, -30m@h.
 // Returns the token and true if a duration was found, otherwise returns
-// a zero token and false (caller should fall through to normal minus handling).
+// a zero token and false (caller should fall through to normal sign handling).
 func (l *Lexer) tryReadDuration() (Token, bool) {
-	if l.pos >= len(l.input) || l.input[l.pos] != '-' {
+	if l.pos >= len(l.input) || (l.input[l.pos] != '-' && l.input[l.pos] != '+') {
 		return Token{}, false
 	}
 
@@ -443,22 +553,33 @@ func (l *Lexer) tryReadDuration() (Token, bool) {
 	}
 	i++
 
-	// Optional snap-to: @h, @d, @w, @m (e.g., -1h@h means "1 hour ago, snapped to hour start").
+	// Optional snap-to: @h, @d, @w, @w0, @w1, @m.
 	lit := l.input[startPos:i]
 	if i < len(l.input) && l.input[i] == '@' {
-		i++
-		if i < len(l.input) {
-			snap := l.input[i]
-			if snap == 'h' || snap == 'd' || snap == 'w' || snap == 'm' || snap == 's' {
-				i++
+		snapStart := i
+		j := i + 1
+		if j < len(l.input) {
+			switch snap := l.input[j]; snap {
+			case 'h', 'd', 'm', 's':
+				j++
+				i = j
 				lit = l.input[startPos:i]
+			case 'w':
+				j++
+				if j < len(l.input) && l.input[j] >= '0' && l.input[j] <= '6' {
+					j++
+				}
+				i = j
+				lit = l.input[startPos:i]
+			default:
+				i = snapStart
 			}
 		}
 	}
 
 	// Verify the next character is not an identifier continuation
 	// (e.g., "-1hour" should not be a duration, "-1h" should be).
-	if i < len(l.input) && isIdentPart(l.input[i]) && l.input[i] != '|' && l.input[i] != ']' {
+	if i < len(l.input) && isIdentPart(l.input[i]) && l.input[i] != '|' && l.input[i] != ']' && l.input[i] != '.' {
 		return Token{}, false
 	}
 

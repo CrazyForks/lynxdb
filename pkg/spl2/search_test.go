@@ -1,6 +1,7 @@
 package spl2
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
@@ -62,7 +63,24 @@ func TestGlobToRegex(t *testing.T) {
 		{"file.txt", "file.txt", true},
 		{"file.txt", "fileTtxt", false},
 		{"(test)", "(test)", true},
-		{"[data]", "[data]", true},
+		{`\[data\]`, "[data]", true},
+		{"[data]", "d", true},
+		{`C:\Windows*`, `C:\Windows\System32\cmd.exe`, true},
+
+		// RFC glob syntax
+		{"api/?", "api/v", true},
+		{"api/?", "api/v1", false},
+		{"api/*", "api/v1", true},
+		{"api/*", "api/v1/users", false},
+		{"api/**", "api/v1/users", true},
+		{"web-[0-9]", "web-7", true},
+		{"web-[0-9]", "web-a", false},
+		{"web-[!0-9]", "web-a", true},
+		{"web-[!0-9]", "web-7", false},
+		{"{api,web,worker}", "web", true},
+		{"{api,web,worker}", "db", false},
+		{`file\*.txt`, "file*.txt", true},
+		{`file\*.txt`, "file1.txt", false},
 	}
 
 	for _, tt := range tests {
@@ -71,6 +89,79 @@ func TestGlobToRegex(t *testing.T) {
 		if got != tt.match {
 			t.Errorf("GlobToRegex(%q).Match(%q) = %v, want %v", tt.pattern, tt.input, got, tt.match)
 		}
+	}
+}
+
+func TestSearchEvaluatorGlobSlashSemantics(t *testing.T) {
+	e := NewSearchEvaluator(nil)
+
+	tests := []struct {
+		pattern string
+		input   string
+		match   bool
+	}{
+		{"*error*", "api/error", true},
+		{"**error*", "api/error", true},
+		{"api/*", "api/v1/users", false},
+		{"api/**", "api/v1/users", true},
+	}
+
+	for _, tt := range tests {
+		got := e.matchGlob(tt.input, tt.pattern, true)
+		if got != tt.match {
+			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.input, tt.pattern, got, tt.match)
+		}
+	}
+}
+
+func TestSearchEvaluatorKeywordGlobMatchesSlash(t *testing.T) {
+	e := NewSearchEvaluator(nil)
+
+	tests := []struct {
+		pattern string
+		input   string
+		match   bool
+	}{
+		{"nova*instance*", "nova/api/instance create", true},
+		{"*/user_*", "GET /api/v1/user_service/health", true},
+		{"*error*timeout*", "error from api/v1 timeout", true},
+		{"*error*timeout*", "timeout before error", false},
+	}
+
+	for _, tt := range tests {
+		got := e.matchKeywordPattern(tt.input, tt.pattern, true)
+		if got != tt.match {
+			t.Errorf("matchKeywordPattern(%q, %q) = %v, want %v", tt.input, tt.pattern, got, tt.match)
+		}
+	}
+}
+
+func TestSearchEvaluatorSigmaWildcardComparison(t *testing.T) {
+	expr, err := ParseSearchExpression(`CommandLine=*"whoami"* AND Image=*".exe" AND ParentImage="C:\\Windows"*`)
+	if err != nil {
+		t.Fatalf("ParseSearchExpression: %v", err)
+	}
+	e := NewSearchEvaluator(expr)
+	row := map[string]event.Value{
+		"CommandLine": event.StringValue(`cmd.exe /c whoami /groups /n:01`),
+		"Image":       event.StringValue(`C:\Windows\System32\cmd.exe`),
+		"ParentImage": event.StringValue(`C:\Windows\explorer.exe`),
+	}
+	for _, part := range []string{
+		`CommandLine=*"whoami"*`,
+		`Image=*".exe"`,
+		`ParentImage="C:\\Windows"*`,
+	} {
+		partExpr, err := ParseSearchExpression(part)
+		if err != nil {
+			t.Fatalf("ParseSearchExpression(%q): %v", part, err)
+		}
+		if !NewSearchEvaluator(partExpr).Evaluate(row) {
+			t.Fatalf("expected %s to match row as %s", part, partExpr.String())
+		}
+	}
+	if !e.Evaluate(row) {
+		t.Fatalf("expected sigma wildcard expression to match row as %s", expr.String())
 	}
 }
 
@@ -92,6 +183,7 @@ func TestSearchLexer(t *testing.T) {
 		{`CASE(Error)`, []SearchTokenType{STokCASE, STokEOF}},
 		{`TERM(127.0.0.1)`, []SearchTokenType{STokTERM, STokEOF}},
 		{`host=web*`, []SearchTokenType{STokWord, STokEq, STokWord, STokEOF}},
+		{`'user-id'=alice`, []SearchTokenType{STokWord, STokEq, STokWord, STokEOF}},
 		{`"*-25-*"`, []SearchTokenType{STokQuoted, STokEOF}},
 		{`src="10.9.165.*" OR dst="10.9.165.8"`, []SearchTokenType{
 			STokWord, STokEq, STokQuoted, STokOR, STokWord, STokEq, STokQuoted, STokEOF,
@@ -197,6 +289,16 @@ func TestSearchParserPrecedence(t *testing.T) {
 	}
 }
 
+func TestSearchParserRejectsXOR(t *testing.T) {
+	_, err := ParseSearchExpression(`error XOR timeout`)
+	if err == nil {
+		t.Fatal("expected SEARCH context to reject XOR")
+	}
+	if got := err.Error(); !strings.Contains(got, "XOR") {
+		t.Fatalf("error = %q, want XOR mention", got)
+	}
+}
+
 func TestSearchParserKeyword(t *testing.T) {
 	expr, err := ParseSearchExpression(`error`)
 	if err != nil {
@@ -252,6 +354,20 @@ func TestSearchParserFieldComparison(t *testing.T) {
 		t.Fatalf("expected SearchCompareExpr, got %T", expr)
 	}
 	if cmp.Field != "host" || cmp.Op != OpEq || cmp.Value != "web*" || !cmp.HasWildcard {
+		t.Errorf("unexpected compare: %+v", cmp)
+	}
+}
+
+func TestSearchParserSingleQuotedFieldComparison(t *testing.T) {
+	expr, err := ParseSearchExpression(`'user-id'=alice`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmp, ok := expr.(*SearchCompareExpr)
+	if !ok {
+		t.Fatalf("expected SearchCompareExpr, got %T", expr)
+	}
+	if cmp.Field != "user-id" || cmp.Op != OpEq || cmp.Value != "alice" {
 		t.Errorf("unexpected compare: %+v", cmp)
 	}
 }

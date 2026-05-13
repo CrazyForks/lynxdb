@@ -7,41 +7,105 @@ import (
 
 // knownCommands is the list of all supported SPL2 command names.
 var knownCommands = []string{
-	"search", "where", "stats", "eval", "sort", "head", "tail",
-	"timechart", "rex", "fields", "table", "dedup", "rename",
-	"bin", "streamstats", "eventstats", "join", "append",
-	"multisearch", "transaction", "xyseries", "top", "rare", "fillnull",
-	"limit", "from", "index", "materialize",
+	"search", "where", "stats", "eval", "sort", "head", "tail", "reverse", "chart",
+	"timechart", "rex", "regex", "replace", "fieldformat", "fields", "table", "dedup", "rename",
+	"bin", "streamstats", "eventstats", "join", "append", "appendcols", "appendpipe",
+	"multisearch", "union", "transaction", "xyseries", "untable", "top", "rare", "fillnull",
+	"from", "index", "materialize",
 	"unpack_json", "unpack_logfmt", "unpack_syslog", "unpack_combined",
 	"unpack_clf", "unpack_nginx_error", "unpack_cef", "unpack_kv",
 	"unpack_docker", "unpack_redis", "unpack_apache_error",
 	"unpack_postgres", "unpack_mysql_slow", "unpack_haproxy",
 	"unpack_leef", "unpack_w3c", "unpack_pattern",
-	"json", "unroll", "pack_json", "tee",
+	"json", "unroll", "mvexpand", "expand", "makeresults", "makemv", "mvcombine", "nomv", "pack_json", "tee",
+	"addinfo", "convert", "fieldsummary", "flatten", "iplocation", "tags", "typer", "thru", "timewrap", "tstats", "mstats",
 	// Lynx Flow commands.
 	"let", "keep", "omit", "select", "group", "every", "bucket",
 	"order", "take", "rank", "topby", "bottomby", "bottom",
 	"running", "enrich", "parse", "explode", "pack", "lookup",
-	"latency", "errors", "rate", "percentiles", "slowest",
-	"views", "dropview", "glimpse", "describe",
+	"latency", "errors", "rate", "proportion", "percentiles", "slowest",
+	"impact", "baseline", "changes", "exemplars", "views", "dropview", "glimpse", "describe",
 	"use", "outliers", "compare", "patterns", "trace", "rollup", "correlate", "sessionize", "topology",
 }
 
-// knownFunctions is the list of all supported eval/aggregation functions.
-var knownFunctions = []string{
+// knownEvalFunctions is the list of supported eval functions.
+var knownEvalFunctions = []string{
 	// Eval functions
-	"if", "case", "match", "coalesce", "tonumber", "tostring", "tobool",
-	"round", "substr", "lower", "upper", "len", "ln", "abs", "ceil",
-	"floor", "sqrt", "mvjoin", "mvappend", "mvdedup", "mvcount",
-	"isnotnull", "isnull", "null", "strftime", "max", "min",
-	// Aggregation functions
-	"count", "sum", "avg", "dc", "values", "stdev",
-	"perc25", "perc50", "perc75", "perc90", "perc95", "perc99",
-	"earliest", "latest", "first", "last", "percentile",
-	// JSON functions
+	"if", "case", "validate", "match", "searchmatch", "like", "ilike", "cidrmatch", "coalesce", "in", "printf", "ipmask",
+	"tonumber", "toint", "todouble", "tostring", "tobool",
+	"round", "substr", "replace", "trim", "ltrim", "rtrim", "urldecode", "spath", "split", "lower", "upper", "len", "ln", "log", "exp", "pow", "pi", "random",
+	"acos", "acosh", "asin", "asinh", "atan", "atan2", "atanh", "cos", "cosh", "hypot", "sin", "sinh", "tan", "tanh",
+	"abs", "ceil", "ceiling", "floor", "sqrt", "mvjoin", "mvappend", "mvdedup", "mvcount",
+	"isnotnull", "isnull", "nullif", "isnum", "isnumeric", "isint", "isstr", "isbool", "isarray", "isobject", "typeof",
+	"null", "strftime", "strptime", "startswith", "endswith", "contains", "max", "min",
+	"md5", "sha1", "sha256", "sha512",
+}
+
+// knownAggregateFunctions is the list of supported aggregate functions.
+var knownAggregateFunctions = []string{
+	"count", "sum", "sumsq", "avg", "mean", "min", "max", "dc", "distinct_count", "estdc", "estdc_error", "values", "list", "mode",
+	"stdev", "stdevp", "var", "varp", "range",
+	"per_second", "per_minute", "per_hour", "per_day",
+	"perc", "perc25", "perc50", "perc75", "perc90", "perc95", "perc99",
+	"p50", "p75", "p90", "p95", "p99",
+	"earliest", "earliest_time", "latest", "latest_time", "first", "last", "median", "percentile", "rate",
+	"percentile25", "percentile50", "percentile75", "percentile90", "percentile95", "percentile99",
+	"exactperc", "exactperc25", "exactperc50", "exactperc75", "exactperc90", "exactperc95", "exactperc99",
+	"upperperc", "upperperc25", "upperperc50", "upperperc75", "upperperc90", "upperperc95", "upperperc99",
+}
+
+// knownJSONFunctions is the list of supported JSON functions.
+var knownJSONFunctions = []string{
 	"json_extract", "json_valid", "json_keys", "json_array_length",
 	"json_object", "json_array", "json_type", "json_set", "json_remove",
 	"json_merge",
+}
+
+// knownFunctions is the list of all supported eval/aggregation functions.
+var knownFunctions = appendCatalogs(knownEvalFunctions, knownAggregateFunctions, knownJSONFunctions)
+
+func appendCatalogs(groups ...[]string) []string {
+	total := 0
+	for _, group := range groups {
+		total += len(group)
+	}
+
+	out := make([]string, 0, total)
+	for _, group := range groups {
+		out = append(out, group...)
+	}
+	return out
+}
+
+func copyCatalog(in []string) []string {
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+// KnownCommands returns the supported SPL2 and LynxFlow command catalog.
+func KnownCommands() []string {
+	return copyCatalog(knownCommands)
+}
+
+// KnownEvalFunctions returns the supported eval function catalog.
+func KnownEvalFunctions() []string {
+	return copyCatalog(knownEvalFunctions)
+}
+
+// KnownAggregateFunctions returns the supported aggregate function catalog.
+func KnownAggregateFunctions() []string {
+	return copyCatalog(knownAggregateFunctions)
+}
+
+// KnownJSONFunctions returns the supported JSON function catalog.
+func KnownJSONFunctions() []string {
+	return copyCatalog(knownJSONFunctions)
+}
+
+// KnownFunctions returns the full supported function catalog.
+func KnownFunctions() []string {
+	return copyCatalog(knownFunctions)
 }
 
 // SuggestFix examines a parse or execution error and returns a hint string

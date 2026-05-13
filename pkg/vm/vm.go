@@ -1,11 +1,18 @@
 package vm //nolint:staticcheck // Intentional use of deprecated As*() methods — see VM struct godoc.
 
 import (
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
+	"math/rand"
 	"net"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -13,6 +20,7 @@ import (
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 const StackSize = 256
@@ -683,6 +691,28 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 				vm.stack[vm.sp-1] = event.StringValue(strings.Join(parts, "|||"))
 			}
 
+		case OpTrim:
+			chars := vm.stack[vm.sp-1]
+			str := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = trimValue(str, chars, trimBoth)
+
+		case OpLTrim:
+			chars := vm.stack[vm.sp-1]
+			str := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = trimValue(str, chars, trimLeft)
+
+		case OpRTrim:
+			chars := vm.stack[vm.sp-1]
+			str := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = trimValue(str, chars, trimRight)
+
+		case OpURLDecode:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = urlDecodeValue(a)
+
 		case OpEq:
 			b := vm.stack[vm.sp-1]
 			a := vm.stack[vm.sp-2]
@@ -763,6 +793,12 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = event.BoolValue(IsTruthy(a) || IsTruthy(b))
 
+		case OpXor:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = event.BoolValue(IsTruthy(a) != IsTruthy(b))
+
 		case OpNot:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = event.BoolValue(!IsTruthy(a))
@@ -818,7 +854,7 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 
 		case OpToBool:
 			a := vm.stack[vm.sp-1]
-			vm.stack[vm.sp-1] = event.BoolValue(IsTruthy(a))
+			vm.stack[vm.sp-1] = toBoolValue(a)
 
 		case OpRound:
 			decimals := vm.stack[vm.sp-1]
@@ -845,6 +881,82 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 		case OpSqrt:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = sqrtValue(a)
+
+		case OpExp:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = expValue(a)
+
+		case OpPow:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = powValue(a, b)
+
+		case OpLog:
+			base := vm.stack[vm.sp-1]
+			value := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = logValue(value, base)
+
+		case OpMathUnary:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = unaryMathValue(a, int(operand))
+
+		case OpMathBinary:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = binaryMathValue(a, b, int(operand))
+
+		case OpRandom:
+			vm.stack[vm.sp] = event.IntValue(int64(rand.Int31()))
+			vm.sp++
+
+		case OpMax:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			count := int(operand)
+			ip += 2
+			if count <= 0 || count > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: max count %d exceeds stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			result, err := maxMinValue(vm.stack[vm.sp-count:vm.sp], true)
+			if err != nil {
+				return event.NullValue(), err
+			}
+			vm.sp -= count
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpMin:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			count := int(operand)
+			ip += 2
+			if count <= 0 || count > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: min count %d exceeds stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			result, err := maxMinValue(vm.stack[vm.sp-count:vm.sp], false)
+			if err != nil {
+				return event.NullValue(), err
+			}
+			vm.sp -= count
+			vm.stack[vm.sp] = result
+			vm.sp++
 
 		case OpMvAppend:
 			operand, opErr := readOperandSafe(ins, ip)
@@ -931,6 +1043,53 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			ts := vm.stack[vm.sp-2]
 			vm.sp--
 			vm.stack[vm.sp-1] = strftimeValue(ts, format)
+
+		case OpStrptime:
+			format := vm.stack[vm.sp-1]
+			ts := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = strptimeValue(ts, format)
+
+		case OpMD5:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "md5")
+
+		case OpSHA1:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "sha1")
+
+		case OpSHA256:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "sha256")
+
+		case OpSHA512:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "sha512")
+
+		case OpPrintf:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			count := int(operand)
+			ip += 2
+			if count <= 0 || count > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: printf count %d exceeds stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			result := printfValue(vm.stack[vm.sp-count : vm.sp])
+			vm.sp -= count
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpIPMask:
+			ip := vm.stack[vm.sp-1]
+			mask := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = ipMaskValue(mask, ip)
+
+		case OpSearchMatch:
+			search := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = searchMatchValue(search, fields)
 
 		case OpJsonExtract:
 			// Stack: [..., field, path] → [..., result]
@@ -1082,6 +1241,22 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 					vm.stack[vm.sp-1] = event.BoolValue(err == nil)
 				}
 			}
+
+		case OpIsBool:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = event.BoolValue(a.Type() == event.FieldTypeBool)
+
+		case OpIsArray:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = event.BoolValue(isJSONKind(a, '['))
+
+		case OpIsObject:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = event.BoolValue(isJSONKind(a, '{'))
+
+		case OpTypeOf:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = event.StringValue(a.Type().String())
 
 		case OpCIDRMatch:
 			operand, opErr := readOperandSafe(ins, ip)
@@ -1577,6 +1752,30 @@ func toFloatValue(v event.Value) event.Value {
 	}
 }
 
+func toBoolValue(v event.Value) event.Value {
+	switch v.Type() {
+	case event.FieldTypeBool:
+		return v
+	case event.FieldTypeNull:
+		return event.NullValue()
+	case event.FieldTypeInt:
+		return event.BoolValue(v.AsInt() != 0)
+	case event.FieldTypeFloat:
+		return event.BoolValue(v.AsFloat() != 0)
+	case event.FieldTypeString:
+		switch strings.ToLower(strings.TrimSpace(v.AsString())) {
+		case "true", "t", "1", "yes", "y":
+			return event.BoolValue(true)
+		case "false", "f", "0", "no", "n", "":
+			return event.BoolValue(false)
+		default:
+			return event.NullValue()
+		}
+	default:
+		return event.NullValue()
+	}
+}
+
 func substrValue(str, start, length event.Value) event.Value {
 	if str.IsNull() || start.IsNull() || length.IsNull() {
 		return event.NullValue()
@@ -1599,6 +1798,42 @@ func substrValue(str, start, length event.Value) event.Value {
 	}
 
 	return event.StringValue(s[si:end])
+}
+
+type trimMode int
+
+const (
+	trimBoth trimMode = iota
+	trimLeft
+	trimRight
+)
+
+func trimValue(str, chars event.Value, mode trimMode) event.Value {
+	if str.IsNull() || chars.IsNull() {
+		return event.NullValue()
+	}
+	s := valueToString(str)
+	cutset := valueToString(chars)
+	switch mode {
+	case trimLeft:
+		return event.StringValue(strings.TrimLeft(s, cutset))
+	case trimRight:
+		return event.StringValue(strings.TrimRight(s, cutset))
+	default:
+		return event.StringValue(strings.Trim(s, cutset))
+	}
+}
+
+func urlDecodeValue(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	decoded, err := url.QueryUnescape(valueToString(v))
+	if err != nil {
+		return event.NullValue()
+	}
+
+	return event.StringValue(decoded)
 }
 
 func roundValue(num, decimals event.Value) event.Value {
@@ -1689,6 +1924,125 @@ func sqrtValue(v event.Value) event.Value {
 	return event.FloatValue(math.Sqrt(f))
 }
 
+func expValue(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	f, ok := ValueToFloat(v)
+	if !ok {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(math.Exp(f))
+}
+
+func powValue(base, exponent event.Value) event.Value {
+	if base.IsNull() || exponent.IsNull() {
+		return event.NullValue()
+	}
+	b, ok := ValueToFloat(base)
+	if !ok {
+		return event.NullValue()
+	}
+	e, ok := ValueToFloat(exponent)
+	if !ok {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(math.Pow(b, e))
+}
+
+func logValue(value, base event.Value) event.Value {
+	if value.IsNull() || base.IsNull() {
+		return event.NullValue()
+	}
+	v, ok := ValueToFloat(value)
+	if !ok || v <= 0 {
+		return event.NullValue()
+	}
+	b, ok := ValueToFloat(base)
+	if !ok || b <= 0 || b == 1 {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(math.Log(v) / math.Log(b))
+}
+
+func unaryMathValue(v event.Value, fn int) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	f, ok := ValueToFloat(v)
+	if !ok {
+		return event.NullValue()
+	}
+	switch fn {
+	case mathFnAcos:
+		return event.FloatValue(math.Acos(f))
+	case mathFnAcosh:
+		return event.FloatValue(math.Acosh(f))
+	case mathFnAsin:
+		return event.FloatValue(math.Asin(f))
+	case mathFnAsinh:
+		return event.FloatValue(math.Asinh(f))
+	case mathFnAtan:
+		return event.FloatValue(math.Atan(f))
+	case mathFnAtanh:
+		return event.FloatValue(math.Atanh(f))
+	case mathFnCos:
+		return event.FloatValue(math.Cos(f))
+	case mathFnCosh:
+		return event.FloatValue(math.Cosh(f))
+	case mathFnSin:
+		return event.FloatValue(math.Sin(f))
+	case mathFnSinh:
+		return event.FloatValue(math.Sinh(f))
+	case mathFnTan:
+		return event.FloatValue(math.Tan(f))
+	case mathFnTanh:
+		return event.FloatValue(math.Tanh(f))
+	default:
+		return event.NullValue()
+	}
+}
+
+func binaryMathValue(a, b event.Value, fn int) event.Value {
+	if a.IsNull() || b.IsNull() {
+		return event.NullValue()
+	}
+	af, ok := ValueToFloat(a)
+	if !ok {
+		return event.NullValue()
+	}
+	bf, ok := ValueToFloat(b)
+	if !ok {
+		return event.NullValue()
+	}
+	switch fn {
+	case mathFnAtan2:
+		return event.FloatValue(math.Atan2(af, bf))
+	case mathFnHypot:
+		return event.FloatValue(math.Hypot(af, bf))
+	default:
+		return event.NullValue()
+	}
+}
+
+func maxMinValue(values []event.Value, isMax bool) (event.Value, error) {
+	if len(values) == 0 {
+		return event.NullValue(), fmt.Errorf("%w: max/min requires at least one value", ErrInvalidBytecode)
+	}
+	result := values[0]
+	for _, value := range values[1:] {
+		cmp := CompareValues(value, result)
+		if (isMax && cmp > 0) || (!isMax && cmp < 0) {
+			result = value
+		}
+	}
+
+	return result, nil
+}
+
 func strftimeValue(ts, format event.Value) event.Value {
 	if ts.IsNull() || format.IsNull() {
 		return event.NullValue()
@@ -1707,6 +2061,118 @@ func strftimeValue(ts, format event.Value) event.Value {
 	goFmt := splTimeToGo(fmtStr)
 
 	return event.StringValue(t.Format(goFmt))
+}
+
+func strptimeValue(ts, format event.Value) event.Value {
+	if ts.IsNull() || format.IsNull() {
+		return event.NullValue()
+	}
+	layout := splTimeToGo(valueToString(format))
+	t, err := time.ParseInLocation(layout, valueToString(ts), time.UTC)
+	if err != nil {
+		return event.NullValue()
+	}
+
+	return event.IntValue(t.Unix())
+}
+
+func hashValue(v event.Value, algorithm string) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	data := []byte(valueToString(v))
+	switch algorithm {
+	case "md5":
+		sum := md5.Sum(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	case "sha1":
+		sum := sha1.Sum(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	case "sha256":
+		sum := sha256.Sum256(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	case "sha512":
+		sum := sha512.Sum512(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	default:
+		return event.NullValue()
+	}
+}
+
+func printfValue(values []event.Value) event.Value {
+	if len(values) == 0 || values[0].IsNull() {
+		return event.NullValue()
+	}
+	format := valueToString(values[0])
+	args := make([]any, 0, len(values)-1)
+	for _, value := range values[1:] {
+		args = append(args, valueToInterface(value))
+	}
+
+	return event.StringValue(fmt.Sprintf(format, args...))
+}
+
+func valueToInterface(v event.Value) any {
+	switch v.Type() {
+	case event.FieldTypeNull:
+		return nil
+	case event.FieldTypeString:
+		return v.AsString()
+	case event.FieldTypeInt:
+		return v.AsInt()
+	case event.FieldTypeFloat:
+		return v.AsFloat()
+	case event.FieldTypeBool:
+		return v.AsBool()
+	case event.FieldTypeTimestamp:
+		return v.AsTimestamp()
+	default:
+		return valueToString(v)
+	}
+}
+
+func isJSONKind(v event.Value, prefix byte) bool {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return false
+	}
+	s := strings.TrimSpace(v.AsString())
+	if len(s) == 0 || s[0] != prefix {
+		return false
+	}
+
+	return json.Valid([]byte(s))
+}
+
+func ipMaskValue(mask, ip event.Value) event.Value {
+	if mask.IsNull() || ip.IsNull() {
+		return event.NullValue()
+	}
+	maskIP := net.ParseIP(valueToString(mask)).To4()
+	targetIP := net.ParseIP(valueToString(ip)).To4()
+	if maskIP == nil || targetIP == nil {
+		return event.NullValue()
+	}
+	masked := net.IPv4(
+		targetIP[0]&maskIP[0],
+		targetIP[1]&maskIP[1],
+		targetIP[2]&maskIP[2],
+		targetIP[3]&maskIP[3],
+	)
+
+	return event.StringValue(masked.String())
+}
+
+func searchMatchValue(search event.Value, fields map[string]event.Value) event.Value {
+	if search.IsNull() {
+		return event.BoolValue(false)
+	}
+	expr, err := spl2.ParseSearchExpression(valueToString(search))
+	if err != nil {
+		return event.BoolValue(false)
+	}
+	evaluator := spl2.NewSearchEvaluator(expr)
+
+	return event.BoolValue(evaluator.Evaluate(fields))
 }
 
 // splTimeReplacer converts SPL2 strftime format tokens to Go time layout tokens.

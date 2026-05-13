@@ -7,6 +7,13 @@ import (
 	"time"
 )
 
+// QueryRewrite describes one visible query normalization.
+type QueryRewrite struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
+	Reason string `json:"reason"`
+}
+
 // NormalizeQuery produces a fully-qualified SPL2 query from user input.
 // It ensures every query has an explicit FROM clause so the pipeline builder
 // always has a source to scan. Without this, server-mode queries that lack
@@ -23,6 +30,27 @@ import (
 //   - "level=error"    → "FROM main | search level=error" (implicit search)
 func NormalizeQuery(q string) string {
 	return NormalizeQueryWithNow(q, time.Now())
+}
+
+// NormalizeQueryWithRewrites returns the normalized query plus visible rewrite metadata.
+func NormalizeQueryWithRewrites(q string) (string, []QueryRewrite) {
+	return NormalizeQueryWithRewritesNow(q, time.Now())
+}
+
+// NormalizeQueryWithRewritesNow is like NormalizeQueryWithRewrites but accepts
+// an explicit "now" time for deterministic testing of relative time rewrites.
+func NormalizeQueryWithRewritesNow(q string, now time.Time) (string, []QueryRewrite) {
+	normalized := NormalizeQueryWithNow(q, now)
+	trimmed := strings.TrimSpace(q)
+	if normalized == trimmed {
+		return normalized, nil
+	}
+
+	return normalized, []QueryRewrite{{
+		Before: q,
+		After:  normalized,
+		Reason: inferRewriteReason(trimmed),
+	}}
 }
 
 // NormalizeQueryWithNow is like NormalizeQuery but accepts an explicit "now"
@@ -80,13 +108,17 @@ func NormalizeQueryWithNow(q string, now time.Time) string {
 	// Must come before known-command check since "index" is a known command
 	// but "index=foo" and "index foo" are source-selection patterns.
 	if indexName, rest, ok := extractIndexPrefix(trimmed); ok {
-		return buildFromWithRest(indexName, rest)
+		return buildFromWithRest(indexName, rest, now)
 	}
 
 	// Splunk-style source selection: source=<name>.
 	// Unlike index=, source is a field filter — scan all indexes and filter by _source.
 	if sourceName, rest, ok := extractSourcePrefix(trimmed); ok {
 		return buildSourceFilter(sourceName, rest)
+	}
+
+	if mods, _ := extractTimeModifierPrefix(trimmed); hasSearchTimeModifier(mods) {
+		return buildFromWithRest("main", trimmed, now)
 	}
 
 	// Known command (search, stats, where, etc.) — prepend FROM main.
@@ -102,6 +134,31 @@ func NormalizeQueryWithNow(q string, now time.Time) string {
 
 	// Implicit search: prepend FROM main and "search" keyword.
 	return "FROM main | search " + trimmed
+}
+
+func inferRewriteReason(trimmed string) string {
+	if trimmed == "" {
+		return "empty"
+	}
+	lower := strings.ToLower(trimmed)
+	if strings.HasPrefix(trimmed, "|") {
+		return "default-source"
+	}
+	if strings.HasPrefix(lower, "index") {
+		return "spl-index"
+	}
+	if strings.HasPrefix(lower, "source") {
+		return "source-filter"
+	}
+	if mods, _ := extractTimeModifierPrefix(trimmed); hasSearchTimeModifier(mods) {
+		return "time-modifier"
+	}
+	first := firstToken(trimmed)
+	if isKnownCommand(strings.ToLower(first)) {
+		return "default-source"
+	}
+
+	return "freehand-search"
 }
 
 // extractIndexInPrefix detects "index IN (...)" or "index NOT IN (...)" at the
@@ -400,24 +457,311 @@ func extractValue(s string) (value, rest string) {
 
 // buildFromWithRest constructs a normalized query from an extracted index name
 // and the remaining query text.
-func buildFromWithRest(indexName, rest string) string {
+func buildFromWithRest(indexName, rest string, now time.Time) string {
+	mods, rest := extractTimeModifierPrefix(rest)
+	source := "FROM " + indexName
+	eventTimeWhere := ""
+	if canUseCompactTimeRange(mods) {
+		source += "[" + mods.earliest
+		if mods.latest != "" {
+			source += ".." + mods.latest
+		}
+		source += "]"
+	} else {
+		eventTimeWhere = buildEventTimeWhere(mods, now)
+	}
+
+	timeWhere := combinePredicates(eventTimeWhere, buildIndexTimeWhere(mods, now))
 	if rest == "" {
-		return "FROM " + indexName
+		if timeWhere != "" {
+			return source + " | where " + timeWhere
+		}
+
+		return source
 	}
 
 	// Already a pipe — attach directly: FROM idx | stats ...
 	if strings.HasPrefix(rest, "|") {
-		return "FROM " + indexName + " " + rest
+		if timeWhere != "" {
+			return source + " | where " + timeWhere + " " + rest
+		}
+
+		return source + " " + rest
 	}
 
 	// Remaining text starts with a known command — insert pipe.
 	word := firstToken(rest)
 	if isKnownCommand(strings.ToLower(word)) {
-		return "FROM " + indexName + " | " + rest
+		if timeWhere != "" {
+			return source + " | where " + timeWhere + " | " + rest
+		}
+
+		return source + " | " + rest
 	}
 
 	// Otherwise treat remainder as implicit search terms.
-	return "FROM " + indexName + " | search " + rest
+	if timeWhere != "" {
+		return source + " | where " + timeWhere + " | search " + rest
+	}
+
+	return source + " | search " + rest
+}
+
+type searchTimeModifiers struct {
+	earliest      string
+	latest        string
+	latestOp      string
+	indexEarliest string
+	indexLatest   string
+	timeformat    string
+}
+
+func extractTimeModifierPrefix(rest string) (searchTimeModifiers, string) {
+	mods := searchTimeModifiers{timeformat: "%m/%d/%Y:%H:%M:%S"}
+	remaining := strings.TrimSpace(rest)
+	for {
+		lower := strings.ToLower(remaining)
+		switch {
+		case strings.HasPrefix(lower, "timeformat="):
+			value, next := extractValue(remaining[len("timeformat="):])
+			if value == "" {
+				return mods, remaining
+			}
+			mods.timeformat = value
+			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(lower, "earliest="):
+			value, next := extractValue(remaining[len("earliest="):])
+			if value == "" {
+				return mods, remaining
+			}
+			mods.earliest = normalizeTimeModifierValue(value)
+			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(lower, "latest="):
+			value, next := extractValue(remaining[len("latest="):])
+			if value == "" {
+				return mods, remaining
+			}
+			mods.latest = normalizeTimeModifierValue(value)
+			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(lower, "starttime="):
+			value, next := extractValue(remaining[len("starttime="):])
+			ts, ok := normalizeFormattedTimeModifier(value, mods.timeformat)
+			if !ok {
+				return mods, remaining
+			}
+			mods.earliest = ts
+			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(lower, "endtime="):
+			value, next := extractValue(remaining[len("endtime="):])
+			ts, ok := normalizeFormattedTimeModifier(value, mods.timeformat)
+			if !ok {
+				return mods, remaining
+			}
+			mods.latest = ts
+			mods.latestOp = "<"
+			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(lower, "_index_earliest="):
+			value, next := extractValue(remaining[len("_index_earliest="):])
+			if value == "" {
+				return mods, remaining
+			}
+			mods.indexEarliest = normalizeTimeModifierValue(value)
+			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(lower, "_index_latest="):
+			value, next := extractValue(remaining[len("_index_latest="):])
+			if value == "" {
+				return mods, remaining
+			}
+			mods.indexLatest = normalizeTimeModifierValue(value)
+			remaining = strings.TrimSpace(next)
+		case strings.HasPrefix(lower, "daysago="):
+			value, next := extractValue(remaining[len("daysago="):])
+			if dur := deprecatedAgoDuration(value, "d"); dur != "" {
+				mods.earliest = dur
+				remaining = strings.TrimSpace(next)
+				continue
+			}
+			return mods, remaining
+		case strings.HasPrefix(lower, "hoursago="):
+			value, next := extractValue(remaining[len("hoursago="):])
+			if dur := deprecatedAgoDuration(value, "h"); dur != "" {
+				mods.earliest = dur
+				remaining = strings.TrimSpace(next)
+				continue
+			}
+			return mods, remaining
+		case strings.HasPrefix(lower, "minutesago="):
+			value, next := extractValue(remaining[len("minutesago="):])
+			if dur := deprecatedAgoDuration(value, "m"); dur != "" {
+				mods.earliest = dur
+				remaining = strings.TrimSpace(next)
+				continue
+			}
+			return mods, remaining
+		case strings.HasPrefix(lower, "enddaysago="):
+			value, next := extractValue(remaining[len("enddaysago="):])
+			if dur := deprecatedAgoDuration(value, "d"); dur != "" {
+				mods.latest = dur
+				remaining = strings.TrimSpace(next)
+				continue
+			}
+			return mods, remaining
+		case strings.HasPrefix(lower, "endhoursago="):
+			value, next := extractValue(remaining[len("endhoursago="):])
+			if dur := deprecatedAgoDuration(value, "h"); dur != "" {
+				mods.latest = dur
+				remaining = strings.TrimSpace(next)
+				continue
+			}
+			return mods, remaining
+		case strings.HasPrefix(lower, "endminutesago="):
+			value, next := extractValue(remaining[len("endminutesago="):])
+			if dur := deprecatedAgoDuration(value, "m"); dur != "" {
+				mods.latest = dur
+				remaining = strings.TrimSpace(next)
+				continue
+			}
+			return mods, remaining
+		default:
+			return mods, remaining
+		}
+	}
+}
+
+func normalizeTimeModifierValue(value string) string {
+	if strings.EqualFold(value, "now()") {
+		return "now"
+	}
+
+	return value
+}
+
+func normalizeFormattedTimeModifier(value, splunkFormat string) (string, bool) {
+	layout, ok := splunkTimeLayout(splunkFormat)
+	if !ok {
+		return "", false
+	}
+	t, err := time.ParseInLocation(layout, value, time.UTC)
+	if err != nil {
+		return "", false
+	}
+
+	return t.Format(time.RFC3339), true
+}
+
+func splunkTimeLayout(format string) (string, bool) {
+	replacer := strings.NewReplacer(
+		"%Y", "2006",
+		"%m", "01",
+		"%d", "02",
+		"%H", "15",
+		"%M", "04",
+		"%S", "05",
+	)
+	layout := replacer.Replace(format)
+	if strings.Contains(layout, "%") {
+		return "", false
+	}
+
+	return layout, true
+}
+
+func canUseCompactTimeRange(mods searchTimeModifiers) bool {
+	return mods.earliest != "" &&
+		isCompactTimeRangeStart(mods.earliest) &&
+		mods.latestOp == "" &&
+		(mods.latest == "" || isCompactTimeRangeEnd(mods.latest))
+}
+
+func isCompactTimeRangeStart(value string) bool {
+	return strings.HasPrefix(value, "-") || strings.HasPrefix(value, "+")
+}
+
+func isCompactTimeRangeEnd(value string) bool {
+	return isCompactTimeRangeStart(value) || strings.EqualFold(value, "now") || strings.HasPrefix(value, "@")
+}
+
+func hasSearchTimeModifier(mods searchTimeModifiers) bool {
+	return mods.earliest != "" || mods.latest != "" ||
+		mods.indexEarliest != "" || mods.indexLatest != ""
+}
+
+func deprecatedAgoDuration(value, unit string) string {
+	if value == "" {
+		return ""
+	}
+	for _, ch := range value {
+		if ch < '0' || ch > '9' {
+			return ""
+		}
+	}
+
+	return "-" + value + unit
+}
+
+func buildEventTimeWhere(mods searchTimeModifiers, now time.Time) string {
+	earliest := resolveTimeModifierForPredicate(mods.earliest, now)
+	latest := resolveTimeModifierForPredicate(mods.latest, now)
+	if earliest != "" && latest != "" {
+		if mods.latestOp == "<" {
+			return `_time >= "` + earliest + `" AND _time < "` + latest + `"`
+		}
+
+		return `_time BETWEEN "` + earliest + `" AND "` + latest + `"`
+	}
+	if earliest != "" {
+		return `_time >= "` + earliest + `"`
+	}
+	if latest != "" {
+		if mods.latestOp == "<" {
+			return `_time < "` + latest + `"`
+		}
+
+		return `_time <= "` + latest + `"`
+	}
+
+	return ""
+}
+
+func buildIndexTimeWhere(mods searchTimeModifiers, now time.Time) string {
+	earliest := resolveTimeModifierForPredicate(mods.indexEarliest, now)
+	latest := resolveTimeModifierForPredicate(mods.indexLatest, now)
+	if earliest != "" && latest != "" {
+		return `_indextime BETWEEN "` + earliest + `" AND "` + latest + `"`
+	}
+	if earliest != "" {
+		return `_indextime >= "` + earliest + `"`
+	}
+	if latest != "" {
+		return `_indextime <= "` + latest + `"`
+	}
+
+	return ""
+}
+
+func combinePredicates(left, right string) string {
+	if left == "" {
+		return right
+	}
+	if right == "" {
+		return left
+	}
+
+	return left + " AND " + right
+}
+
+func resolveTimeModifierForPredicate(value string, now time.Time) string {
+	if value == "" {
+		return ""
+	}
+	if strings.EqualFold(value, "now") {
+		return now.Format(time.RFC3339)
+	}
+	if strings.HasPrefix(value, "-") {
+		return resolveDurationToTime(value, now)
+	}
+
+	return value
 }
 
 // isKnownCommand reports whether name (lowercase) is a recognized SPL2 command.

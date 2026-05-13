@@ -42,8 +42,13 @@ const (
 	TokenSort
 	TokenHead
 	TokenTail
+	TokenReverse
 	TokenTimechart
+	TokenChart
 	TokenRex
+	TokenRegex
+	TokenReplace
+	TokenFieldformat
 	TokenFields
 	TokenTable
 	TokenDedup
@@ -53,9 +58,13 @@ const (
 	TokenEventstats
 	TokenJoin
 	TokenAppend
+	TokenAppendcols
+	TokenAppendpipe
 	TokenMultisearch
+	TokenUnion
 	TokenTransaction
 	TokenXyseries
+	TokenUntable
 	TokenTop
 	TokenRare
 	TokenFillnull
@@ -63,8 +72,10 @@ const (
 	TokenAs
 	TokenAnd
 	TokenOr
+	TokenXor
 	TokenNot
 	TokenIn
+	TokenOver
 	TokenSpan
 	TokenTrue
 	TokenFalse
@@ -97,6 +108,12 @@ const (
 	TokenUnpackPattern
 	TokenJson
 	TokenUnroll
+	TokenMvexpand
+	TokenExpand
+	TokenMakeresults
+	TokenMakemv
+	TokenMvcombine
+	TokenNomv
 	TokenPackJson
 	TokenTee
 
@@ -148,8 +165,13 @@ const (
 	TokenLatency
 	TokenErrors
 	TokenRate
+	TokenProportion
 	TokenPercentiles
 	TokenSlowest
+	TokenImpact
+	TokenBaseline
+	TokenChanges
+	TokenExemplars
 	TokenRollup
 
 	// Schema exploration.
@@ -182,7 +204,7 @@ const (
 
 	// Time literals.
 	TokenAt       // @
-	TokenDuration // relative time like -1h, -7d, -1h@h
+	TokenDuration // relative time like -1h, +30m, -7d, -1h@h
 	TokenDot      // . (used for range syntax -7d..-1d)
 
 	// Lynx Flow punctuation (NOT in keywords map — lexed directly).
@@ -225,8 +247,13 @@ var tokenNames = map[TokenType]string{
 	TokenSort:              "SORT",
 	TokenHead:              "HEAD",
 	TokenTail:              "TAIL",
+	TokenReverse:           "REVERSE",
 	TokenTimechart:         "TIMECHART",
+	TokenChart:             "CHART",
 	TokenRex:               "REX",
+	TokenRegex:             "REGEX",
+	TokenReplace:           "REPLACE",
+	TokenFieldformat:       "FIELDFORMAT",
 	TokenFields:            "FIELDS",
 	TokenTable:             "TABLE",
 	TokenDedup:             "DEDUP",
@@ -236,9 +263,13 @@ var tokenNames = map[TokenType]string{
 	TokenEventstats:        "EVENTSTATS",
 	TokenJoin:              "JOIN",
 	TokenAppend:            "APPEND",
+	TokenAppendcols:        "APPENDCOLS",
+	TokenAppendpipe:        "APPENDPIPE",
 	TokenMultisearch:       "MULTISEARCH",
+	TokenUnion:             "UNION",
 	TokenTransaction:       "TRANSACTION",
 	TokenXyseries:          "XYSERIES",
+	TokenUntable:           "UNTABLE",
 	TokenTop:               "TOP",
 	TokenRare:              "RARE",
 	TokenFillnull:          "FILLNULL",
@@ -246,8 +277,10 @@ var tokenNames = map[TokenType]string{
 	TokenAs:                "AS",
 	TokenAnd:               "AND",
 	TokenOr:                "OR",
+	TokenXor:               "XOR",
 	TokenNot:               "NOT",
 	TokenIn:                "IN",
+	TokenOver:              "OVER",
 	TokenSpan:              "SPAN",
 	TokenTrue:              "TRUE",
 	TokenFalse:             "FALSE",
@@ -274,6 +307,12 @@ var tokenNames = map[TokenType]string{
 	TokenUnpackPattern:     "UNPACK_PATTERN",
 	TokenJson:              "JSON",
 	TokenUnroll:            "UNROLL",
+	TokenMvexpand:          "MVEXPAND",
+	TokenExpand:            "EXPAND",
+	TokenMakeresults:       "MAKERESULTS",
+	TokenMakemv:            "MAKEMV",
+	TokenMvcombine:         "MVCOMBINE",
+	TokenNomv:              "NOMV",
 	TokenPackJson:          "PACK_JSON",
 	TokenTee:               "TEE",
 	TokenRegexMatch:        "REGEX_MATCH",
@@ -313,8 +352,13 @@ var tokenNames = map[TokenType]string{
 	TokenLatency:           "LATENCY",
 	TokenErrors:            "ERRORS",
 	TokenRate:              "RATE",
+	TokenProportion:        "PROPORTION",
 	TokenPercentiles:       "PERCENTILES",
 	TokenSlowest:           "SLOWEST",
+	TokenImpact:            "IMPACT",
+	TokenBaseline:          "BASELINE",
+	TokenChanges:           "CHANGES",
+	TokenExemplars:         "EXEMPLARS",
 	TokenRollup:            "ROLLUP",
 	TokenGlimpse:           "GLIMPSE",
 	TokenDescribe:          "DESCRIBE",
@@ -368,8 +412,13 @@ var keywords = map[string]TokenType{
 	"sort":                TokenSort,
 	"head":                TokenHead,
 	"tail":                TokenTail,
+	"reverse":             TokenReverse,
 	"timechart":           TokenTimechart,
+	"chart":               TokenChart,
 	"rex":                 TokenRex,
+	"regex":               TokenRegex,
+	"replace":             TokenReplace,
+	"fieldformat":         TokenFieldformat,
 	"fields":              TokenFields,
 	"table":               TokenTable,
 	"dedup":               TokenDedup,
@@ -379,9 +428,13 @@ var keywords = map[string]TokenType{
 	"eventstats":          TokenEventstats,
 	"join":                TokenJoin,
 	"append":              TokenAppend,
+	"appendcols":          TokenAppendcols,
+	"appendpipe":          TokenAppendpipe,
 	"multisearch":         TokenMultisearch,
+	"union":               TokenUnion,
 	"transaction":         TokenTransaction,
 	"xyseries":            TokenXyseries,
+	"untable":             TokenUntable,
 	"top":                 TokenTop,
 	"rare":                TokenRare,
 	"fillnull":            TokenFillnull,
@@ -389,12 +442,20 @@ var keywords = map[string]TokenType{
 	"as":                  TokenAs,
 	"and":                 TokenAnd,
 	"or":                  TokenOr,
+	"xor":                 TokenXor,
 	"not":                 TokenNot,
 	"in":                  TokenIn,
+	"over":                TokenOver,
 	"span":                TokenSpan,
 	"true":                TokenTrue,
 	"false":               TokenFalse,
 	"like":                TokenLike,
+	"type":                TokenTypeKeyword,
+	"window":              TokenWindow,
+	"current":             TokenCurrent,
+	"maxspan":             TokenMaxspan,
+	"startswith":          TokenStartswith,
+	"endswith":            TokenEndswith,
 	"materialize":         TokenMaterialize,
 	"views":               TokenViews,
 	"dropview":            TokenDropview,
@@ -417,6 +478,12 @@ var keywords = map[string]TokenType{
 	"unpack_pattern":      TokenUnpackPattern,
 	"json":                TokenJson,
 	"unroll":              TokenUnroll,
+	"mvexpand":            TokenMvexpand,
+	"expand":              TokenExpand,
+	"makeresults":         TokenMakeresults,
+	"makemv":              TokenMakemv,
+	"mvcombine":           TokenMvcombine,
+	"nomv":                TokenNomv,
 	"pack_json":           TokenPackJson,
 	"tee":                 TokenTee,
 	"between":             TokenBetween,
@@ -453,8 +520,13 @@ var keywords = map[string]TokenType{
 	"latency":             TokenLatency,
 	"errors":              TokenErrors,
 	"rate":                TokenRate,
+	"proportion":          TokenProportion,
 	"percentiles":         TokenPercentiles,
 	"slowest":             TokenSlowest,
+	"impact":              TokenImpact,
+	"baseline":            TokenBaseline,
+	"changes":             TokenChanges,
+	"exemplars":           TokenExemplars,
 	"rollup":              TokenRollup,
 	"glimpse":             TokenGlimpse,
 	"describe":            TokenDescribe,

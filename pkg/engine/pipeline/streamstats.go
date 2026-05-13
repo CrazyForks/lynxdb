@@ -198,8 +198,8 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 			}
 			addValueToRunning(states[j], agg, row)
 			var val event.Value
-			if strings.EqualFold(agg.Name, aggValues) {
-				// Values aggregate requires full scan for order-preserving dedup.
+			if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
+				// Values/list aggregates require full scan for order-sensitive output.
 				val = s.computeAgg(agg, rb.items())
 			} else {
 				val = readRunningAgg(states[j], agg, rb)
@@ -247,7 +247,7 @@ func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 		return true
 	}
 	for _, agg := range aggs {
-		if strings.EqualFold(agg.Name, aggValues) {
+		if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
 			return true
 		}
 	}
@@ -299,7 +299,7 @@ func (r *ringBuffer) nextEvictedBytes() int64 {
 // newRunningAggState creates an initialized running state for the given aggregate.
 func newRunningAggState(aggName string) *runningAggState {
 	st := &runningAggState{}
-	if strings.EqualFold(aggName, "dc") {
+	if strings.EqualFold(aggName, aggDC) || strings.EqualFold(aggName, aggEstDCE) || strings.EqualFold(aggName, aggMode) {
 		st.freq = make(map[string]int64)
 	}
 
@@ -315,10 +315,17 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 		} else if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			st.count++
 		}
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		if v, ok := row[agg.Field]; ok {
 			if f, fok := vm.ValueToFloat(v); fok {
 				st.sum += f
+				st.count++
+			}
+		}
+	case aggSumSq:
+		if v, ok := row[agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				st.sum += f * f
 				st.count++
 			}
 		}
@@ -343,13 +350,13 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 			}
 			st.count++
 		}
-	case "dc":
+	case aggDC, aggEstDCE, aggMode:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			st.freq[v.String()]++
 			st.count++
 		}
-	case aggValues:
-		// Values aggregate still requires full scan for correctness (dedup + order).
+	case aggValues, aggList:
+		// Values/list aggregates still require full scan for correctness.
 		// Fall through to readRunningAgg which does the scan.
 		st.count++
 	}
@@ -364,10 +371,17 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 		} else if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			st.count--
 		}
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		if v, ok := row[agg.Field]; ok {
 			if f, fok := vm.ValueToFloat(v); fok {
 				st.sum -= f
+				st.count--
+			}
+		}
+	case aggSumSq:
+		if v, ok := row[agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				st.sum -= f * f
 				st.count--
 			}
 		}
@@ -393,7 +407,7 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 				st.maxVal = event.Value{} // invalidate
 			}
 		}
-	case "dc":
+	case aggDC, aggEstDCE, aggMode:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			key := v.String()
 			st.freq[key]--
@@ -402,7 +416,7 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 			}
 			st.count--
 		}
-	case aggValues:
+	case aggValues, aggList:
 		st.count--
 	}
 }
@@ -414,7 +428,9 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 	switch strings.ToLower(agg.Name) {
 	case aggCount:
 		return event.IntValue(st.count)
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
+		return event.FloatValue(st.sum)
+	case aggSumSq:
 		return event.FloatValue(st.sum)
 	case aggAvg:
 		if st.count == 0 {
@@ -448,8 +464,12 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		}
 
 		return st.maxVal
-	case "dc":
+	case aggDC:
 		return event.IntValue(int64(len(st.freq)))
+	case aggEstDCE:
+		return event.FloatValue(0)
+	case aggMode:
+		return modeFromCounts(st.freq)
 	}
 
 	return event.NullValue()
@@ -497,12 +517,23 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return event.IntValue(count)
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		sum := 0.0
 		for _, item := range items {
 			if v, ok := item[agg.Field]; ok {
 				if f, fok := vm.ValueToFloat(v); fok {
 					sum += f
+				}
+			}
+		}
+
+		return event.FloatValue(sum)
+	case aggSumSq:
+		sum := 0.0
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok {
+				if f, fok := vm.ValueToFloat(v); fok {
+					sum += f * f
 				}
 			}
 		}
@@ -545,15 +576,27 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return maxVal
-	case "dc":
+	case aggDC, aggEstDCE:
 		seen := make(map[string]bool)
 		for _, item := range items {
 			if v, ok := item[agg.Field]; ok && !v.IsNull() {
 				seen[v.String()] = true
 			}
 		}
+		if strings.EqualFold(agg.Name, aggEstDCE) {
+			return event.FloatValue(0)
+		}
 
 		return event.IntValue(int64(len(seen)))
+	case aggMode:
+		counts := make(map[string]int64)
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok && !v.IsNull() {
+				counts[v.String()]++
+			}
+		}
+
+		return modeFromCounts(counts)
 	case aggValues:
 		var vals []string
 		seen := make(map[string]bool)
@@ -564,6 +607,15 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 					seen[s] = true
 					vals = append(vals, s)
 				}
+			}
+		}
+
+		return event.StringValue(strings.Join(vals, "|||"))
+	case aggList:
+		var vals []string
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok && !v.IsNull() {
+				vals = append(vals, v.String())
 			}
 		}
 

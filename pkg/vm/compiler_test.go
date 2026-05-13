@@ -101,6 +101,43 @@ func TestCompileBooleanExpr(t *testing.T) {
 	}
 }
 
+func TestCompileXorExpr(t *testing.T) {
+	tests := []struct {
+		name       string
+		left       string
+		right      string
+		wantResult bool
+	}{
+		{"true XOR true", "true", "true", false},
+		{"true XOR false", "true", "false", true},
+		{"false XOR true", "false", "true", true},
+		{"false XOR false", "false", "false", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := &spl2.BinaryExpr{
+				Left:  &spl2.LiteralExpr{Value: tt.left},
+				Op:    "xor",
+				Right: &spl2.LiteralExpr{Value: tt.right},
+			}
+			prog, err := CompilePredicate(expr)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			vm := &VM{}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.AsBool() != tt.wantResult {
+				t.Errorf("got %v, want %v", result.AsBool(), tt.wantResult)
+			}
+		})
+	}
+}
+
 func TestCompileNotExpr(t *testing.T) {
 	expr := &spl2.NotExpr{
 		Expr: &spl2.CompareExpr{
@@ -212,6 +249,81 @@ func TestCompileCaseFunction(t *testing.T) {
 	}
 }
 
+func TestCompileValidateFunction(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "validate",
+		Args: []spl2.Expr{
+			&spl2.CompareExpr{
+				Left:  &spl2.FieldExpr{Name: "status"},
+				Op:    ">=",
+				Right: &spl2.LiteralExpr{Value: "200"},
+			},
+			&spl2.LiteralExpr{Value: `"too low"`},
+			&spl2.CompareExpr{
+				Left:  &spl2.FieldExpr{Name: "status"},
+				Op:    "<",
+				Right: &spl2.LiteralExpr{Value: "300"},
+			},
+			&spl2.LiteralExpr{Value: `"too high"`},
+		},
+	}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm := &VM{}
+	tests := []struct {
+		status int64
+		want   event.Value
+	}{
+		{99, event.StringValue("too low")},
+		{200, event.NullValue()},
+		{404, event.StringValue("too high")},
+	}
+	for _, tt := range tests {
+		result, err := vm.Execute(prog, map[string]event.Value{"status": event.IntValue(tt.status)})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !valuesEqual(result, tt.want) {
+			t.Fatalf("status=%d: got %v, want %v", tt.status, result, tt.want)
+		}
+	}
+}
+
+func TestCompileSearchMatch(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "searchmatch",
+		Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"sshd AND Accepted"`}},
+	}
+	prog, err := CompilePredicate(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, map[string]event.Value{
+		"_raw": event.StringValue("sshd[123]: Accepted password for admin"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.AsBool() {
+		t.Fatal("expected matching _raw to return true")
+	}
+
+	result, err = vm.Execute(prog, map[string]event.Value{
+		"_raw": event.StringValue("sshd[123]: Failed password for guest"),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AsBool() {
+		t.Fatal("expected non-matching _raw to return false")
+	}
+}
+
 func TestCompileCoalesce(t *testing.T) {
 	expr := &spl2.FuncCallExpr{
 		Name: "coalesce",
@@ -236,6 +348,290 @@ func TestCompileCoalesce(t *testing.T) {
 	}
 	if result.AsString() != "found" {
 		t.Errorf("got %q, want %q", result.AsString(), "found")
+	}
+}
+
+func TestCompileNullIf(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "nullif",
+		Args: []spl2.Expr{
+			&spl2.FieldExpr{Name: "status"},
+			&spl2.LiteralExpr{Value: `"ok"`},
+		},
+	}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, map[string]event.Value{"status": event.StringValue("ok")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.IsNull() {
+		t.Fatalf("equal value: got %v, want null", result)
+	}
+
+	result, err = vm.Execute(prog, map[string]event.Value{"status": event.StringValue("warn")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AsString() != "warn" {
+		t.Fatalf("different value: got %q, want warn", result.AsString())
+	}
+}
+
+func TestCompileTrimFunctions(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *spl2.FuncCallExpr
+		want string
+	}{
+		{
+			name: "trim default whitespace",
+			expr: &spl2.FuncCallExpr{
+				Name: "trim",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"  ok  "`}},
+			},
+			want: "ok",
+		},
+		{
+			name: "ltrim chars",
+			expr: &spl2.FuncCallExpr{
+				Name: "ltrim",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: `"xxok"`},
+					&spl2.LiteralExpr{Value: `"x"`},
+				},
+			},
+			want: "ok",
+		},
+		{
+			name: "rtrim chars",
+			expr: &spl2.FuncCallExpr{
+				Name: "rtrim",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: `"okxx"`},
+					&spl2.LiteralExpr{Value: `"x"`},
+				},
+			},
+			want: "ok",
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if result.AsString() != tt.want {
+				t.Fatalf("got %q, want %q", result.AsString(), tt.want)
+			}
+		})
+	}
+}
+
+func TestCompileEncodingCryptoFunctions(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *spl2.FuncCallExpr
+		want string
+	}{
+		{
+			name: "urldecode",
+			expr: &spl2.FuncCallExpr{
+				Name: "urldecode",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"%7Bok%7D"`}},
+			},
+			want: "{ok}",
+		},
+		{
+			name: "md5",
+			expr: &spl2.FuncCallExpr{
+				Name: "md5",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "900150983cd24fb0d6963f7d28e17f72",
+		},
+		{
+			name: "sha1",
+			expr: &spl2.FuncCallExpr{
+				Name: "sha1",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "a9993e364706816aba3e25717850c26c9cd0d89d",
+		},
+		{
+			name: "sha256",
+			expr: &spl2.FuncCallExpr{
+				Name: "sha256",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+		},
+		{
+			name: "sha512",
+			expr: &spl2.FuncCallExpr{
+				Name: "sha512",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if result.AsString() != tt.want {
+				t.Fatalf("got %q, want %q", result.AsString(), tt.want)
+			}
+		})
+	}
+}
+
+func TestCompilePrintf(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *spl2.FuncCallExpr
+		want string
+	}{
+		{
+			name: "string and int",
+			expr: &spl2.FuncCallExpr{
+				Name: "printf",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: `"%s-%03d"`},
+					&spl2.LiteralExpr{Value: `"svc"`},
+					&spl2.LiteralExpr{Value: "7"},
+				},
+			},
+			want: "svc-007",
+		},
+		{
+			name: "float precision",
+			expr: &spl2.FuncCallExpr{
+				Name: "printf",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: `"%.1f"`},
+					&spl2.LiteralExpr{Value: "3.14"},
+				},
+			},
+			want: "3.1",
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if result.AsString() != tt.want {
+				t.Fatalf("got %q, want %q", result.AsString(), tt.want)
+			}
+		})
+	}
+}
+
+func TestCompileIPMask(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *spl2.FuncCallExpr
+		want event.Value
+	}{
+		{
+			name: "default subnet mask",
+			expr: &spl2.FuncCallExpr{
+				Name: "ipmask",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: `"255.255.255.0"`},
+					&spl2.LiteralExpr{Value: `"10.20.30.120"`},
+				},
+			},
+			want: event.StringValue("10.20.30.0"),
+		},
+		{
+			name: "arbitrary octet mask",
+			expr: &spl2.FuncCallExpr{
+				Name: "ipmask",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: `"0.255.0.224"`},
+					&spl2.LiteralExpr{Value: `"10.20.30.120"`},
+				},
+			},
+			want: event.StringValue("0.20.0.96"),
+		},
+		{
+			name: "invalid ip is null",
+			expr: &spl2.FuncCallExpr{
+				Name: "ipmask",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: `"255.255.255.0"`},
+					&spl2.LiteralExpr{Value: `"not-an-ip"`},
+				},
+			},
+			want: event.NullValue(),
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if !valuesEqual(result, tt.want) {
+				t.Fatalf("got %v, want %v", result, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompileStrptime(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "strptime",
+		Args: []spl2.Expr{
+			&spl2.LiteralExpr{Value: `"2024-05-01 12:34:56"`},
+			&spl2.LiteralExpr{Value: `"%Y-%m-%d %H:%M:%S"`},
+		},
+	}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AsInt() != 1714566896 {
+		t.Fatalf("got %d, want 1714566896", result.AsInt())
 	}
 }
 
@@ -270,6 +666,8 @@ func TestCompileMathFunctions(t *testing.T) {
 		want float64
 	}{
 		{"ln(1)", "ln", &spl2.LiteralExpr{Value: "1"}, 0},
+		{"log(100)", "log", &spl2.LiteralExpr{Value: "100"}, 2},
+		{"exp(1)", "exp", &spl2.LiteralExpr{Value: "1"}, math.E},
 		{"abs(-5)", "abs", &spl2.LiteralExpr{Value: "-5"}, 5},
 		{"sqrt(16)", "sqrt", &spl2.LiteralExpr{Value: "16"}, 4},
 		{"ceil(2.3)", "ceil", &spl2.LiteralExpr{Value: "2.3"}, 3},
@@ -296,6 +694,135 @@ func TestCompileMathFunctions(t *testing.T) {
 				t.Errorf("got %v, want %v", f, tt.want)
 			}
 		})
+	}
+}
+
+func TestCompileRFCMathFunctions(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *spl2.FuncCallExpr
+		want float64
+	}{
+		{
+			name: "pow",
+			expr: &spl2.FuncCallExpr{
+				Name: "pow",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: "2"},
+					&spl2.LiteralExpr{Value: "3"},
+				},
+			},
+			want: 8,
+		},
+		{
+			name: "log base",
+			expr: &spl2.FuncCallExpr{
+				Name: "log",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: "8"},
+					&spl2.LiteralExpr{Value: "2"},
+				},
+			},
+			want: 3,
+		},
+		{
+			name: "pi",
+			expr: &spl2.FuncCallExpr{Name: "pi"},
+			want: math.Pi,
+		},
+		{
+			name: "max variadic",
+			expr: &spl2.FuncCallExpr{
+				Name: "max",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: "2"},
+					&spl2.LiteralExpr{Value: "9"},
+					&spl2.LiteralExpr{Value: "5"},
+				},
+			},
+			want: 9,
+		},
+		{
+			name: "min variadic",
+			expr: &spl2.FuncCallExpr{
+				Name: "min",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: "2"},
+					&spl2.LiteralExpr{Value: "9"},
+					&spl2.LiteralExpr{Value: "5"},
+				},
+			},
+			want: 2,
+		},
+		{name: "acos", expr: &spl2.FuncCallExpr{Name: "acos", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "1"}}}, want: 0},
+		{name: "acosh", expr: &spl2.FuncCallExpr{Name: "acosh", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "1"}}}, want: 0},
+		{name: "asin", expr: &spl2.FuncCallExpr{Name: "asin", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "1"}}}, want: math.Pi / 2},
+		{name: "asinh", expr: &spl2.FuncCallExpr{Name: "asinh", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 0},
+		{name: "atan", expr: &spl2.FuncCallExpr{Name: "atan", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "1"}}}, want: math.Pi / 4},
+		{name: "atanh", expr: &spl2.FuncCallExpr{Name: "atanh", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 0},
+		{name: "cos", expr: &spl2.FuncCallExpr{Name: "cos", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 1},
+		{name: "cosh", expr: &spl2.FuncCallExpr{Name: "cosh", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 1},
+		{name: "sin", expr: &spl2.FuncCallExpr{Name: "sin", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 0},
+		{name: "sinh", expr: &spl2.FuncCallExpr{Name: "sinh", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 0},
+		{name: "tan", expr: &spl2.FuncCallExpr{Name: "tan", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 0},
+		{name: "tanh", expr: &spl2.FuncCallExpr{Name: "tanh", Args: []spl2.Expr{&spl2.LiteralExpr{Value: "0"}}}, want: 0},
+		{
+			name: "atan2",
+			expr: &spl2.FuncCallExpr{
+				Name: "atan2",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: "1"}, &spl2.LiteralExpr{Value: "1"}},
+			},
+			want: math.Pi / 4,
+		},
+		{
+			name: "hypot",
+			expr: &spl2.FuncCallExpr{
+				Name: "hypot",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: "3"}, &spl2.LiteralExpr{Value: "4"}},
+			},
+			want: 5,
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			f, ok := ValueToFloat(result)
+			if !ok {
+				t.Fatalf("not numeric: %v", result)
+			}
+			if math.Abs(f-tt.want) > 1e-10 {
+				t.Fatalf("got %v, want %v", f, tt.want)
+			}
+		})
+	}
+}
+
+func TestCompileRandom(t *testing.T) {
+	expr := &spl2.FuncCallExpr{Name: "random"}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Type() != event.FieldTypeInt {
+		t.Fatalf("got type %s, want int", result.Type())
+	}
+	if result.AsInt() < 0 || result.AsInt() >= 1<<31 {
+		t.Fatalf("random out of range: %d", result.AsInt())
 	}
 }
 
@@ -330,6 +857,39 @@ func TestCompileInExpr(t *testing.T) {
 	}
 	if result.AsBool() {
 		t.Errorf("expected false for 404 IN (200,201,204)")
+	}
+}
+
+func TestCompileInFunction(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "in",
+		Args: []spl2.Expr{
+			&spl2.FieldExpr{Name: "status"},
+			&spl2.LiteralExpr{Value: "200"},
+			&spl2.LiteralExpr{Value: "201"},
+			&spl2.LiteralExpr{Value: "204"},
+		},
+	}
+	prog, err := CompilePredicate(expr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, map[string]event.Value{"status": event.IntValue(204)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.AsBool() {
+		t.Errorf("expected true for in(204, 200, 201, 204)")
+	}
+
+	result, err = vm.Execute(prog, map[string]event.Value{"status": event.IntValue(500)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AsBool() {
+		t.Errorf("expected false for in(500, 200, 201, 204)")
 	}
 }
 

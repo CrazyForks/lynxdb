@@ -2,10 +2,12 @@ package pipeline
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/vm"
 )
 
@@ -100,6 +102,818 @@ func TestLimitEarlyTermination(t *testing.T) {
 	// Verify early termination: scan should only have been called 1 time
 	if scan.ScanCalls() > 1 {
 		t.Errorf("scan called %d times, want 1 (early termination)", scan.ScanCalls())
+	}
+}
+
+func TestReverseIterator(t *testing.T) {
+	events := makeEvents(5)
+	scan := NewScanIterator(events, 2)
+	reverse := NewReverseIterator(scan, 2)
+
+	ctx := context.Background()
+	if err := reverse.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := CollectAll(ctx, reverse)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 5 {
+		t.Fatalf("got %d rows, want 5", len(rows))
+	}
+
+	for i, row := range rows {
+		got := row["x"].AsInt()
+		want := int64(4 - i)
+		if got != want {
+			t.Errorf("row[%d].x: got %d, want %d", i, got, want)
+		}
+	}
+}
+
+func TestBuildFromSourceReverseCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | reverse`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	source := NewScanIterator(makeEvents(4), 2)
+	iter, err := BuildFromSource(context.Background(), source, query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	rows, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("got %d rows, want 4", len(rows))
+	}
+	if got := rows[0]["x"].AsInt(); got != 3 {
+		t.Errorf("first row x: got %d, want 3", got)
+	}
+}
+
+func TestBuildFromSourceRegexCommandDefaultRaw(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | regex "error|fatal"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	events := []*event.Event{
+		event.NewEvent(time.Unix(1, 0), "info ready"),
+		event.NewEvent(time.Unix(2, 0), "error timeout"),
+		event.NewEvent(time.Unix(3, 0), "fatal panic"),
+	}
+	iter, err := BuildFromSource(context.Background(), NewScanIterator(events, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	rows, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if got := rows[0]["_raw"].AsString(); got != "error timeout" {
+		t.Errorf("first raw: got %q", got)
+	}
+}
+
+func TestBuildFromSourceRegexCommandNotMatchIncludesNull(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | regex message!="^debug"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	events := []*event.Event{
+		event.NewEvent(time.Unix(1, 0), "a"),
+		event.NewEvent(time.Unix(2, 0), "b"),
+		event.NewEvent(time.Unix(3, 0), "c"),
+	}
+	events[0].SetField("message", event.StringValue("debug detail"))
+	events[1].SetField("message", event.StringValue("info detail"))
+
+	iter, err := BuildFromSource(context.Background(), NewScanIterator(events, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	rows, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	if got := rows[0]["message"].AsString(); got != "info detail" {
+		t.Errorf("first message: got %q", got)
+	}
+	if !rows[1]["message"].IsNull() {
+		t.Errorf("second message: got %v, want null", rows[1]["message"])
+	}
+}
+
+func TestBuildFromSourceMvexpandCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | mvexpand limit=2 tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{
+			"name": event.StringValue("alice"),
+			"tags": event.StringValue(`["admin","user","dev"]`),
+		},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d rows, want 2", len(results))
+	}
+	if got := results[1]["tags"].AsString(); got != "user" {
+		t.Errorf("second tag: got %q, want user", got)
+	}
+}
+
+func TestBuildPipelineMakeresultsCommand(t *testing.T) {
+	query, err := spl2.Parse(`| makeresults count=3`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	iter, err := BuildPipeline(context.Background(), query, nil, 2)
+	if err != nil {
+		t.Fatalf("BuildPipeline: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	rows, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 3 {
+		t.Fatalf("got %d rows, want 3", len(rows))
+	}
+	for i, row := range rows {
+		if row["_time"].IsNull() {
+			t.Fatalf("row %d _time is null", i)
+		}
+	}
+}
+
+func TestBuildPipelineMakeresultsAnnotate(t *testing.T) {
+	query, err := spl2.Parse(`| makeresults count=2 annotate=true splunk_server=local`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	iter, err := BuildPipeline(context.Background(), query, nil, 2)
+	if err != nil {
+		t.Fatalf("BuildPipeline: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	rows, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("got %d rows, want 2", len(rows))
+	}
+	row := rows[0]
+	for _, field := range []string{"_raw", "host", "source", "sourcetype", "splunk_server_group"} {
+		if v, ok := row[field]; !ok || !v.IsNull() {
+			t.Fatalf("%s: got %+v, want null field", field, v)
+		}
+	}
+	if got := row["splunk_server"].AsString(); got != "local" {
+		t.Fatalf("splunk_server: got %q, want local", got)
+	}
+}
+
+func TestBuildPipelineMakeresultsFormatDataDeferred(t *testing.T) {
+	query, err := spl2.Parse(`| makeresults format=json data="[{\"name\":\"Ada\"}]"`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	_, err = BuildPipeline(context.Background(), query, nil, 2)
+	if err == nil {
+		t.Fatal("expected deferred format/data error")
+	}
+	if !strings.Contains(err.Error(), "makeresults format/data is not implemented") {
+		t.Fatalf("error: got %q", err.Error())
+	}
+}
+
+func TestBuildFromSourceUntableCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | untable host metric value`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{
+			"host":   event.StringValue("h1"),
+			"count":  event.IntValue(7),
+			"errors": event.IntValue(2),
+		},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d rows, want 2", len(results))
+	}
+	if got := results[0]["host"].AsString(); got != "h1" {
+		t.Errorf("first host: got %q, want h1", got)
+	}
+	if got := results[0]["metric"].AsString(); got != "count" {
+		t.Errorf("first metric: got %q, want count", got)
+	}
+	if got := results[0]["value"].AsInt(); got != 7 {
+		t.Errorf("first value: got %d, want 7", got)
+	}
+	if got := results[1]["metric"].AsString(); got != "errors" {
+		t.Errorf("second metric: got %q, want errors", got)
+	}
+}
+
+func TestBuildFromSourceNomvCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | nomv senders`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"senders": event.StringValue(`["alice","bob"]`)},
+		{"senders": event.StringValue("carol|||dave")},
+		{"senders": event.StringValue("erin")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["senders"].AsString(); got != "alice\nbob" {
+		t.Errorf("json array senders: got %q, want %q", got, "alice\nbob")
+	}
+	if got := results[1]["senders"].AsString(); got != "carol\ndave" {
+		t.Errorf("internal mv senders: got %q, want %q", got, "carol\ndave")
+	}
+	if got := results[2]["senders"].AsString(); got != "erin" {
+		t.Errorf("scalar senders: got %q, want erin", got)
+	}
+}
+
+func TestBuildFromSourceMakemvCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | makemv delim="," tags | nomv tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"tags": event.StringValue("red,blue,,green")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["tags"].AsString(); got != "red\nblue\ngreen" {
+		t.Errorf("tags: got %q, want %q", got, "red\nblue\ngreen")
+	}
+}
+
+func TestBuildFromSourceMakemvTokenizerCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | makemv tokenizer="([^,]+),?" allowempty=true tags | nomv tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"tags": event.StringValue("red,blue,green")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["tags"].AsString(); got != "red\nblue\ngreen" {
+		t.Errorf("tags: got %q, want %q", got, "red\nblue\ngreen")
+	}
+}
+
+func TestBuildFromSourceMakemvInvalidTokenizer(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | makemv tokenizer="(" tags`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	_, err = BuildFromSource(context.Background(), NewRowScanIterator(nil, 2), query.Commands, 2)
+	if err == nil {
+		t.Fatal("expected tokenizer compile error")
+	}
+	if !strings.Contains(err.Error(), "makemv") {
+		t.Fatalf("error %q missing makemv context", err)
+	}
+}
+
+func TestBuildFromSourceMvcombineCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | mvcombine host | nomv host`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("www1"), "max": event.IntValue(4000), "min": event.IntValue(200)},
+		{"host": event.StringValue("www2"), "max": event.IntValue(4000), "min": event.IntValue(200)},
+		{"host": event.StringValue("api1"), "max": event.IntValue(9000), "min": event.IntValue(100)},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 2 {
+		t.Fatalf("got %d rows, want 2", len(results))
+	}
+	if got := results[0]["host"].AsString(); got != "www1\nwww2" {
+		t.Errorf("first host: got %q, want %q", got, "www1\nwww2")
+	}
+	if got := results[0]["max"].AsInt(); got != 4000 {
+		t.Errorf("first max: got %d, want 4000", got)
+	}
+	if got := results[1]["host"].AsString(); got != "api1" {
+		t.Errorf("second host: got %q, want api1", got)
+	}
+}
+
+func TestBuildFromSourceReplaceCommand(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | replace 0 WITH Critical, "* localhost" WITH "localhost *" IN msg_level host`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"msg_level": event.IntValue(0), "host": event.StringValue("web localhost"), "_raw": event.StringValue("0")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["msg_level"].AsString(); got != "Critical" {
+		t.Errorf("msg_level: got %q, want Critical", got)
+	}
+	if got := results[0]["host"].AsString(); got != "localhost web" {
+		t.Errorf("host: got %q, want %q", got, "localhost web")
+	}
+	if got := results[0]["_raw"].AsString(); got != "0" {
+		t.Errorf("_raw: got %q, want 0", got)
+	}
+}
+
+func TestBuildFromSourceReplaceSkipsInternalWithoutIn(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | replace 0 WITH zero`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"level": event.StringValue("0"), "_raw": event.StringValue("0")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["level"].AsString(); got != "zero" {
+		t.Errorf("level: got %q, want zero", got)
+	}
+	if got := results[0]["_raw"].AsString(); got != "0" {
+		t.Errorf("_raw: got %q, want 0", got)
+	}
+}
+
+func TestBuildFromSourceFieldformatKeepsUnderlyingValue(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | fieldformat totalCount=tostring(totalCount, "commas")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"totalCount": event.IntValue(1234)},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := results[0]["totalCount"]
+	if got.Type() != event.FieldTypeInt {
+		t.Fatalf("totalCount type: got %s, want int", got.Type())
+	}
+	if got.AsInt() != 1234 {
+		t.Errorf("totalCount: got %d, want 1234", got.AsInt())
+	}
+}
+
+func TestBuildFromSourceCapabilityCommandRequiresEnablement(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | addinfo`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{{"host": event.StringValue("web")}}
+	_, err = BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err == nil {
+		t.Fatal("expected capability error")
+	}
+	if !strings.Contains(err.Error(), `capability command "addinfo" is not enabled`) {
+		t.Fatalf("error: got %q", err.Error())
+	}
+}
+
+func TestBuildFromSourceChartByField(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | chart count by host`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("api")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int64{}
+	for _, row := range results {
+		counts[row["host"].AsString()] = row["count"].AsInt()
+	}
+	if counts["web"] != 2 || counts["api"] != 1 {
+		t.Errorf("counts: got %v, want web=2 api=1", counts)
+	}
+}
+
+func TestBuildFromSourceChartOverByPivotsOneAggregate(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | chart count over host by status`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web"), "status": event.StringValue("200")},
+		{"host": event.StringValue("web"), "status": event.StringValue("500")},
+		{"host": event.StringValue("web"), "status": event.StringValue("500")},
+		{"host": event.StringValue("api"), "status": event.StringValue("200")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byHost := map[string]map[string]event.Value{}
+	for _, row := range results {
+		byHost[row["host"].AsString()] = row
+	}
+	if got := byHost["web"]["200"].AsInt(); got != 1 {
+		t.Errorf("web 200: got %d, want 1", got)
+	}
+	if got := byHost["web"]["500"].AsInt(); got != 2 {
+		t.Errorf("web 500: got %d, want 2", got)
+	}
+	if got := byHost["api"]["200"].AsInt(); got != 1 {
+		t.Errorf("api 200: got %d, want 1", got)
+	}
+}
+
+func TestBuildFromSourceUnionSubsearch(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | union [makeresults count=2 | eval branch="sub"]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"branch": event.StringValue("main")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, row := range results {
+		counts[row["branch"].AsString()]++
+	}
+	if counts["main"] != 1 || counts["sub"] != 2 {
+		t.Errorf("counts: got %v, want main=1 sub=2", counts)
+	}
+}
+
+func TestBuildFromSourceUnionMaxout(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | union maxout=1 [makeresults count=3 | eval branch="sub"]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"branch": event.StringValue("main")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	counts := map[string]int{}
+	for _, row := range results {
+		counts[row["branch"].AsString()]++
+	}
+	if counts["main"] != 1 || counts["sub"] != 1 {
+		t.Errorf("counts: got %v, want main=1 sub=1", counts)
+	}
+}
+
+func TestBuildFromSourceAppendpipe(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | appendpipe [stats count as total]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("api")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(results) != 3 {
+		t.Fatalf("rows: got %d, want 3", len(results))
+	}
+	if got := results[2]["total"].AsInt(); got != 2 {
+		t.Errorf("total: got %d, want 2", got)
+	}
+	if got := results[0]["host"].AsString(); got != "web" {
+		t.Errorf("first original host: got %q, want web", got)
+	}
+}
+
+func TestBuildFromSourceAppendcols(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | appendcols [makeresults count=1 | eval host="sub", extra="x", _internal="skip"]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("api")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["host"].AsString(); got != "web" {
+		t.Errorf("host: got %q, want web", got)
+	}
+	if got := results[0]["extra"].AsString(); got != "x" {
+		t.Errorf("extra: got %q, want x", got)
+	}
+	if _, ok := results[0]["_internal"]; ok {
+		t.Error("internal subsearch field should not be appended")
+	}
+	if got := results[1]["extra"]; !got.IsNull() {
+		t.Errorf("second row extra: got %v, want null", got)
+	}
+}
+
+func TestBuildFromSourceAppendcolsMaxout(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | appendcols maxout=1 [makeresults count=2 | streamstats count as row_num | eval extra=row_num]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+		{"host": event.StringValue("api")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["extra"].AsInt(); got != 1 {
+		t.Errorf("first extra: got %d, want 1", got)
+	}
+	if got := results[1]["extra"]; !got.IsNull() {
+		t.Errorf("second extra: got %v, want null", got)
+	}
+}
+
+func TestBuildFromSourceAppendcolsOverride(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | appendcols override=true [makeresults | eval host="sub"]`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{
+		{"host": event.StringValue("web")},
+	}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+
+	ctx := context.Background()
+	if err := iter.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	defer iter.Close()
+
+	results, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := results[0]["host"].AsString(); got != "sub" {
+		t.Errorf("host: got %q, want sub", got)
 	}
 }
 
@@ -546,6 +1360,70 @@ func TestStreamStatsIterator(t *testing.T) {
 		}
 		if f != expected[i] {
 			t.Errorf("row %d: running_sum got %v, want %v", i, f, expected[i])
+		}
+	}
+}
+
+func TestStreamStatsIterator_EstDCError(t *testing.T) {
+	events := makeEvents(4)
+	users := []string{"alice", "bob", "alice", "carol"}
+	for i := range events {
+		events[i].SetField("user", event.StringValue(users[i]))
+	}
+	scan := NewScanIterator(events, 1024)
+	aggs := []AggFunc{
+		{Name: aggEstDCE, Field: "user", Alias: "user_error"},
+		{Name: aggMode, Field: "user", Alias: "common_user"},
+	}
+	ss := NewStreamStatsIterator(scan, aggs, nil, 3, true)
+
+	ctx := context.Background()
+	ss.Init(ctx)
+	rows, err := CollectAll(ctx, ss)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 rows, got %d", len(rows))
+	}
+	for i, row := range rows {
+		got := row["user_error"]
+		if got.Type() != event.FieldTypeFloat || got.AsFloat() != 0 {
+			t.Errorf("row %d: user_error got %v, want 0.0", i, got)
+		}
+	}
+	expectedMode := []string{"alice", "alice", "alice", "alice"}
+	for i, row := range rows {
+		got := row["common_user"]
+		if got.Type() != event.FieldTypeString || got.AsString() != expectedMode[i] {
+			t.Errorf("row %d: common_user got %v, want %q", i, got, expectedMode[i])
+		}
+	}
+}
+
+func TestEventStatsIterator_Mode(t *testing.T) {
+	events := makeEvents(4)
+	users := []string{"alice", "bob", "alice", "carol"}
+	for i := range events {
+		events[i].SetField("user", event.StringValue(users[i]))
+	}
+	scan := NewScanIterator(events, 1024)
+	aggs := []AggFunc{{Name: aggMode, Field: "user", Alias: "common_user"}}
+	es := NewEventStatsIterator(scan, aggs, nil, 2)
+
+	ctx := context.Background()
+	es.Init(ctx)
+	rows, err := CollectAll(ctx, es)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("expected 4 rows, got %d", len(rows))
+	}
+	for i, row := range rows {
+		got := row["common_user"]
+		if got.Type() != event.FieldTypeString || got.AsString() != "alice" {
+			t.Errorf("row %d: common_user got %v, want alice", i, got)
 		}
 	}
 }

@@ -66,6 +66,7 @@ type PartialAggState struct {
 	// DistinctHLL is used when the distinct set exceeds dcHLLThreshold.
 	// When non-nil, DistinctSet is nil and cardinality is approximate.
 	DistinctHLL *HyperLogLog
+	ModeCounts  map[string]int64
 	// Digest holds t-digest state for approximate percentile computation
 	// in partial aggregation. Merged across segments via TDigest.Merge().
 	Digest *TDigest
@@ -80,9 +81,9 @@ type PartialAggState struct {
 // into partial aggregation + merge.
 func IsPushableAgg(name string) bool {
 	switch strings.ToLower(name) {
-	case aggCount, aggSum, aggAvg, aggMin, aggMax, "dc",
+	case aggCount, aggSum, aggSumSq, aggAvg, aggMin, aggMax, aggRange, aggDC, aggEstDCE, aggMode,
 		aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
-		aggStdev:
+		aggStdev, aggStdevP, aggVar, aggVarP:
 		return true
 	default:
 		return false
@@ -249,6 +250,12 @@ func MergePartialAggs(partials [][]*PartialAggGroup, spec *PartialAggSpec) []map
 							clone.States[j].DistinctSet[k] = true
 						}
 					}
+					if pg.States[j].ModeCounts != nil {
+						clone.States[j].ModeCounts = make(map[string]int64, len(pg.States[j].ModeCounts))
+						for k, v := range pg.States[j].ModeCounts {
+							clone.States[j].ModeCounts[k] = v
+						}
+					}
 					if pg.States[j].DistinctHLL != nil {
 						data := pg.States[j].DistinctHLL.MarshalBinary()
 						clone.States[j].DistinctHLL = UnmarshalHyperLogLog(data)
@@ -336,6 +343,12 @@ func MergePartialGroupsNoFinalize(groups []*PartialAggGroup, spec *PartialAggSpe
 					clone.States[j].DistinctSet = make(map[string]bool, len(pg.States[j].DistinctSet))
 					for k := range pg.States[j].DistinctSet {
 						clone.States[j].DistinctSet[k] = true
+					}
+				}
+				if pg.States[j].ModeCounts != nil {
+					clone.States[j].ModeCounts = make(map[string]int64, len(pg.States[j].ModeCounts))
+					for k, v := range pg.States[j].ModeCounts {
+						clone.States[j].ModeCounts[k] = v
 					}
 				}
 				if pg.States[j].DistinctHLL != nil {
@@ -652,9 +665,14 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 		if !val.IsNull() {
 			s.Count++
 		}
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		if f, ok := vm.ValueToFloat(val); ok {
 			s.Sum += f
+			s.Count++
+		}
+	case aggSumSq:
+		if f, ok := vm.ValueToFloat(val); ok {
+			s.Sum += f * f
 			s.Count++
 		}
 	case aggAvg:
@@ -674,7 +692,18 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 				s.Max = val
 			}
 		}
-	case "dc":
+	case aggRange:
+		if f, ok := vm.ValueToFloat(val); ok {
+			v := event.FloatValue(f)
+			if s.Count == 0 || vm.CompareValues(v, s.Min) < 0 {
+				s.Min = v
+			}
+			if s.Count == 0 || vm.CompareValues(v, s.Max) > 0 {
+				s.Max = v
+			}
+			s.Count++
+		}
+	case aggDC, aggEstDCE:
 		if !val.IsNull() {
 			str := val.String()
 			if s.DistinctHLL != nil {
@@ -695,6 +724,13 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 				}
 			}
 		}
+	case aggMode:
+		if !val.IsNull() {
+			if s.ModeCounts == nil {
+				s.ModeCounts = make(map[string]int64)
+			}
+			s.ModeCounts[val.String()]++
+		}
 	case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if f, ok := vm.ValueToFloat(val); ok {
 			if s.Digest == nil {
@@ -702,7 +738,7 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 			}
 			s.Digest.Add(f)
 		}
-	case aggStdev:
+	case aggStdev, aggStdevP, aggVar, aggVarP:
 		if f, ok := vm.ValueToFloat(val); ok {
 			// Welford's online algorithm for numerically stable variance.
 			s.Count++
@@ -719,7 +755,7 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		dst.Count += src.Count
-	case aggSum:
+	case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 		dst.Sum += src.Sum
 		dst.Count += src.Count
 	case aggAvg:
@@ -737,7 +773,18 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 				dst.Max = src.Max
 			}
 		}
-	case "dc":
+	case aggRange:
+		if src.Count == 0 {
+			return
+		}
+		if dst.Count == 0 || vm.CompareValues(src.Min, dst.Min) < 0 {
+			dst.Min = src.Min
+		}
+		if dst.Count == 0 || vm.CompareValues(src.Max, dst.Max) > 0 {
+			dst.Max = src.Max
+		}
+		dst.Count += src.Count
+	case aggDC, aggEstDCE:
 		// If either side uses HLL, promote both to HLL and merge.
 		if src.DistinctHLL != nil || dst.DistinctHLL != nil {
 			// Ensure dst has an HLL.
@@ -776,6 +823,16 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 		// Accumulate count as upper-bound fallback for the backfill path
 		// where the exact distinct set is lost but counts are preserved.
 		dst.Count += src.Count
+	case aggMode:
+		if src.ModeCounts == nil {
+			return
+		}
+		if dst.ModeCounts == nil {
+			dst.ModeCounts = make(map[string]int64, len(src.ModeCounts))
+		}
+		for value, count := range src.ModeCounts {
+			dst.ModeCounts[value] += count
+		}
 	case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if src.Digest != nil {
 			if dst.Digest == nil {
@@ -783,7 +840,7 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 			}
 			dst.Digest.Merge(src.Digest)
 		}
-	case aggStdev:
+	case aggStdev, aggStdevP, aggVar, aggVarP:
 		// Chan et al. parallel algorithm for combining Welford states.
 		if src.Count == 0 {
 			return
@@ -808,7 +865,9 @@ func finalizePartialState(s *PartialAggState, fn string) event.Value {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		return event.IntValue(s.Count)
-	case aggSum:
+	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
+		return event.FloatValue(s.Sum)
+	case aggSumSq:
 		return event.FloatValue(s.Sum)
 	case aggAvg:
 		if s.Count == 0 {
@@ -820,7 +879,18 @@ func finalizePartialState(s *PartialAggState, fn string) event.Value {
 		return s.Min
 	case aggMax:
 		return s.Max
-	case "dc":
+	case aggRange:
+		if s.Count == 0 {
+			return event.NullValue()
+		}
+		min, minOK := vm.ValueToFloat(s.Min)
+		max, maxOK := vm.ValueToFloat(s.Max)
+		if !minOK || !maxOK {
+			return event.NullValue()
+		}
+
+		return event.FloatValue(max - min)
+	case aggDC:
 		if s.DistinctHLL != nil {
 			return event.IntValue(s.DistinctHLL.Count())
 		}
@@ -834,6 +904,14 @@ func finalizePartialState(s *PartialAggState, fn string) event.Value {
 		}
 
 		return event.IntValue(0)
+	case aggEstDCE:
+		if s.DistinctHLL != nil {
+			return event.FloatValue(s.DistinctHLL.StandardError())
+		}
+
+		return event.FloatValue(0)
+	case aggMode:
+		return modeFromCounts(s.ModeCounts)
 	case aggPerc50:
 		return finalizeTDigest(s, 0.50)
 	case aggPerc75:
@@ -845,14 +923,32 @@ func finalizePartialState(s *PartialAggState, fn string) event.Value {
 	case aggPerc99:
 		return finalizeTDigest(s, 0.99)
 	case aggStdev:
-		if s.Count < 2 {
-			return event.NullValue()
-		}
-
-		return event.FloatValue(math.Sqrt(s.StdevM2 / float64(s.Count-1)))
+		return finalizePartialVarianceState(s, false, true)
+	case aggStdevP:
+		return finalizePartialVarianceState(s, true, true)
+	case aggVar:
+		return finalizePartialVarianceState(s, false, false)
+	case aggVarP:
+		return finalizePartialVarianceState(s, true, false)
 	}
 
 	return event.NullValue()
+}
+
+func finalizePartialVarianceState(s *PartialAggState, population, root bool) event.Value {
+	if s.Count == 0 || (!population && s.Count < 2) {
+		return event.NullValue()
+	}
+	denom := float64(s.Count)
+	if !population {
+		denom = float64(s.Count - 1)
+	}
+	variance := s.StdevM2 / denom
+	if root {
+		return event.FloatValue(math.Sqrt(variance))
+	}
+
+	return event.FloatValue(variance)
 }
 
 // finalizeTDigest extracts a quantile from the partial state's t-digest.

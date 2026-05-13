@@ -3,7 +3,6 @@ package server
 import (
 	"context"
 	"log/slog"
-	"path"
 	"runtime"
 	"sort"
 	"strconv"
@@ -313,7 +312,9 @@ func buildStreamHints(hints *spl2.QueryHints, bitmapThreshold float64) *enginepi
 
 	// Multi-source fields for wildcard/list queries.
 	sh.SourceIndices = hints.SourceIndices
+	sh.SourceIncludeGlobs = hints.SourceIncludeGlobs
 	sh.SourceGlob = hints.SourceGlob
+	sh.SourceExcludeGlobs = hints.SourceExcludeGlobs
 	sh.SourceScopeType = hints.SourceScopeType
 	sh.SourceScopeSources = hints.SourceScopeSources
 	sh.SourceScopePattern = hints.SourceScopePattern
@@ -841,6 +842,10 @@ func shouldSkipSegment(seg *segmentHandle, hints *spl2.QueryHints, ss *storeStat
 // Checks optimizer-resolved SourceScopeType first, then falls back to parser-level
 // SourceIndices/SourceGlob, then single IndexName.
 func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
+	if sourceMatchesAnyGlob(segIndex, hints.SourceExcludeGlobs) {
+		return false
+	}
+
 	// If SourceScopeType is set by optimizer, use it as the authoritative source.
 	switch hints.SourceScopeType {
 	case "all":
@@ -864,9 +869,7 @@ func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
 		return false
 	case "glob":
 		if hints.SourceScopePattern != "" {
-			matched, _ := path.Match(hints.SourceScopePattern, segIndex)
-
-			return matched
+			return spl2.MatchGlob(hints.SourceScopePattern, segIndex, false)
 		}
 	}
 
@@ -877,8 +880,12 @@ func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
 				return true
 			}
 		}
-
-		return false
+		if len(hints.SourceIncludeGlobs) == 0 {
+			return false
+		}
+	}
+	if sourceMatchesAnyGlob(segIndex, hints.SourceIncludeGlobs) {
+		return true
 	}
 
 	// Fallback: use SourceGlob (from parser, FROM logs*).
@@ -886,9 +893,7 @@ func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
 		if hints.SourceGlob == "*" {
 			return true
 		}
-		matched, _ := path.Match(hints.SourceGlob, segIndex)
-
-		return matched
+		return spl2.MatchGlob(hints.SourceGlob, segIndex, false)
 	}
 
 	// Fallback: single IndexName exact match (existing behavior).

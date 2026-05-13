@@ -139,6 +139,8 @@ lynxdb query [SPL2 query] [flags]
 | `--fail-on-empty` | | `false` | Exit with code 6 if no results |
 | `--copy` | | `false` | Copy results to clipboard as TSV |
 | `--explain` | | `false` | Show query plan without executing |
+| `--no-lint` | | `false` | Disable advisory query lints in server mode |
+| `--no-suggestions` | | `false` | Disable advisory query suggestions in server mode |
 
 The query argument is required unless `--queries-file` is set. `FROM main` is automatically prepended if the query starts with `|` or a command name.
 
@@ -1611,6 +1613,8 @@ Summary/stats lines are always written to **stderr**, so they don't pollute pipe
 lynxdb query --file access.log '| stats count' > result.json
 # stderr shows: Scanned 50,000 events | 1 results | 89ms
 ```
+
+Server-backed `query` also prints advisory query lints to stderr unless `--quiet` or `--no-lint` is set. Use `--no-suggestions` to omit advisory suggestion metadata from server requests.
 
 ---
 

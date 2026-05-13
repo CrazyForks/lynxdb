@@ -59,7 +59,12 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		if p := job.Progress.Load(); p != nil {
 			data["progress"] = p
 		}
-		respondData(w, http.StatusOK, data)
+		respondData(w, http.StatusOK, data,
+			WithQueryID(snap.ID),
+			WithWarnings(snap.Warnings),
+			WithLints(snap.Lints),
+			WithSuggestions(snap.Suggestions),
+			WithRewrites(snap.Rewrites))
 
 		return
 	}
@@ -74,7 +79,12 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 				"code":    errCode,
 				"message": snap.Error,
 			},
-		})
+		},
+			WithQueryID(snap.ID),
+			WithWarnings(snap.Warnings),
+			WithLints(snap.Lints),
+			WithSuggestions(snap.Suggestions),
+			WithRewrites(snap.Rewrites))
 
 		return
 	}
@@ -92,6 +102,7 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 	default:
 		results = buildEventsResponse(snap.Results, defaultLimit, 0)
 	}
+	lints := lintsWithBroadScope(snap.Lints, snap.Query, &snap.Stats, s.currentQueryConfig(), snap.LintsEnabled, snap.LintLimit, snap.LintFull)
 	respondData(w, http.StatusOK, map[string]interface{}{
 		"type":         "job",
 		"job_id":       snap.ID,
@@ -104,7 +115,12 @@ func (s *Server) handleGetJob(w http.ResponseWriter, r *http.Request) {
 		WithTookMS(snap.Stats.ElapsedMS),
 		WithScanned(snap.Stats.RowsScanned),
 		WithQueryID(snap.ID),
-		WithSearchStats(searchStatsToMeta(&snap.Stats)))
+		WithSearchStats(searchStatsToMeta(&snap.Stats)),
+		WithWarnings(snap.Warnings),
+		WithLints(lints),
+		WithSuggestions(snap.Suggestions),
+		WithRewrites(snap.Rewrites),
+		WithExplain(explainFromSearchStats(&snap.Stats, snap.Query)))
 }
 
 // handleCancelJob cancels a running job.

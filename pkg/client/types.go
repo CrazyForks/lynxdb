@@ -7,11 +7,68 @@ import (
 
 // Meta contains response metadata returned by the server.
 type Meta struct {
-	TookMS          float64      `json:"took_ms,omitempty"`
-	Scanned         int64        `json:"scanned,omitempty"`
-	QueryID         string       `json:"query_id,omitempty"`
-	SegmentsErrored int          `json:"segments_errored,omitempty"`
-	Stats           *SearchStats `json:"stats,omitempty"`
+	TookMS          float64           `json:"took_ms,omitempty"`
+	Scanned         int64             `json:"scanned,omitempty"`
+	QueryID         string            `json:"query_id,omitempty"`
+	SegmentsErrored int               `json:"segments_errored,omitempty"`
+	Stats           *SearchStats      `json:"stats,omitempty"`
+	Lints           []QueryLint       `json:"lints,omitempty"`
+	Suggestions     []QuerySuggestion `json:"suggestions,omitempty"`
+	Rewrites        []QueryRewrite    `json:"rewrites,omitempty"`
+	Explain         *QueryExplain     `json:"explain,omitempty"`
+}
+
+// QueryLint is an advisory query warning returned in response metadata.
+type QueryLint struct {
+	Code     string `json:"code"`
+	Message  string `json:"message"`
+	Reason   string `json:"reason,omitempty"`
+	Severity string `json:"severity,omitempty"`
+	Position int    `json:"position"`
+}
+
+// QuerySuggestion is an advisory query edit/template returned in metadata.
+type QuerySuggestion struct {
+	Text       string `json:"text"`
+	Reason     string `json:"reason"`
+	SourceCode string `json:"source_code,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
+// QueryRewrite describes one visible server-side query normalization.
+type QueryRewrite struct {
+	Before string `json:"before"`
+	After  string `json:"after"`
+	Reason string `json:"reason"`
+}
+
+// QueryExplain is advisory planning/execution metadata returned under meta.
+type QueryExplain struct {
+	SourceScope       *QueryExplainSourceScope `json:"source_scope,omitempty"`
+	Segments          *QueryExplainSegments    `json:"segments,omitempty"`
+	CandidateRows     *int64                   `json:"candidate_rows,omitempty"`
+	RegexEngine       string                   `json:"regex_engine,omitempty"`
+	LiteralExtraction *bool                    `json:"literal_extraction,omitempty"`
+	WallClockMS       float64                  `json:"wall_clock_ms,omitempty"`
+	ScannedBytes      int64                    `json:"scanned_bytes,omitempty"`
+}
+
+// QueryExplainSourceScope describes selected source/index scope.
+type QueryExplainSourceScope struct {
+	Selected []string `json:"selected,omitempty"`
+	Count    int      `json:"count"`
+}
+
+// QueryExplainSegments describes segment scanning and skipping.
+type QueryExplainSegments struct {
+	Total        int `json:"total"`
+	Scanned      int `json:"scanned"`
+	Skipped      int `json:"skipped"`
+	SkippedIndex int `json:"skipped_index,omitempty"`
+	SkippedTime  int `json:"skipped_time,omitempty"`
+	SkippedStats int `json:"skipped_stats,omitempty"`
+	SkippedBloom int `json:"skipped_bloom,omitempty"`
+	SkippedRange int `json:"skipped_range,omitempty"`
 }
 
 // SearchStats holds detailed query execution statistics from the server.
@@ -137,14 +194,18 @@ const (
 
 // QueryRequest is the request body for POST /api/v1/query.
 type QueryRequest struct {
-	Q       string   `json:"q"`
-	From    string   `json:"from,omitempty"`
-	To      string   `json:"to,omitempty"`
-	Limit   int      `json:"limit,omitempty"`
-	Offset  int      `json:"offset,omitempty"`
-	Format  string   `json:"format,omitempty"`
-	Wait    *float64 `json:"wait,omitempty"`
-	Profile string   `json:"profile,omitempty"` // "basic", "full", "trace"
+	Q           string   `json:"q"`
+	From        string   `json:"from,omitempty"`
+	To          string   `json:"to,omitempty"`
+	Limit       int      `json:"limit,omitempty"`
+	Offset      int      `json:"offset,omitempty"`
+	Format      string   `json:"format,omitempty"`
+	Wait        *float64 `json:"wait,omitempty"`
+	Profile     string   `json:"profile,omitempty"`     // "basic", "full", "trace"
+	Lint        *bool    `json:"lint,omitempty"`        // false disables advisory query lints
+	Suggestions *bool    `json:"suggestions,omitempty"` // false disables advisory suggestions
+	LintLimit   int      `json:"lint_limit,omitempty"`  // max lints to return; default 5
+	LintFull    bool     `json:"lint_full,omitempty"`   // true returns all advisory lints
 }
 
 // QueryResult is the polymorphic response from Query().

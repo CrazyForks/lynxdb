@@ -284,7 +284,7 @@ func emitPartitionGroups(a *AggregateIterator, result *Batch) {
 				}
 			}
 			for j, agg := range a.aggs {
-				row[agg.Alias] = a.finalizeState(&group.states[j], agg.Name)
+				row[agg.Alias] = a.finalizeAgg(&group.states[j], agg)
 			}
 			result.AddRow(row)
 		}
@@ -309,9 +309,13 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 		case aggAvg:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 			row[agg.Alias+"__count"] = event.IntValue(s.count)
-		case aggSum:
+		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
-		case aggDC:
+		case aggRange:
+			row[agg.Alias+"__min"] = s.min
+			row[agg.Alias+"__max"] = s.max
+			row[agg.Alias+"__count"] = event.IntValue(s.count)
+		case aggDC, aggEstDCE:
 			if s.hll != nil {
 				row[agg.Alias+"__hll"] = event.StringValue(
 					encodeBase64(s.hll.MarshalBinary()))
@@ -324,7 +328,48 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 				row[agg.Alias+"__vals"] = event.StringValue(
 					joinAllStrings(s.all, "|||"))
 			}
-		case aggStdev:
+		case aggList:
+			if len(s.all) > 0 {
+				row[agg.Alias+"__listvals"] = event.StringValue(
+					joinAllStrings(s.all, "|||"))
+			}
+		case aggMode:
+			if len(s.mode) > 0 {
+				row[agg.Alias+"__modecounts"] = event.StringValue(
+					encodeModeCounts(s.mode))
+			}
+		case "earliest":
+			if !s.first.IsNull() {
+				row[agg.Alias+"__first_value"] = s.first
+				if !s.firstTS.IsZero() {
+					row[agg.Alias+"__first_time"] = event.FloatValue(float64(s.firstTS.UnixNano()) / 1e9)
+				}
+			}
+		case "latest":
+			if !s.last.IsNull() {
+				row[agg.Alias+"__last_value"] = s.last
+				if !s.lastTS.IsZero() {
+					row[agg.Alias+"__last_time"] = event.FloatValue(float64(s.lastTS.UnixNano()) / 1e9)
+				}
+			}
+		case aggEarT:
+			if !s.firstTS.IsZero() {
+				row[agg.Alias+"__earliest_time"] = event.FloatValue(float64(s.firstTS.UnixNano()) / 1e9)
+			}
+		case aggLatT:
+			if !s.lastTS.IsZero() {
+				row[agg.Alias+"__latest_time"] = event.FloatValue(float64(s.lastTS.UnixNano()) / 1e9)
+			}
+		case aggRate:
+			if !s.firstTS.IsZero() {
+				row[agg.Alias+"__first_time"] = event.FloatValue(float64(s.firstTS.UnixNano()) / 1e9)
+				row[agg.Alias+"__first_value"] = s.first
+			}
+			if !s.lastTS.IsZero() {
+				row[agg.Alias+"__last_time"] = event.FloatValue(float64(s.lastTS.UnixNano()) / 1e9)
+				row[agg.Alias+"__last_value"] = s.last
+			}
+		case aggStdev, aggStdevP, aggVar, aggVarP:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 			row[agg.Alias+"__count"] = event.IntValue(s.count)
 			m2 := s.sumSq
@@ -346,7 +391,7 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 					joinAllFloats(s.all, "|"))
 			}
 		default:
-			row[agg.Alias] = a.finalizeState(s, agg.Name)
+			row[agg.Alias] = a.finalizeAgg(s, agg)
 		}
 	}
 
@@ -371,14 +416,30 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			if countF, ok := vm.ValueToFloat(countVal); ok {
 				group.states[j].count += int64(countF)
 			}
-		case aggSum:
+		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			sumVal := row[agg.Alias+"__sum"]
 			a.mergeSpilledValue(&group.states[j], agg.Name, sumVal)
-		case aggDC:
+		case aggRange:
+			a.mergeRangeFromRow(&group.states[j], row, agg.Alias)
+		case aggDC, aggEstDCE:
 			a.mergeDCFromRow(&group.states[j], row, agg.Alias)
 		case aggValues:
 			a.mergeValuesFromRow(&group.states[j], row, agg.Alias)
-		case aggStdev:
+		case aggList:
+			a.mergeListFromRow(&group.states[j], row, agg.Alias)
+		case aggMode:
+			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
+		case "earliest":
+			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
+		case "latest":
+			a.mergeLatestValueFromRow(&group.states[j], row, agg.Alias)
+		case aggEarT:
+			a.mergeEarliestTimeFromRow(&group.states[j], row, agg.Alias)
+		case aggLatT:
+			a.mergeLatestTimeFromRow(&group.states[j], row, agg.Alias)
+		case aggRate:
+			a.mergeRateFromRow(&group.states[j], row, agg.Alias)
+		case aggStdev, aggStdevP, aggVar, aggVarP:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
 		case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 			a.mergePercFromRow(&group.states[j], row, agg.Alias)

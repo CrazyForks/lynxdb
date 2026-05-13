@@ -365,13 +365,17 @@ func (qc *queryContext) buildQuery(ctx context.Context, query *spl2.Query) (Iter
 	for i, cmd := range query.Commands {
 		switch c := cmd.(type) {
 		case *spl2.CompareCommand:
-			shift, err := time.ParseDuration(c.Shift)
+			shift, err := parseCompareShiftDuration(c.Shift)
 			if err != nil {
 				return nil, fmt.Errorf("build pipeline: invalid compare duration %q: %w", c.Shift, err)
 			}
 			prefixCmds := query.Commands[:i]
 			reExec := func(ctx context.Context) (Iterator, error) {
-				shiftedSrc := shiftSourceClause(query.Source, shift)
+				source := query.Source
+				if source == nil && qc.defaultSource != nil {
+					source = qc.defaultSource
+				}
+				shiftedSrc := shiftSourceClause(source, shift)
 				shiftedQuery := &spl2.Query{
 					Source:   shiftedSrc,
 					Commands: prefixCmds,
@@ -509,30 +513,45 @@ func resolveTimeRange(tr *spl2.SourceTimeRange, now time.Time) (earliest, latest
 		return earliest, latest
 	}
 
-	dur := parseRelativeDuration(tr.Relative)
-	earliest = now.Add(-dur)
+	earliest = resolveRelativeTime(tr.Relative, now)
 
 	// Apply snap-to on the earliest bound.
 	if tr.SnapTo != "" {
-		earliest = snapTime(now.Add(-dur), tr.SnapTo)
+		earliest = snapTime(earliest, tr.SnapTo)
 	}
 
 	// End bound: either explicit range end or "now".
 	if tr.End != "" {
-		if strings.HasPrefix(tr.End, "@") {
+		if strings.EqualFold(tr.End, "now") {
+			latest = now
+		} else if strings.HasPrefix(tr.End, "@") {
 			latest = snapTime(now, tr.End[1:])
 		} else {
-			endDur := parseRelativeDuration(tr.End)
-			latest = now.Add(-endDur)
+			latest = resolveRelativeTime(tr.End, now)
+			if snap := durationSnapUnit(tr.End); snap != "" {
+				latest = snapTime(latest, snap)
+			}
 		}
 	} else {
 		latest = now
+	}
+	if !earliest.IsZero() && !latest.IsZero() && latest.Before(earliest) {
+		earliest, latest = latest, earliest
 	}
 
 	return earliest, latest
 }
 
-// parseRelativeDuration parses a duration string like "-1h", "-7d", "-30m".
+func resolveRelativeTime(s string, now time.Time) time.Time {
+	dur := parseRelativeDuration(s)
+	if strings.HasPrefix(s, "+") {
+		return now.Add(dur)
+	}
+
+	return now.Add(-dur)
+}
+
+// parseRelativeDuration parses a duration string like "-1h", "+30m", "-7d", "-30m".
 func parseRelativeDuration(s string) time.Duration {
 	if s == "" {
 		return 0
@@ -575,6 +594,15 @@ func parseRelativeDuration(s string) time.Duration {
 	}
 }
 
+func durationSnapUnit(s string) string {
+	idx := strings.IndexByte(s, '@')
+	if idx < 0 || idx == len(s)-1 {
+		return ""
+	}
+
+	return s[idx+1:]
+}
+
 // snapTime snaps a time to the start of the given unit.
 func snapTime(t time.Time, unit string) time.Time {
 	switch unit {
@@ -595,6 +623,14 @@ func snapTime(t time.Time, unit string) time.Time {
 
 		return startOfDay.AddDate(0, 0, -(weekday - 1))
 	default:
+		if len(unit) == 2 && unit[0] == 'w' && unit[1] >= '0' && unit[1] <= '6' {
+			targetWeekday := int(unit[1] - '0')
+			startOfDay := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
+			daysSinceTarget := (int(t.Weekday()) - targetWeekday + 7) % 7
+
+			return startOfDay.AddDate(0, 0, -daysSinceTarget)
+		}
+
 		return t
 	}
 }
@@ -614,6 +650,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Head"
 	case *spl2.TailCommand:
 		return "Tail"
+	case *spl2.ReverseCommand:
+		return "Reverse"
 	case *spl2.FieldsCommand:
 		return "Fields"
 	case *spl2.TableCommand:
@@ -628,6 +666,12 @@ func commandStageName(cmd spl2.Command) string {
 		return "Dedup"
 	case *spl2.RexCommand:
 		return "Rex"
+	case *spl2.RegexCommand:
+		return "Regex"
+	case *spl2.ReplaceCommand:
+		return "Replace"
+	case *spl2.FieldformatCommand:
+		return "Fieldformat"
 	case *spl2.BinCommand:
 		return "Bin"
 	case *spl2.StreamstatsCommand:
@@ -638,10 +682,18 @@ func commandStageName(cmd spl2.Command) string {
 		return "Join"
 	case *spl2.AppendCommand:
 		return "Append"
+	case *spl2.AppendcolsCommand:
+		return "Appendcols"
+	case *spl2.AppendpipeCommand:
+		return "Appendpipe"
 	case *spl2.MultisearchCommand:
 		return "Multisearch"
+	case *spl2.UnionCommand:
+		return "Union"
 	case *spl2.XYSeriesCommand:
 		return "XYSeries"
+	case *spl2.UntableCommand:
+		return "Untable"
 	case *spl2.TransactionCommand:
 		return "Transaction"
 	case *spl2.TopCommand:
@@ -652,6 +704,8 @@ func commandStageName(cmd spl2.Command) string {
 		return "Fillnull"
 	case *spl2.TimechartCommand:
 		return "Timechart"
+	case *spl2.ChartCommand:
+		return "Chart"
 	case *spl2.FromCommand:
 		return "From"
 	case *spl2.MaterializeCommand:
@@ -678,6 +732,16 @@ func commandStageName(cmd spl2.Command) string {
 		return "Select"
 	case *spl2.UnrollCommand:
 		return "Unroll"
+	case *spl2.MakeresultsCommand:
+		return "Makeresults"
+	case *spl2.MakemvCommand:
+		return "Makemv"
+	case *spl2.MvcombineCommand:
+		return "Mvcombine"
+	case *spl2.NomvCommand:
+		return "Nomv"
+	case *spl2.CapabilityCommand:
+		return "Capability"
 	case *spl2.PackJsonCommand:
 		return "PackJson"
 	case *spl2.TeeCommand:
@@ -901,6 +965,9 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		// Tail requires materialization — use sort-like approach
 		return NewTailIteratorWithBudget(child, c.Count, qc.batchSize, qc.newAccount("tail")), nil
 
+	case *spl2.ReverseCommand:
+		return NewReverseIteratorWithBudget(child, qc.batchSize, qc.newAccount("reverse")), nil
+
 	case *spl2.FieldsCommand:
 		return NewProjectIterator(child, c.Fields, c.Remove), nil
 
@@ -974,6 +1041,41 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 
 		return NewRexIterator(child, field, c.Pattern)
 
+	case *spl2.RegexCommand:
+		field := c.Field
+		if field == "" {
+			field = "_raw"
+		}
+		op := "=~"
+		if c.Negate {
+			op = "!~"
+		}
+		expr := &spl2.CompareExpr{
+			Left:  &spl2.FieldExpr{Name: field},
+			Op:    op,
+			Right: &spl2.LiteralExpr{Value: c.Pattern},
+		}
+		prog, err := vm.CompilePredicate(expr)
+		if err != nil {
+			return nil, fmt.Errorf("compile REGEX: %w", err)
+		}
+
+		return NewFilterIterator(child, prog), nil
+
+	case *spl2.ReplaceCommand:
+		iter, err := NewReplaceIterator(child, c.Pairs, c.Fields)
+		if err != nil {
+			return nil, fmt.Errorf("build replace: %w", err)
+		}
+
+		return iter, nil
+
+	case *spl2.FieldformatCommand:
+		return NewFieldformatIterator(child), nil
+
+	case *spl2.CapabilityCommand:
+		return nil, fmt.Errorf("capability command %q is not enabled", c.Name)
+
 	case *spl2.BinCommand:
 		dur := parseDuration(c.Span)
 
@@ -1037,6 +1139,34 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 
 		return NewUnionIterator([]Iterator{child, appendIter}), nil
 
+	case *spl2.AppendcolsCommand:
+		if c.Subquery == nil {
+			return child, nil
+		}
+		subIter, err := qc.buildQuery(qc.ctx, c.Subquery)
+		if err != nil {
+			return nil, fmt.Errorf("build APPENDCOLS subquery: %w", err)
+		}
+
+		return NewAppendcolsIterator(child, subIter, c.Override, c.Maxout, qc.batchSize), nil
+
+	case *spl2.AppendpipeCommand:
+		if c.Subquery == nil {
+			return child, nil
+		}
+		buildSubpipe := func(source Iterator, commands []spl2.Command) (Iterator, error) {
+			iter := source
+			for _, subcmd := range commands {
+				var err error
+				iter, err = qc.buildCommand(iter, subcmd)
+				if err != nil {
+					return nil, err
+				}
+			}
+			return iter, nil
+		}
+		return NewAppendpipeIterator(child, c.Subquery.Commands, qc.batchSize, buildSubpipe), nil
+
 	case *spl2.MultisearchCommand:
 		children := make([]Iterator, 0, len(c.Searches))
 		for _, search := range c.Searches {
@@ -1069,8 +1199,37 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 
 		return NewUnionIterator(children), nil
 
+	case *spl2.UnionCommand:
+		children := []Iterator{child}
+		for _, branch := range c.Branches {
+			subQuery := branch
+			if subQuery.Source == nil && qc.defaultSource != nil {
+				subQuery = &spl2.Query{
+					Source:      qc.defaultSource,
+					Commands:    branch.Commands,
+					Annotations: branch.Annotations,
+				}
+			}
+			subIter, err := qc.buildQuery(qc.ctx, subQuery)
+			if err != nil {
+				return nil, fmt.Errorf("build UNION branch: %w", err)
+			}
+			if c.Maxout >= 0 {
+				subIter = NewLimitIterator(subIter, c.Maxout)
+			}
+			children = append(children, subIter)
+		}
+		if qc.parallelCfg.Enabled && len(children) > 1 {
+			return NewConcurrentUnionIterator(children, OrderConcurrent, &qc.parallelCfg), nil
+		}
+
+		return NewUnionIterator(children), nil
+
 	case *spl2.XYSeriesCommand:
 		return NewXYSeriesIteratorWithSpill(child, c.XField, c.YField, c.ValueField, qc.batchSize, qc.newCoordinatedAccount("xyseries", reservationAggregate), qc.spillMgr), nil
+
+	case *spl2.UntableCommand:
+		return NewUntableIterator(child, c.XField, c.YNameField, c.YDataField, qc.batchSize), nil
 
 	case *spl2.TransactionCommand:
 		dur := parseDuration(c.MaxSpan)
@@ -1139,7 +1298,7 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		// rows in chronological order.
 		dur := parseDuration(c.Span)
 		binIter := NewBinIterator(child, "_time", "_time", dur)
-		aggs := qc.convertAggs(c.Aggregations)
+		aggs := qc.convertTimechartAggs(c.Aggregations, dur)
 		groupBy := append([]string{"_time"}, c.GroupBy...)
 		tcIter := NewAggregateIteratorWithSpill(binIter, aggs, groupBy, qc.newCoordinatedAccount("timechart", reservationAggregate), qc.spillMgr)
 		if qc.govBudget != nil {
@@ -1154,6 +1313,21 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 			sortFields = append(sortFields, SortField{Name: g, Desc: false})
 		}
 		return NewSortIteratorWithSpill(tcIter, sortFields, qc.batchSize, qc.newCoordinatedAccount("timechart-sort", reservationSort), qc.spillMgr), nil
+
+	case *spl2.ChartCommand:
+		aggs := qc.convertAggs(c.Aggregations)
+		groupBy := make([]string, 0, 2)
+		if c.RowSplit != "" {
+			groupBy = append(groupBy, c.RowSplit)
+		}
+		if c.ColumnSplit != "" {
+			groupBy = append(groupBy, c.ColumnSplit)
+		}
+		aggIter := NewAggregateIteratorWithSpill(child, aggs, groupBy, qc.newCoordinatedAccount("chart", reservationAggregate), qc.spillMgr)
+		if c.ColumnSplit != "" && len(aggs) == 1 {
+			return NewXYSeriesIteratorWithSpill(aggIter, c.RowSplit, c.ColumnSplit, aggs[0].Alias, qc.batchSize, qc.newCoordinatedAccount("chart-xyseries", reservationAggregate), qc.spillMgr), nil
+		}
+		return aggIter, nil
 
 	case *spl2.FromCommand:
 		// System tables: FROM system.parts, system.merges, system.columns.
@@ -1234,7 +1408,49 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		return NewJsonCmdIterator(child, field, c.Paths), nil
 
 	case *spl2.UnrollCommand:
-		return NewUnrollIterator(child, c.AllFields(), qc.batchSize), nil
+		return NewUnrollIteratorWithLimit(child, c.AllFields(), qc.batchSize, c.Limit), nil
+
+	case *spl2.MakeresultsCommand:
+		if c.Format != "" || c.Data != "" {
+			return nil, fmt.Errorf("makeresults format/data is not implemented")
+		}
+		count := c.Count
+		if count < 0 {
+			count = 0
+		}
+		now := time.Now()
+		rows := make([]map[string]event.Value, count)
+		for i := range rows {
+			rows[i] = map[string]event.Value{"_time": event.TimestampValue(now)}
+			if c.Annotate {
+				server := c.SplunkServer
+				if server == "" {
+					server = "local"
+				}
+				rows[i]["_raw"] = event.NullValue()
+				rows[i]["host"] = event.NullValue()
+				rows[i]["source"] = event.NullValue()
+				rows[i]["sourcetype"] = event.NullValue()
+				rows[i]["splunk_server"] = event.StringValue(server)
+				rows[i]["splunk_server_group"] = event.NullValue()
+			}
+		}
+
+		return NewRowScanIterator(rows, qc.batchSize), nil
+
+	case *spl2.MakemvCommand:
+		iter, err := NewMakemvIterator(child, c.Field, c.Delim, c.Tokenizer, c.AllowEmpty)
+		if err != nil {
+			return nil, fmt.Errorf("build makemv: %w", err)
+		}
+
+		return iter, nil
+
+	case *spl2.MvcombineCommand:
+		return NewMvcombineIterator(child, c.Field, qc.batchSize), nil
+
+	case *spl2.NomvCommand:
+		return NewNomvIterator(child, c.Field), nil
 
 	case *spl2.PackJsonCommand:
 		return NewPackJsonIterator(child, c.Fields, c.Target), nil
@@ -1390,6 +1606,80 @@ func (t *TailIterator) Close() error {
 }
 func (t *TailIterator) Schema() []FieldInfo { return t.child.Schema() }
 
+// ReverseIterator materializes input rows and emits them in reverse order.
+type ReverseIterator struct {
+	child     Iterator
+	rows      []map[string]event.Value
+	emitted   bool
+	offset    int
+	batchSize int
+	acct      memgov.MemoryAccount
+}
+
+func NewReverseIterator(child Iterator, batchSize int) *ReverseIterator {
+	if batchSize <= 0 {
+		batchSize = DefaultBatchSize
+	}
+	return &ReverseIterator{
+		child:     child,
+		batchSize: batchSize,
+		acct:      memgov.NopAccount(),
+	}
+}
+
+func NewReverseIteratorWithBudget(child Iterator, batchSize int, acct memgov.MemoryAccount) *ReverseIterator {
+	r := NewReverseIterator(child, batchSize)
+	r.acct = memgov.EnsureAccount(acct)
+
+	return r
+}
+
+func (r *ReverseIterator) Init(ctx context.Context) error { return r.child.Init(ctx) }
+
+func (r *ReverseIterator) Next(ctx context.Context) (*Batch, error) {
+	if !r.emitted {
+		for {
+			batch, err := r.child.Next(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if batch == nil {
+				break
+			}
+			for i := 0; i < batch.Len; i++ {
+				row := batch.Row(i)
+				if err := r.acct.Grow(EstimateRowBytes(row)); err != nil {
+					return nil, fmt.Errorf("reverse: memory budget exceeded: %w", err)
+				}
+				r.rows = append(r.rows, row)
+			}
+		}
+		for i, j := 0, len(r.rows)-1; i < j; i, j = i+1, j-1 {
+			r.rows[i], r.rows[j] = r.rows[j], r.rows[i]
+		}
+		r.emitted = true
+	}
+
+	if r.offset >= len(r.rows) {
+		return nil, nil
+	}
+	end := r.offset + r.batchSize
+	if end > len(r.rows) {
+		end = len(r.rows)
+	}
+	batch := BatchFromRows(r.rows[r.offset:end])
+	r.offset = end
+
+	return batch, nil
+}
+
+func (r *ReverseIterator) Close() error {
+	r.acct.Close()
+
+	return r.child.Close()
+}
+func (r *ReverseIterator) Schema() []FieldInfo { return r.child.Schema() }
+
 func (qc *queryContext) convertAggs(aggs []spl2.AggExpr) []AggFunc {
 	result := make([]AggFunc, len(aggs))
 	for i, a := range aggs {
@@ -1434,6 +1724,36 @@ func (qc *queryContext) convertAggs(aggs []spl2.AggExpr) []AggFunc {
 	}
 
 	return result
+}
+
+func (qc *queryContext) convertTimechartAggs(aggs []spl2.AggExpr, span time.Duration) []AggFunc {
+	result := qc.convertAggs(aggs)
+	if span == 0 {
+		span = time.Hour
+	}
+	for i := range result {
+		result[i].Scale = timechartAggScale(result[i].Name, span)
+	}
+
+	return result
+}
+
+func timechartAggScale(name string, span time.Duration) float64 {
+	if span <= 0 {
+		return 1
+	}
+	switch strings.ToLower(name) {
+	case aggPerSec:
+		return float64(time.Second) / float64(span)
+	case aggPerMin:
+		return float64(time.Minute) / float64(span)
+	case aggPerHr:
+		return float64(time.Hour) / float64(span)
+	case aggPerDay:
+		return float64(24*time.Hour) / float64(span)
+	default:
+		return 0
+	}
 }
 
 func parseDuration(s string) time.Duration {
@@ -1541,9 +1861,12 @@ func shiftSourceClause(src *spl2.SourceClause, shift time.Duration) *spl2.Source
 	clone := *src
 	if clone.TimeRange != nil {
 		tr := *clone.TimeRange
+		originalRelative := tr.Relative
 		tr.Relative = shiftRelative(tr.Relative, shift)
 		if tr.End != "" {
 			tr.End = shiftRelative(tr.End, shift)
+		} else if originalRelative != "" {
+			tr.End = originalRelative
 		}
 		clone.TimeRange = &tr
 	} else {
@@ -1554,6 +1877,17 @@ func shiftSourceClause(src *spl2.SourceClause, shift time.Duration) *spl2.Source
 	}
 
 	return &clone
+}
+
+func parseCompareShiftDuration(s string) (time.Duration, error) {
+	if d, err := time.ParseDuration(s); err == nil {
+		return d, nil
+	}
+	if d := parseRelativeDuration(s); d > 0 {
+		return d, nil
+	}
+
+	return 0, fmt.Errorf("invalid duration")
 }
 
 // shiftRelative adjusts a relative time string by subtracting a duration.

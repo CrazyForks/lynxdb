@@ -633,6 +633,23 @@ func TestLynxFlow_SortByDesc(t *testing.T) {
 	}
 }
 
+func TestParse_SortLegacyDirection(t *testing.T) {
+	q, err := Parse(`from app | sort status asc, duration_ms desc`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	sort := q.Commands[0].(*SortCommand)
+	if len(sort.Fields) != 2 {
+		t.Fatalf("Fields: got %d, want 2", len(sort.Fields))
+	}
+	if sort.Fields[0].Name != "status" || sort.Fields[0].Desc {
+		t.Errorf("Fields[0]: got %+v, want status asc", sort.Fields[0])
+	}
+	if sort.Fields[1].Name != "duration_ms" || !sort.Fields[1].Desc {
+		t.Errorf("Fields[1]: got %+v, want duration_ms desc", sort.Fields[1])
+	}
+}
+
 func TestLynxFlow_Take(t *testing.T) {
 	q, err := Parse(`from app | take 10`)
 	if err != nil {
@@ -752,7 +769,7 @@ func TestLynxFlow_TopByAgg(t *testing.T) {
 }
 
 func TestLynxFlow_Topby(t *testing.T) {
-	q, err := Parse(`from app | topby 20 sku using avg(dur) compute count() as n`)
+	q, err := Parse(`from app | topby 20 sku using mean(dur) compute count() as n`)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -904,7 +921,7 @@ func TestLynxFlow_Append(t *testing.T) {
 }
 
 func TestLynxFlow_Transaction(t *testing.T) {
-	q, err := Parse(`from app | transaction session_id maxspan=30m`)
+	q, err := Parse(`from app | transaction session_id maxspan=30m startswith="login" endswith="logout"`)
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}
@@ -917,6 +934,83 @@ func TestLynxFlow_Transaction(t *testing.T) {
 	}
 	if tx.MaxSpan != "30m" {
 		t.Errorf("MaxSpan: got %q", tx.MaxSpan)
+	}
+	if tx.StartsWith != "login" {
+		t.Errorf("StartsWith: got %q, want login", tx.StartsWith)
+	}
+	if tx.EndsWith != "logout" {
+		t.Errorf("EndsWith: got %q, want logout", tx.EndsWith)
+	}
+}
+
+func TestLynxFlow_TransactionCanonicalOptionOrder(t *testing.T) {
+	q, err := Parse(`from app | transaction maxspan=30m startswith="login" endswith="logout" session_id`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	tx, ok := q.Commands[0].(*TransactionCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected TransactionCommand, got %T", q.Commands[0])
+	}
+	if tx.Field != "session_id" || tx.MaxSpan != "30m" || tx.StartsWith != "login" || tx.EndsWith != "logout" {
+		t.Errorf("Transaction: got %+v", tx)
+	}
+}
+
+func TestLynxFlow_SessionizeMaxPauseDuration(t *testing.T) {
+	q, err := Parse(`from app | sessionize maxpause=5m by session_id`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 1 {
+		t.Fatalf("Commands: got %d, want 1", len(q.Commands))
+	}
+	sessionize, ok := q.Commands[0].(*SessionizeCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected SessionizeCommand, got %T", q.Commands[0])
+	}
+	if sessionize.MaxPause != "5m" {
+		t.Errorf("MaxPause: got %q, want 5m", sessionize.MaxPause)
+	}
+	if len(sessionize.GroupBy) != 1 || sessionize.GroupBy[0] != "session_id" {
+		t.Errorf("GroupBy: got %v, want [session_id]", sessionize.GroupBy)
+	}
+}
+
+func TestLynxFlow_SessionizeQuotedMaxPauseDuration(t *testing.T) {
+	q, err := Parse(`from app | sessionize maxpause="30m" by user_id`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 1 {
+		t.Fatalf("Commands: got %d, want 1", len(q.Commands))
+	}
+	sessionize, ok := q.Commands[0].(*SessionizeCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected SessionizeCommand, got %T", q.Commands[0])
+	}
+	if sessionize.MaxPause != "30m" {
+		t.Errorf("MaxPause: got %q, want 30m", sessionize.MaxPause)
+	}
+	if len(sessionize.GroupBy) != 1 || sessionize.GroupBy[0] != "user_id" {
+		t.Errorf("GroupBy: got %v, want [user_id]", sessionize.GroupBy)
+	}
+}
+
+func TestLynxFlow_StreamstatsModifierKeywords(t *testing.T) {
+	q, err := Parse(`from app | streamstats current=false window=5 count() as n`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	ss, ok := q.Commands[0].(*StreamstatsCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected StreamstatsCommand, got %T", q.Commands[0])
+	}
+	if ss.Current {
+		t.Error("Current: got true, want false")
+	}
+	if ss.Window != 5 {
+		t.Errorf("Window: got %d, want 5", ss.Window)
 	}
 }
 
@@ -1219,6 +1313,217 @@ func TestLynxFlow_RateDefault(t *testing.T) {
 	tc := q.Commands[0].(*TimechartCommand)
 	if tc.Span != "1m" {
 		t.Errorf("Span: got %q, want 1m (default)", tc.Span)
+	}
+}
+
+func TestLynxFlow_Proportion(t *testing.T) {
+	q, err := Parse(`from app | proportion status >= 500 AS error_rate by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+
+	stats, ok := q.Commands[0].(*StatsCommand)
+	if !ok {
+		t.Fatalf("command[0]: got %T, want StatsCommand", q.Commands[0])
+	}
+	if len(stats.Aggregations) != 2 {
+		t.Fatalf("Aggregations: got %d, want 2", len(stats.Aggregations))
+	}
+	if stats.Aggregations[0].Func != "count" || stats.Aggregations[0].Alias != "error_rate_num" {
+		t.Errorf("num agg: got %+v", stats.Aggregations[0])
+	}
+	if _, ok := stats.Aggregations[0].Args[0].(*FuncCallExpr); !ok {
+		t.Fatalf("num agg arg: got %T, want FuncCallExpr", stats.Aggregations[0].Args[0])
+	}
+	if stats.Aggregations[1].Func != "count" || stats.Aggregations[1].Alias != "error_rate_den" {
+		t.Errorf("den agg: got %+v", stats.Aggregations[1])
+	}
+	if len(stats.GroupBy) != 1 || stats.GroupBy[0] != "service" {
+		t.Errorf("GroupBy: got %v, want [service]", stats.GroupBy)
+	}
+
+	eval, ok := q.Commands[1].(*EvalCommand)
+	if !ok {
+		t.Fatalf("command[1]: got %T, want EvalCommand", q.Commands[1])
+	}
+	if eval.Field != "error_rate" {
+		t.Errorf("Eval field: got %q, want error_rate", eval.Field)
+	}
+}
+
+func TestLynxFlow_ProportionEvery(t *testing.T) {
+	q, err := Parse(`from app | proportion level = "error" AS error_rate every 5m by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 3 {
+		t.Fatalf("Commands: got %d, want 3", len(q.Commands))
+	}
+	bin, ok := q.Commands[0].(*BinCommand)
+	if !ok {
+		t.Fatalf("command[0]: got %T, want BinCommand", q.Commands[0])
+	}
+	if bin.Field != "_time" || bin.Span != "5m" {
+		t.Errorf("bin: got field=%q span=%q, want _time/5m", bin.Field, bin.Span)
+	}
+	stats := q.Commands[1].(*StatsCommand)
+	if len(stats.GroupBy) != 2 || stats.GroupBy[0] != "service" || stats.GroupBy[1] != "_time" {
+		t.Errorf("GroupBy: got %v, want [service _time]", stats.GroupBy)
+	}
+}
+
+func TestLynxFlow_ImpactDefault(t *testing.T) {
+	q, err := Parse(`from app | impact by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 4 {
+		t.Fatalf("Commands: got %d, want 4", len(q.Commands))
+	}
+	stats := q.Commands[0].(*StatsCommand)
+	if len(stats.Aggregations) != 1 || stats.Aggregations[0].Func != "count" || stats.Aggregations[0].Alias != "n" {
+		t.Errorf("stats aggregation: got %+v", stats.Aggregations)
+	}
+	if len(stats.GroupBy) != 1 || stats.GroupBy[0] != "service" {
+		t.Errorf("GroupBy: got %v, want [service]", stats.GroupBy)
+	}
+	eventstats := q.Commands[1].(*EventstatsCommand)
+	if len(eventstats.Aggregations) != 1 || eventstats.Aggregations[0].Alias != "total_n" {
+		t.Errorf("eventstats aggregation: got %+v", eventstats.Aggregations)
+	}
+	eval := q.Commands[2].(*EvalCommand)
+	if eval.Field != "pct_n" {
+		t.Errorf("Eval field: got %q, want pct_n", eval.Field)
+	}
+	sort := q.Commands[3].(*SortCommand)
+	if len(sort.Fields) != 1 || sort.Fields[0].Name != "pct_n" || !sort.Fields[0].Desc {
+		t.Errorf("Sort fields: got %+v, want -pct_n", sort.Fields)
+	}
+}
+
+func TestLynxFlow_ImpactAggregate(t *testing.T) {
+	q, err := Parse(`from app | impact sum(bytes) by host`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	stats := q.Commands[0].(*StatsCommand)
+	if stats.Aggregations[0].Alias != "sum_bytes" {
+		t.Errorf("Alias: got %q, want sum_bytes", stats.Aggregations[0].Alias)
+	}
+	eventstats := q.Commands[1].(*EventstatsCommand)
+	if eventstats.Aggregations[0].Alias != "total_sum_bytes" {
+		t.Errorf("Total alias: got %q, want total_sum_bytes", eventstats.Aggregations[0].Alias)
+	}
+}
+
+func TestLynxFlow_Baseline(t *testing.T) {
+	q, err := Parse(`from app | baseline error_rate window=12 by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+	streamstats, ok := q.Commands[0].(*StreamstatsCommand)
+	if !ok {
+		t.Fatalf("command[0]: got %T, want StreamstatsCommand", q.Commands[0])
+	}
+	if streamstats.Current {
+		t.Error("Current: got true, want false")
+	}
+	if streamstats.Window != 12 {
+		t.Errorf("Window: got %d, want 12", streamstats.Window)
+	}
+	if len(streamstats.Aggregations) != 2 {
+		t.Fatalf("Aggregations: got %d, want 2", len(streamstats.Aggregations))
+	}
+	if streamstats.Aggregations[0].Alias != "baseline_error_rate" {
+		t.Errorf("baseline alias: got %q", streamstats.Aggregations[0].Alias)
+	}
+	if streamstats.Aggregations[1].Alias != "stdev_error_rate" {
+		t.Errorf("stdev alias: got %q", streamstats.Aggregations[1].Alias)
+	}
+	if len(streamstats.GroupBy) != 1 || streamstats.GroupBy[0] != "service" {
+		t.Errorf("GroupBy: got %v, want [service]", streamstats.GroupBy)
+	}
+	eval, ok := q.Commands[1].(*EvalCommand)
+	if !ok {
+		t.Fatalf("command[1]: got %T, want EvalCommand", q.Commands[1])
+	}
+	if len(eval.Assignments) != 2 || eval.Assignments[0].Field != "delta_error_rate" || eval.Assignments[1].Field != "z_error_rate" {
+		t.Errorf("Assignments: got %+v", eval.Assignments)
+	}
+}
+
+func TestLynxFlow_Changes(t *testing.T) {
+	q, err := Parse(`from app | changes version by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 3 {
+		t.Fatalf("Commands: got %d, want 3", len(q.Commands))
+	}
+	sort := q.Commands[0].(*SortCommand)
+	if len(sort.Fields) != 1 || sort.Fields[0].Name != "_time" || sort.Fields[0].Desc {
+		t.Errorf("Sort fields: got %+v, want +_time", sort.Fields)
+	}
+	streamstats := q.Commands[1].(*StreamstatsCommand)
+	if streamstats.Current {
+		t.Error("Current: got true, want false")
+	}
+	if len(streamstats.Aggregations) != 1 || streamstats.Aggregations[0].Func != "last" || streamstats.Aggregations[0].Alias != "previous_version" {
+		t.Errorf("Aggregations: got %+v", streamstats.Aggregations)
+	}
+	if len(streamstats.GroupBy) != 1 || streamstats.GroupBy[0] != "service" {
+		t.Errorf("GroupBy: got %v, want [service]", streamstats.GroupBy)
+	}
+	where, ok := q.Commands[2].(*WhereCommand)
+	if !ok {
+		t.Fatalf("command[2]: got %T, want WhereCommand", q.Commands[2])
+	}
+	if _, ok := where.Expr.(*BinaryExpr); !ok {
+		t.Fatalf("where expr: got %T, want BinaryExpr", where.Expr)
+	}
+}
+
+func TestLynxFlow_Exemplars(t *testing.T) {
+	q, err := Parse(`from app | exemplars 3 by service`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+	sort := q.Commands[0].(*SortCommand)
+	if len(sort.Fields) != 1 || sort.Fields[0].Name != "_time" || !sort.Fields[0].Desc {
+		t.Errorf("Sort fields: got %+v, want -_time", sort.Fields)
+	}
+	dedup, ok := q.Commands[1].(*DedupCommand)
+	if !ok {
+		t.Fatalf("command[1]: got %T, want DedupCommand", q.Commands[1])
+	}
+	if dedup.Limit != 3 || len(dedup.Fields) != 1 || dedup.Fields[0] != "service" {
+		t.Errorf("Dedup: got %+v, want limit 3 by service", dedup)
+	}
+}
+
+func TestLynxFlow_ExemplarsGlobal(t *testing.T) {
+	q, err := Parse(`from app | exemplars 5`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+	head, ok := q.Commands[1].(*HeadCommand)
+	if !ok {
+		t.Fatalf("command[1]: got %T, want HeadCommand", q.Commands[1])
+	}
+	if head.Count != 5 {
+		t.Errorf("Head count: got %d, want 5", head.Count)
 	}
 }
 
@@ -1624,6 +1929,11 @@ func TestLynxFlow_LexerKeywordsAsTokens(t *testing.T) {
 		{"latency", TokenLatency},
 		{"errors", TokenErrors},
 		{"rate", TokenRate},
+		{"proportion", TokenProportion},
+		{"impact", TokenImpact},
+		{"baseline", TokenBaseline},
+		{"changes", TokenChanges},
+		{"exemplars", TokenExemplars},
 		{"percentiles", TokenPercentiles},
 		{"slowest", TokenSlowest},
 	}
@@ -1988,7 +2298,7 @@ func TestLynxFlow_NormalizeKnownCommands(t *testing.T) {
 		"let", "keep", "omit", "select", "group", "every", "bucket",
 		"order", "take", "rank", "topby", "bottomby", "bottom",
 		"running", "enrich", "parse", "explode", "pack", "lookup",
-		"latency", "errors", "rate", "percentiles", "slowest",
+		"latency", "errors", "rate", "proportion", "impact", "baseline", "changes", "exemplars", "percentiles", "slowest",
 		"views", "dropview",
 	}
 	for _, cmd := range lfCommands {
@@ -2810,6 +3120,11 @@ func TestLynxFlow_NormalizerAllLynxFlowCommands(t *testing.T) {
 		{"every 5m compute count()", "FROM main | every 5m compute count()"},
 		{"order by f asc", "FROM main | order by f asc"},
 		{"take 10", "FROM main | take 10"},
+		{"proportion status >= 500 AS error_rate", "FROM main | proportion status >= 500 AS error_rate"},
+		{"impact by service", "FROM main | impact by service"},
+		{"baseline error_rate window=12", "FROM main | baseline error_rate window=12"},
+		{"changes version", "FROM main | changes version"},
+		{"exemplars 5", "FROM main | exemplars 5"},
 		{"views", "FROM main | views"},
 	}
 	for _, tt := range tests {
@@ -3079,6 +3394,42 @@ func TestLynxFlow_ParseShortcut_WithModifiers(t *testing.T) {
 	}
 }
 
+func TestLynxFlow_SingleQuotedIdentifiers(t *testing.T) {
+	q, err := Parse(`from 'app logs' | where 'user-id' = 42 | stats count() by 'user-id' | eval 'sort' = 'user-id' + 1`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if q.Source == nil || q.Source.Index != "app logs" {
+		t.Fatalf("Source.Index: got %v, want app logs", q.Source)
+	}
+	where, ok := q.Commands[0].(*WhereCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected WhereCommand, got %T", q.Commands[0])
+	}
+	cmp, ok := where.Expr.(*CompareExpr)
+	if !ok {
+		t.Fatalf("where expr: expected CompareExpr, got %T", where.Expr)
+	}
+	left, ok := cmp.Left.(*FieldExpr)
+	if !ok || left.Name != "user-id" {
+		t.Fatalf("where field: got %#v, want user-id", cmp.Left)
+	}
+	stats, ok := q.Commands[1].(*StatsCommand)
+	if !ok {
+		t.Fatalf("cmd[1]: expected StatsCommand, got %T", q.Commands[1])
+	}
+	if len(stats.GroupBy) != 1 || stats.GroupBy[0] != "user-id" {
+		t.Fatalf("GroupBy: got %v, want [user-id]", stats.GroupBy)
+	}
+	eval, ok := q.Commands[2].(*EvalCommand)
+	if !ok {
+		t.Fatalf("cmd[2]: expected EvalCommand, got %T", q.Commands[2])
+	}
+	if eval.Field != "sort" {
+		t.Fatalf("Eval field: got %q, want sort", eval.Field)
+	}
+}
+
 func TestLynxFlow_ParseShortcut_Regex(t *testing.T) {
 	q, err := Parse(`from app | regex(_raw, "host=(?P<host>\\S+)")`)
 	if err != nil {
@@ -3168,5 +3519,40 @@ func TestLynxFlow_ParseShortcut_UnknownFormatErrors(t *testing.T) {
 	}
 	if _, ok := q.Commands[0].(*UnpackCommand); ok {
 		t.Fatalf("cmd[0]: shortcut should not fire for unknown format, got UnpackCommand")
+	}
+}
+
+func TestLynxFlow_CompareParsesPositiveDuration(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{
+			name:  "previous keyword",
+			query: `from nginx[-1h] | compare previous 1h`,
+			want:  "1h",
+		},
+		{
+			name:  "optional previous",
+			query: `from nginx[-7d] | compare 7d`,
+			want:  "7d",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := Parse(tt.query)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			cmd, ok := q.Commands[0].(*CompareCommand)
+			if !ok {
+				t.Fatalf("cmd[0]: expected CompareCommand, got %T", q.Commands[0])
+			}
+			if cmd.Shift != tt.want {
+				t.Fatalf("Shift: got %q, want %q", cmd.Shift, tt.want)
+			}
+		})
 	}
 }

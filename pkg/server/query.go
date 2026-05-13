@@ -36,7 +36,7 @@ func DetectResultType(prog *spl2.Program) ResultType {
 			continue // transparent — check previous command
 		case *spl2.TimechartCommand:
 			return ResultTypeTimechart
-		case *spl2.StatsCommand, *spl2.TopCommand, *spl2.RareCommand,
+		case *spl2.StatsCommand, *spl2.ChartCommand, *spl2.TopCommand, *spl2.RareCommand,
 			*spl2.XYSeriesCommand:
 			return ResultTypeAggregate
 		case *spl2.EventstatsCommand:

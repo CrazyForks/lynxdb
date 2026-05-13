@@ -50,8 +50,9 @@ func (s *QueryService) currentQueryConfig() config.QueryConfig {
 
 // Explain parses and analyses a query without executing it.
 func (s *QueryService) Explain(_ context.Context, req ExplainRequest) (*ExplainResult, error) {
+	query, rewrites := spl2.NormalizeQueryWithRewrites(req.Query)
 	plan, err := s.planner.Plan(planner.PlanRequest{
-		Query: req.Query,
+		Query: query,
 		From:  req.From,
 		To:    req.To,
 	})
@@ -59,7 +60,8 @@ func (s *QueryService) Explain(_ context.Context, req ExplainRequest) (*ExplainR
 		var pe *planner.ParseError
 		if errors.As(err, &pe) {
 			return &ExplainResult{
-				IsValid: false,
+				IsValid:  false,
+				Rewrites: rewrites,
 				Errors: []ExplainError{{
 					Message:    pe.Message,
 					Suggestion: pe.Suggestion,
@@ -130,8 +132,9 @@ func (s *QueryService) Explain(_ context.Context, req ExplainRequest) (*ExplainR
 	}
 
 	return &ExplainResult{
-		IsValid: true,
-		Errors:  nil,
+		IsValid:  true,
+		Errors:   nil,
+		Rewrites: rewrites,
 		Parsed: &ExplainParsed{
 			Pipeline:          stages,
 			ResultType:        string(plan.ResultType),
@@ -189,6 +192,8 @@ func commandName(cmd spl2.Command) string {
 		return "where"
 	case *spl2.StatsCommand:
 		return "stats"
+	case *spl2.ChartCommand:
+		return "chart"
 	case *spl2.EvalCommand:
 		return "eval"
 	case *spl2.HeadCommand:
@@ -209,6 +214,10 @@ func commandName(cmd spl2.Command) string {
 		return "timechart"
 	case *spl2.RexCommand:
 		return "rex"
+	case *spl2.ReplaceCommand:
+		return "replace"
+	case *spl2.FieldformatCommand:
+		return "fieldformat"
 	case *spl2.BinCommand:
 		return "bin"
 	case *spl2.StreamstatsCommand:
@@ -219,12 +228,20 @@ func commandName(cmd spl2.Command) string {
 		return "join"
 	case *spl2.AppendCommand:
 		return "append"
+	case *spl2.AppendcolsCommand:
+		return "appendcols"
+	case *spl2.AppendpipeCommand:
+		return "appendpipe"
 	case *spl2.MultisearchCommand:
 		return "multisearch"
+	case *spl2.UnionCommand:
+		return "union"
 	case *spl2.TransactionCommand:
 		return "transaction"
 	case *spl2.XYSeriesCommand:
 		return "xyseries"
+	case *spl2.UntableCommand:
+		return "untable"
 	case *spl2.TopCommand:
 		return "top"
 	case *spl2.RareCommand:
@@ -247,6 +264,14 @@ func commandName(cmd spl2.Command) string {
 		return "json"
 	case *spl2.UnrollCommand:
 		return "explode"
+	case *spl2.MakemvCommand:
+		return "makemv"
+	case *spl2.MvcombineCommand:
+		return "mvcombine"
+	case *spl2.NomvCommand:
+		return "nomv"
+	case *spl2.CapabilityCommand:
+		return cmd.(*spl2.CapabilityCommand).Name
 	case *spl2.SelectCommand:
 		return "select"
 	case *spl2.PackJsonCommand:
@@ -394,6 +419,24 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 			fieldsUnknown = false
 			stage.Description = truncateDesc(c.String(), 80)
 
+		case *spl2.ChartCommand:
+			if c.ColumnSplit != "" {
+				fieldsUnknown = true
+			} else {
+				var newFields []string
+				if c.RowSplit != "" {
+					newFields = append(newFields, c.RowSplit)
+				}
+				for _, agg := range c.Aggregations {
+					newFields = append(newFields, aggOutputName(agg))
+				}
+				removed = diffFields(fields.order, newFields)
+				added = newFields
+				setReplace(fields, newFields...)
+				fieldsUnknown = false
+			}
+			stage.Description = truncateDesc(c.String(), 80)
+
 		case *spl2.TimechartCommand:
 			// Timechart replaces the entire field set with _time + agg outputs + optional split-by.
 			var newFields []string
@@ -537,6 +580,12 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 		case *spl2.DedupCommand:
 			stage.Description = truncateDesc(c.String(), 80)
 
+		case *spl2.ReplaceCommand:
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.FieldformatCommand:
+			stage.Description = truncateDesc(c.String(), 80)
+
 		case *spl2.BinCommand:
 			outField := c.Alias
 			if outField == "" {
@@ -604,7 +653,19 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 			fieldsUnknown = true
 			stage.Description = truncateDesc(c.String(), 80)
 
+		case *spl2.AppendcolsCommand:
+			fieldsUnknown = true
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.AppendpipeCommand:
+			fieldsUnknown = true
+			stage.Description = truncateDesc(c.String(), 80)
+
 		case *spl2.MultisearchCommand:
+			fieldsUnknown = true
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.UnionCommand:
 			fieldsUnknown = true
 			stage.Description = truncateDesc(c.String(), 80)
 
@@ -624,6 +685,15 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 			fieldsUnknown = true
 			stage.Description = truncateDesc(c.String(), 80)
 
+		case *spl2.UntableCommand:
+			// Untable changes row count and condenses dynamic input fields.
+			newFields := []string{c.XField, c.YNameField, c.YDataField}
+			removed = diffFields(fields.order, newFields)
+			added = newFields
+			setReplace(fields, newFields...)
+			fieldsUnknown = false
+			stage.Description = truncateDesc(c.String(), 80)
+
 		case *spl2.FillnullCommand:
 			stage.Description = truncateDesc(c.String(), 80)
 
@@ -639,6 +709,19 @@ func annotatePipelineFields(query *spl2.Query, catalogFields []string) []Pipelin
 			for _, f := range c.ExtraFields {
 				setAdd(fields, f)
 			}
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.NomvCommand:
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.MakemvCommand:
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.MvcombineCommand:
+			stage.Description = truncateDesc(c.String(), 80)
+
+		case *spl2.CapabilityCommand:
+			fieldsUnknown = true
 			stage.Description = truncateDesc(c.String(), 80)
 
 		case *spl2.PackJsonCommand:
@@ -841,6 +924,7 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 	if err != nil {
 		return nil, err
 	}
+	job.SetLintOptions(!req.NoLint, req.LintLimit, req.LintFull)
 
 	limit := req.Limit
 	if limit <= 0 {
@@ -855,6 +939,24 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 	if plan.Hints != nil && len(plan.Hints.Warnings) > 0 {
 		warnings = plan.Hints.Warnings
 	}
+	var analysisLints []spl2.QueryLint
+	if !req.NoLint || !req.NoSuggestions {
+		var lintErr error
+		analysisLints, lintErr = spl2.LintQuery(req.Query)
+		if lintErr != nil {
+			analysisLints, _ = spl2.LintProgram(plan.RawQuery, plan.Program)
+		}
+		analysisLints = spl2.PrepareQueryLints(analysisLints)
+	}
+	var lints []spl2.QueryLint
+	if !req.NoLint {
+		lints = applyLintOutputLimit(analysisLints, req.LintLimit, req.LintFull)
+	}
+	var suggestions []spl2.QuerySuggestion
+	if !req.NoSuggestions {
+		suggestions = spl2.SuggestionsFromLints(analysisLints)
+	}
+	job.SetAdvisoryMetadata(warnings, lints, suggestions, req.Rewrites)
 
 	switch req.Mode {
 	case QueryModeSync:
@@ -868,6 +970,9 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 		case <-job.Done():
 			r := buildSyncResult(job, limit, req.Offset)
 			r.Warnings = warnings
+			r.Lints = lints
+			r.Suggestions = suggestions
+			r.Rewrites = req.Rewrites
 			return r, nil
 		case <-timer.C:
 			// Promoted to async — detach from HTTP context so job survives disconnect.
@@ -885,6 +990,9 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 		case <-job.Done():
 			r := buildSyncResult(job, limit, req.Offset)
 			r.Warnings = warnings
+			r.Lints = lints
+			r.Suggestions = suggestions
+			r.Rewrites = req.Rewrites
 			return r, nil
 		case <-timer.C:
 			// Promoted to async — detach from HTTP context so job survives disconnect.
@@ -1115,11 +1223,32 @@ func buildSyncResult(job *server.SearchJob, limit, offset int) *SubmitResult {
 	}
 }
 
+const defaultLintOutputLimit = 5
+
+func applyLintOutputLimit(lints []spl2.QueryLint, limit int, full bool) []spl2.QueryLint {
+	if full || len(lints) == 0 {
+		return lints
+	}
+	if limit <= 0 {
+		limit = defaultLintOutputLimit
+	}
+	if len(lints) <= limit {
+		return lints
+	}
+
+	return append([]spl2.QueryLint(nil), lints[:limit]...)
+}
+
 func buildJobHandle(job *server.SearchJob) *SubmitResult {
+	snap := job.Snapshot()
 	r := &SubmitResult{
-		Done:   false,
-		JobID:  job.ID,
-		Status: "running",
+		Done:        false,
+		JobID:       job.ID,
+		Status:      "running",
+		Warnings:    snap.Warnings,
+		Lints:       snap.Lints,
+		Suggestions: snap.Suggestions,
+		Rewrites:    snap.Rewrites,
 	}
 	if p := job.Progress.Load(); p != nil {
 		r.Progress = p

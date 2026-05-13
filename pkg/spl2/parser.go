@@ -2394,6 +2394,11 @@ func (p *Parser) parseSourceName() (string, error) {
 
 		return tok.Literal, nil
 
+	case tok.Type == TokenRegex:
+		p.advance()
+
+		return tok.Literal, nil
+
 	case tok.Type == TokenString:
 		p.advance()
 
@@ -2527,6 +2532,10 @@ func (p *Parser) readSpanValue() string {
 
 		return span
 	case TokenIdent, TokenReplace:
+		p.advance()
+
+		return tok.Literal
+	case TokenString:
 		p.advance()
 
 		return tok.Literal

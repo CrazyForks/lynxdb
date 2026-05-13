@@ -65,6 +65,7 @@ func TestGlobToRegex(t *testing.T) {
 		{"(test)", "(test)", true},
 		{`\[data\]`, "[data]", true},
 		{"[data]", "d", true},
+		{`C:\Windows*`, `C:\Windows\System32\cmd.exe`, true},
 
 		// RFC glob syntax
 		{"api/?", "api/v", true},
@@ -91,7 +92,7 @@ func TestGlobToRegex(t *testing.T) {
 	}
 }
 
-func TestSearchEvaluatorGlobDoesNotFastMatchSlash(t *testing.T) {
+func TestSearchEvaluatorGlobSlashSemantics(t *testing.T) {
 	e := NewSearchEvaluator(nil)
 
 	tests := []struct {
@@ -99,7 +100,7 @@ func TestSearchEvaluatorGlobDoesNotFastMatchSlash(t *testing.T) {
 		input   string
 		match   bool
 	}{
-		{"*error*", "api/error", false},
+		{"*error*", "api/error", true},
 		{"**error*", "api/error", true},
 		{"api/*", "api/v1/users", false},
 		{"api/**", "api/v1/users", true},
@@ -110,6 +111,57 @@ func TestSearchEvaluatorGlobDoesNotFastMatchSlash(t *testing.T) {
 		if got != tt.match {
 			t.Errorf("matchGlob(%q, %q) = %v, want %v", tt.input, tt.pattern, got, tt.match)
 		}
+	}
+}
+
+func TestSearchEvaluatorKeywordGlobMatchesSlash(t *testing.T) {
+	e := NewSearchEvaluator(nil)
+
+	tests := []struct {
+		pattern string
+		input   string
+		match   bool
+	}{
+		{"nova*instance*", "nova/api/instance create", true},
+		{"*/user_*", "GET /api/v1/user_service/health", true},
+		{"*error*timeout*", "error from api/v1 timeout", true},
+		{"*error*timeout*", "timeout before error", false},
+	}
+
+	for _, tt := range tests {
+		got := e.matchKeywordPattern(tt.input, tt.pattern, true)
+		if got != tt.match {
+			t.Errorf("matchKeywordPattern(%q, %q) = %v, want %v", tt.input, tt.pattern, got, tt.match)
+		}
+	}
+}
+
+func TestSearchEvaluatorSigmaWildcardComparison(t *testing.T) {
+	expr, err := ParseSearchExpression(`CommandLine=*"whoami"* AND Image=*".exe" AND ParentImage="C:\\Windows"*`)
+	if err != nil {
+		t.Fatalf("ParseSearchExpression: %v", err)
+	}
+	e := NewSearchEvaluator(expr)
+	row := map[string]event.Value{
+		"CommandLine": event.StringValue(`cmd.exe /c whoami /groups /n:01`),
+		"Image":       event.StringValue(`C:\Windows\System32\cmd.exe`),
+		"ParentImage": event.StringValue(`C:\Windows\explorer.exe`),
+	}
+	for _, part := range []string{
+		`CommandLine=*"whoami"*`,
+		`Image=*".exe"`,
+		`ParentImage="C:\\Windows"*`,
+	} {
+		partExpr, err := ParseSearchExpression(part)
+		if err != nil {
+			t.Fatalf("ParseSearchExpression(%q): %v", part, err)
+		}
+		if !NewSearchEvaluator(partExpr).Evaluate(row) {
+			t.Fatalf("expected %s to match row as %s", part, partExpr.String())
+		}
+	}
+	if !e.Evaluate(row) {
+		t.Fatalf("expected sigma wildcard expression to match row as %s", expr.String())
 	}
 }
 

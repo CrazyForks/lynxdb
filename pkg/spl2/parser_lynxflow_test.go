@@ -977,6 +977,26 @@ func TestLynxFlow_SessionizeMaxPauseDuration(t *testing.T) {
 	}
 }
 
+func TestLynxFlow_SessionizeQuotedMaxPauseDuration(t *testing.T) {
+	q, err := Parse(`from app | sessionize maxpause="30m" by user_id`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 1 {
+		t.Fatalf("Commands: got %d, want 1", len(q.Commands))
+	}
+	sessionize, ok := q.Commands[0].(*SessionizeCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected SessionizeCommand, got %T", q.Commands[0])
+	}
+	if sessionize.MaxPause != "30m" {
+		t.Errorf("MaxPause: got %q, want 30m", sessionize.MaxPause)
+	}
+	if len(sessionize.GroupBy) != 1 || sessionize.GroupBy[0] != "user_id" {
+		t.Errorf("GroupBy: got %v, want [user_id]", sessionize.GroupBy)
+	}
+}
+
 func TestLynxFlow_StreamstatsModifierKeywords(t *testing.T) {
 	q, err := Parse(`from app | streamstats current=false window=5 count() as n`)
 	if err != nil {

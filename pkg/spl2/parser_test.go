@@ -1209,6 +1209,19 @@ func TestParse_FromSingleUnchanged(t *testing.T) {
 	}
 }
 
+func TestParse_FromRegexSourceName(t *testing.T) {
+	q, err := Parse(`FROM regex | search *`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if q.Source == nil {
+		t.Fatal("expected source clause")
+	}
+	if q.Source.Index != "regex" {
+		t.Errorf("Index: got %q, want regex", q.Source.Index)
+	}
+}
+
 func TestParse_SearchIndexEquals(t *testing.T) {
 	// search index=nginx should still work via the existing code path.
 	input := `FROM main | search index=nginx level=error`

@@ -338,8 +338,10 @@ func MatchGlob(pattern, text string, caseInsensitive bool) bool {
 
 // matchGlob checks if text matches a glob pattern with caching.
 func (e *SearchEvaluator) matchGlob(text, pattern string, caseInsensitive bool) bool {
-	if !strings.Contains(text, "/") {
-		// Fast path: *literal* -> contains check.
+	if !strings.Contains(pattern, "/") {
+		// Fast path: *literal* -> contains check. Field comparisons are not
+		// source path globs, so slash in the field value does not disable these
+		// shortcuts. Slash in the pattern still uses RFC path-glob semantics.
 		if literal, ok := extractStarLiteralStar(pattern); ok {
 			if caseInsensitive {
 				return containsFoldASCII(text, e.lowerKeyword(literal))
@@ -401,10 +403,14 @@ func (e *SearchEvaluator) matchGlobContains(text, pattern string, caseInsensitiv
 
 // globToContainsRegex converts a glob pattern to a regex without anchoring (substring match).
 func globToContainsRegex(pattern string, caseInsensitive bool) *regexp.Regexp {
-	return globToRegex(pattern, caseInsensitive, false)
+	return globToRegexWithMode(pattern, caseInsensitive, false, true)
 }
 
 func globToRegex(pattern string, caseInsensitive bool, anchored bool) *regexp.Regexp {
+	return globToRegexWithMode(pattern, caseInsensitive, anchored, false)
+}
+
+func globToRegexWithMode(pattern string, caseInsensitive bool, anchored bool, wildcardMatchesSlash bool) *regexp.Regexp {
 	var buf strings.Builder
 	if caseInsensitive {
 		buf.WriteString("(?i)")
@@ -419,11 +425,17 @@ func globToRegex(pattern string, caseInsensitive bool, anchored bool) *regexp.Re
 			if i+1 < len(pattern) && pattern[i+1] == '*' {
 				buf.WriteString(".*")
 				i++
+			} else if wildcardMatchesSlash {
+				buf.WriteString(".*")
 			} else {
 				buf.WriteString("[^/]*")
 			}
 		case '?':
-			buf.WriteString("[^/]")
+			if wildcardMatchesSlash {
+				buf.WriteByte('.')
+			} else {
+				buf.WriteString("[^/]")
+			}
 		case '[':
 			next, ok := appendGlobClass(&buf, pattern, i)
 			if ok {
@@ -440,8 +452,13 @@ func globToRegex(pattern string, caseInsensitive bool, anchored bool) *regexp.Re
 			}
 		case '\\':
 			if i+1 < len(pattern) {
-				i++
-				buf.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+				next := pattern[i+1]
+				if isEscapableGlobChar(next) {
+					i++
+					buf.WriteString(regexp.QuoteMeta(pattern[i : i+1]))
+				} else {
+					buf.WriteString(`\\`)
+				}
 			} else {
 				buf.WriteString(`\\`)
 			}
@@ -457,6 +474,15 @@ func globToRegex(pattern string, caseInsensitive bool, anchored bool) *regexp.Re
 	}
 
 	return regexp.MustCompile(buf.String())
+}
+
+func isEscapableGlobChar(ch byte) bool {
+	switch ch {
+	case '*', '?', '[', ']', '{', '}', '\\':
+		return true
+	default:
+		return false
+	}
 }
 
 func appendGlobClass(buf *strings.Builder, pattern string, start int) (int, bool) {

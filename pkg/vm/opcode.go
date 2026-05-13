@@ -129,7 +129,12 @@ const (
 	OpTypeOf Opcode = 0xB6
 
 	// Time Functions.
-	OpStrftime Opcode = 0xC0
+	OpStrftime  Opcode = 0xC0
+	OpURLDecode Opcode = 0xC1
+	OpMD5       Opcode = 0xC2
+	OpSHA1      Opcode = 0xC3
+	OpSHA256    Opcode = 0xC4
+	OpSHA512    Opcode = 0xC5
 
 	// Network (operand: 2-byte CIDR pool index).
 	OpCIDRMatch Opcode = 0xE0 // net.IPNet.Contains
@@ -256,7 +261,12 @@ var definitions = map[Opcode]*Definition{
 	OpIsBool:    {"OpIsBool", nil},
 	OpTypeOf:    {"OpTypeOf", nil},
 
-	OpStrftime: {"OpStrftime", nil},
+	OpStrftime:  {"OpStrftime", nil},
+	OpURLDecode: {"OpURLDecode", nil},
+	OpMD5:       {"OpMD5", nil},
+	OpSHA1:      {"OpSHA1", nil},
+	OpSHA256:    {"OpSHA256", nil},
+	OpSHA512:    {"OpSHA512", nil},
 
 	OpCIDRMatch: {"OpCIDRMatch", []int{2}},
 

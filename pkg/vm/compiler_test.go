@@ -363,6 +363,72 @@ func TestCompileTrimFunctions(t *testing.T) {
 	}
 }
 
+func TestCompileEncodingCryptoFunctions(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *spl2.FuncCallExpr
+		want string
+	}{
+		{
+			name: "urldecode",
+			expr: &spl2.FuncCallExpr{
+				Name: "urldecode",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"%7Bok%7D"`}},
+			},
+			want: "{ok}",
+		},
+		{
+			name: "md5",
+			expr: &spl2.FuncCallExpr{
+				Name: "md5",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "900150983cd24fb0d6963f7d28e17f72",
+		},
+		{
+			name: "sha1",
+			expr: &spl2.FuncCallExpr{
+				Name: "sha1",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "a9993e364706816aba3e25717850c26c9cd0d89d",
+		},
+		{
+			name: "sha256",
+			expr: &spl2.FuncCallExpr{
+				Name: "sha256",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+		},
+		{
+			name: "sha512",
+			expr: &spl2.FuncCallExpr{
+				Name: "sha512",
+				Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"abc"`}},
+			},
+			want: "ddaf35a193617abacc417349ae20413112e6fa4e89a97ea20a9eeee64b55d39a2192992a274fc1a836ba3c23a3feebbd454d4423643ce80e2a9ac94fa54ca49f",
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			result, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			if result.AsString() != tt.want {
+				t.Fatalf("got %q, want %q", result.AsString(), tt.want)
+			}
+		})
+	}
+}
+
 func TestCompileIsNull(t *testing.T) {
 	expr := &spl2.FuncCallExpr{
 		Name: "isnull",

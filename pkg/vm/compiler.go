@@ -683,6 +683,14 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 		return c.compileTrim(e, OpLTrim)
 	case "rtrim":
 		return c.compileTrim(e, OpRTrim)
+	case "urldecode":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("urldecode expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpURLDecode)
 	case "split":
 		if len(e.Args) != 2 {
 			return fmt.Errorf("split expects 2 arguments, got %d", len(e.Args))
@@ -705,6 +713,14 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpStrftime)
+	case "md5":
+		return c.compileHash(e, OpMD5)
+	case "sha1":
+		return c.compileHash(e, OpSHA1)
+	case "sha256":
+		return c.compileHash(e, OpSHA256)
+	case "sha512":
+		return c.compileHash(e, OpSHA512)
 	case "max":
 		if len(e.Args) < 2 {
 			return fmt.Errorf("max expects at least 2 arguments, got %d", len(e.Args))
@@ -1062,6 +1078,18 @@ func (c *compiler) compileTrim(e *spl2.FuncCallExpr, op Opcode) error {
 	} else {
 		idx := c.prog.AddConstant(event.StringValue(" \t\r\n"))
 		c.prog.EmitOp(OpConstStr, idx)
+	}
+	c.prog.EmitOp(op)
+
+	return nil
+}
+
+func (c *compiler) compileHash(e *spl2.FuncCallExpr, op Opcode) error {
+	if len(e.Args) != 1 {
+		return fmt.Errorf("%s expects 1 argument, got %d", strings.ToLower(e.Name), len(e.Args))
+	}
+	if err := c.compileExpr(e.Args[0]); err != nil {
+		return err
 	}
 	c.prog.EmitOp(op)
 

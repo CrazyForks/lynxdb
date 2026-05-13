@@ -1,11 +1,17 @@
 package vm //nolint:staticcheck // Intentional use of deprecated As*() methods — see VM struct godoc.
 
 import (
+	"crypto/md5"
+	"crypto/sha1"
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -701,6 +707,10 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = trimValue(str, chars, trimRight)
 
+		case OpURLDecode:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = urlDecodeValue(a)
+
 		case OpEq:
 			b := vm.stack[vm.sp-1]
 			a := vm.stack[vm.sp-2]
@@ -1007,6 +1017,22 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			ts := vm.stack[vm.sp-2]
 			vm.sp--
 			vm.stack[vm.sp-1] = strftimeValue(ts, format)
+
+		case OpMD5:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "md5")
+
+		case OpSHA1:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "sha1")
+
+		case OpSHA256:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "sha256")
+
+		case OpSHA512:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = hashValue(a, "sha512")
 
 		case OpJsonExtract:
 			// Stack: [..., field, path] → [..., result]
@@ -1733,6 +1759,18 @@ func trimValue(str, chars event.Value, mode trimMode) event.Value {
 	}
 }
 
+func urlDecodeValue(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	decoded, err := url.QueryUnescape(valueToString(v))
+	if err != nil {
+		return event.NullValue()
+	}
+
+	return event.StringValue(decoded)
+}
+
 func roundValue(num, decimals event.Value) event.Value {
 	if num.IsNull() {
 		return event.NullValue()
@@ -1898,6 +1936,29 @@ func strftimeValue(ts, format event.Value) event.Value {
 	goFmt := splTimeToGo(fmtStr)
 
 	return event.StringValue(t.Format(goFmt))
+}
+
+func hashValue(v event.Value, algorithm string) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	data := []byte(valueToString(v))
+	switch algorithm {
+	case "md5":
+		sum := md5.Sum(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	case "sha1":
+		sum := sha1.Sum(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	case "sha256":
+		sum := sha256.Sum256(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	case "sha512":
+		sum := sha512.Sum512(data)
+		return event.StringValue(hex.EncodeToString(sum[:]))
+	default:
+		return event.NullValue()
+	}
 }
 
 // splTimeReplacer converts SPL2 strftime format tokens to Go time layout tokens.

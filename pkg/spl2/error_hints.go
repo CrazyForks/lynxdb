@@ -33,10 +33,11 @@ var knownFunctions = []string{
 	// Eval functions
 	"if", "case", "match", "like", "ilike", "cidrmatch", "coalesce", "in",
 	"tonumber", "toint", "todouble", "tostring", "tobool",
-	"round", "substr", "trim", "ltrim", "rtrim", "lower", "upper", "len", "ln", "log", "exp", "pow", "pi",
+	"round", "substr", "trim", "ltrim", "rtrim", "urldecode", "lower", "upper", "len", "ln", "log", "exp", "pow", "pi",
 	"abs", "ceil", "ceiling", "floor", "sqrt", "mvjoin", "mvappend", "mvdedup", "mvcount",
 	"isnotnull", "isnull", "nullif", "isnum", "isnumeric", "isint", "isstr", "isbool", "typeof",
 	"null", "strftime", "startswith", "endswith", "contains", "max", "min",
+	"md5", "sha1", "sha256", "sha512",
 	// Aggregation functions
 	"count", "sum", "sumsq", "avg", "mean", "dc", "distinct_count", "estdc", "estdc_error", "values", "list", "mode",
 	"stdev", "stdevp", "var", "varp", "range",

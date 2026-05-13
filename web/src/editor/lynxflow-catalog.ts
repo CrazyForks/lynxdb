@@ -170,7 +170,8 @@ export const EVAL_FUNCTIONS: readonly string[] = [
   "lower()", "upper()", "len()", "substr()", "replace()", "trim()", "ltrim()",
   "rtrim()", "split()", "mvappend()", "mvcount()", "mvdedup()", "mvfind()",
   "mvindex()", "mvjoin()", "mvsort()", "mvzip()", "now()", "time()",
-  "relative_time()", "strftime()", "strptime()", "json_extract()", "json_valid()",
+  "relative_time()", "strftime()", "strptime()", "urldecode()", "md5()", "sha1()",
+  "sha256()", "sha512()", "json_extract()", "json_valid()",
   "json_keys()", "json_array_length()", "json_object()", "json_array()", "json_type()",
   "json_set()", "json_remove()", "json_merge()",
 ];

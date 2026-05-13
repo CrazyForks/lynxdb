@@ -15,6 +15,7 @@ type Meta struct {
 	Lints           []QueryLint       `json:"lints,omitempty"`
 	Suggestions     []QuerySuggestion `json:"suggestions,omitempty"`
 	Rewrites        []QueryRewrite    `json:"rewrites,omitempty"`
+	Explain         *QueryExplain     `json:"explain,omitempty"`
 }
 
 // QueryLint is an advisory query warning returned in response metadata.
@@ -39,6 +40,35 @@ type QueryRewrite struct {
 	Before string `json:"before"`
 	After  string `json:"after"`
 	Reason string `json:"reason"`
+}
+
+// QueryExplain is advisory planning/execution metadata returned under meta.
+type QueryExplain struct {
+	SourceScope       *QueryExplainSourceScope `json:"source_scope,omitempty"`
+	Segments          *QueryExplainSegments    `json:"segments,omitempty"`
+	CandidateRows     *int64                   `json:"candidate_rows,omitempty"`
+	RegexEngine       string                   `json:"regex_engine,omitempty"`
+	LiteralExtraction *bool                    `json:"literal_extraction,omitempty"`
+	WallClockMS       float64                  `json:"wall_clock_ms,omitempty"`
+	ScannedBytes      int64                    `json:"scanned_bytes,omitempty"`
+}
+
+// QueryExplainSourceScope describes selected source/index scope.
+type QueryExplainSourceScope struct {
+	Selected []string `json:"selected,omitempty"`
+	Count    int      `json:"count"`
+}
+
+// QueryExplainSegments describes segment scanning and skipping.
+type QueryExplainSegments struct {
+	Total        int `json:"total"`
+	Scanned      int `json:"scanned"`
+	Skipped      int `json:"skipped"`
+	SkippedIndex int `json:"skipped_index,omitempty"`
+	SkippedTime  int `json:"skipped_time,omitempty"`
+	SkippedStats int `json:"skipped_stats,omitempty"`
+	SkippedBloom int `json:"skipped_bloom,omitempty"`
+	SkippedRange int `json:"skipped_range,omitempty"`
 }
 
 // SearchStats holds detailed query execution statistics from the server.

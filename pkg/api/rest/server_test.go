@@ -1139,6 +1139,9 @@ func TestQuery_AsyncMode(t *testing.T) {
 			meta := jr["meta"].(map[string]interface{})
 			assertLintMeta(t, meta, spl2.LintCountWithoutParens)
 			assertRewriteMeta(t, meta, spl2.NormalizeQuery(query), "default-source")
+			if explain, _ := meta["explain"].(map[string]interface{}); explain == nil {
+				t.Fatalf("job meta.explain missing: %#v", meta)
+			}
 
 			return
 		}
@@ -1905,6 +1908,52 @@ func TestQuery_SuggestionsMetadata(t *testing.T) {
 	}
 	if lints, _ := noSuggestionMeta["lints"].([]interface{}); len(lints) == 0 {
 		t.Fatalf("meta.lints missing when suggestions=false: %#v", noSuggestionMeta["lints"])
+	}
+}
+
+func TestQuery_ExplainMetadata(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ingestTestEvents(t, srv.Addr(), 20, 2)
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `FROM main | regex "request" | head 3`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	meta, _ := result["meta"].(map[string]interface{})
+	explain, _ := meta["explain"].(map[string]interface{})
+	if explain == nil {
+		t.Fatalf("missing meta.explain: %#v", meta)
+	}
+	sourceScope, _ := explain["source_scope"].(map[string]interface{})
+	if sourceScope == nil || int(sourceScope["count"].(float64)) == 0 {
+		t.Fatalf("meta.explain.source_scope: %#v", explain["source_scope"])
+	}
+	segments, _ := explain["segments"].(map[string]interface{})
+	if segments == nil || int(segments["total"].(float64)) == 0 {
+		t.Fatalf("meta.explain.segments: %#v", explain["segments"])
+	}
+	if rows, ok := explain["candidate_rows"].(float64); !ok || rows == 0 {
+		t.Fatalf("meta.explain.candidate_rows: %#v", explain["candidate_rows"])
+	}
+	if _, ok := explain["literal_extraction"].(bool); !ok {
+		t.Fatalf("meta.explain.literal_extraction missing: %#v", explain)
+	}
+	if explain["regex_engine"] != "linear" {
+		t.Fatalf("meta.explain.regex_engine: got %#v, want linear", explain["regex_engine"])
 	}
 }
 

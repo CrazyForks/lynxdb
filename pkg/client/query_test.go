@@ -90,6 +90,13 @@ func TestQuery_LintOptionAndMetadata(t *testing.T) {
 				"suggestions": []map[string]interface{}{
 					{"text": "errors by service", "reason": "shortcut", "source_code": "L020"},
 				},
+				"explain": map[string]interface{}{
+					"source_scope":       map[string]interface{}{"selected": []string{"main"}, "count": 1},
+					"segments":           map[string]interface{}{"total": 2, "scanned": 1, "skipped": 1, "skipped_time": 1},
+					"candidate_rows":     10,
+					"literal_extraction": true,
+					"regex_engine":       "linear",
+				},
 			},
 		})
 	}))
@@ -113,6 +120,24 @@ func TestQuery_LintOptionAndMetadata(t *testing.T) {
 	}
 	if result.Meta.Suggestions[0].Text != "errors by service" {
 		t.Errorf("suggestion text = %q, want errors by service", result.Meta.Suggestions[0].Text)
+	}
+	if result.Meta.Explain == nil {
+		t.Fatal("Meta.Explain is nil")
+	}
+	if result.Meta.Explain.SourceScope == nil || result.Meta.Explain.SourceScope.Count != 1 {
+		t.Fatalf("Explain.SourceScope = %#v, want count 1", result.Meta.Explain.SourceScope)
+	}
+	if result.Meta.Explain.Segments == nil || result.Meta.Explain.Segments.SkippedTime != 1 {
+		t.Fatalf("Explain.Segments = %#v, want skipped_time 1", result.Meta.Explain.Segments)
+	}
+	if result.Meta.Explain.CandidateRows == nil || *result.Meta.Explain.CandidateRows != 10 {
+		t.Fatalf("Explain.CandidateRows = %#v, want 10", result.Meta.Explain.CandidateRows)
+	}
+	if result.Meta.Explain.LiteralExtraction == nil || !*result.Meta.Explain.LiteralExtraction {
+		t.Fatalf("Explain.LiteralExtraction = %#v, want true", result.Meta.Explain.LiteralExtraction)
+	}
+	if result.Meta.Explain.RegexEngine != "linear" {
+		t.Fatalf("Explain.RegexEngine = %q, want linear", result.Meta.Explain.RegexEngine)
 	}
 }
 

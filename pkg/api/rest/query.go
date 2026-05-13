@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/api/apicontracts"
@@ -144,7 +145,7 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 
 			return
 		}
-		writeSyncResultFromUsecase(w, result, limit, req.Offset)
+		writeSyncResultFromUsecase(w, result, limit, req.Offset, normalizedQuery)
 	} else {
 		writeJobHandleFromUsecase(w, result)
 	}
@@ -212,7 +213,7 @@ func handlePlanError(w http.ResponseWriter, err error) {
 }
 
 // writeSyncResultFromUsecase writes 200 with full results from a SubmitResult.
-func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int) {
+func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int, query string) {
 	var data interface{}
 	switch result.ResultType {
 	case server.ResultTypeAggregate, server.ResultTypeTimechart:
@@ -232,7 +233,69 @@ func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitRe
 		WithWarnings(result.Warnings),
 		WithLints(result.Lints),
 		WithSuggestions(result.Suggestions),
-		WithRewrites(result.Rewrites))
+		WithRewrites(result.Rewrites),
+		WithExplain(explainFromSearchStats(&result.Stats, query)))
+}
+
+func explainFromSearchStats(ss *server.SearchStats, query string) *metaExplain {
+	if ss == nil {
+		return nil
+	}
+
+	sources := ss.SourcesScanned
+	if len(sources) == 0 {
+		sources = ss.IndexesUsed
+	}
+	skipped := ss.SegmentsSkippedIdx + ss.SegmentsSkippedTime + ss.SegmentsSkippedStat +
+		ss.SegmentsSkippedBF + ss.SegmentsSkippedRange
+	hasSegments := ss.SegmentsTotal > 0 || ss.SegmentsScanned > 0 || skipped > 0
+	if len(sources) == 0 && !hasSegments && ss.RowsScanned == 0 && ss.ProcessedBytes == 0 && ss.ElapsedMS == 0 {
+		return nil
+	}
+
+	candidates := ss.RowsScanned
+	if ss.RowsInRange > 0 {
+		candidates = ss.RowsInRange
+	}
+	literalExtraction := ss.InvertedIndexHits > 0
+	explain := &metaExplain{
+		CandidateRows:     &candidates,
+		LiteralExtraction: &literalExtraction,
+		WallClockMS:       ss.ElapsedMS,
+		ScannedBytes:      ss.ProcessedBytes,
+	}
+	if len(sources) > 0 {
+		explain.SourceScope = &metaExplainSourceScope{
+			Selected: append([]string(nil), sources...),
+			Count:    len(sources),
+		}
+	}
+	if hasSegments {
+		explain.Segments = &metaExplainSegments{
+			Total:        ss.SegmentsTotal,
+			Scanned:      ss.SegmentsScanned,
+			Skipped:      skipped,
+			SkippedIndex: ss.SegmentsSkippedIdx,
+			SkippedTime:  ss.SegmentsSkippedTime,
+			SkippedStats: ss.SegmentsSkippedStat,
+			SkippedBloom: ss.SegmentsSkippedBF,
+			SkippedRange: ss.SegmentsSkippedRange,
+		}
+	}
+	if queryUsesRegex(query) {
+		explain.RegexEngine = "linear"
+	}
+
+	return explain
+}
+
+func queryUsesRegex(query string) bool {
+	lower := strings.ToLower(query)
+
+	return strings.Contains(lower, "| regex ") ||
+		strings.Contains(lower, " regex ") ||
+		strings.Contains(query, "=~") ||
+		strings.Contains(query, "!~")
 }
 
 // searchStatsToMeta converts a server.SearchStats to the REST meta stats struct.

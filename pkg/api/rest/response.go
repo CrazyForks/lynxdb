@@ -102,6 +102,33 @@ type metaFields struct {
 	Lints           []spl2.QueryLint       `json:"lints,omitempty"`            // stable post-parse query lint warnings
 	Suggestions     []spl2.QuerySuggestion `json:"suggestions,omitempty"`      // advisory edits/templates
 	Rewrites        []spl2.QueryRewrite    `json:"rewrites,omitempty"`         // visible query normalizer rewrites
+	Explain         *metaExplain           `json:"explain,omitempty"`          // advisory planning/execution explanation
+}
+
+type metaExplain struct {
+	SourceScope       *metaExplainSourceScope `json:"source_scope,omitempty"`
+	Segments          *metaExplainSegments    `json:"segments,omitempty"`
+	CandidateRows     *int64                  `json:"candidate_rows,omitempty"`
+	RegexEngine       string                  `json:"regex_engine,omitempty"`
+	LiteralExtraction *bool                   `json:"literal_extraction,omitempty"`
+	WallClockMS       float64                 `json:"wall_clock_ms,omitempty"`
+	ScannedBytes      int64                   `json:"scanned_bytes,omitempty"`
+}
+
+type metaExplainSourceScope struct {
+	Selected []string `json:"selected,omitempty"`
+	Count    int      `json:"count"`
+}
+
+type metaExplainSegments struct {
+	Total        int `json:"total"`
+	Scanned      int `json:"scanned"`
+	Skipped      int `json:"skipped"`
+	SkippedIndex int `json:"skipped_index,omitempty"`
+	SkippedTime  int `json:"skipped_time,omitempty"`
+	SkippedStats int `json:"skipped_stats,omitempty"`
+	SkippedBloom int `json:"skipped_bloom,omitempty"`
+	SkippedRange int `json:"skipped_range,omitempty"`
 }
 
 // metaStats holds detailed query execution statistics returned in the
@@ -309,6 +336,15 @@ func WithRewrites(rewrites []spl2.QueryRewrite) MetaOpt {
 	return func(m *metaFields) {
 		if len(rewrites) > 0 {
 			m.Rewrites = rewrites
+		}
+	}
+}
+
+// WithExplain adds advisory planning/execution explanation metadata.
+func WithExplain(explain *metaExplain) MetaOpt {
+	return func(m *metaFields) {
+		if explain != nil {
+			m.Explain = explain
 		}
 	}
 }

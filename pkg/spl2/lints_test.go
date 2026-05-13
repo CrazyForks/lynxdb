@@ -494,6 +494,16 @@ func TestLintQuery_DoubleQuotedNames(t *testing.T) {
 			wantCodes: []string{LintDoubleQuotedName},
 		},
 		{
+			name:      "xyseries command",
+			query:     `from app | xyseries "host name" "metric name" "metric value"`,
+			wantCodes: []string{LintDoubleQuotedName, LintDoubleQuotedName, LintDoubleQuotedName},
+		},
+		{
+			name:      "untable command",
+			query:     `from app | untable "host name" "metric name" "metric value"`,
+			wantCodes: []string{LintDoubleQuotedName, LintDoubleQuotedName, LintDoubleQuotedName},
+		},
+		{
 			name:      "stats group by",
 			query:     `from app | stats count() by "user id", host`,
 			wantCodes: []string{LintDoubleQuotedName},

@@ -468,6 +468,26 @@ func TestParse_DoubleQuotedLegacyFieldLists(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "xyseries fields",
+			input: `FROM main | xyseries "host name" "metric name" "metric value"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*XYSeriesCommand)
+				if cmd.XField != "host name" || cmd.YField != "metric name" || cmd.ValueField != "metric value" {
+					t.Fatalf("xyseries: got %+v", cmd)
+				}
+			},
+		},
+		{
+			name:  "untable fields",
+			input: `FROM main | untable "host name" "metric name" "metric value"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*UntableCommand)
+				if cmd.XField != "host name" || cmd.YNameField != "metric name" || cmd.YDataField != "metric value" {
+					t.Fatalf("untable: got %+v", cmd)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

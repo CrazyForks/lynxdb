@@ -221,6 +221,15 @@ func TestKnownAggregateFunctionsIncludesSupportedAggregates(t *testing.T) {
 			t.Fatalf("missing aggregate alias %q", fn)
 		}
 	}
+
+	for _, prefix := range []string{"percentile", "exactperc", "upperperc"} {
+		for _, suffix := range []string{"25", "50", "75", "90", "95", "99"} {
+			fn := prefix + suffix
+			if !have[fn] {
+				t.Fatalf("missing percentile suffix aggregate %q", fn)
+			}
+		}
+	}
 }
 
 func TestSuggestTypeMismatch(t *testing.T) {

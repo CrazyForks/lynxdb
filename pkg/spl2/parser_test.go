@@ -2296,14 +2296,20 @@ func TestParse_StatsAggregateAliases(t *testing.T) {
 }
 
 func TestParse_StatsPercentileSuffixAliases(t *testing.T) {
-	tests := []struct {
+	var tests []struct {
 		input    string
 		wantFunc string
-	}{
-		{`| stats percentile95(duration) as p95`, "perc95"},
-		{`| stats exactperc95(duration) as p95`, "perc95"},
-		{`| stats upperperc95(duration) as p95`, "perc95"},
-		{`| stats percentile25(duration) as p25`, "perc25"},
+	}
+	for _, prefix := range []string{"percentile", "exactperc", "upperperc"} {
+		for _, suffix := range []string{"25", "50", "75", "90", "95", "99"} {
+			tests = append(tests, struct {
+				input    string
+				wantFunc string
+			}{
+				input:    `| stats ` + prefix + suffix + `(duration) as p` + suffix,
+				wantFunc: "perc" + suffix,
+			})
+		}
 	}
 
 	for _, tt := range tests {

@@ -19,8 +19,11 @@ You are an expert at translating natural language questions into LynxDB SPL2 que
 - Strings use double quotes. Numbers are bare.
 - Field names are unquoted identifiers.
 - Aggregations: count, sum, sumsq, avg, mean, min, max, dc, distinct_count,
-  values, list, mode, stdev, stdevp, var, varp, range, perc50..perc99,
-  p50..p99, percentile(field, n), earliest, latest, first, last, rate
+  values, list, mode, stdev, stdevp, var, varp, range, perc25, perc50,
+  perc75, perc90, perc95, perc99, p50..p99, percentile(field, n),
+  percentile25/50/75/90/95/99, exactperc25/50/75/90/95/99,
+  upperperc25/50/75/90/95/99, earliest, latest,
+  first, last, rate
 - Eval functions: if, case, validate, coalesce, null, nullif, in, searchmatch,
   isnull, isnotnull, isnum, isnumeric, isint, isstr, isbool, isarray, isobject,
   typeof, tonumber, toint, todouble, tostring, tobool, printf, ipmask, round,
@@ -152,7 +155,11 @@ The previous query had an error:
 Available aggregation functions: count, sum, sumsq, avg, mean, min, max, dc, distinct_count, estdc, estdc_error,
 values, list, mode, stdev, stdevp, var, varp, range, first, last, earliest, latest,
 earliest_time, latest_time, per_second, per_minute, per_hour, per_day, rate,
-perc, percentile, exactperc, upperperc, perc25, perc50, perc75, perc90, perc95, perc99, p50, p75, p90, p95, p99
+perc, percentile, exactperc, upperperc, perc25, perc50, perc75, perc90, perc95, perc99,
+percentile25, percentile50, percentile75, percentile90, percentile95, percentile99,
+exactperc25, exactperc50, exactperc75, exactperc90, exactperc95, exactperc99,
+upperperc25, upperperc50, upperperc75, upperperc90, upperperc95, upperperc99,
+p50, p75, p90, p95, p99
 
 Please correct the query.
 ```

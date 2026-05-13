@@ -242,7 +242,12 @@ unpack_option    = "from" field
                  | "assign" "=" quoted_string
                  | "quote" "=" quoted_string
                  | "header" "=" quoted_string ;
-json_cmd         = "json" [ "field" "=" field ] ;
+json_cmd         = "json" { json_option } [ json_path_list ] ;
+json_option      = "field" "=" field
+                 | "path" "=" quoted_string [ "as" ident ]
+                 | "paths" "=" quoted_string ;
+json_path_list   = json_path [ "as" ident ] { "," json_path [ "as" ident ] } ;
+json_path        = ident | glob ;
 unroll_cmd       = "unroll" [ "field" "=" ] field ;
 mvexpand_cmd     = ( "mvexpand" | "expand" ) [ "limit" "=" number ] field [ "limit" "=" number ] ;
 makeresults_cmd  = "makeresults" [ number ]
@@ -260,7 +265,7 @@ fieldformat_cmd  = "fieldformat" field "=" expr ;
 capability_cmd   = ( "addinfo" | "convert" | "fieldsummary" | "flatten" | "iplocation"
                  | "tags" | "typer" | "thru" | "timewrap" | "tstats" | "mstats" )
                     { ident | quoted_string | number | "=" | "," | "*" | "(" | ")" } ;
-pack_json_cmd    = "pack_json" ident_list [ "as" ident ] ;
+pack_json_cmd    = "pack_json" [ ident_list ] "into" ident ;
 
 (* ─── Grouping / bucketing ─── *)
 

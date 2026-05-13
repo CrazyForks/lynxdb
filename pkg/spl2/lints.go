@@ -837,12 +837,13 @@ func lintLynxFlowShortcuts(prog *Program, tokens []Token) []QueryLint {
 	}
 	skipErrors := hasCommandToken(tokens, TokenErrors)
 	skipRate := hasCommandToken(tokens, TokenRate)
+	skipEvery := hasCommandToken(tokens, TokenEvery)
 
 	var lints []QueryLint
 	for _, ds := range prog.Datasets {
-		lints = append(lints, lintLynxFlowShortcutsInQuery(ds.Query, skipErrors, skipRate)...)
+		lints = append(lints, lintLynxFlowShortcutsInQuery(ds.Query, skipErrors, skipRate, skipEvery)...)
 	}
-	lints = append(lints, lintLynxFlowShortcutsInQuery(prog.Main, skipErrors, skipRate)...)
+	lints = append(lints, lintLynxFlowShortcutsInQuery(prog.Main, skipErrors, skipRate, skipEvery)...)
 
 	return lints
 }
@@ -856,7 +857,7 @@ func hasCommandToken(tokens []Token, typ TokenType) bool {
 	return false
 }
 
-func lintLynxFlowShortcutsInQuery(q *Query, skipErrors bool, skipRate bool) []QueryLint {
+func lintLynxFlowShortcutsInQuery(q *Query, skipErrors bool, skipRate bool, skipEvery bool) []QueryLint {
 	if q == nil {
 		return nil
 	}
@@ -883,16 +884,28 @@ func lintLynxFlowShortcutsInQuery(q *Query, skipErrors bool, skipRate bool) []Qu
 			}
 		}
 	}
+	if !skipEvery {
+		for i := 0; i+1 < len(q.Commands); i++ {
+			bin, ok := q.Commands[i].(*BinCommand)
+			if !ok || !isTimeBin(bin) {
+				continue
+			}
+			stats, ok := q.Commands[i+1].(*StatsCommand)
+			if ok && isEveryCountStats(stats) {
+				lints = append(lints, everyShortcutLint(bin, stats))
+			}
+		}
+	}
 
 	for _, cmd := range q.Commands {
 		switch c := cmd.(type) {
 		case *JoinCommand:
-			lints = append(lints, lintLynxFlowShortcutsInQuery(c.Subquery, skipErrors, skipRate)...)
+			lints = append(lints, lintLynxFlowShortcutsInQuery(c.Subquery, skipErrors, skipRate, skipEvery)...)
 		case *AppendCommand:
-			lints = append(lints, lintLynxFlowShortcutsInQuery(c.Subquery, skipErrors, skipRate)...)
+			lints = append(lints, lintLynxFlowShortcutsInQuery(c.Subquery, skipErrors, skipRate, skipEvery)...)
 		case *MultisearchCommand:
 			for _, sub := range c.Searches {
-				lints = append(lints, lintLynxFlowShortcutsInQuery(sub, skipErrors, skipRate)...)
+				lints = append(lints, lintLynxFlowShortcutsInQuery(sub, skipErrors, skipRate, skipEvery)...)
 			}
 		}
 	}
@@ -982,6 +995,38 @@ func rateShortcutLint(cmd *TimechartCommand) QueryLint {
 	}
 	if len(cmd.GroupBy) > 0 {
 		savings += len(cmd.GroupBy)
+	}
+
+	return QueryLint{
+		Code:     LintShortcutAvailable,
+		Message:  fmt.Sprintf("Equivalent: `%s` (shorter by %d tokens)", form, savings),
+		Position: 0,
+	}
+}
+
+func isTimeBin(cmd *BinCommand) bool {
+	return cmd != nil && strings.EqualFold(cmd.Field, "_time") && cmd.Span != "" && cmd.Alias == ""
+}
+
+func isEveryCountStats(stats *StatsCommand) bool {
+	if !isDefaultCountStats(stats) || len(stats.GroupBy) == 0 {
+		return false
+	}
+	return strings.EqualFold(stats.GroupBy[len(stats.GroupBy)-1], "_time")
+}
+
+func everyShortcutLint(bin *BinCommand, stats *StatsCommand) QueryLint {
+	groupBy := stats.GroupBy[:len(stats.GroupBy)-1]
+
+	form := "every " + bin.Span
+	if len(groupBy) > 0 {
+		form += " by " + strings.Join(groupBy, ", ")
+	}
+	form += " compute count()"
+
+	savings := 4
+	if len(groupBy) > 0 {
+		savings += len(groupBy)
 	}
 
 	return QueryLint{

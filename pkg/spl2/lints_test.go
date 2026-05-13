@@ -795,6 +795,28 @@ func TestLintQuery_LynxFlowShortcutAvailable(t *testing.T) {
 			query:     `from app | timechart span=1m count()`,
 			wantCodes: nil,
 		},
+		{
+			name:        "every count",
+			query:       `from app | bin _time span=5m | stats count() by _time`,
+			wantCodes:   []string{LintShortcutAvailable},
+			wantMessage: "Equivalent: `every 5m compute count()`",
+		},
+		{
+			name:        "every count by field",
+			query:       `from app | bin _time span=5m | stats count() by service, _time`,
+			wantCodes:   []string{LintShortcutAvailable},
+			wantMessage: "Equivalent: `every 5m by service compute count()`",
+		},
+		{
+			name:      "already every",
+			query:     `from app | every 5m by service compute count()`,
+			wantCodes: nil,
+		},
+		{
+			name:      "bin alias keeps explicit form",
+			query:     `from app | bin _time span=5m as minute | stats count() by minute`,
+			wantCodes: nil,
+		},
 	}
 
 	for _, tt := range tests {

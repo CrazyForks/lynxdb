@@ -193,6 +193,16 @@ func TestSuggestFunction(t *testing.T) {
 	if !strings.Contains(hint, "Did you mean: ceiling?") {
 		t.Errorf("expected 'Did you mean: ceiling?', got: %s", hint)
 	}
+
+	hint = SuggestFunction("replce")
+	if !strings.Contains(hint, "Did you mean: replace?") {
+		t.Errorf("expected 'Did you mean: replace?', got: %s", hint)
+	}
+
+	hint = SuggestFunction("splt")
+	if !strings.Contains(hint, "Did you mean: split?") {
+		t.Errorf("expected 'Did you mean: split?', got: %s", hint)
+	}
 }
 
 func TestSuggestTypeMismatch(t *testing.T) {

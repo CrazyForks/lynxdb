@@ -361,6 +361,12 @@ func lintDoubleQuotedNames(tokens []Token) []QueryLint {
 					add(tokens[j].Pos)
 				}
 			}
+		case TokenCorrelate:
+			for j := i + 1; j < len(tokens) && !isSegmentBoundary(tokens[j].Type); j++ {
+				if tokens[j].Type == TokenString {
+					add(tokens[j].Pos)
+				}
+			}
 		case TokenSort, TokenOrder:
 			for j := i + 1; j < len(tokens) && !isSegmentBoundary(tokens[j].Type); j++ {
 				if tokens[j].Type == TokenString {

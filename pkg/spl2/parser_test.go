@@ -597,6 +597,16 @@ func TestParse_DoubleQuotedLegacyFieldLists(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "correlate fields",
+			input: `FROM main | correlate "latency ms" "error rate"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*CorrelateCommand)
+				if cmd.Field1 != "latency ms" || cmd.Field2 != "error rate" {
+					t.Fatalf("correlate: got %+v", cmd)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

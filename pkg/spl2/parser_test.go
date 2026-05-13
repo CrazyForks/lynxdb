@@ -1340,6 +1340,24 @@ func TestParse_PackJson_AllFields(t *testing.T) {
 	}
 }
 
+func TestParse_EvalReplaceFunction(t *testing.T) {
+	q, err := Parse(`FROM main | eval clean=replace(source, "old-", "new-")`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	eval, ok := q.Commands[0].(*EvalCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: got %T, want *EvalCommand", q.Commands[0])
+	}
+	call, ok := eval.Assignments[0].Expr.(*FuncCallExpr)
+	if !ok {
+		t.Fatalf("expr: got %T, want *FuncCallExpr", eval.Assignments[0].Expr)
+	}
+	if call.Name != "replace" {
+		t.Fatalf("function: got %q, want replace", call.Name)
+	}
+}
+
 func TestParse_WhereNotIn(t *testing.T) {
 	q, err := Parse(`| where status NOT IN (200, 301, 302)`)
 	if err != nil {

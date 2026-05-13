@@ -682,17 +682,15 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 		}
 		c.prog.EmitOp(OpStrftime)
 	case "max":
-		if len(e.Args) != 2 {
-			return fmt.Errorf("max expects 2 arguments, got %d", len(e.Args))
+		if len(e.Args) < 2 {
+			return fmt.Errorf("max expects at least 2 arguments, got %d", len(e.Args))
 		}
-
-		return c.compileMaxMin(e.Args[0], e.Args[1], true)
+		return c.compileMaxMin(e.Args, true)
 	case "min":
-		if len(e.Args) != 2 {
-			return fmt.Errorf("min expects 2 arguments, got %d", len(e.Args))
+		if len(e.Args) < 2 {
+			return fmt.Errorf("min expects at least 2 arguments, got %d", len(e.Args))
 		}
-
-		return c.compileMaxMin(e.Args[0], e.Args[1], false)
+		return c.compileMaxMin(e.Args, false)
 	case "json_extract":
 		if len(e.Args) != 2 {
 			return fmt.Errorf("json_extract expects 2 arguments, got %d", len(e.Args))
@@ -1004,31 +1002,17 @@ func (c *compiler) compileCoalesce(e *spl2.FuncCallExpr) error {
 	return nil
 }
 
-func (c *compiler) compileMaxMin(a, b spl2.Expr, isMax bool) error {
-	// max(a, b) = IF(a > b, a, b)
-	if err := c.compileExpr(a); err != nil {
-		return err
-	}
-	if err := c.compileExpr(b); err != nil {
-		return err
+func (c *compiler) compileMaxMin(args []spl2.Expr, isMax bool) error {
+	for _, arg := range args {
+		if err := c.compileExpr(arg); err != nil {
+			return err
+		}
 	}
 	if isMax {
-		c.prog.EmitOp(OpGt)
+		c.prog.EmitOp(OpMax, len(args))
 	} else {
-		c.prog.EmitOp(OpLt)
+		c.prog.EmitOp(OpMin, len(args))
 	}
-	jumpFalse := c.prog.EmitOp(OpJumpIfFalse, 0)
-	if err := c.compileExpr(a); err != nil {
-		return err
-	}
-	jumpEnd := c.prog.EmitOp(OpJump, 0)
-	elsePos := c.prog.Len()
-	if err := c.compileExpr(b); err != nil {
-		return err
-	}
-	endPos := c.prog.Len()
-	c.prog.PatchUint16(jumpFalse+1, uint16(elsePos))
-	c.prog.PatchUint16(jumpEnd+1, uint16(endPos))
 
 	return nil
 }

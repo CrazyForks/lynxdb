@@ -105,6 +105,8 @@ const (
 	OpExp   Opcode = 0x96
 	OpPow   Opcode = 0x97
 	OpLog   Opcode = 0x98
+	OpMax   Opcode = 0x99
+	OpMin   Opcode = 0x9A
 
 	// Multivalue Operations.
 	OpMvAppend Opcode = 0xA0
@@ -232,6 +234,8 @@ var definitions = map[Opcode]*Definition{
 	OpExp:   {"OpExp", nil},
 	OpPow:   {"OpPow", nil},
 	OpLog:   {"OpLog", nil},
+	OpMax:   {"OpMax", []int{2}},
+	OpMin:   {"OpMin", []int{2}},
 
 	OpMvAppend: {"OpMvAppend", []int{2}},
 	OpMvJoin:   {"OpMvJoin", nil},

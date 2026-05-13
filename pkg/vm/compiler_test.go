@@ -371,6 +371,30 @@ func TestCompileRFCMathFunctions(t *testing.T) {
 			expr: &spl2.FuncCallExpr{Name: "pi"},
 			want: math.Pi,
 		},
+		{
+			name: "max variadic",
+			expr: &spl2.FuncCallExpr{
+				Name: "max",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: "2"},
+					&spl2.LiteralExpr{Value: "9"},
+					&spl2.LiteralExpr{Value: "5"},
+				},
+			},
+			want: 9,
+		},
+		{
+			name: "min variadic",
+			expr: &spl2.FuncCallExpr{
+				Name: "min",
+				Args: []spl2.Expr{
+					&spl2.LiteralExpr{Value: "2"},
+					&spl2.LiteralExpr{Value: "9"},
+					&spl2.LiteralExpr{Value: "5"},
+				},
+			},
+			want: 2,
+		},
 	}
 
 	vm := &VM{}

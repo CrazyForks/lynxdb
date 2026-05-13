@@ -868,6 +868,42 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = logValue(value, base)
 
+		case OpMax:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			count := int(operand)
+			ip += 2
+			if count <= 0 || count > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: max count %d exceeds stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			result, err := maxMinValue(vm.stack[vm.sp-count:vm.sp], true)
+			if err != nil {
+				return event.NullValue(), err
+			}
+			vm.sp -= count
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpMin:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			count := int(operand)
+			ip += 2
+			if count <= 0 || count > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: min count %d exceeds stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			result, err := maxMinValue(vm.stack[vm.sp-count:vm.sp], false)
+			if err != nil {
+				return event.NullValue(), err
+			}
+			vm.sp -= count
+			vm.stack[vm.sp] = result
+			vm.sp++
+
 		case OpMvAppend:
 			operand, opErr := readOperandSafe(ins, ip)
 			if opErr != nil {
@@ -1785,6 +1821,21 @@ func logValue(value, base event.Value) event.Value {
 	}
 
 	return event.FloatValue(math.Log(v) / math.Log(b))
+}
+
+func maxMinValue(values []event.Value, isMax bool) (event.Value, error) {
+	if len(values) == 0 {
+		return event.NullValue(), fmt.Errorf("%w: max/min requires at least one value", ErrInvalidBytecode)
+	}
+	result := values[0]
+	for _, value := range values[1:] {
+		cmp := CompareValues(value, result)
+		if (isMax && cmp > 0) || (!isMax && cmp < 0) {
+			result = value
+		}
+	}
+
+	return result, nil
 }
 
 func strftimeValue(ts, format event.Value) event.Value {

@@ -165,6 +165,7 @@ export const EVAL_FUNCTIONS: readonly string[] = [
   "isnumeric()", "isint()", "isstr()", "isbool()", "typeof()", "tonumber()",
   "tostring()", "toint()", "todouble()", "tobool()", "printf()", "abs()", "ceil()",
   "ceiling()", "floor()", "round()", "sqrt()", "pow()", "log()", "ln()", "exp()", "pi()",
+  "max()", "min()",
   "startswith()", "endswith()", "contains()", "ilike()",
   "lower()", "upper()", "len()", "substr()", "replace()", "trim()", "ltrim()",
   "rtrim()", "split()", "mvappend()", "mvcount()", "mvdedup()", "mvfind()",

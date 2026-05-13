@@ -25,7 +25,7 @@ command          = search_cmd | where_cmd | stats_cmd | eval_cmd | sort_cmd
                  | dropview_cmd | glimpse_cmd | describe_cmd | use_cmd | outliers_cmd
                  | compare_cmd | patterns_cmd | trace_cmd | tee_cmd
                  | rollup_cmd | sessionize_cmd | correlate_cmd | topology_cmd
-                 | unpack_json_cmd | unpack_logfmt_cmd | json_cmd | unroll_cmd
+                 | unpack_cmd | json_cmd | unroll_cmd
                  | mvexpand_cmd | makeresults_cmd | makemv_cmd | mvcombine_cmd | nomv_cmd | pack_json_cmd
                  | capability_cmd
                  | select_cmd | take_cmd | keep_cmd | omit_cmd
@@ -224,8 +224,22 @@ topology_cmd     = "topology" field field [ "maxdepth" "=" number ] ;
 
 (* ─── Structured data commands ─── *)
 
-unpack_json_cmd  = "unpack_json" [ "field" "=" field ] [ "prefix" "=" ident ] ;
-unpack_logfmt_cmd = "unpack_logfmt" [ "field" "=" field ] [ "prefix" "=" ident ] ;
+unpack_cmd       = unpack_format { unpack_option }
+                 | "unpack_pattern" quoted_string { unpack_option } ;
+unpack_format    = "unpack_json" | "unpack_logfmt" | "unpack_syslog"
+                 | "unpack_combined" | "unpack_clf" | "unpack_nginx_error"
+                 | "unpack_cef" | "unpack_kv" | "unpack_docker"
+                 | "unpack_redis" | "unpack_apache_error" | "unpack_postgres"
+                 | "unpack_mysql_slow" | "unpack_haproxy" | "unpack_leef"
+                 | "unpack_w3c" ;
+unpack_option    = "from" field
+                 | "fields" "(" ident_list ")"
+                 | "prefix" ( ident | quoted_string )
+                 | "keep_original"
+                 | "delim" "=" quoted_string
+                 | "assign" "=" quoted_string
+                 | "quote" "=" quoted_string
+                 | "header" "=" quoted_string ;
 json_cmd         = "json" [ "field" "=" field ] ;
 unroll_cmd       = "unroll" [ "field" "=" ] field ;
 mvexpand_cmd     = ( "mvexpand" | "expand" ) [ "limit" "=" number ] field [ "limit" "=" number ] ;

@@ -422,6 +422,16 @@ func TestParse_DoubleQuotedLegacyFieldLists(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "join field",
+			input: `FROM main | join type=inner "client ip" [FROM geo]`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*JoinCommand)
+				if cmd.Field != "client ip" {
+					t.Fatalf("join field: got %q, want client ip", cmd.Field)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

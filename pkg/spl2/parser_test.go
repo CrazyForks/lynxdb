@@ -2871,6 +2871,26 @@ func TestParse_Trace(t *testing.T) {
 			t.Errorf("ParentIDField: got %q, want %q", cmd.ParentIDField, "pid")
 		}
 	})
+
+	t.Run("quoted custom fields", func(t *testing.T) {
+		q, err := Parse(`FROM main | trace trace_id="trace id" span_id="span id" parent_id="parent id"`)
+		if err != nil {
+			t.Fatalf("Parse: %v", err)
+		}
+		cmd, ok := q.Commands[0].(*TraceCommand)
+		if !ok {
+			t.Fatalf("expected TraceCommand, got %T", q.Commands[0])
+		}
+		if cmd.TraceIDField != "trace id" {
+			t.Errorf("TraceIDField: got %q, want %q", cmd.TraceIDField, "trace id")
+		}
+		if cmd.SpanIDField != "span id" {
+			t.Errorf("SpanIDField: got %q, want %q", cmd.SpanIDField, "span id")
+		}
+		if cmd.ParentIDField != "parent id" {
+			t.Errorf("ParentIDField: got %q, want %q", cmd.ParentIDField, "parent id")
+		}
+	})
 }
 
 func TestParse_FString(t *testing.T) {

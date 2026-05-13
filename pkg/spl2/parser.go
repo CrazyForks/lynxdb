@@ -1136,31 +1136,31 @@ func (p *Parser) parseTrace() (*TraceCommand, error) {
 			if _, err := p.expect(TokenEq); err != nil {
 				return nil, err
 			}
-			tok := p.peek()
-			if tok.Type == TokenIdent {
-				p.advance()
-				cmd.TraceIDField = tok.Literal
+			tok, err := p.expectIdent()
+			if err != nil {
+				return nil, err
 			}
+			cmd.TraceIDField = tok.Literal
 		case "span_id":
 			p.advance()
 			if _, err := p.expect(TokenEq); err != nil {
 				return nil, err
 			}
-			tok := p.peek()
-			if tok.Type == TokenIdent {
-				p.advance()
-				cmd.SpanIDField = tok.Literal
+			tok, err := p.expectIdent()
+			if err != nil {
+				return nil, err
 			}
+			cmd.SpanIDField = tok.Literal
 		case "parent_id":
 			p.advance()
 			if _, err := p.expect(TokenEq); err != nil {
 				return nil, err
 			}
-			tok := p.peek()
-			if tok.Type == TokenIdent {
-				p.advance()
-				cmd.ParentIDField = tok.Literal
+			tok, err := p.expectIdent()
+			if err != nil {
+				return nil, err
 			}
+			cmd.ParentIDField = tok.Literal
 		default:
 			return cmd, nil
 		}

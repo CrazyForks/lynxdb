@@ -559,6 +559,11 @@ func TestLintQuery_DoubleQuotedNames(t *testing.T) {
 			wantCodes: []string{LintDoubleQuotedName},
 		},
 		{
+			name:      "trace field options",
+			query:     `from app | trace trace_id="trace id" span_id="span id" parent_id="parent id"`,
+			wantCodes: []string{LintDoubleQuotedName, LintDoubleQuotedName, LintDoubleQuotedName},
+		},
+		{
 			name:      "unpack field list",
 			query:     `from app | unpack_json fields ("host")`,
 			wantCodes: []string{LintDoubleQuotedName},

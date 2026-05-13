@@ -435,14 +435,22 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpIsNotNull)
-	case "tonumber":
+	case "tonumber", "todouble":
 		if len(e.Args) != 1 {
-			return fmt.Errorf("tonumber expects 1 argument, got %d", len(e.Args))
+			return fmt.Errorf("%s expects 1 argument, got %d", name, len(e.Args))
 		}
 		if err := c.compileExpr(e.Args[0]); err != nil {
 			return err
 		}
 		c.prog.EmitOp(OpToFloat)
+	case "toint":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("toint expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpToInt)
 	case "tostring":
 		if len(e.Args) != 1 {
 			return fmt.Errorf("tostring expects 1 argument, got %d", len(e.Args))
@@ -451,6 +459,14 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return err
 		}
 		c.prog.EmitOp(OpToString)
+	case "tobool":
+		if len(e.Args) != 1 {
+			return fmt.Errorf("tobool expects 1 argument, got %d", len(e.Args))
+		}
+		if err := c.compileExpr(e.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpToBool)
 	case "round":
 		if len(e.Args) < 1 || len(e.Args) > 2 {
 			return fmt.Errorf("round expects 1-2 arguments, got %d", len(e.Args))
@@ -835,9 +851,9 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 		c.prog.EmitOp(OpIsNotNull)
 
 	// LIKE as eval function (already case-insensitive).
-	case "ilike":
+	case "like", "ilike":
 		if len(e.Args) != 2 {
-			return fmt.Errorf("ilike expects 2 arguments, got %d", len(e.Args))
+			return fmt.Errorf("%s expects 2 arguments, got %d", name, len(e.Args))
 		}
 		if err := c.compileExpr(e.Args[0]); err != nil {
 			return err

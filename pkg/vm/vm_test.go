@@ -2065,6 +2065,97 @@ func TestCompileILike(t *testing.T) {
 	}
 }
 
+func TestCompileRFCConversionAliases(t *testing.T) {
+	tests := []struct {
+		name  string
+		expr  *spl2.FuncCallExpr
+		check func(*testing.T, event.Value)
+	}{
+		{
+			name: "toint",
+			expr: &spl2.FuncCallExpr{Name: "toint", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"42"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if got.AsInt() != 42 {
+					t.Fatalf("toint: got %v, want 42", got)
+				}
+			},
+		},
+		{
+			name: "todouble",
+			expr: &spl2.FuncCallExpr{Name: "todouble", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"3.5"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if got.AsFloat() != 3.5 {
+					t.Fatalf("todouble: got %v, want 3.5", got)
+				}
+			},
+		},
+		{
+			name: "tobool",
+			expr: &spl2.FuncCallExpr{Name: "tobool", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"true"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if !got.AsBool() {
+					t.Fatalf("tobool: got %v, want true", got)
+				}
+			},
+		},
+		{
+			name: "tobool false",
+			expr: &spl2.FuncCallExpr{Name: "tobool", Args: []spl2.Expr{&spl2.LiteralExpr{Value: `"false"`}}},
+			check: func(t *testing.T, got event.Value) {
+				if got.AsBool() {
+					t.Fatalf("tobool false: got %v, want false", got)
+				}
+			},
+		},
+	}
+
+	vm := &VM{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prog, err := CompileExpr(tt.expr)
+			if err != nil {
+				t.Fatalf("CompileExpr: %v", err)
+			}
+			got, err := vm.Execute(prog, nil)
+			if err != nil {
+				t.Fatalf("Execute: %v", err)
+			}
+			tt.check(t, got)
+		})
+	}
+}
+
+func TestCompileLikeFunction(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "like",
+		Args: []spl2.Expr{
+			&spl2.FieldExpr{Name: "host"},
+			&spl2.LiteralExpr{Value: `"web-%"`},
+		},
+	}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatalf("CompileExpr: %v", err)
+	}
+
+	vm := &VM{}
+	result, err := vm.Execute(prog, map[string]event.Value{"host": event.StringValue("web-01")})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if !result.AsBool() {
+		t.Fatal("expected true for matching LIKE")
+	}
+
+	result, err = vm.Execute(prog, map[string]event.Value{"host": event.StringValue("db-01")})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.AsBool() {
+		t.Fatal("expected false for non-matching LIKE")
+	}
+}
+
 func TestVMOptionalChaining_MissingField(t *testing.T) {
 	// When a nested field like event.user is accessed on a row where
 	// "event" doesn't exist, the VM should return null without error.

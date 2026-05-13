@@ -824,7 +824,7 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 
 		case OpToBool:
 			a := vm.stack[vm.sp-1]
-			vm.stack[vm.sp-1] = event.BoolValue(IsTruthy(a))
+			vm.stack[vm.sp-1] = toBoolValue(a)
 
 		case OpRound:
 			decimals := vm.stack[vm.sp-1]
@@ -1578,6 +1578,30 @@ func toFloatValue(v event.Value) event.Value {
 		}
 
 		return event.FloatValue(0)
+	default:
+		return event.NullValue()
+	}
+}
+
+func toBoolValue(v event.Value) event.Value {
+	switch v.Type() {
+	case event.FieldTypeBool:
+		return v
+	case event.FieldTypeNull:
+		return event.NullValue()
+	case event.FieldTypeInt:
+		return event.BoolValue(v.AsInt() != 0)
+	case event.FieldTypeFloat:
+		return event.BoolValue(v.AsFloat() != 0)
+	case event.FieldTypeString:
+		switch strings.ToLower(strings.TrimSpace(v.AsString())) {
+		case "true", "t", "1", "yes", "y":
+			return event.BoolValue(true)
+		case "false", "f", "0", "no", "n", "":
+			return event.BoolValue(false)
+		default:
+			return event.NullValue()
+		}
 	default:
 		return event.NullValue()
 	}

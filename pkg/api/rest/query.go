@@ -230,6 +230,7 @@ func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitRe
 		WithSearchStats(searchStatsToMeta(&result.Stats)),
 		WithWarnings(result.Warnings),
 		WithLints(result.Lints),
+		WithSuggestions(spl2.SuggestionsFromLints(result.Lints)),
 		WithRewrites(result.Rewrites))
 }
 
@@ -366,6 +367,7 @@ func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitRes
 		WithQueryID(result.JobID),
 		WithWarnings(result.Warnings),
 		WithLints(result.Lints),
+		WithSuggestions(spl2.SuggestionsFromLints(result.Lints)),
 		WithRewrites(result.Rewrites))
 }
 

@@ -1848,6 +1848,40 @@ func TestQuery_LintOutputControls(t *testing.T) {
 	}
 }
 
+func TestQuery_SuggestionsMetadata(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"q": `from main | where level IN ("error", "fatal") | stats count() by service`,
+	})
+	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(body))
+	if err != nil {
+		t.Fatalf("POST: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: got %d, want 200, body: %s", resp.StatusCode, string(b))
+	}
+
+	var result map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&result)
+	meta, _ := result["meta"].(map[string]interface{})
+	suggestions, _ := meta["suggestions"].([]interface{})
+	if len(suggestions) != 1 {
+		t.Fatalf("meta.suggestions: got %#v, want one suggestion", meta["suggestions"])
+	}
+	first, _ := suggestions[0].(map[string]interface{})
+	if first["text"] != "errors by service" {
+		t.Fatalf("suggestion text: got %v, want errors by service", first["text"])
+	}
+	if first["reason"] != "shortcut" || first["source_code"] != spl2.LintShortcutAvailable {
+		t.Fatalf("suggestion metadata: got %#v", first)
+	}
+}
+
 func TestErrorFormat(t *testing.T) {
 	srv, cleanup := startTestServer(t)
 	defer cleanup()

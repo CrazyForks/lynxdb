@@ -7,13 +7,14 @@ import (
 
 // Meta contains response metadata returned by the server.
 type Meta struct {
-	TookMS          float64        `json:"took_ms,omitempty"`
-	Scanned         int64          `json:"scanned,omitempty"`
-	QueryID         string         `json:"query_id,omitempty"`
-	SegmentsErrored int            `json:"segments_errored,omitempty"`
-	Stats           *SearchStats   `json:"stats,omitempty"`
-	Lints           []QueryLint    `json:"lints,omitempty"`
-	Rewrites        []QueryRewrite `json:"rewrites,omitempty"`
+	TookMS          float64           `json:"took_ms,omitempty"`
+	Scanned         int64             `json:"scanned,omitempty"`
+	QueryID         string            `json:"query_id,omitempty"`
+	SegmentsErrored int               `json:"segments_errored,omitempty"`
+	Stats           *SearchStats      `json:"stats,omitempty"`
+	Lints           []QueryLint       `json:"lints,omitempty"`
+	Suggestions     []QuerySuggestion `json:"suggestions,omitempty"`
+	Rewrites        []QueryRewrite    `json:"rewrites,omitempty"`
 }
 
 // QueryLint is an advisory query warning returned in response metadata.
@@ -23,6 +24,14 @@ type QueryLint struct {
 	Reason   string `json:"reason,omitempty"`
 	Severity string `json:"severity,omitempty"`
 	Position int    `json:"position"`
+}
+
+// QuerySuggestion is an advisory query edit/template returned in metadata.
+type QuerySuggestion struct {
+	Text       string `json:"text"`
+	Reason     string `json:"reason"`
+	SourceCode string `json:"source_code,omitempty"`
+	Message    string `json:"message,omitempty"`
 }
 
 // QueryRewrite describes one visible server-side query normalization.

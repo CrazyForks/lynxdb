@@ -42,6 +42,32 @@ func TestPrepareQueryLints_AnnotatesAndSorts(t *testing.T) {
 	}
 }
 
+func TestSuggestionsFromLints_ShortcutSuggestions(t *testing.T) {
+	lints := PrepareQueryLints([]QueryLint{
+		{
+			Code:     LintShortcutAvailable,
+			Message:  "Equivalent: `errors by service` (shorter by 8 tokens)",
+			Position: 0,
+		},
+		{
+			Code:     LintLeadingWildcard,
+			Message:  "Leading wildcard slows the query; consider an anchor",
+			Position: 1,
+		},
+	})
+
+	got := SuggestionsFromLints(lints)
+	if len(got) != 1 {
+		t.Fatalf("len(SuggestionsFromLints) = %d, want 1: %+v", len(got), got)
+	}
+	if got[0].Text != "errors by service" {
+		t.Fatalf("suggestion text = %q, want errors by service", got[0].Text)
+	}
+	if got[0].Reason != "shortcut" || got[0].SourceCode != LintShortcutAvailable {
+		t.Fatalf("suggestion metadata = %+v, want shortcut/%s", got[0], LintShortcutAvailable)
+	}
+}
+
 func TestLintQuery_CountWithoutParens(t *testing.T) {
 	tests := []struct {
 		name      string

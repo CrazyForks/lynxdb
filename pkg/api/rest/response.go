@@ -93,14 +93,15 @@ func respondQueryError(w http.ResponseWriter, msg, code string) {
 
 // metaFields holds optional metadata for success responses.
 type metaFields struct {
-	TookMS          *float64            `json:"took_ms,omitempty"`
-	Scanned         *int64              `json:"scanned,omitempty"`
-	QueryID         string              `json:"query_id,omitempty"`
-	SegmentsErrored *int                `json:"segments_errored,omitempty"` // E7: surface segment read errors
-	SearchStats     *metaStats          `json:"stats,omitempty"`            // rich query stats for CLI display
-	Warnings        []string            `json:"warnings,omitempty"`         // user-facing warnings about the query
-	Lints           []spl2.QueryLint    `json:"lints,omitempty"`            // stable post-parse query lint warnings
-	Rewrites        []spl2.QueryRewrite `json:"rewrites,omitempty"`         // visible query normalizer rewrites
+	TookMS          *float64               `json:"took_ms,omitempty"`
+	Scanned         *int64                 `json:"scanned,omitempty"`
+	QueryID         string                 `json:"query_id,omitempty"`
+	SegmentsErrored *int                   `json:"segments_errored,omitempty"` // E7: surface segment read errors
+	SearchStats     *metaStats             `json:"stats,omitempty"`            // rich query stats for CLI display
+	Warnings        []string               `json:"warnings,omitempty"`         // user-facing warnings about the query
+	Lints           []spl2.QueryLint       `json:"lints,omitempty"`            // stable post-parse query lint warnings
+	Suggestions     []spl2.QuerySuggestion `json:"suggestions,omitempty"`      // advisory edits/templates
+	Rewrites        []spl2.QueryRewrite    `json:"rewrites,omitempty"`         // visible query normalizer rewrites
 }
 
 // metaStats holds detailed query execution statistics returned in the
@@ -294,6 +295,15 @@ func WithLints(lints []spl2.QueryLint) MetaOpt {
 	}
 }
 
+// WithSuggestions adds advisory query suggestions to the response meta.
+func WithSuggestions(suggestions []spl2.QuerySuggestion) MetaOpt {
+	return func(m *metaFields) {
+		if len(suggestions) > 0 {
+			m.Suggestions = suggestions
+		}
+	}
+}
+
 // WithRewrites adds visible query normalizer rewrites to the response meta.
 func WithRewrites(rewrites []spl2.QueryRewrite) MetaOpt {
 	return func(m *metaFields) {
@@ -313,7 +323,7 @@ func respondData(w http.ResponseWriter, httpStatus int, data interface{}, opts .
 	}
 	envelope := map[string]interface{}{"data": data}
 	// Only include meta if it has content.
-	if meta.TookMS != nil || meta.Scanned != nil || meta.QueryID != "" || meta.SegmentsErrored != nil || meta.SearchStats != nil || len(meta.Warnings) > 0 || len(meta.Lints) > 0 || len(meta.Rewrites) > 0 {
+	if meta.TookMS != nil || meta.Scanned != nil || meta.QueryID != "" || meta.SegmentsErrored != nil || meta.SearchStats != nil || len(meta.Warnings) > 0 || len(meta.Lints) > 0 || len(meta.Suggestions) > 0 || len(meta.Rewrites) > 0 {
 		envelope["meta"] = meta
 	}
 	// Expose query_id as a response header for logging middleware correlation.

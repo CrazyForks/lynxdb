@@ -15,6 +15,15 @@ type QueryLint struct {
 	Position int    `json:"position"`
 }
 
+// QuerySuggestion is an advisory edit or template suggestion derived from
+// parser/lint context. Applying it is always an explicit user action.
+type QuerySuggestion struct {
+	Text       string `json:"text"`
+	Reason     string `json:"reason"`
+	SourceCode string `json:"source_code,omitempty"`
+	Message    string `json:"message,omitempty"`
+}
+
 const (
 	LintLeadingWildcard      = "L001"
 	LintDefaultSource        = "L002"
@@ -75,6 +84,45 @@ func PrepareQueryLints(lints []QueryLint) []QueryLint {
 	})
 
 	return out
+}
+
+// SuggestionsFromLints exposes edit suggestions as a separate RFC meta block.
+func SuggestionsFromLints(lints []QueryLint) []QuerySuggestion {
+	var suggestions []QuerySuggestion
+	for _, lint := range lints {
+		if lint.Code != LintShortcutAvailable {
+			continue
+		}
+		text := equivalentText(lint.Message)
+		if text == "" {
+			continue
+		}
+		reason := lint.Reason
+		if reason == "" {
+			reason = lintReason(lint.Code)
+		}
+		suggestions = append(suggestions, QuerySuggestion{
+			Text:       text,
+			Reason:     reason,
+			SourceCode: lint.Code,
+			Message:    lint.Message,
+		})
+	}
+	return suggestions
+}
+
+func equivalentText(message string) string {
+	const prefix = "Equivalent: `"
+	start := strings.Index(message, prefix)
+	if start < 0 {
+		return ""
+	}
+	start += len(prefix)
+	end := strings.Index(message[start:], "`")
+	if end < 0 {
+		return ""
+	}
+	return message[start : start+end]
 }
 
 func lintReason(code string) string {

@@ -84,6 +84,9 @@ func TestQuery_LintOptionAndMetadata(t *testing.T) {
 				"lints": []map[string]interface{}{
 					{"code": "L002", "message": "Default source", "position": 0},
 				},
+				"suggestions": []map[string]interface{}{
+					{"text": "errors by service", "reason": "shortcut", "source_code": "L020"},
+				},
 			},
 		})
 	}))
@@ -100,6 +103,12 @@ func TestQuery_LintOptionAndMetadata(t *testing.T) {
 	}
 	if result.Meta.Lints[0].Code != "L002" {
 		t.Errorf("lint code = %q, want L002", result.Meta.Lints[0].Code)
+	}
+	if len(result.Meta.Suggestions) != 1 {
+		t.Fatalf("len(Meta.Suggestions) = %d, want 1", len(result.Meta.Suggestions))
+	}
+	if result.Meta.Suggestions[0].Text != "errors by service" {
+		t.Errorf("suggestion text = %q, want errors by service", result.Meta.Suggestions[0].Text)
 	}
 }
 

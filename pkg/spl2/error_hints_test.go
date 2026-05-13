@@ -188,6 +188,11 @@ func TestSuggestFunction(t *testing.T) {
 	if hint == "" {
 		t.Error("expected a hint for 'avrage'")
 	}
+
+	hint = SuggestFunction("ceilling")
+	if !strings.Contains(hint, "Did you mean: ceiling?") {
+		t.Errorf("expected 'Did you mean: ceiling?', got: %s", hint)
+	}
 }
 
 func TestSuggestTypeMismatch(t *testing.T) {

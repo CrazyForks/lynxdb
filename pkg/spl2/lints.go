@@ -345,6 +345,10 @@ func lintDoubleQuotedNames(tokens []Token) []QueryLint {
 					add(tokens[j].Pos)
 				}
 			}
+		case TokenBin:
+			if peekTokenType(tokens, i+1) == TokenString {
+				add(tokens[i+1].Pos)
+			}
 		case TokenEval, TokenLet:
 			for j := i + 1; j < len(tokens) && !isSegmentBoundary(tokens[j].Type); j++ {
 				if tokens[j].Type == TokenString && peekTokenType(tokens, j+1) == TokenEq {

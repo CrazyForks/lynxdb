@@ -412,6 +412,16 @@ func TestParse_DoubleQuotedLegacyFieldLists(t *testing.T) {
 				}
 			},
 		},
+		{
+			name:  "bin field",
+			input: `FROM main | bin "duration ms" span=100 as "duration bucket"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*BinCommand)
+				if cmd.Field != "duration ms" || cmd.Alias != "duration bucket" {
+					t.Fatalf("bin: got field=%q alias=%q", cmd.Field, cmd.Alias)
+				}
+			},
+		},
 	}
 
 	for _, tt := range tests {

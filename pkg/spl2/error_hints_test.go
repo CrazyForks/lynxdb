@@ -203,6 +203,11 @@ func TestSuggestFunction(t *testing.T) {
 	if !strings.Contains(hint, "Did you mean: split?") {
 		t.Errorf("expected 'Did you mean: split?', got: %s", hint)
 	}
+
+	hint = SuggestFunction("spth")
+	if !strings.Contains(hint, "Did you mean: spath?") {
+		t.Errorf("expected 'Did you mean: spath?', got: %s", hint)
+	}
 }
 
 func TestKnownAggregateFunctionsIncludesSupportedAggregates(t *testing.T) {

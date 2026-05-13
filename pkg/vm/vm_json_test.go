@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 func TestVM_JsonExtract(t *testing.T) {
@@ -94,6 +95,32 @@ func TestVM_JsonExtract_MissingPath(t *testing.T) {
 	}
 	if !result.IsNull() {
 		t.Errorf("json_extract(missing path): got %v, want null", result)
+	}
+}
+
+func TestCompileSpathAlias(t *testing.T) {
+	expr := &spl2.FuncCallExpr{
+		Name: "spath",
+		Args: []spl2.Expr{
+			&spl2.FieldExpr{Name: "payload"},
+			&spl2.LiteralExpr{Value: "user.name"},
+		},
+	}
+	prog, err := CompileExpr(expr)
+	if err != nil {
+		t.Fatalf("CompileExpr: %v", err)
+	}
+
+	fields := map[string]event.Value{
+		"payload": event.StringValue(`{"user":{"id":42,"name":"alice"}}`),
+	}
+	v := &VM{}
+	result, err := v.Execute(prog, fields)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if result.String() != "alice" {
+		t.Errorf("spath: got %q, want alice", result.String())
 	}
 }
 

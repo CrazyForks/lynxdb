@@ -806,9 +806,9 @@ func (c *compiler) compileFuncCall(e *spl2.FuncCallExpr) error {
 			return fmt.Errorf("min expects at least 2 arguments, got %d", len(e.Args))
 		}
 		return c.compileMaxMin(e.Args, false)
-	case "json_extract":
+	case "json_extract", "spath":
 		if len(e.Args) != 2 {
-			return fmt.Errorf("json_extract expects 2 arguments, got %d", len(e.Args))
+			return fmt.Errorf("%s expects 2 arguments, got %d", name, len(e.Args))
 		}
 		// Compile field (first arg), then path (second arg).
 		if err := c.compileExpr(e.Args[0]); err != nil {

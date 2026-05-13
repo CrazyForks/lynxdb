@@ -39,6 +39,13 @@ func TestSplunkCompat_RFCUnsupportedCommands(t *testing.T) {
 	}
 }
 
+func TestCheckUnsupportedCommands_IgnoresPipesInEscapedQuotedRegex(t *testing.T) {
+	query := `FROM idx_openstack | REX "\"(?<http_method>GET|POST|PUT|DELETE|PATCH)" | WHERE isnotnull(http_method)`
+	if err := CheckUnsupportedCommands(query); err != nil {
+		t.Fatalf("CheckUnsupportedCommands: got %v, want nil", err)
+	}
+}
+
 func TestSplunkCompat_CapabilityCommandsNotUnsupported(t *testing.T) {
 	for _, cmd := range []string{"addinfo", "tstats", "mstats"} {
 		t.Run(cmd, func(t *testing.T) {

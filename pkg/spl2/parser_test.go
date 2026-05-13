@@ -1222,6 +1222,23 @@ func TestParse_FromRegexSourceName(t *testing.T) {
 	}
 }
 
+func TestParse_RexEscapedQuoteAlternation(t *testing.T) {
+	q, err := Parse(`FROM idx_openstack | REX "\"(?<http_method>GET|POST|PUT|DELETE|PATCH)" | WHERE isnotnull(http_method) | STATS count BY http_method | SORT - count`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 4 {
+		t.Fatalf("Commands: got %d, want 4", len(q.Commands))
+	}
+	rex, ok := q.Commands[0].(*RexCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: got %T, want RexCommand", q.Commands[0])
+	}
+	if rex.Pattern != `"(?<http_method>GET|POST|PUT|DELETE|PATCH)` {
+		t.Fatalf("Rex pattern: got %q", rex.Pattern)
+	}
+}
+
 func TestParse_SearchIndexEquals(t *testing.T) {
 	// search index=nginx should still work via the existing code path.
 	input := `FROM main | search index=nginx level=error`

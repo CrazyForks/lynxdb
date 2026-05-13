@@ -80,6 +80,10 @@ func pipeSegments(query string) []string {
 	var inSingle, inDouble bool
 	start := 0
 	for i := 0; i < len(query); i++ {
+		if query[i] == '\\' && (inSingle || inDouble) && i+1 < len(query) {
+			i++
+			continue
+		}
 		switch {
 		case query[i] == '\'' && !inDouble:
 			inSingle = !inSingle

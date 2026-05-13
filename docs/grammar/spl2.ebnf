@@ -69,11 +69,14 @@ stats_cmd        = "stats" agg_list [ "by" ident_list ] ;
 agg_list         = agg_expr { [ "," ] agg_expr } ;
 agg_expr         = agg_func "(" [ expr_list ] ")" [ "as" ident ]
                  | agg_func [ "(" ")" ] [ "as" ident ] ;
-agg_func         = "count" | "sum" | "sumsq" | "avg" | "min" | "max" | "dc" | "estdc" | "estdc_error"
-                 | "values" | "list" | "mode" | "first" | "last" | "stdev" | "stdevp" | "var" | "varp"
+agg_func         = "count" | "sum" | "sumsq" | "avg" | "mean" | "min" | "max"
+                 | "dc" | "distinct_count" | "estdc" | "estdc_error"
+                 | "values" | "list" | "mode" | "first" | "last"
+                 | "stdev" | "stdevp" | "var" | "varp" | "range"
                  | "earliest_time" | "latest_time" | "per_second" | "per_minute" | "per_hour" | "per_day" | "rate"
                  | "perc" | "percentile" | "exactperc" | "upperperc"
                  | "perc25" | "perc50" | "perc75" | "perc90"
+                 | "p50" | "p75" | "p90" | "p95" | "p99"
                  | "perc95" | "perc99"
                  | "percentile95" | "exactperc95" | "upperperc95"
                  | "earliest" | "latest" | "earliest_time" | "latest_time" | "rate" ;

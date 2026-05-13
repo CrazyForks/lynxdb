@@ -314,6 +314,12 @@ func lintDoubleQuotedNames(tokens []Token) []QueryLint {
 					add(tokens[j+1].Pos)
 				}
 			}
+		case TokenTable, TokenDedup:
+			for j := i + 1; j < len(tokens) && !isSegmentBoundary(tokens[j].Type); j++ {
+				if tokens[j].Type == TokenString {
+					add(tokens[j].Pos)
+				}
+			}
 		case TokenFieldformat:
 			if peekTokenType(tokens, i+1) == TokenString {
 				add(tokens[i+1].Pos)
@@ -323,8 +329,23 @@ func lintDoubleQuotedNames(tokens []Token) []QueryLint {
 				add(tokens[i+1].Pos)
 			}
 		case TokenFields:
-			if peekTokenType(tokens, i+1) == TokenLParen {
+			cmdType := segmentCommandType(tokens, i)
+			if cmdType == TokenFields {
+				for j := i + 1; j < len(tokens) && !isSegmentBoundary(tokens[j].Type); j++ {
+					if tokens[j].Type == TokenString {
+						add(tokens[j].Pos)
+					}
+				}
+			} else if peekTokenType(tokens, i+1) == TokenLParen {
 				for j := i + 2; j < len(tokens) && tokens[j].Type != TokenRParen && tokens[j].Type != TokenEOF; j++ {
+					if tokens[j].Type == TokenString {
+						add(tokens[j].Pos)
+					}
+				}
+			}
+		case TokenBy:
+			if isGroupByCommandType(segmentCommandType(tokens, i)) {
+				for j := i + 1; j < len(tokens) && !isSegmentBoundary(tokens[j].Type); j++ {
 					if tokens[j].Type == TokenString {
 						add(tokens[j].Pos)
 					}
@@ -368,6 +389,16 @@ func isUnpackCommandType(t TokenType) bool {
 		TokenUnpackDocker, TokenUnpackRedis, TokenUnpackApacheError, TokenUnpackPostgres,
 		TokenUnpackMySQLSlow, TokenUnpackHAProxy, TokenUnpackLEEF, TokenUnpackW3C,
 		TokenUnpackPattern:
+		return true
+	default:
+		return false
+	}
+}
+
+func isGroupByCommandType(t TokenType) bool {
+	switch t {
+	case TokenStats, TokenTimechart, TokenStreamstats, TokenEventstats,
+		TokenRare, TokenSessionize, TokenTrace:
 		return true
 	default:
 		return false

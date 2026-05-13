@@ -1608,7 +1608,7 @@ func (p *Parser) parseDedup() (*DedupCommand, error) {
 			limit = n
 			break
 		}
-		if !isIdentLike(tok.Type) && tok.Type != TokenGlob {
+		if !isIdentLike(tok.Type) && tok.Type != TokenGlob && tok.Type != TokenString {
 			break
 		}
 		p.advance()
@@ -1617,7 +1617,7 @@ func (p *Parser) parseDedup() (*DedupCommand, error) {
 			p.advance()
 			continue
 		}
-		if p.peek().Type == TokenNumber || isIdentLike(p.peek().Type) || p.peek().Type == TokenGlob {
+		if p.peek().Type == TokenNumber || isIdentLike(p.peek().Type) || p.peek().Type == TokenGlob || p.peek().Type == TokenString {
 			continue
 		}
 		break
@@ -3605,7 +3605,7 @@ func (p *Parser) parseIdentList() ([]string, error) {
 
 	for {
 		tok := p.peek()
-		if !isIdentLike(tok.Type) && tok.Type != TokenGlob {
+		if !isIdentLike(tok.Type) && tok.Type != TokenGlob && tok.Type != TokenString {
 			break
 		}
 		p.advance()

@@ -333,6 +333,68 @@ func TestParse_DedupCompatibilityForms(t *testing.T) {
 	}
 }
 
+func TestParse_DoubleQuotedLegacyFieldLists(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		check func(*testing.T, *Query)
+	}{
+		{
+			name:  "fields",
+			input: `FROM main | fields "user id", status`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*FieldsCommand)
+				if got, want := cmd.Fields, []string{"user id", "status"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("fields: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "table",
+			input: `FROM main | table _time, "user id"`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*TableCommand)
+				if got, want := cmd.Fields, []string{"_time", "user id"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("table fields: got %v, want %v", got, want)
+				}
+			},
+		},
+		{
+			name:  "dedup",
+			input: `FROM main | dedup 2 "user id", host`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*DedupCommand)
+				if got, want := cmd.Fields, []string{"user id", "host"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("dedup fields: got %v, want %v", got, want)
+				}
+				if cmd.Limit != 2 {
+					t.Fatalf("dedup limit: got %d, want 2", cmd.Limit)
+				}
+			},
+		},
+		{
+			name:  "stats by",
+			input: `FROM main | stats count() by "user id", host`,
+			check: func(t *testing.T, q *Query) {
+				cmd := q.Commands[0].(*StatsCommand)
+				if got, want := cmd.GroupBy, []string{"user id", "host"}; !reflect.DeepEqual(got, want) {
+					t.Fatalf("stats group by: got %v, want %v", got, want)
+				}
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, err := Parse(tt.input)
+			if err != nil {
+				t.Fatalf("Parse: %v", err)
+			}
+			tt.check(t, q)
+		})
+	}
+}
+
 func TestParse_TailCommand(t *testing.T) {
 	input := `FROM main | tail 50`
 	q, err := Parse(input)

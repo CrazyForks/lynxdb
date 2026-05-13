@@ -419,6 +419,26 @@ func TestLintQuery_DoubleQuotedNames(t *testing.T) {
 			wantCodes: []string{LintDoubleQuotedName},
 		},
 		{
+			name:      "fields command",
+			query:     `from app | fields "user id", status`,
+			wantCodes: []string{LintDoubleQuotedName},
+		},
+		{
+			name:      "table command",
+			query:     `from app | table _time, "user id"`,
+			wantCodes: []string{LintDoubleQuotedName},
+		},
+		{
+			name:      "dedup command",
+			query:     `from app | dedup 2 "user id", host`,
+			wantCodes: []string{LintDoubleQuotedName},
+		},
+		{
+			name:      "stats group by",
+			query:     `from app | stats count() by "user id", host`,
+			wantCodes: []string{LintDoubleQuotedName},
+		},
+		{
 			name:      "field option",
 			query:     `from app | json field="message"`,
 			wantCodes: []string{LintDoubleQuotedName},

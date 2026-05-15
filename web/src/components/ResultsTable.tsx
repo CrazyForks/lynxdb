@@ -10,6 +10,7 @@ import { ChevronRight, ChevronDown } from "lucide-react";
 import type { QueryResult, EventsResult, AggregateResult } from "../api/client";
 import { rowKey } from "../utils/rowKey";
 import { updateSortInQuery, parseSortFromQuery } from "../utils/sortQuery";
+import { deriveColumnsFromEvents } from "../utils/deriveColumns";
 import { EventDetailInline } from "./EventDetail";
 import styles from "./ResultsTable.module.css";
 
@@ -98,29 +99,6 @@ function isNumeric(value: unknown): boolean {
   );
 }
 
-/** Derive columns from events: _time first, then _raw, _source, source, then alphabetical */
-function deriveColumnsFromEvents(events: Record<string, unknown>[]): string[] {
-  const keySet = new Set<string>();
-  const limit = Math.min(events.length, 100);
-  for (let i = 0; i < limit; i++) {
-    for (const key of Object.keys(events[i])) {
-      keySet.add(key);
-    }
-  }
-
-  const priority = ["_time", "_raw", "_source", "source"];
-  const ordered: string[] = [];
-  for (const p of priority) {
-    if (keySet.has(p)) {
-      ordered.push(p);
-      keySet.delete(p);
-    }
-  }
-
-  const rest = Array.from(keySet).sort();
-  return ordered.concat(rest);
-}
-
 /** Normalize result data into a uniform shape for rendering */
 function useTableData(result: QueryResult | null): {
   columns: string[];
@@ -154,7 +132,10 @@ function useTableData(result: QueryResult | null): {
       const data = agg.rows[i];
       if (data) {
         for (let c = 0; c < columns.length; c++) {
-          row[columns[c]] = data[c];
+          const colName = columns[c];
+          if (colName !== undefined) {
+            row[colName] = data[c];
+          }
         }
       }
       return row;
@@ -223,10 +204,23 @@ export function ResultsTable({
     return () => obs.disconnect();
   }, []);
 
+  // PERF-06: rAF-throttle the scroll handler to coalesce scrollTop updates
+  const rafRef = useRef(0);
   const handleScroll = useCallback(() => {
-    if (scrollContainerRef.current) {
-      setScrollTop(scrollContainerRef.current.scrollTop);
-    }
+    if (rafRef.current) return; // rAF already scheduled
+    rafRef.current = requestAnimationFrame(() => {
+      rafRef.current = 0;
+      if (scrollContainerRef.current) {
+        setScrollTop(scrollContainerRef.current.scrollTop);
+      }
+    });
+  }, []);
+
+  // Cleanup pending rAF on unmount
+  useEffect(() => {
+    return () => {
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
+    };
   }, []);
 
   // ---- Column resize handlers ----

@@ -12,7 +12,6 @@ import {
   resetHistoryNavigation,
 } from "../stores/queryHistory";
 import { useThemeStore } from "../stores/ui";
-import styles from "./QueryEditor.module.css";
 
 interface QueryEditorProps {
   value: string;
@@ -286,12 +285,15 @@ export function QueryEditor({
   }, []);
 
   return (
-    <div className={styles.editorContainer}>
-      <div ref={wrapRef} className={styles.editorWrap}>
+    <div className="flex flex-1 flex-col relative min-w-0">
+      <div
+        ref={wrapRef}
+        className="min-h-8 border border-border rounded-sm overflow-hidden transition-colors duration-150 focus-within:border-primary motion-reduce:transition-none"
+      >
         <div ref={containerRef} />
       </div>
       <div
-        className={styles.dragHandle}
+        className="absolute bottom-0 inset-x-0 h-1 cursor-ns-resize bg-transparent z-[2] transition-colors duration-150 hover:bg-accent motion-reduce:transition-none"
         onPointerDown={handlePointerDown}
         role="separator"
         aria-orientation="horizontal"

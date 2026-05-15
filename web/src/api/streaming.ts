@@ -194,8 +194,14 @@ export async function streamQuery(
 /**
  * Parse and dispatch a single NDJSON line.
  * Returns true if the line was a __meta or __error control line.
+ *
+ * Exported for unit testing: this control-line classification is the
+ * regression oracle the framework migration is verified against.
  */
-function processLine(line: string, callbacks: StreamCallbacks): boolean {
+export function processLine(
+  line: string,
+  callbacks: StreamCallbacks,
+): boolean {
   try {
     const parsed = JSON.parse(line);
     if (parsed.__meta) {

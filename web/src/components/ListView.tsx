@@ -1,7 +1,9 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useRef } from "react";
 import type { QueryResult, EventsResult, AggregateResult } from "../api/client";
 import { EventDetailInline } from "./EventDetail";
 import { rowKey } from "../utils/rowKey";
+import { deriveColumnsFromEvents } from "../utils/deriveColumns";
+import { useRowVirtualizer } from "../hooks/useRowVirtualizer";
 import styles from "./ListView.module.css";
 
 interface ListViewProps {
@@ -10,28 +12,10 @@ interface ListViewProps {
   onFilter?: (field: string, value: string, exclude: boolean) => void;
 }
 
-/** Derive columns from events: _time first, then _raw, _source, source, then alphabetical */
-function deriveColumnsFromEvents(events: Record<string, unknown>[]): string[] {
-  const keySet = new Set<string>();
-  const limit = Math.min(events.length, 100);
-  for (let i = 0; i < limit; i++) {
-    for (const key of Object.keys(events[i])) {
-      keySet.add(key);
-    }
-  }
-
-  const priority = ["_time", "_raw", "_source", "source"];
-  const ordered: string[] = [];
-  for (const p of priority) {
-    if (keySet.has(p)) {
-      ordered.push(p);
-      keySet.delete(p);
-    }
-  }
-
-  const rest = Array.from(keySet).sort();
-  return ordered.concat(rest);
-}
+/** Estimated height of a collapsed event row (header + ~4 fields). */
+const ESTIMATED_ROW_HEIGHT = 120;
+/** Max accordion height for expanded detail. */
+const MAX_ACCORDION_HEIGHT = 400;
 
 /** Normalize result data into columns and rows */
 function useTableData(result: QueryResult | null): {
@@ -63,7 +47,10 @@ function useTableData(result: QueryResult | null): {
       const data = agg.rows[i];
       if (data) {
         for (let c = 0; c < columns.length; c++) {
-          row[columns[c]] = data[c];
+          const colName = columns[c];
+          if (colName !== undefined) {
+            row[colName] = data[c];
+          }
         }
       }
       return row;
@@ -74,58 +61,105 @@ function useTableData(result: QueryResult | null): {
 export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
   const { columns, rowCount, getRow } = useTableData(result);
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleToggle = useCallback((i: number) => {
     setExpandedIndex((prev) => (prev === i ? null : i));
   }, []);
 
+  const estimateSize = useCallback(
+    (index: number) => {
+      const row = getRow(index);
+      // Base height: header line + one line per field
+      const fieldCount = columns.length;
+      const baseHeight = 28 + fieldCount * 24 + 16; // header + fields + padding
+      if (expandedIndex === index) {
+        const detailFieldCount = Object.keys(row).length;
+        const accordionHeight = Math.min(
+          detailFieldCount * 28 + 52,
+          MAX_ACCORDION_HEIGHT,
+        );
+        return baseHeight + accordionHeight;
+      }
+      return Math.max(ESTIMATED_ROW_HEIGHT, baseHeight);
+    },
+    [columns.length, expandedIndex, getRow],
+  );
+
+  const virtualizer = useRowVirtualizer({
+    count: rowCount,
+    scrollRef,
+    estimateSize,
+    overscan: 5,
+  });
+
   if (!result || rowCount === 0) {
     return <div className={styles.empty}>No results</div>;
   }
 
-  const events = [];
-  for (let i = 0; i < rowCount; i++) {
-    const row = getRow(i);
-    const isExpanded = expandedIndex === i;
-
-    events.push(
+  return (
+    <div className={styles.wrapper} ref={scrollRef}>
       <div
-        key={rowKey(row)}
-        className={`${styles.event} ${isExpanded ? styles.eventSelected : ""}`}
-        onClick={() => handleToggle(i)}
+        style={{
+          height: virtualizer.getTotalSize(),
+          width: "100%",
+          position: "relative",
+        }}
       >
-        <div className={styles.eventHeader}>Event {i + 1}</div>
-        {columns.map((col) => {
-          const value = row[col] == null ? "" : String(row[col]);
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const i = virtualRow.index;
+          const row = getRow(i);
+          const isExpanded = expandedIndex === i;
+
           return (
-            <div key={col} className={styles.field}>
-              <span className={styles.fieldName}>{col}</span>
-              <span
-                className={styles.fieldValue}
-                title={value}
-                onClick={(e: React.MouseEvent) => {
-                  e.stopPropagation();
-                  if (onCellCopy && value) {
-                    onCellCopy(value, e.clientX, e.clientY);
-                  }
-                }}
+            <div
+              key={rowKey(row)}
+              data-index={i}
+              ref={virtualizer.measureElement}
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <div
+                className={`${styles.event} ${isExpanded ? styles.eventSelected : ""}`}
+                onClick={() => handleToggle(i)}
               >
-                {value}
-              </span>
+                <div className={styles.eventHeader}>Event {i + 1}</div>
+                {columns.map((col) => {
+                  const value = row[col] == null ? "" : String(row[col]);
+                  return (
+                    <div key={col} className={styles.field}>
+                      <span className={styles.fieldName}>{col}</span>
+                      <span
+                        className={styles.fieldValue}
+                        title={value}
+                        onClick={(e: React.MouseEvent) => {
+                          e.stopPropagation();
+                          if (onCellCopy && value) {
+                            onCellCopy(value, e.clientX, e.clientY);
+                          }
+                        }}
+                      >
+                        {value}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {isExpanded && (
+                <div className={styles.accordionRow}>
+                  <EventDetailInline event={row} onFilter={onFilter} />
+                </div>
+              )}
             </div>
           );
         })}
-      </div>,
-    );
-
-    if (isExpanded) {
-      events.push(
-        <div key={`acc-${rowKey(row)}`} className={styles.accordionRow}>
-          <EventDetailInline event={row} onFilter={onFilter} />
-        </div>,
-      );
-    }
-  }
-
-  return <div className={styles.wrapper}>{events}</div>;
+      </div>
+    </div>
+  );
 }

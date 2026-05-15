@@ -15,7 +15,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "bundle:check": "node scripts/check-bundle.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.1",
@@ -28,6 +29,7 @@
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@lezer/highlight": "^1.2.3",
     "@tailwindcss/vite": "^4",
+    "@tanstack/react-virtual": "^3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

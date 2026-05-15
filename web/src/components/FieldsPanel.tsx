@@ -1,34 +1,19 @@
-import React, { useState, useMemo, useCallback, useRef } from "react";
+import React, {
+  useState,
+  useMemo,
+  useCallback,
+  useRef,
+  useEffect,
+} from "react";
 import type { FieldInfo } from "../api/client";
 import { FieldValuePopover } from "./FieldValuePopover";
+import { typeAbbrev } from "../utils/fieldType";
 import styles from "./FieldsPanel.module.css";
 
 interface FieldsPanelProps {
   selectedFields: string[];
   catalogFields: FieldInfo[];
   onFilter?: (field: string, value: string, exclude: boolean) => void;
-}
-
-function typeAbbrev(t?: string): string {
-  if (!t) return "";
-  switch (t.toLowerCase()) {
-    case "string":
-      return "str";
-    case "integer":
-    case "int":
-      return "int";
-    case "float":
-    case "number":
-      return "flt";
-    case "boolean":
-    case "bool":
-      return "bool";
-    case "datetime":
-    case "timestamp":
-      return "ts";
-    default:
-      return t.slice(0, 3);
-  }
 }
 
 function typeBadgeClass(abbrev: string): string {
@@ -69,6 +54,10 @@ export function FieldsPanel({
       setDebouncedSearch(value);
     }, 150);
   }, []);
+
+  // Clear the pending debounce timer on unmount so it cannot fire against
+  // an unmounted component.
+  useEffect(() => () => clearTimeout(searchTimerRef.current), []);
 
   // Build a lookup map from catalog fields
   const catalogMap = useMemo(() => {

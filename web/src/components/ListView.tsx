@@ -129,13 +129,22 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
               }}
             >
               <div
+                role="button"
+                tabIndex={0}
+                aria-expanded={isExpanded}
                 className={cn(
-                  "border-b border-border px-3 py-2 cursor-pointer transition-colors duration-75 motion-reduce:transition-none",
+                  "border-b border-border px-3 py-2 cursor-pointer transition-colors duration-75 motion-reduce:transition-none focus-visible:outline-2 focus-visible:outline-ring",
                   isExpanded
                     ? "bg-accent hover:bg-accent/80"
                     : "hover:bg-muted/50",
                 )}
                 onClick={() => handleToggle(i)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    handleToggle(i);
+                  }
+                }}
               >
                 <div className="font-sans text-[0.6875rem] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
                   Event {i + 1}
@@ -148,12 +157,21 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
                         {col}
                       </span>
                       <span
-                        className="flex-1 text-foreground break-words rounded-sm px-0.5 -mx-0.5 cursor-pointer transition-colors duration-100 motion-reduce:transition-none hover:bg-muted"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`Copy ${col} value`}
+                        className="flex-1 text-foreground break-words rounded-sm px-0.5 -mx-0.5 cursor-pointer transition-colors duration-100 motion-reduce:transition-none hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring"
                         title={value}
                         onClick={(e: React.MouseEvent) => {
                           e.stopPropagation();
                           if (onCellCopy && value) {
                             onCellCopy(value, e.clientX, e.clientY);
+                          }
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") {
+                            e.preventDefault();
+                            if (onCellCopy && value) onCellCopy(value, 0, 0);
                           }
                         }}
                       >

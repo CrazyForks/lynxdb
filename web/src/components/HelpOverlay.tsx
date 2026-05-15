@@ -5,7 +5,14 @@ import {
   setHelpOverlayOpen,
 } from "../utils/keyboard";
 import type { ShortcutDef } from "../utils/keyboard";
-import styles from "./HelpOverlay.module.css";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "./ui/dialog";
+import { Kbd } from "./ui/kbd";
 
 type ShortcutRow = {
   def: ShortcutDef;
@@ -51,30 +58,41 @@ const GROUPS: ShortcutGroup[] = [
 export function HelpOverlay() {
   const helpOverlayOpen = useOverlayStore((s) => s.helpOverlayOpen);
 
-  if (!helpOverlayOpen) return null;
-
-  const handleBackdropClick = () => {
-    setHelpOverlayOpen(false);
-  };
-
   return (
-    <div className={styles.backdrop} onClick={handleBackdropClick}>
-      <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
-        <div className={styles.title}>Keyboard Shortcuts</div>
-        <div className={styles.grid}>
+    <Dialog
+      open={helpOverlayOpen}
+      onOpenChange={(open) => {
+        if (!open) setHelpOverlayOpen(false);
+      }}
+    >
+      <DialogContent className="max-w-[600px] rounded-md sm:max-w-[600px]">
+        <DialogHeader>
+          <DialogTitle>Keyboard Shortcuts</DialogTitle>
+          <DialogDescription className="sr-only">
+            A list of all available keyboard shortcuts.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
           {GROUPS.map((group) => (
-            <div key={group.title} className={styles.group}>
-              <div className={styles.groupTitle}>{group.title}</div>
+            <div key={group.title} className="flex flex-col gap-1">
+              <div className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                {group.title}
+              </div>
               {group.items.map((item) => (
-                <div key={item.label} className={styles.row}>
-                  <span className={styles.label}>{item.label}</span>
-                  <kbd className={styles.kbd}>{formatShortcut(item.def)}</kbd>
+                <div
+                  key={item.label}
+                  className="flex items-center justify-between py-1"
+                >
+                  <span className="text-[0.8125rem] text-foreground">
+                    {item.label}
+                  </span>
+                  <Kbd>{formatShortcut(item.def)}</Kbd>
                 </div>
               ))}
             </div>
           ))}
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }

@@ -13,12 +13,12 @@ export function StageNode({ stage, isSelected, onSelect }: StageNodeProps) {
   return (
     <button
       type="button"
-      class={`${styles.stageCompact} ${isSelected ? styles.stageCompactSelected : ""}`}
+      className={`${styles.stageCompact} ${isSelected ? styles.stageCompactSelected : ""}`}
       onClick={onSelect}
     >
-      <span class={styles.stageCompactCmd}>{stage.command}</span>
+      <span className={styles.stageCompactCmd}>{stage.command}</span>
       {description && (
-        <span class={styles.stageCompactDesc} title={description}>
+        <span className={styles.stageCompactDesc} title={description}>
           {description}
         </span>
       )}

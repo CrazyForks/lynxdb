@@ -1,4 +1,4 @@
-import { useRouter } from "preact-router";
+import { useLocation, useNavigate } from "react-router";
 import {
   Search,
   BookmarkCheck,
@@ -7,17 +7,20 @@ import {
   Sun,
   Moon,
   HelpCircle,
-} from "lucide-preact";
-import { theme, toggleTheme } from "../stores/ui";
-import { token, clearToken } from "../stores/auth";
-import { helpOverlayOpen, paletteOpen } from "../utils/keyboard";
-import { uiPath } from "../utils/base";
+} from "lucide-react";
+import { useThemeStore, toggleTheme } from "../stores/ui";
+import { useAuthStore, clearToken } from "../stores/auth";
+import {
+  useOverlayStore,
+  setPaletteOpen,
+  setHelpOverlayOpen,
+} from "../utils/keyboard";
 import styles from "./Sidebar.module.css";
 
 const NAV_ITEMS = [
-  { path: uiPath("/"), icon: Search, label: "Search" },
-  { path: uiPath("/queries"), icon: BookmarkCheck, label: "Saved Queries" },
-  { path: uiPath("/settings"), icon: Settings, label: "Settings" },
+  { path: "/", icon: Search, label: "Search" },
+  { path: "/queries", icon: BookmarkCheck, label: "Saved Queries" },
+  { path: "/settings", icon: Settings, label: "Settings" },
 ] as const;
 
 function isActive(url: string, path: string): boolean {
@@ -30,69 +33,85 @@ function isActive(url: string, path: string): boolean {
 }
 
 export function Sidebar() {
-  const [routerState] = useRouter();
-  const url = routerState?.url ?? "/";
+  const location = useLocation();
+  const navigate = useNavigate();
+  const url = location.pathname;
+  const theme = useThemeStore((s) => s.theme);
+  const token = useAuthStore((s) => s.token);
+  // Suppress unused variable warning — we subscribe to force re-renders on overlay changes
+  useOverlayStore();
 
   return (
-    <nav class={styles.sidebar}>
-      <div class={styles.top}>
-        <a href={uiPath("/")} class={styles.logo}>
+    <nav className={styles.sidebar}>
+      <div className={styles.top}>
+        <a
+          href="/"
+          className={styles.logo}
+          onClick={(e) => {
+            e.preventDefault();
+            navigate("/");
+          }}
+        >
           <img
-            src={uiPath("/lynxdb-icon.png")}
+            src={`${import.meta.env.BASE_URL || "/"}lynxdb-icon.png`}
             alt="LynxDB"
-            class={styles.logoIcon}
+            className={styles.logoIcon}
           />
-          <span class={styles.logoText}>LynxDB</span>
+          <span className={styles.logoText}>LynxDB</span>
         </a>
         {NAV_ITEMS.map(({ path, icon: Icon, label }) => (
           <a
             key={path}
             href={path}
-            class={`${styles.navItem} ${isActive(url, path) ? styles.active : ""}`}
+            className={`${styles.navItem} ${isActive(url, path) ? styles.active : ""}`}
             title={label}
+            onClick={(e) => {
+              e.preventDefault();
+              navigate(path);
+            }}
           >
             <Icon size={20} />
-            <span class={styles.navLabel}>{label}</span>
+            <span className={styles.navLabel}>{label}</span>
           </a>
         ))}
       </div>
-      <div class={styles.bottom}>
+      <div className={styles.bottom}>
         <button
           type="button"
-          class={styles.navItem}
+          className={styles.navItem}
           onClick={toggleTheme}
           title={
-            theme.value === "dark"
+            theme === "dark"
               ? "Switch to light mode"
               : "Switch to dark mode"
           }
         >
-          {theme.value === "dark" ? <Sun size={20} /> : <Moon size={20} />}
-          <span class={styles.navLabel}>
-            {theme.value === "dark" ? "Light mode" : "Dark mode"}
+          {theme === "dark" ? <Sun size={20} /> : <Moon size={20} />}
+          <span className={styles.navLabel}>
+            {theme === "dark" ? "Light mode" : "Dark mode"}
           </span>
         </button>
         <button
           type="button"
-          class={styles.navItem}
+          className={styles.navItem}
           onClick={() => {
-            paletteOpen.value = false;
-            helpOverlayOpen.value = true;
+            setPaletteOpen(false);
+            setHelpOverlayOpen(true);
           }}
           title="Keyboard shortcuts (?)"
         >
           <HelpCircle size={20} />
-          <span class={styles.navLabel}>Shortcuts</span>
+          <span className={styles.navLabel}>Shortcuts</span>
         </button>
-        {token.value && (
+        {token && (
           <button
             type="button"
-            class={styles.navItem}
+            className={styles.navItem}
             onClick={clearToken}
             title="Sign out"
           >
             <LogOut size={20} />
-            <span class={styles.navLabel}>Sign out</span>
+            <span className={styles.navLabel}>Sign out</span>
           </button>
         )}
       </div>

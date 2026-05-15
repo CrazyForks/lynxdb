@@ -1,5 +1,5 @@
-import { useState, useEffect, useCallback, useRef } from "preact/hooks";
-import { Table2, List, Download } from "lucide-preact";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { Table2, List, Download } from "lucide-react";
 import styles from "./TableToolbar.module.css";
 
 interface TableToolbarProps {
@@ -47,13 +47,13 @@ export function TableToolbar({
   );
 
   return (
-    <div class={styles.toolbar}>
-      <div class={styles.left}>
+    <div className={styles.toolbar}>
+      <div className={styles.left}>
         {/* View mode segmented control */}
-        <div class={styles.segmented}>
+        <div className={styles.segmented}>
           <button
             type="button"
-            class={`${styles.segBtn} ${viewMode === "table" ? styles.segBtnActive : ""}`}
+            className={`${styles.segBtn} ${viewMode === "table" ? styles.segBtnActive : ""}`}
             onClick={() => onViewModeChange("table")}
             title="Table view"
             aria-label="Table view"
@@ -62,7 +62,7 @@ export function TableToolbar({
           </button>
           <button
             type="button"
-            class={`${styles.segBtn} ${viewMode === "list" ? styles.segBtnActive : ""}`}
+            className={`${styles.segBtn} ${viewMode === "list" ? styles.segBtnActive : ""}`}
             onClick={() => onViewModeChange("list")}
             title="List view"
             aria-label="List view"
@@ -72,12 +72,12 @@ export function TableToolbar({
         </div>
       </div>
 
-      <div class={styles.right}>
+      <div className={styles.right}>
         {/* Export dropdown */}
-        <div class={styles.exportWrapper} ref={dropdownRef}>
+        <div className={styles.exportWrapper} ref={dropdownRef}>
           <button
             type="button"
-            class={styles.exportBtn}
+            className={styles.exportBtn}
             onClick={() => setDropdownOpen(!dropdownOpen)}
             aria-haspopup="menu"
             aria-expanded={dropdownOpen}
@@ -86,10 +86,10 @@ export function TableToolbar({
             Export
           </button>
           {dropdownOpen && (
-            <div class={styles.exportDropdown} role="menu">
+            <div className={styles.exportDropdown} role="menu">
               <button
                 type="button"
-                class={styles.exportOption}
+                className={styles.exportOption}
                 role="menuitem"
                 onClick={() => handleExportClick("csv", "page")}
               >
@@ -97,7 +97,7 @@ export function TableToolbar({
               </button>
               <button
                 type="button"
-                class={styles.exportOption}
+                className={styles.exportOption}
                 role="menuitem"
                 onClick={() => handleExportClick("csv", "all")}
               >
@@ -105,7 +105,7 @@ export function TableToolbar({
               </button>
               <button
                 type="button"
-                class={styles.exportOption}
+                className={styles.exportOption}
                 role="menuitem"
                 onClick={() => handleExportClick("json", "page")}
               >
@@ -113,7 +113,7 @@ export function TableToolbar({
               </button>
               <button
                 type="button"
-                class={styles.exportOption}
+                className={styles.exportOption}
                 role="menuitem"
                 onClick={() => handleExportClick("json", "all")}
               >

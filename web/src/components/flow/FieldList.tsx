@@ -1,4 +1,4 @@
-import { useState, useCallback } from "preact/hooks";
+import { useState, useCallback } from "react";
 import { FieldItem } from "./FieldItem";
 import styles from "./flow.module.css";
 
@@ -32,10 +32,10 @@ export function FieldList({
   }
 
   return (
-    <div class={styles.fieldList}>
+    <div className={styles.fieldList}>
       {newFields.length > 0 && (
         <>
-          <div class={styles.fieldsSectionHeader}>New Fields</div>
+          <div className={styles.fieldsSectionHeader}>New Fields</div>
           {newFields.map((name) => (
             <FieldItem
               key={name}
@@ -52,12 +52,12 @@ export function FieldList({
         <>
           <button
             type="button"
-            class={styles.fieldsSectionHeader}
+            className={styles.fieldsSectionHeader}
             onClick={handleToggleAll}
           >
             <span>All Fields ({defaultFields.length})</span>
             <span
-              class={`${styles.sectionChevron} ${allExpanded ? styles.sectionChevronExpanded : ""}`}
+              className={`${styles.sectionChevron} ${allExpanded ? styles.sectionChevronExpanded : ""}`}
               aria-hidden="true"
             >
               &#9656;

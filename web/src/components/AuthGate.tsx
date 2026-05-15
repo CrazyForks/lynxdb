@@ -1,11 +1,11 @@
-import { useState, useCallback } from "preact/hooks";
-import type { ComponentChildren } from "preact";
-import { token, authRequired, setToken } from "../stores/auth";
+import { useState, useCallback } from "react";
+import type { ReactNode, FormEvent } from "react";
+import { useAuthStore, setToken } from "../stores/auth";
 import { uiPath } from "../utils/base";
 import styles from "./AuthGate.module.css";
 
 interface Props {
-  children: ComponentChildren;
+  children: ReactNode;
 }
 
 /**
@@ -19,15 +19,18 @@ interface Props {
  * a token and this gate is never shown.
  */
 export function AuthGate({ children }: Props) {
+  const token = useAuthStore((s) => s.token);
+  const authRequired = useAuthStore((s) => s.authRequired);
+
   // If we have a token and auth hasn't been flagged as required, pass through
-  if (token.value && !authRequired.value) {
+  if (token && !authRequired) {
     return <>{children}</>;
   }
 
   // On first load with no token, try to render the app -- if the server
   // has auth disabled, everything will work. If 401 comes back,
-  // authRequired signal flips to true and we re-render with the login form.
-  if (!token.value && !authRequired.value) {
+  // authRequired flips to true and we re-render with the login form.
+  if (!token && !authRequired) {
     return <>{children}</>;
   }
 
@@ -40,7 +43,7 @@ function LoginForm() {
   const [checking, setChecking] = useState(false);
 
   const handleSubmit = useCallback(
-    async (e: Event) => {
+    async (e: FormEvent) => {
       e.preventDefault();
       const val = inputValue.trim();
       if (!val) return;
@@ -75,39 +78,39 @@ function LoginForm() {
   }, []);
 
   return (
-    <div class={styles.backdrop}>
-      <form class={styles.card} onSubmit={handleSubmit}>
-        <div class={styles.logo}>
+    <div className={styles.backdrop}>
+      <form className={styles.card} onSubmit={handleSubmit}>
+        <div className={styles.logo}>
           <img
             src={uiPath("/favicon.svg")}
             alt="LynxDB"
-            class={styles.logoIcon}
+            className={styles.logoIcon}
           />
           LynxDB
         </div>
-        <div class={styles.subtitle}>Enter your API key to continue</div>
+        <div className={styles.subtitle}>Enter your API key to continue</div>
 
         <input
           type="password"
-          class={styles.input}
+          className={styles.input}
           placeholder="lynx_..."
           value={inputValue}
           onInput={(e) => setInputValue((e.target as HTMLInputElement).value)}
           autoFocus
-          spellcheck={false}
-          autocomplete="off"
+          spellCheck={false}
+          autoComplete="off"
         />
 
         {error && error !== "connection_error" && (
-          <div class={styles.error}>{error}</div>
+          <div className={styles.error}>{error}</div>
         )}
 
         {error === "connection_error" && (
-          <div class={styles.error}>
+          <div className={styles.error}>
             Cannot connect to server -- is LynxDB running?{" "}
             <button
               type="button"
-              class={styles.retryLink}
+              className={styles.retryLink}
               onClick={handleRetry}
             >
               Retry
@@ -117,13 +120,13 @@ function LoginForm() {
 
         <button
           type="submit"
-          class={styles.submitBtn}
+          className={styles.submitBtn}
           disabled={checking || !inputValue.trim()}
         >
           {checking ? "Verifying..." : "Connect"}
         </button>
 
-        <div class={styles.hint}>
+        <div className={styles.hint}>
           Generate a key with <code>lynxdb auth create-key</code>
         </div>
       </form>

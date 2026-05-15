@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useState } from "react";
 import type { PipelineStage, OptimizerRule } from "../api/client";
 import styles from "./PipelineFlow.module.css";
 
@@ -63,7 +63,7 @@ export function PipelineFlow({ stages, optimizerRules }: PipelineFlowProps) {
 
   return (
     <div>
-      <div class={styles.pipelineRow}>
+      <div className={styles.pipelineRow}>
         {stages.map((stage, i) => {
           const stageRules = ruleMap.get(i);
           const isSelected = expandedStage === i;
@@ -71,12 +71,12 @@ export function PipelineFlow({ stages, optimizerRules }: PipelineFlowProps) {
           return (
             <>
               {i > 0 && (
-                <span class={styles.arrow} aria-hidden="true">
+                <span className={styles.arrow} aria-hidden="true">
                   {"\u2192"}
                 </span>
               )}
               <div
-                class={`${styles.stageCard}${isSelected ? ` ${styles.stageCardActive}` : ""}`}
+                className={`${styles.stageCard}${isSelected ? ` ${styles.stageCardActive}` : ""}`}
                 onClick={() => handleStageClick(i)}
                 role="button"
                 tabIndex={0}
@@ -89,15 +89,15 @@ export function PipelineFlow({ stages, optimizerRules }: PipelineFlowProps) {
                 aria-expanded={isSelected}
                 aria-label={`Pipeline stage: ${stage.command}`}
               >
-                <span class={styles.stageName}>{stage.command}</span>
+                <span className={styles.stageName}>{stage.command}</span>
                 {stage.description && (
-                  <span class={styles.stageDesc} title={stage.description}>
+                  <span className={styles.stageDesc} title={stage.description}>
                     {stage.description}
                   </span>
                 )}
                 {stageRules && stageRules.length > 0 && (
                   <span
-                    class={styles.optimizerBadge}
+                    className={styles.optimizerBadge}
                     title={stageRules
                       .map((r: OptimizerRule) => r.name)
                       .join(", ")}
@@ -111,26 +111,26 @@ export function PipelineFlow({ stages, optimizerRules }: PipelineFlowProps) {
       </div>
 
       {expandedStage !== null && stages[expandedStage] && (
-        <div class={styles.stageDetail}>
+        <div className={styles.stageDetail}>
           <div>
-            <span class={styles.fieldLabel}>Fields added:</span>
-            <span class={styles.fieldList}>
+            <span className={styles.fieldLabel}>Fields added:</span>
+            <span className={styles.fieldList}>
               {stages[expandedStage].fields_added?.length
                 ? stages[expandedStage].fields_added!.join(", ")
                 : "none"}
             </span>
           </div>
           <div>
-            <span class={styles.fieldLabel}>Fields removed:</span>
-            <span class={styles.fieldList}>
+            <span className={styles.fieldLabel}>Fields removed:</span>
+            <span className={styles.fieldList}>
               {stages[expandedStage].fields_removed?.length
                 ? stages[expandedStage].fields_removed!.join(", ")
                 : "none"}
             </span>
           </div>
           <div>
-            <span class={styles.fieldLabel}>Fields out:</span>
-            <span class={styles.fieldList}>
+            <span className={styles.fieldLabel}>Fields out:</span>
+            <span className={styles.fieldList}>
               {stages[expandedStage].fields_out?.length
                 ? stages[expandedStage].fields_out!.join(", ")
                 : "all"}

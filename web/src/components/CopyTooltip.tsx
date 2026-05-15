@@ -10,7 +10,7 @@ export function CopyTooltip({ visible, x, y }: CopyTooltipProps) {
   if (!visible) return null;
 
   return (
-    <div class={styles.tooltip} style={{ left: x, top: y - 28 }}>
+    <div className={styles.tooltip} style={{ left: x, top: y - 28 }}>
       Copied!
     </div>
   );

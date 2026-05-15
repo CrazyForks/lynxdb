@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useRef } from "preact/hooks";
+import React, { useState, useMemo, useCallback, useRef } from "react";
 import type { FieldInfo } from "../api/client";
 import { FieldValuePopover } from "./FieldValuePopover";
 import styles from "./FieldsPanel.module.css";
@@ -61,7 +61,7 @@ export function FieldsPanel({
   );
   const [debouncedSearch, setDebouncedSearch] = useState("");
 
-  const handleSearchChange = useCallback((e: Event) => {
+  const handleSearchChange = useCallback((e: React.FormEvent<HTMLInputElement>) => {
     const value = (e.target as HTMLInputElement).value;
     setSearch(value);
     clearTimeout(searchTimerRef.current);
@@ -104,7 +104,7 @@ export function FieldsPanel({
   }, [catalogFields, selectedSet, searchLower]);
 
   const handleFieldClick = useCallback(
-    (fieldName: string, e: MouseEvent) => {
+    (fieldName: string, e: React.MouseEvent) => {
       const target = e.currentTarget as HTMLElement;
       const rect = target.getBoundingClientRect();
       if (popoverField === fieldName) {
@@ -137,32 +137,32 @@ export function FieldsPanel({
     const abbrev = typeAbbrev(catalog?.type);
 
     return (
-      <div class={styles.fieldRow} key={fieldName}>
+      <div className={styles.fieldRow} key={fieldName}>
         <button
           type="button"
-          class={styles.fieldName}
-          onClick={(e: MouseEvent) => handleFieldClick(fieldName, e)}
+          className={styles.fieldName}
+          onClick={(e: React.MouseEvent) => handleFieldClick(fieldName, e)}
           title={fieldName}
         >
           {fieldName}
         </button>
         {abbrev && (
-          <span class={`${styles.typeBadge} ${typeBadgeClass(abbrev)}`}>
+          <span className={`${styles.typeBadge} ${typeBadgeClass(abbrev)}`}>
             {abbrev}
           </span>
         )}
         {catalog && catalog.coverage > 0 && (
-          <span class={styles.coverage}>{catalog.coverage}%</span>
+          <span className={styles.coverage}>{catalog.coverage}%</span>
         )}
       </div>
     );
   }
 
   return (
-    <div class={styles.fieldsPanel}>
+    <div className={styles.fieldsPanel}>
       <input
         type="text"
-        class={styles.searchInput}
+        className={styles.searchInput}
         placeholder="Filter fields..."
         value={search}
         onInput={handleSearchChange}
@@ -170,27 +170,27 @@ export function FieldsPanel({
 
       {/* Selected Fields */}
       <div>
-        <div class={styles.sectionHeader}>
+        <div className={styles.sectionHeader}>
           Selected Fields ({filteredSelected.length})
         </div>
         {filteredSelected.length > 0 ? (
           filteredSelected.map((name) => renderFieldRow(name))
         ) : (
-          <div class={styles.emptyFields}>No selected fields</div>
+          <div className={styles.emptyFields}>No selected fields</div>
         )}
       </div>
 
-      <div class={styles.divider} />
+      <div className={styles.divider} />
 
       {/* Available Fields */}
       <div>
-        <div class={styles.sectionHeader}>
+        <div className={styles.sectionHeader}>
           Available Fields ({filteredAvailable.length})
         </div>
         {filteredAvailable.length > 0 ? (
           filteredAvailable.map((f) => renderFieldRow(f.name))
         ) : (
-          <div class={styles.emptyFields}>No available fields</div>
+          <div className={styles.emptyFields}>No available fields</div>
         )}
       </div>
 

@@ -1,4 +1,4 @@
-import { useState } from "preact/hooks";
+import { useState } from "react";
 import { PipelineFlow } from "./PipelineFlow";
 import type { ExplainResult, QueryStats } from "../api/client";
 import type { DetailedStats } from "../api/client";
@@ -33,13 +33,13 @@ export function ExplainInspector({ explain, stats }: ExplainInspectorProps) {
   ];
 
   return (
-    <div class={styles.inspector}>
-      <div class={styles.tabBar}>
+    <div className={styles.inspector}>
+      <div className={styles.tabBar}>
         {tabs.map((tab) => (
           <button
             key={tab.id}
             type="button"
-            class={`${styles.tab}${activeTab === tab.id ? ` ${styles.tabActive}` : ""}`}
+            className={`${styles.tab}${activeTab === tab.id ? ` ${styles.tabActive}` : ""}`}
             onClick={() => setActiveTab(tab.id)}
           >
             {tab.label}
@@ -47,7 +47,7 @@ export function ExplainInspector({ explain, stats }: ExplainInspectorProps) {
         ))}
       </div>
 
-      <div class={styles.tabContent}>
+      <div className={styles.tabContent}>
         {activeTab === "pipeline" && (
           <PipelineFlow
             stages={parsed.pipeline}
@@ -75,19 +75,19 @@ function OptimizerRulesTab({
   rules?: { name: string; description?: string; count: number }[];
 }) {
   if (!rules || rules.length === 0) {
-    return <div class={styles.emptyState}>No optimizer rules applied</div>;
+    return <div className={styles.emptyState}>No optimizer rules applied</div>;
   }
 
   return (
     <div>
       {rules.map((rule) => (
-        <div key={rule.name} class={styles.ruleItem}>
-          <span class={styles.ruleName}>{formatRuleName(rule.name)}</span>
+        <div key={rule.name} className={styles.ruleItem}>
+          <span className={styles.ruleName}>{formatRuleName(rule.name)}</span>
           {rule.description && (
-            <span class={styles.ruleDesc}>{rule.description}</span>
+            <span className={styles.ruleDesc}>{rule.description}</span>
           )}
           {rule.count > 1 && (
-            <span class={styles.ruleCount}>x{rule.count}</span>
+            <span className={styles.ruleCount}>x{rule.count}</span>
           )}
         </div>
       ))}
@@ -151,9 +151,9 @@ function ScanPlanTab({
   return (
     <div>
       {rows.map((row) => (
-        <div key={row.label} class={styles.scanRow}>
-          <span class={styles.scanLabel}>{row.label}</span>
-          <span class={styles.scanValue}>{row.value}</span>
+        <div key={row.label} className={styles.scanRow}>
+          <span className={styles.scanLabel}>{row.label}</span>
+          <span className={styles.scanValue}>{row.value}</span>
         </div>
       ))}
     </div>
@@ -180,7 +180,7 @@ function TimingTab({
     entries.push({ label: "Pipeline", ms: ds.pipeline_ms });
 
   if (entries.length === 0) {
-    return <div class={styles.emptyState}>Timing data not available</div>;
+    return <div className={styles.emptyState}>Timing data not available</div>;
   }
 
   const maxMs = Math.max(...entries.map((e) => e.ms), 1);
@@ -190,13 +190,13 @@ function TimingTab({
       {entries.map((entry) => {
         const widthPercent = Math.max((entry.ms / maxMs) * 100, 2);
         return (
-          <div key={entry.label} class={styles.timingRow}>
-            <span class={styles.timingLabel}>{entry.label}</span>
+          <div key={entry.label} className={styles.timingRow}>
+            <span className={styles.timingLabel}>{entry.label}</span>
             <div
-              class={styles.timingBar}
+              className={styles.timingBar}
               style={{ width: `${widthPercent}%` }}
             />
-            <span class={styles.timingValue}>{formatMs(entry.ms)}</span>
+            <span className={styles.timingValue}>{formatMs(entry.ms)}</span>
           </div>
         );
       })}

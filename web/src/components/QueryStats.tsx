@@ -1,4 +1,4 @@
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect } from "react";
 import type {
   QueryStats as QueryStatsType,
   DetailedStats,
@@ -139,10 +139,10 @@ export function QueryStatsBar({
     // Show error/warning inline even in tail mode
     if (error) {
       return (
-        <div class={styles.bar} role="alert">
-          <span class={styles.tailDot} aria-hidden="true" />
-          <span class={styles.tailLabel}>Live Tail</span>
-          <span class={styles.errorMsg}>{error}</span>
+        <div className={styles.bar} role="alert">
+          <span className={styles.tailDot} aria-hidden="true" />
+          <span className={styles.tailLabel}>Live Tail</span>
+          <span className={styles.errorMsg}>{error}</span>
         </div>
       );
     }
@@ -150,10 +150,10 @@ export function QueryStatsBar({
     // Reconnecting state: amber dot and "Reconnecting..." label
     if (tailReconnecting) {
       return (
-        <div class={styles.bar} role="status" aria-live="polite">
-          <span class={styles.reconnectingDot} aria-hidden="true" />
-          <span class={styles.reconnectingLabel}>Reconnecting...</span>
-          <span class={styles.tailSep} aria-hidden="true">
+        <div className={styles.bar} role="status" aria-live="polite">
+          <span className={styles.reconnectingDot} aria-hidden="true" />
+          <span className={styles.reconnectingLabel}>Reconnecting...</span>
+          <span className={styles.tailSep} aria-hidden="true">
             &mdash;
           </span>
           <span>
@@ -168,10 +168,10 @@ export function QueryStatsBar({
       : `Catching up\u2026 ${formatCount(count)} ${count === 1 ? "event" : "events"}`;
 
     return (
-      <div class={styles.bar} role="status" aria-live="polite">
-        <span class={styles.tailDot} aria-hidden="true" />
-        <span class={styles.tailLabel}>Live Tail</span>
-        <span class={styles.tailSep} aria-hidden="true">
+      <div className={styles.bar} role="status" aria-live="polite">
+        <span className={styles.tailDot} aria-hidden="true" />
+        <span className={styles.tailLabel}>Live Tail</span>
+        <span className={styles.tailSep} aria-hidden="true">
           &mdash;
         </span>
         <span>{statusText}</span>
@@ -186,8 +186,8 @@ export function QueryStatsBar({
       streamingCount !== undefined && streamingCount > 0;
 
     return (
-      <div class={styles.bar} role="status" aria-live="polite">
-        <span class={styles.canceledIcon} aria-hidden="true">
+      <div className={styles.bar} role="status" aria-live="polite">
+        <span className={styles.canceledIcon} aria-hidden="true">
           &#9888;
         </span>
         {hasPartialResults
@@ -200,8 +200,8 @@ export function QueryStatsBar({
   /* --- Streaming state (NDJSON search in progress) --- */
   if (streaming) {
     return (
-      <div class={styles.bar} role="status" aria-live="polite">
-        <span class={styles.streamingDot} aria-hidden="true" />
+      <div className={styles.bar} role="status" aria-live="polite">
+        <span className={styles.streamingDot} aria-hidden="true" />
         {`${formatCount(streamingCount ?? 0)} results (streaming...) \u2014 ${formatElapsed(elapsedMs ?? 0)}`}
       </div>
     );
@@ -210,16 +210,16 @@ export function QueryStatsBar({
   /* --- Progress state (aggregation with progress bar) --- */
   if (progress) {
     return (
-      <div class={styles.bar} role="status" aria-live="polite">
-        <div class={styles.progressTrack}>
+      <div className={styles.bar} role="status" aria-live="polite">
+        <div className={styles.progressTrack}>
           <div
-            class={styles.progressFill}
+            className={styles.progressFill}
             style={{ width: `${progress.percent}%` }}
           />
         </div>
         {`${formatCount(progress.scanned)}/${formatCount(progress.total)} segments (${Math.round(progress.percent)}%) \u2014 ${formatElapsed(elapsedMs ?? progress.elapsedMs)}`}
         {isPreview && (
-          <span class={styles.previewHint}>Showing partial results\u2026</span>
+          <span className={styles.previewHint}>Showing partial results\u2026</span>
         )}
       </div>
     );
@@ -228,8 +228,8 @@ export function QueryStatsBar({
   /* --- Standard query mode --- */
   if (loading) {
     return (
-      <div class={styles.bar} role="status" aria-live="polite">
-        <span class={styles.spinner} aria-hidden="true" />
+      <div className={styles.bar} role="status" aria-live="polite">
+        <span className={styles.spinner} aria-hidden="true" />
         Running query...
       </div>
     );
@@ -237,17 +237,17 @@ export function QueryStatsBar({
 
   if (error) {
     return (
-      <div class={styles.bar} role="alert">
-        <span class={styles.errorIcon} aria-hidden="true">
+      <div className={styles.bar} role="alert">
+        <span className={styles.errorIcon} aria-hidden="true">
           &#9888;
         </span>
-        <span class={styles.errorMsg}>{error}</span>
+        <span className={styles.errorMsg}>{error}</span>
       </div>
     );
   }
 
   if (!stats) {
-    return <div class={styles.bar}>Ready</div>;
+    return <div className={styles.bar}>Ready</div>;
   }
 
   // --- Completed query with compact/expanded stats ---
@@ -269,18 +269,18 @@ export function QueryStatsBar({
 
   return (
     <div
-      class={hasDetail ? styles.barColumn : styles.bar}
+      className={hasDetail ? styles.barColumn : styles.bar}
       role="status"
       aria-live="polite"
     >
-      <div class={styles.compactLine}>
-        <span class={styles.success} aria-hidden="true">
+      <div className={styles.compactLine}>
+        <span className={styles.success} aria-hidden="true">
           &#10003;
         </span>
         <span>{compactText}</span>
         {acceleratedBy && (
-          <span class={styles.mvBadge}>
-            <span class={styles.mvIcon} aria-hidden="true">
+          <span className={styles.mvBadge}>
+            <span className={styles.mvIcon} aria-hidden="true">
               &#9889;
             </span>
             MV: {acceleratedBy}
@@ -290,7 +290,7 @@ export function QueryStatsBar({
         {hasDetail && (
           <button
             type="button"
-            class={styles.expandToggle}
+            className={styles.expandToggle}
             onClick={() => setExpanded(!expanded)}
             aria-label={expanded ? "Collapse details" : "Expand details"}
             aria-expanded={expanded}
@@ -301,7 +301,7 @@ export function QueryStatsBar({
         {explainAvailable && onExplainToggle && (
           <button
             type="button"
-            class={styles.explainBtn}
+            className={styles.explainBtn}
             onClick={onExplainToggle}
           >
             Explain
@@ -309,34 +309,34 @@ export function QueryStatsBar({
         )}
       </div>
       {expanded && ds && (
-        <div class={styles.expandedRow}>
+        <div className={styles.expandedRow}>
           {ds.scan_ms != null && (
-            <span class={styles.latencyDetail}>
+            <span className={styles.latencyDetail}>
               Scan: {formatMs(ds.scan_ms)}
             </span>
           )}
           {ds.pipeline_ms != null && (
-            <span class={styles.latencyDetail}>
+            <span className={styles.latencyDetail}>
               Pipeline: {formatMs(ds.pipeline_ms)}
             </span>
           )}
           {ds.parse_ms != null && (
-            <span class={styles.latencyDetail}>
+            <span className={styles.latencyDetail}>
               Parse: {formatMs(ds.parse_ms)}
             </span>
           )}
           {ds.optimize_ms != null && (
-            <span class={styles.latencyDetail}>
+            <span className={styles.latencyDetail}>
               Optimize: {formatMs(ds.optimize_ms)}
             </span>
           )}
           {badges.map((b) => (
-            <span key={b} class={styles.badge}>
+            <span key={b} className={styles.badge}>
               {b}
             </span>
           ))}
           {ds.processed_bytes != null && ds.processed_bytes > 0 && (
-            <span class={styles.latencyDetail}>
+            <span className={styles.latencyDetail}>
               {formatBytes(ds.processed_bytes)} processed
             </span>
           )}

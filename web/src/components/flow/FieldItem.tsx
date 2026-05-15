@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "preact/hooks";
+import React, { useState, useCallback, useRef } from "react";
 import { FieldCommandMenu } from "./FieldCommandMenu";
 import styles from "./flow.module.css";
 
@@ -51,7 +51,7 @@ export function FieldItem({
     }
   }, [onInsertCommand, name]);
 
-  const handleMoreClick = useCallback((e: MouseEvent) => {
+  const handleMoreClick = useCallback((e: React.MouseEvent) => {
     e.stopPropagation();
     setMenuOpen((prev) => !prev);
   }, []);
@@ -63,21 +63,21 @@ export function FieldItem({
   const abbrev = typeAbbrev(type);
 
   return (
-    <div class={`${styles.fieldItem} ${isAdded ? styles.fieldItemAdded : ""}`}>
-      <div class={styles.fieldItemRow}>
+    <div className={`${styles.fieldItem} ${isAdded ? styles.fieldItemAdded : ""}`}>
+      <div className={styles.fieldItemRow}>
         <button
           type="button"
-          class={styles.fieldItemName}
+          className={styles.fieldItemName}
           onClick={handleNameClick}
           title={`Filter: ${name}!=""`}
         >
           {name}
         </button>
-        {abbrev && <span class={styles.fieldTypeLabel}>{abbrev}</span>}
+        {abbrev && <span className={styles.fieldTypeLabel}>{abbrev}</span>}
         <button
           ref={moreBtnRef}
           type="button"
-          class={styles.fieldMoreBtn}
+          className={styles.fieldMoreBtn}
           onClick={handleMoreClick}
           aria-label={`Commands for ${name}`}
           title="Insert command"

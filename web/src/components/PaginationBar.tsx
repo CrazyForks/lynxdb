@@ -1,4 +1,4 @@
-import { useMemo } from "preact/hooks";
+import { useMemo } from "react";
 import styles from "./PaginationBar.module.css";
 
 interface PaginationBarProps {
@@ -62,15 +62,15 @@ export function PaginationBar({
   );
 
   return (
-    <div class={styles.bar}>
-      <div class={styles.left}>
-        <span class={styles.totalCount}>{fmtNum(total)} results</span>
+    <div className={styles.bar}>
+      <div className={styles.left}>
+        <span className={styles.totalCount}>{fmtNum(total)} results</span>
       </div>
 
-      <div class={styles.center}>
+      <div className={styles.center}>
         <button
           type="button"
-          class={styles.navBtn}
+          className={styles.navBtn}
           disabled={page <= 1}
           onClick={() => onPageChange(page - 1)}
           aria-label="Previous page"
@@ -80,14 +80,14 @@ export function PaginationBar({
 
         {pageNumbers.map((item, idx) =>
           item === "..." ? (
-            <span key={`ellipsis-${idx}`} class={styles.ellipsis}>
+            <span key={`ellipsis-${idx}`} className={styles.ellipsis}>
               ...
             </span>
           ) : (
             <button
               key={item}
               type="button"
-              class={`${styles.pageBtn} ${item === page ? styles.pageBtnActive : ""}`}
+              className={`${styles.pageBtn} ${item === page ? styles.pageBtnActive : ""}`}
               onClick={() => onPageChange(item)}
               aria-label={`Page ${item}`}
               aria-current={item === page ? "page" : undefined}
@@ -99,7 +99,7 @@ export function PaginationBar({
 
         <button
           type="button"
-          class={styles.navBtn}
+          className={styles.navBtn}
           disabled={page >= totalPages}
           onClick={() => onPageChange(page + 1)}
           aria-label="Next page"
@@ -108,9 +108,9 @@ export function PaginationBar({
         </button>
       </div>
 
-      <div class={styles.right}>
+      <div className={styles.right}>
         <select
-          class={styles.sizeSelect}
+          className={styles.sizeSelect}
           value={pageSize}
           onChange={(e) =>
             onPageSizeChange(Number((e.target as HTMLSelectElement).value))

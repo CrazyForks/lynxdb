@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from "preact/hooks";
+import { useEffect, useRef, useCallback } from "react";
 import styles from "./flow.module.css";
 
 interface FieldCommandMenuProps {
@@ -96,12 +96,12 @@ export function FieldCommandMenu({
   );
 
   return (
-    <div ref={menuRef} class={styles.commandMenu} style={style}>
+    <div ref={menuRef} className={styles.commandMenu} style={style}>
       {commands.map((cmd) => (
         <button
           key={cmd.template}
           type="button"
-          class={styles.commandMenuItem}
+          className={styles.commandMenuItem}
           onClick={() => handleItemClick(cmd.template)}
         >
           {cmd.label}

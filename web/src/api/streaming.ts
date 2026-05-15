@@ -9,7 +9,7 @@
  */
 
 import type { QueryResult, QueryStats } from "./client";
-import { authHeaders, handleAuthError, token } from "./auth";
+import { authHeaders, handleAuthError, useAuthStore } from "./auth";
 
 // Types
 
@@ -238,8 +238,9 @@ export function subscribeJobProgress(
   onCanceled: () => void,
 ): () => void {
   const params = new URLSearchParams();
-  if (token.value) {
-    params.set("_token", token.value);
+  const tokenValue = useAuthStore.getState().token;
+  if (tokenValue) {
+    params.set("_token", tokenValue);
   }
 
   const qs = params.toString();

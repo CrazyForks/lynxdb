@@ -1,4 +1,4 @@
-import { useState, useCallback } from "preact/hooks";
+import { useState, useCallback } from "react";
 import type { IndexInfo, ViewSummary } from "../../api/client";
 import styles from "./flow.module.css";
 
@@ -23,61 +23,61 @@ export function SourcesPanel({
 
   if (!hasContent) {
     return (
-      <div class={styles.sourcesPanel}>
-        <div class={styles.sectionHeader}>
-          <span class={styles.sectionTitle}>Sources</span>
+      <div className={styles.sourcesPanel}>
+        <div className={styles.sectionHeader}>
+          <span className={styles.sectionTitle}>Sources</span>
         </div>
-        <div class={styles.sourcesEmpty}>No sources available</div>
+        <div className={styles.sourcesEmpty}>No sources available</div>
       </div>
     );
   }
 
   return (
-    <div class={styles.sourcesPanel}>
+    <div className={styles.sourcesPanel}>
       <button
         type="button"
-        class={styles.sectionHeader}
+        className={styles.sectionHeader}
         onClick={handleToggle}
         aria-expanded={expanded}
       >
         <span
-          class={`${styles.sectionChevron} ${expanded ? styles.sectionChevronExpanded : ""}`}
+          className={`${styles.sectionChevron} ${expanded ? styles.sectionChevronExpanded : ""}`}
           aria-hidden="true"
         >
           &#9656;
         </span>
-        <span class={styles.sectionTitle}>Sources</span>
-        <span class={styles.sectionCount}>{indexes.length + views.length}</span>
+        <span className={styles.sectionTitle}>Sources</span>
+        <span className={styles.sectionCount}>{indexes.length + views.length}</span>
       </button>
 
       {expanded && (
-        <div class={styles.sourceList}>
+        <div className={styles.sourceList}>
           {indexes.map((idx) => (
             <button
               key={idx.name}
               type="button"
-              class={styles.sourceItem}
+              className={styles.sourceItem}
               onClick={() => onSelectSource?.(idx.name)}
               title={`Query index: ${idx.name}`}
             >
-              <span class={styles.sourceIcon} aria-hidden="true">
+              <span className={styles.sourceIcon} aria-hidden="true">
                 &#9632;
               </span>
-              <span class={styles.sourceName}>{idx.name}</span>
+              <span className={styles.sourceName}>{idx.name}</span>
             </button>
           ))}
           {views.map((view) => (
             <button
               key={view.name}
               type="button"
-              class={styles.sourceItem}
+              className={styles.sourceItem}
               onClick={() => onSelectSource?.(view.name)}
               title={`Query view: ${view.name} (${view.status})`}
             >
-              <span class={styles.sourceIconView} aria-hidden="true">
+              <span className={styles.sourceIconView} aria-hidden="true">
                 &#9670;
               </span>
-              <span class={styles.sourceName}>{view.name}</span>
+              <span className={styles.sourceName}>{view.name}</span>
             </button>
           ))}
         </div>

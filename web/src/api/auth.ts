@@ -1,7 +1,6 @@
 // Re-export from canonical location (stores/auth.ts)
 export {
-  token,
-  authRequired,
+  useAuthStore,
   setToken,
   clearToken,
   authHeaders,

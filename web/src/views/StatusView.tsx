@@ -1,5 +1,4 @@
-import { useEffect, useCallback } from "preact/hooks";
-import { signal } from "@preact/signals";
+import { useEffect, useCallback, useState, useRef } from "react";
 import { fetchStatus } from "../api/client";
 import { formatUptime, formatBytes, formatCount } from "../utils/format";
 import styles from "./StatusView.module.css";
@@ -7,13 +6,6 @@ import styles from "./StatusView.module.css";
 interface Props {
   path?: string;
 }
-
-// State
-
-const status = signal<Record<string, unknown> | null>(null);
-const loading = signal(true);
-const error = signal<string | null>(null);
-const lastUpdatedAt = signal<Date | null>(null);
 
 // Helpers
 
@@ -61,54 +53,64 @@ function formatLastUpdated(date: Date | null): string {
 // Component
 
 export function StatusView(_props: Props) {
+  const [status, setStatus] = useState<Record<string, unknown> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
+
+  // Use ref to keep loadStatus stable for the interval
+  const loadStatusRef = useRef<(() => Promise<void>) | undefined>(undefined);
+
   const loadStatus = useCallback(async () => {
     try {
       const data = await fetchStatus();
-      status.value = data;
-      error.value = null;
-      lastUpdatedAt.value = new Date();
+      setStatus(data);
+      setError(null);
+      setLastUpdatedAt(new Date());
     } catch (err: unknown) {
       const message =
         err instanceof Error ? err.message : "Failed to fetch status";
-      error.value = message;
+      setError(message);
     } finally {
-      loading.value = false;
+      setLoading(false);
     }
   }, []);
 
+  loadStatusRef.current = loadStatus;
+
   useEffect(() => {
     // Initial fetch
-    loading.value = true;
+    setLoading(true);
     loadStatus();
 
     // Auto-refresh every 5 seconds
-    const interval = setInterval(loadStatus, 5000);
+    const interval = setInterval(() => loadStatusRef.current?.(), 5000);
     return () => clearInterval(interval);
   }, [loadStatus]);
 
   // Loading state (only on first load)
-  if (loading.value && !status.value) {
+  if (loading && !status) {
     return (
-      <div class={styles.loadingState} role="status" aria-live="polite">
+      <div className={styles.loadingState} role="status" aria-live="polite">
         Loading status...
       </div>
     );
   }
 
   // Error state (only if we never got data)
-  if (error.value && !status.value) {
+  if (error && !status) {
     return (
-      <div class={styles.errorState} role="alert">
+      <div className={styles.errorState} role="alert">
         <div>Unable to connect to server</div>
-        <div class={styles.errorMessage}>{error.value}</div>
-        <button type="button" class={styles.retryBtn} onClick={loadStatus}>
+        <div className={styles.errorMessage}>{error}</div>
+        <button type="button" className={styles.retryBtn} onClick={loadStatus}>
           Retry
         </button>
       </div>
     );
   }
 
-  const data = status.value;
+  const data = status;
   const storageData = nested(data, "storage");
   const eventsData = nested(data, "events");
   const queriesData = nested(data, "queries");
@@ -129,43 +131,43 @@ export function StatusView(_props: Props) {
   const tailDropped = safeNumber(tailData.total_dropped_events);
 
   return (
-    <div class={styles.page}>
-      <div class={styles.pageHeader}>
-        <h1 class={styles.pageTitle}>Server Status</h1>
-        <span class={styles.lastUpdated} aria-live="off">
-          {formatLastUpdated(lastUpdatedAt.value)}
+    <div className={styles.page}>
+      <div className={styles.pageHeader}>
+        <h1 className={styles.pageTitle}>Server Status</h1>
+        <span className={styles.lastUpdated} aria-live="off">
+          {formatLastUpdated(lastUpdatedAt)}
         </span>
       </div>
 
-      <div class={styles.grid}>
+      <div className={styles.grid}>
         {/* Server card */}
-        <div class={styles.card}>
-          <div class={styles.cardTitle}>Server</div>
-          <div class={styles.healthRow}>
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Server</div>
+          <div className={styles.healthRow}>
             <span
-              class={`${styles.healthDot} ${healthClass(health)}`}
+              className={`${styles.healthDot} ${healthClass(health)}`}
               aria-hidden="true"
             />
-            <span class={styles.healthLabel}>{health}</span>
+            <span className={styles.healthLabel}>{health}</span>
           </div>
-          <div class={styles.cardSubtext}>
+          <div className={styles.cardSubtext}>
             v{version} &middot; up {formatUptime(uptimeSeconds)}
           </div>
         </div>
 
         {/* Events card */}
-        <div class={styles.card}>
-          <div class={styles.cardTitle}>Events</div>
-          <div class={styles.cardValue}>{formatCount(totalEvents)}</div>
-          <div class={styles.cardSubtext}>{formatCount(todayEvents)} today</div>
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Events</div>
+          <div className={styles.cardValue}>{formatCount(totalEvents)}</div>
+          <div className={styles.cardSubtext}>{formatCount(todayEvents)} today</div>
         </div>
 
         {/* Storage card */}
-        <div class={styles.card}>
-          <div class={styles.cardTitle}>Storage</div>
-          <div class={styles.cardValue}>{formatBytes(usedBytes)}</div>
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Storage</div>
+          <div className={styles.cardValue}>{formatBytes(usedBytes)}</div>
           {segmentCount > 0 && (
-            <div class={styles.cardSubtext}>
+            <div className={styles.cardSubtext}>
               {formatCount(segmentCount)}{" "}
               {segmentCount === 1 ? "segment" : "segments"}
             </div>
@@ -173,26 +175,26 @@ export function StatusView(_props: Props) {
         </div>
 
         {/* Queries card */}
-        <div class={styles.card}>
-          <div class={styles.cardTitle}>Queries</div>
-          <div class={styles.cardValue}>{activeQueries}</div>
-          <div class={styles.cardSubtext}>active</div>
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Queries</div>
+          <div className={styles.cardValue}>{activeQueries}</div>
+          <div className={styles.cardSubtext}>active</div>
         </div>
 
         {/* Views card */}
-        <div class={styles.card}>
-          <div class={styles.cardTitle}>Materialized Views</div>
-          <div class={styles.cardValue}>{totalViews}</div>
-          <div class={styles.cardSubtext}>{activeViews} active</div>
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Materialized Views</div>
+          <div className={styles.cardValue}>{totalViews}</div>
+          <div className={styles.cardSubtext}>{activeViews} active</div>
         </div>
 
         {/* Tail card */}
-        <div class={styles.card}>
-          <div class={styles.cardTitle}>Live Tail</div>
-          <div class={styles.cardValue}>{tailSessions}</div>
-          <div class={styles.cardSubtext}>
+        <div className={styles.card}>
+          <div className={styles.cardTitle}>Live Tail</div>
+          <div className={styles.cardValue}>{tailSessions}</div>
+          <div className={styles.cardSubtext}>
             {tailSessions === 1 ? "session" : "sessions"}
-            {tailDropped > 0 && ` \u00b7 ${formatCount(tailDropped)} dropped`}
+            {tailDropped > 0 && ` · ${formatCount(tailDropped)} dropped`}
           </div>
         </div>
       </div>

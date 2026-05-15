@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "preact/hooks";
+import { useRef, useEffect, useCallback, useState } from "react";
 import uPlot from "uplot";
 import "uplot/dist/uPlot.min.css";
 import type { HistogramBucket, HistogramBucketGrouped } from "../api/client";
@@ -412,12 +412,12 @@ export function Timeline({
     : [];
 
   return (
-    <div class={styles.wrapper}>
-      <div class={styles.container} ref={containerRef}>
-        {!hasBuckets && <div class={styles.empty}>No histogram data</div>}
+    <div className={styles.wrapper}>
+      <div className={styles.container} ref={containerRef}>
+        {!hasBuckets && <div className={styles.empty}>No histogram data</div>}
         <div
           ref={tooltipRef}
-          class={`${styles.tooltip} ${tooltipVisible ? styles.tooltipVisible : ""}`}
+          className={`${styles.tooltip} ${tooltipVisible ? styles.tooltipVisible : ""}`}
           style={{
             left: `${tooltipPos.x}px`,
             top: `${tooltipPos.y}px`,
@@ -426,7 +426,7 @@ export function Timeline({
           {tooltipContent.map((line, i) => (
             <div
               key={i}
-              class={i === 0 ? styles.tooltipTime : styles.tooltipCount}
+              className={i === 0 ? styles.tooltipTime : styles.tooltipCount}
             >
               {line}
             </div>
@@ -435,7 +435,7 @@ export function Timeline({
         {showReset && (
           <button
             type="button"
-            class={styles.resetBtn}
+            className={styles.resetBtn}
             onClick={onReset}
             aria-label="Reset time range"
             title="Reset time range"
@@ -445,11 +445,11 @@ export function Timeline({
         )}
       </div>
       {isGrouped && legendLevels.length > 0 && (
-        <div class={styles.legend}>
+        <div className={styles.legend}>
           {legendLevels.map((level) => (
-            <span key={level} class={styles.legendItem}>
+            <span key={level} className={styles.legendItem}>
               <span
-                class={styles.legendDot}
+                className={styles.legendDot}
                 style={{ background: levelColor(level) }}
               />
               {level}

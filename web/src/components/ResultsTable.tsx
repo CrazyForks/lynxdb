@@ -1,12 +1,12 @@
-import {
+import React, {
   useRef,
   useState,
   useCallback,
   useLayoutEffect,
   useEffect,
   useMemo,
-} from "preact/hooks";
-import { ChevronRight, ChevronDown } from "lucide-preact";
+} from "react";
+import { ChevronRight, ChevronDown } from "lucide-react";
 import type { QueryResult, EventsResult, AggregateResult } from "../api/client";
 import { updateSortInQuery, parseSortFromQuery } from "../utils/sortQuery";
 import { EventDetailInline } from "./EventDetail";
@@ -231,11 +231,11 @@ export function ResultsTable({
   // ---- Column resize handlers ----
 
   const handleResizeStart = useCallback(
-    (e: PointerEvent, colName: string) => {
+    (e: React.PointerEvent<HTMLDivElement>, colName: string) => {
       e.preventDefault();
       e.stopPropagation();
 
-      const target = e.currentTarget as HTMLElement;
+      const target = e.currentTarget;
       target.setPointerCapture(e.pointerId);
 
       const startX = e.clientX;
@@ -264,7 +264,7 @@ export function ResultsTable({
     [columnWidths],
   );
 
-  const handleResizeDblClick = useCallback((e: MouseEvent, colName: string) => {
+  const handleResizeDblClick = useCallback((e: React.MouseEvent<HTMLDivElement>, colName: string) => {
     e.preventDefault();
     e.stopPropagation();
     // Remove stored width to reset to auto-fit (max-content)
@@ -305,11 +305,11 @@ export function ResultsTable({
   // ---- Early returns ----
 
   if (!result) {
-    return <div class={styles.empty}>No results</div>;
+    return <div className={styles.empty}>No results</div>;
   }
 
   if (rowCount === 0) {
-    return <div class={styles.empty}>Query returned no results</div>;
+    return <div className={styles.empty}>Query returned no results</div>;
   }
 
   // ---- Grid template ----
@@ -374,15 +374,15 @@ export function ResultsTable({
     visibleRows.push(
       <div
         key={i}
-        class={rowClasses}
+        className={rowClasses}
         style={rowStyle}
         role="row"
         aria-rowindex={i + 1}
         onClick={() => handleRowToggle(i)}
       >
         <div
-          class={`${styles.gutter} ${isExpanded ? styles.gutterExpanded : ""}`}
-          onClick={(e: MouseEvent) => {
+          className={`${styles.gutter} ${isExpanded ? styles.gutterExpanded : ""}`}
+          onClick={(e: React.MouseEvent) => {
             e.stopPropagation();
             handleRowToggle(i);
           }}
@@ -406,7 +406,7 @@ export function ResultsTable({
             .join(" ");
 
           return (
-            <div key={col} class={cellClasses} title={fullValue} role="cell">
+            <div key={col} className={cellClasses} title={fullValue} role="cell">
               {display}
             </div>
           );
@@ -420,7 +420,7 @@ export function ResultsTable({
       visibleRows.push(
         <div
           key={`accordion-${i}`}
-          class={styles.accordionRow}
+          className={styles.accordionRow}
           style={{
             transform: `translateY(${accordionY}px)`,
             height: accordionHeight,
@@ -435,15 +435,15 @@ export function ResultsTable({
   // ---- Render ----
 
   return (
-    <div class={styles.wrapper} role="table" aria-label="Query results">
+    <div className={styles.wrapper} role="table" aria-label="Query results">
       <div
-        class={styles.scrollContainer}
+        className={styles.scrollContainer}
         ref={scrollContainerRef}
         onScroll={handleScroll}
       >
         {/* Header row inside scroll container for sticky top:0 */}
-        <div class={styles.headerRow} style={gridStyle} role="row">
-          <div class={styles.gutterHeader} />
+        <div className={styles.headerRow} style={gridStyle} role="row">
+          <div className={styles.gutterHeader} />
           {columns.map((col) => {
             const isSorted = currentSort?.field === col;
             const cellClasses = [
@@ -456,20 +456,20 @@ export function ResultsTable({
             return (
               <div
                 key={col}
-                class={cellClasses}
+                className={cellClasses}
                 role="columnheader"
                 onClick={() => handleHeaderClick(col)}
               >
                 <span>{col}</span>
                 {isSorted && (
-                  <span class={styles.sortIndicator}>
+                  <span className={styles.sortIndicator}>
                     {currentSort!.direction === "asc" ? "\u25B2" : "\u25BC"}
                   </span>
                 )}
                 <div
-                  class={`${styles.resizeHandle} ${resizingCol === col ? styles.resizeActive : ""}`}
-                  onPointerDown={(e: PointerEvent) => handleResizeStart(e, col)}
-                  onDblClick={(e: MouseEvent) => handleResizeDblClick(e, col)}
+                  className={`${styles.resizeHandle} ${resizingCol === col ? styles.resizeActive : ""}`}
+                  onPointerDown={(e: React.PointerEvent<HTMLDivElement>) => handleResizeStart(e, col)}
+                  onDoubleClick={(e: React.MouseEvent<HTMLDivElement>) => handleResizeDblClick(e, col)}
                 />
               </div>
             );
@@ -477,7 +477,7 @@ export function ResultsTable({
         </div>
 
         {/* Scroll content area */}
-        <div class={styles.scrollContent} style={{ height: totalHeight }}>
+        <div className={styles.scrollContent} style={{ height: totalHeight }}>
           {visibleRows}
         </div>
       </div>

@@ -1,7 +1,6 @@
-import { useRef, useEffect, useState } from "preact/hooks";
-import { batch } from "@preact/signals";
-import { route } from "preact-router";
-import type { ComponentType } from "preact";
+import { useRef, useEffect, useState } from "react";
+import { useNavigate } from "react-router";
+import type { ComponentType } from "react";
 import {
   Search,
   BookmarkCheck,
@@ -13,17 +12,17 @@ import {
   PanelLeftClose,
   Keyboard,
   Clock,
-} from "lucide-preact";
-import { toggleTheme, theme } from "../stores/ui";
-import { queryHistory } from "../stores/queryHistory";
+} from "lucide-react";
+import { useThemeStore, toggleTheme } from "../stores/ui";
+import { useQueryHistoryStore } from "../stores/queryHistory";
 import {
   SHORTCUTS,
   formatShortcut,
-  paletteOpen,
-  helpOverlayOpen,
-  paletteQuery,
+  useOverlayStore,
+  setPaletteOpen,
+  setHelpOverlayOpen,
+  setPaletteQuery,
 } from "../utils/keyboard";
-import { uiPath } from "../utils/base";
 import type { ShortcutDef } from "../utils/keyboard";
 import styles from "./CommandPalette.module.css";
 
@@ -66,13 +65,18 @@ function filterItems(items: PaletteItem[], q: string): PaletteItem[] {
 }
 
 function truncate(text: string, max: number): string {
-  return text.length > max ? text.slice(0, max) + "\u2026" : text;
+  return text.length > max ? text.slice(0, max) + "…" : text;
 }
 
 export function CommandPalette() {
   const inputRef = useRef<HTMLInputElement>(null);
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState(0);
+  const navigate = useNavigate();
+
+  const paletteOpen = useOverlayStore((s) => s.paletteOpen);
+  const theme = useThemeStore((s) => s.theme);
+  const queryHistory = useQueryHistoryStore((s) => s.queryHistory);
 
   const navigationItems: PaletteItem[] = [
     {
@@ -81,21 +85,21 @@ export function CommandPalette() {
       section: "navigation",
       icon: Search,
       shortcut: SHORTCUTS.focusSearch,
-      action: () => route(uiPath("/")),
+      action: () => navigate("/"),
     },
     {
       id: "nav-queries",
       label: "Saved Queries",
       section: "navigation",
       icon: BookmarkCheck,
-      action: () => route(uiPath("/queries")),
+      action: () => navigate("/queries"),
     },
     {
       id: "nav-settings",
       label: "Settings",
       section: "navigation",
       icon: Settings,
-      action: () => route(uiPath("/settings")),
+      action: () => navigate("/settings"),
     },
   ];
 
@@ -106,7 +110,7 @@ export function CommandPalette() {
       section: "commands",
       icon: Play,
       shortcut: SHORTCUTS.runQuery,
-      action: () => route(uiPath("/")),
+      action: () => navigate("/"),
     },
     {
       id: "cmd-tail",
@@ -114,13 +118,13 @@ export function CommandPalette() {
       section: "commands",
       icon: Repeat,
       shortcut: SHORTCUTS.toggleTail,
-      action: () => route(uiPath("/")),
+      action: () => navigate("/"),
     },
     {
       id: "cmd-theme",
-      label: `Toggle theme (${theme.value === "light" ? "dark" : "light"})`,
+      label: `Toggle theme (${theme === "light" ? "dark" : "light"})`,
       section: "commands",
-      icon: theme.value === "light" ? Moon : Sun,
+      icon: theme === "light" ? Moon : Sun,
       action: () => toggleTheme(),
     },
     {
@@ -129,7 +133,7 @@ export function CommandPalette() {
       section: "commands",
       icon: PanelLeftClose,
       shortcut: SHORTCUTS.toggleSidebar,
-      action: () => route(uiPath("/")),
+      action: () => navigate("/"),
     },
     {
       id: "cmd-help",
@@ -138,24 +142,22 @@ export function CommandPalette() {
       icon: Keyboard,
       shortcut: SHORTCUTS.openHelp,
       action: () => {
-        batch(() => {
-          paletteOpen.value = false;
-          helpOverlayOpen.value = true;
-        });
+        setPaletteOpen(false);
+        setHelpOverlayOpen(true);
       },
     },
   ];
 
-  const recentItems: PaletteItem[] = queryHistory.value
+  const recentItems: PaletteItem[] = queryHistory
     .slice(0, 10)
-    .map((q, i) => ({
+    .map((q: string, i: number) => ({
       id: `recent-${i}`,
       label: truncate(q, 60),
       section: "recent" as const,
       icon: Clock,
       action: () => {
-        paletteQuery.value = q;
-        route(uiPath("/"));
+        setPaletteQuery(q);
+        navigate("/");
       },
     }));
 
@@ -164,7 +166,7 @@ export function CommandPalette() {
 
   // Reset state on open
   useEffect(() => {
-    if (paletteOpen.value) {
+    if (paletteOpen) {
       setSearch("");
       setSelected(0);
       // Auto-focus the input after rendering
@@ -172,7 +174,7 @@ export function CommandPalette() {
         inputRef.current?.focus();
       });
     }
-  }, [paletteOpen.value]);
+  }, [paletteOpen]);
 
   // Clamp selected index when filtered list changes
   useEffect(() => {
@@ -181,9 +183,9 @@ export function CommandPalette() {
     }
   }, [filtered.length, selected]);
 
-  if (!paletteOpen.value) return null;
+  if (!paletteOpen) return null;
 
-  const handleKeyDown = (e: KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelected((prev) => (prev + 1) % filtered.length);
@@ -194,16 +196,16 @@ export function CommandPalette() {
       e.preventDefault();
       if (filtered[selected]) {
         filtered[selected].action();
-        paletteOpen.value = false;
+        setPaletteOpen(false);
       }
     } else if (e.key === "Escape") {
       e.preventDefault();
-      paletteOpen.value = false;
+      setPaletteOpen(false);
     }
   };
 
   const handleBackdropClick = () => {
-    paletteOpen.value = false;
+    setPaletteOpen(false);
   };
 
   // Group filtered items by section (preserving section order)
@@ -217,25 +219,25 @@ export function CommandPalette() {
   let flatIndex = 0;
 
   return (
-    <div class={styles.backdrop} onClick={handleBackdropClick}>
+    <div className={styles.backdrop} onClick={handleBackdropClick}>
       <div
-        class={styles.palette}
-        onClick={(e: Event) => e.stopPropagation()}
+        className={styles.palette}
+        onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
         <input
           ref={inputRef}
           type="text"
-          class={styles.searchInput}
+          className={styles.searchInput}
           placeholder="Type a command..."
           value={search}
-          onInput={(e: Event) => {
+          onInput={(e) => {
             setSearch((e.target as HTMLInputElement).value);
             setSelected(0);
           }}
         />
-        <div class={styles.results}>
-          {filtered.length === 0 && <div class={styles.empty}>No matches</div>}
+        <div className={styles.results}>
+          {filtered.length === 0 && <div className={styles.empty}>No matches</div>}
           {grouped.map((group) => {
             const groupStartIndex = flatIndex;
             const groupItems = group.items.map((item, i) => {
@@ -243,17 +245,17 @@ export function CommandPalette() {
               return (
                 <div
                   key={item.id}
-                  class={`${styles.item}${itemIndex === selected ? ` ${styles.selected}` : ""}`}
+                  className={`${styles.item}${itemIndex === selected ? ` ${styles.selected}` : ""}`}
                   onClick={() => {
                     item.action();
-                    paletteOpen.value = false;
+                    setPaletteOpen(false);
                   }}
                   onMouseEnter={() => setSelected(itemIndex)}
                 >
                   <item.icon size={16} />
-                  <span class={styles.itemLabel}>{item.label}</span>
+                  <span className={styles.itemLabel}>{item.label}</span>
                   {item.shortcut && (
-                    <span class={styles.itemShortcut}>
+                    <span className={styles.itemShortcut}>
                       {formatShortcut(item.shortcut)}
                     </span>
                   )}
@@ -263,7 +265,7 @@ export function CommandPalette() {
             flatIndex += group.items.length;
             return (
               <div key={group.section}>
-                <div class={styles.sectionHeader}>{group.label}</div>
+                <div className={styles.sectionHeader}>{group.label}</div>
                 {groupItems}
               </div>
             );

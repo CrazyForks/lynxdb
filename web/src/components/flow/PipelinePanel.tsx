@@ -1,4 +1,4 @@
-import { useState, useEffect } from "preact/hooks";
+import { useState, useEffect } from "react";
 import type { PipelineStage } from "../../api/client";
 import { StageNode } from "./StageNode";
 import { FieldList } from "./FieldList";
@@ -29,15 +29,15 @@ export function PipelinePanel({
   const selected = stages[selectedIndex] ?? stages[stages.length - 1];
 
   return (
-    <div class={styles.pipelinePanel}>
+    <div className={styles.pipelinePanel}>
       {/* Hero: Fields for selected stage */}
-      <div class={styles.pipelineSectionHeader}>
-        <span class={styles.sectionTitle}>Fields</span>
+      <div className={styles.pipelineSectionHeader}>
+        <span className={styles.sectionTitle}>Fields</span>
         {selected.fields_unknown && (
-          <span class={styles.sectionCount}>+ dynamic</span>
+          <span className={styles.sectionCount}>+ dynamic</span>
         )}
       </div>
-      <div class={styles.fieldsHero}>
+      <div className={styles.fieldsHero}>
         <FieldList
           fields={selected.fields_out ?? []}
           fieldsAdded={selected.fields_added}
@@ -46,18 +46,18 @@ export function PipelinePanel({
         />
         {(!selected.fields_out || selected.fields_out.length === 0) &&
           !selected.fields_unknown && (
-            <div class={styles.stageNoFields}>No field info</div>
+            <div className={styles.stageNoFields}>No field info</div>
           )}
       </div>
 
       {/* Compact stage selector */}
-      <div class={styles.pipelineSectionHeader}>
-        <span class={styles.sectionTitle}>Pipeline</span>
-        <span class={styles.sectionCount}>
+      <div className={styles.pipelineSectionHeader}>
+        <span className={styles.sectionTitle}>Pipeline</span>
+        <span className={styles.sectionCount}>
           {stages.length} {stages.length === 1 ? "stage" : "stages"}
         </span>
       </div>
-      <div class={styles.pipelineTree}>
+      <div className={styles.pipelineTree}>
         {stages.map((stage, i) => (
           <StageNode
             key={i}

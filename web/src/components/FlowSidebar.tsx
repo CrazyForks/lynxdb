@@ -41,7 +41,7 @@ export function FlowSidebar({
     return (
       <button
         type="button"
-        class={styles.collapsedToggle}
+        className={styles.collapsedToggle}
         onClick={onToggle}
         aria-label="Show flow sidebar"
         title={`Show flow sidebar (${formatShortcut(SHORTCUTS.toggleSidebar)})`}
@@ -54,10 +54,10 @@ export function FlowSidebar({
   const pipeline = explainResult?.parsed?.pipeline ?? [];
 
   return (
-    <aside class={styles.sidebar} aria-label="Flow">
+    <aside className={styles.sidebar} aria-label="Flow">
       <button
         type="button"
-        class={styles.toggleBtn}
+        className={styles.toggleBtn}
         onClick={onToggle}
         aria-label="Hide flow sidebar"
         title={`Hide flow sidebar (${formatShortcut(SHORTCUTS.toggleSidebar)})`}
@@ -65,7 +65,7 @@ export function FlowSidebar({
         &#9666;
       </button>
 
-      <div class={styles.content}>
+      <div className={styles.content}>
         <SourcesPanel
           indexes={indexes}
           views={views}
@@ -81,12 +81,12 @@ export function FlowSidebar({
         )}
 
         {pipeline.length === 0 && (
-          <div class={styles.emptyPipeline}>
+          <div className={styles.emptyPipeline}>
             Run a query to see the pipeline
           </div>
         )}
 
-        <div class={styles.fieldsDivider} />
+        <div className={styles.fieldsDivider} />
 
         <FieldsPanel
           selectedFields={selectedFields ?? []}

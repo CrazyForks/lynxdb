@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "preact/hooks";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { fetchFieldValues } from "../api/client";
 import type { FieldValue } from "../api/client";
 import styles from "./FieldValuePopover.module.css";
@@ -114,42 +114,42 @@ export function FieldValuePopover({
   return (
     <div
       ref={popoverRef}
-      class={styles.popover}
+      className={styles.popover}
       style={{
         top: `${pos.top}px`,
         left: `${pos.left}px`,
       }}
     >
-      <div class={styles.popoverHeader}>
+      <div className={styles.popoverHeader}>
         {fieldName}
-        <div class={styles.popoverSubtitle}>Top 10 values</div>
+        <div className={styles.popoverSubtitle}>Top 10 values</div>
       </div>
 
-      {loading && <div class={styles.loadingState}>Loading...</div>}
+      {loading && <div className={styles.loadingState}>Loading...</div>}
 
-      {fetchError && <div class={styles.emptyState}>Failed to load values</div>}
+      {fetchError && <div className={styles.emptyState}>Failed to load values</div>}
 
       {!loading && !fetchError && values.length === 0 && (
-        <div class={styles.emptyState}>No values found</div>
+        <div className={styles.emptyState}>No values found</div>
       )}
 
       {!loading && !fetchError && values.length > 0 && (
-        <div class={styles.valuesList}>
+        <div className={styles.valuesList}>
           {values.map((v) => {
             const pct = maxCount > 0 ? (v.count / maxCount) * 100 : 0;
             return (
-              <div class={styles.valueRow} key={v.value}>
-                <span class={styles.valueName} title={v.value}>
+              <div className={styles.valueRow} key={v.value}>
+                <span className={styles.valueName} title={v.value}>
                   {v.value}
                 </span>
-                <div class={styles.valueBarContainer}>
-                  <div class={styles.valueBar} style={{ width: `${pct}%` }} />
+                <div className={styles.valueBarContainer}>
+                  <div className={styles.valueBar} style={{ width: `${pct}%` }} />
                 </div>
-                <span class={styles.valueCount}>{v.count}</span>
-                <div class={styles.filterBtns}>
+                <span className={styles.valueCount}>{v.count}</span>
+                <div className={styles.filterBtns}>
                   <button
                     type="button"
-                    class={styles.addBtn}
+                    className={styles.addBtn}
                     onClick={() => handleInclude(v.value)}
                     title={`Add filter: ${fieldName}="${v.value}"`}
                     aria-label={`Include ${v.value}`}
@@ -158,7 +158,7 @@ export function FieldValuePopover({
                   </button>
                   <button
                     type="button"
-                    class={styles.excludeBtn}
+                    className={styles.excludeBtn}
                     onClick={() => handleExclude(v.value)}
                     title={`Exclude: ${fieldName}!="${v.value}"`}
                     aria-label={`Exclude ${v.value}`}

@@ -1,6 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "preact/hooks";
-import { signal } from "@preact/signals";
-import type { Signal } from "@preact/signals";
+import { useRef, useEffect, useCallback, useState } from "react";
 import {
   PRESETS,
   getTimeRangeLabel,
@@ -10,15 +8,22 @@ import {
 import styles from "./TimeRangePicker.module.css";
 
 interface TimeRangePickerProps {
-  from: Signal<string>;
-  to: Signal<string | undefined>;
+  from: string;
+  to: string | undefined;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string | undefined) => void;
   onApply?: () => void;
 }
 
-const open = signal(false);
-
-export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
+export function TimeRangePicker({
+  from,
+  to,
+  onFromChange,
+  onToChange,
+  onApply,
+}: TimeRangePickerProps) {
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const [open, setOpen] = useState(false);
   const [fromInput, setFromInput] = useState("");
   const [toInput, setToInput] = useState("");
   const [quickSearch, setQuickSearch] = useState("");
@@ -26,13 +31,13 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
 
   // Sync inputs when dropdown opens
   useEffect(() => {
-    if (open.value) {
-      setFromInput(toNowExpr(from.value));
-      setToInput(toNowExpr(to.value));
+    if (open) {
+      setFromInput(toNowExpr(from));
+      setToInput(toNowExpr(to));
       setQuickSearch("");
       setValidationError(null);
     }
-  }, [open.value]);
+  }, [open, from, to]);
 
   // Apply absolute/relative inputs from left panel
   const handleApply = useCallback(() => {
@@ -48,7 +53,7 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
         setValidationError("Invalid From value. Use now-3h or ISO date.");
         return;
       }
-      from.value = d.toISOString();
+      onFromChange(d.toISOString());
     } else if (parsedFrom === undefined) {
       // "now" as from doesn't make sense, but allow it
       setValidationError(
@@ -56,7 +61,7 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
       );
       return;
     } else {
-      from.value = parsedFrom;
+      onFromChange(parsedFrom);
     }
 
     if (parsedTo === null) {
@@ -65,26 +70,26 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
         setValidationError("Invalid To value. Use now or now-30m or ISO date.");
         return;
       }
-      to.value = d.toISOString();
+      onToChange(d.toISOString());
     } else if (parsedTo === undefined) {
-      to.value = undefined;
+      onToChange(undefined);
     } else {
-      to.value = parsedTo;
+      onToChange(parsedTo);
     }
 
-    open.value = false;
+    setOpen(false);
     onApply?.();
-  }, [from, to, onApply, fromInput, toInput]);
+  }, [onFromChange, onToChange, onApply, fromInput, toInput]);
 
   // Click a quick-range preset
   const handlePreset = useCallback(
     (value: string) => {
-      from.value = value;
-      to.value = undefined;
-      open.value = false;
+      onFromChange(value);
+      onToChange(undefined);
+      setOpen(false);
       onApply?.();
     },
-    [from, to, onApply],
+    [onFromChange, onToChange, onApply],
   );
 
   // Close on outside click
@@ -94,7 +99,7 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
         wrapperRef.current &&
         !wrapperRef.current.contains(e.target as Node)
       ) {
-        open.value = false;
+        setOpen(false);
       }
     }
     document.addEventListener("pointerdown", onPointerDown, true);
@@ -105,13 +110,13 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
   // Close on Escape
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
-      if (e.key === "Escape" && open.value) {
-        open.value = false;
+      if (e.key === "Escape" && open) {
+        setOpen(false);
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [open]);
 
   // Filter presets by search
   const filteredPresets = quickSearch
@@ -122,51 +127,51 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
 
   // Determine which preset is active
   const activePreset =
-    to.value === undefined || to.value === "now"
-      ? (PRESETS.find((p) => p.value === from.value)?.value ?? null)
+    to === undefined || to === "now"
+      ? (PRESETS.find((p) => p.value === from)?.value ?? null)
       : null;
 
   return (
-    <div class={styles.wrapper} ref={wrapperRef}>
+    <div className={styles.wrapper} ref={wrapperRef}>
       <button
         type="button"
-        class={styles.trigger}
+        className={styles.trigger}
         onClick={() => {
-          open.value = !open.value;
+          setOpen(!open);
         }}
         aria-haspopup="dialog"
-        aria-expanded={open.value}
+        aria-expanded={open}
       >
         <svg
-          class={styles.triggerIcon}
+          className={styles.triggerIcon}
           viewBox="0 0 14 14"
           fill="none"
           stroke="currentColor"
-          stroke-width="1.5"
-          stroke-linecap="round"
-          stroke-linejoin="round"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
         >
           <circle cx="7" cy="7" r="5.5" />
           <path d="M7 4.5V7l2 1.5" />
         </svg>
-        {getTimeRangeLabel(from.value, to.value)}
+        {getTimeRangeLabel(from, to)}
       </button>
 
-      {open.value && (
+      {open && (
         <div
-          class={styles.dropdown}
+          className={styles.dropdown}
           role="dialog"
           aria-label="Time range picker"
         >
           {/* Left panel: absolute time range */}
-          <div class={styles.leftPanel}>
-            <div class={styles.panelTitle}>Absolute time range</div>
+          <div className={styles.leftPanel}>
+            <div className={styles.panelTitle}>Absolute time range</div>
 
-            <div class={styles.inputGroup}>
-              <label class={styles.inputLabel}>From</label>
+            <div className={styles.inputGroup}>
+              <label className={styles.inputLabel}>From</label>
               <input
                 type="text"
-                class={styles.textInput}
+                className={styles.textInput}
                 value={fromInput}
                 placeholder="now-1h"
                 onInput={(e) => {
@@ -182,11 +187,11 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
               />
             </div>
 
-            <div class={styles.inputGroup}>
-              <label class={styles.inputLabel}>To</label>
+            <div className={styles.inputGroup}>
+              <label className={styles.inputLabel}>To</label>
               <input
                 type="text"
-                class={styles.textInput}
+                className={styles.textInput}
                 value={toInput}
                 placeholder="now"
                 onInput={(e) => {
@@ -203,31 +208,31 @@ export function TimeRangePicker({ from, to, onApply }: TimeRangePickerProps) {
             </div>
 
             {validationError && (
-              <div class={styles.validationError}>{validationError}</div>
+              <div className={styles.validationError}>{validationError}</div>
             )}
 
-            <button type="button" class={styles.applyBtn} onClick={handleApply}>
+            <button type="button" className={styles.applyBtn} onClick={handleApply}>
               Apply time range
             </button>
           </div>
 
           {/* Right panel: quick ranges */}
-          <div class={styles.rightPanel}>
+          <div className={styles.rightPanel}>
             <input
               type="text"
-              class={styles.searchInput}
+              className={styles.searchInput}
               placeholder="Search quick ranges"
               value={quickSearch}
               onInput={(e) =>
                 setQuickSearch((e.target as HTMLInputElement).value)
               }
             />
-            <div class={styles.presetList}>
+            <div className={styles.presetList}>
               {filteredPresets.map((preset) => (
                 <button
                   key={preset.value}
                   type="button"
-                  class={`${styles.presetItem} ${activePreset === preset.value ? styles.presetItemActive : ""}`}
+                  className={`${styles.presetItem} ${activePreset === preset.value ? styles.presetItemActive : ""}`}
                   onClick={() => handlePreset(preset.value)}
                 >
                   {preset.label}

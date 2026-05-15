@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from "preact/hooks";
+import React, { useRef, useEffect, useCallback } from "react";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, keymap, placeholder, lineNumbers } from "@codemirror/view";
 import { defaultKeymap } from "@codemirror/commands";
@@ -234,9 +234,9 @@ export function QueryEditor({
   }, [value]);
 
   // Drag handle pointer event handlers
-  const handlePointerDown = useCallback((e: PointerEvent) => {
+  const handlePointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     e.preventDefault();
-    const target = e.currentTarget as HTMLElement;
+    const target = e.currentTarget;
     target.setPointerCapture(e.pointerId);
 
     // Capture the current height of the wrap element at drag start
@@ -268,12 +268,12 @@ export function QueryEditor({
   }, []);
 
   return (
-    <div class={styles.editorContainer}>
-      <div ref={wrapRef} class={styles.editorWrap}>
+    <div className={styles.editorContainer}>
+      <div ref={wrapRef} className={styles.editorWrap}>
         <div ref={containerRef} />
       </div>
       <div
-        class={styles.dragHandle}
+        className={styles.dragHandle}
         onPointerDown={handlePointerDown}
         role="separator"
         aria-orientation="horizontal"

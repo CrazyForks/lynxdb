@@ -1,4 +1,4 @@
-import { useState, useCallback } from "preact/hooks";
+import React, { useState, useCallback } from "react";
 import type { QueryResult, EventsResult, AggregateResult } from "../api/client";
 import { EventDetailInline } from "./EventDetail";
 import styles from "./ListView.module.css";
@@ -79,7 +79,7 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
   }, []);
 
   if (!result || rowCount === 0) {
-    return <div class={styles.empty}>No results</div>;
+    return <div className={styles.empty}>No results</div>;
   }
 
   const events = [];
@@ -90,19 +90,19 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
     events.push(
       <div
         key={i}
-        class={`${styles.event} ${isExpanded ? styles.eventSelected : ""}`}
+        className={`${styles.event} ${isExpanded ? styles.eventSelected : ""}`}
         onClick={() => handleToggle(i)}
       >
-        <div class={styles.eventHeader}>Event {i + 1}</div>
+        <div className={styles.eventHeader}>Event {i + 1}</div>
         {columns.map((col) => {
           const value = row[col] == null ? "" : String(row[col]);
           return (
-            <div key={col} class={styles.field}>
-              <span class={styles.fieldName}>{col}</span>
+            <div key={col} className={styles.field}>
+              <span className={styles.fieldName}>{col}</span>
               <span
-                class={styles.fieldValue}
+                className={styles.fieldValue}
                 title={value}
-                onClick={(e: MouseEvent) => {
+                onClick={(e: React.MouseEvent) => {
                   e.stopPropagation();
                   if (onCellCopy && value) {
                     onCellCopy(value, e.clientX, e.clientY);
@@ -119,12 +119,12 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
 
     if (isExpanded) {
       events.push(
-        <div key={`accordion-${i}`} class={styles.accordionRow}>
+        <div key={`accordion-${i}`} className={styles.accordionRow}>
           <EventDetailInline event={row} onFilter={onFilter} />
         </div>,
       );
     }
   }
 
-  return <div class={styles.wrapper}>{events}</div>;
+  return <div className={styles.wrapper}>{events}</div>;
 }

@@ -4,7 +4,7 @@ import { EventDetailInline } from "./EventDetail";
 import { rowKey } from "../utils/rowKey";
 import { deriveColumnsFromEvents } from "../utils/deriveColumns";
 import { useRowVirtualizer } from "../hooks/useRowVirtualizer";
-import styles from "./ListView.module.css";
+import { cn } from "@/lib/utils";
 
 interface ListViewProps {
   result: QueryResult | null;
@@ -94,11 +94,15 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
   });
 
   if (!result || rowCount === 0) {
-    return <div className={styles.empty}>No results</div>;
+    return (
+      <div className="flex flex-1 items-center justify-center text-muted-foreground font-sans text-sm p-12">
+        No results
+      </div>
+    );
   }
 
   return (
-    <div className={styles.wrapper} ref={scrollRef}>
+    <div className="flex-1 overflow-auto p-0 font-mono text-[0.8125rem]" ref={scrollRef}>
       <div
         style={{
           height: virtualizer.getTotalSize(),
@@ -125,17 +129,26 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
               }}
             >
               <div
-                className={`${styles.event} ${isExpanded ? styles.eventSelected : ""}`}
+                className={cn(
+                  "border-b border-border px-3 py-2 cursor-pointer transition-colors duration-75 motion-reduce:transition-none",
+                  isExpanded
+                    ? "bg-accent hover:bg-accent/80"
+                    : "hover:bg-muted/50",
+                )}
                 onClick={() => handleToggle(i)}
               >
-                <div className={styles.eventHeader}>Event {i + 1}</div>
+                <div className="font-sans text-[0.6875rem] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+                  Event {i + 1}
+                </div>
                 {columns.map((col) => {
                   const value = row[col] == null ? "" : String(row[col]);
                   return (
-                    <div key={col} className={styles.field}>
-                      <span className={styles.fieldName}>{col}</span>
+                    <div key={col} className="flex items-baseline gap-3 py-px leading-relaxed">
+                      <span className="shrink-0 basis-[120px] text-muted-foreground text-xs overflow-hidden text-ellipsis whitespace-nowrap">
+                        {col}
+                      </span>
                       <span
-                        className={styles.fieldValue}
+                        className="flex-1 text-foreground break-words rounded-sm px-0.5 -mx-0.5 cursor-pointer transition-colors duration-100 motion-reduce:transition-none hover:bg-muted"
                         title={value}
                         onClick={(e: React.MouseEvent) => {
                           e.stopPropagation();
@@ -152,7 +165,7 @@ export function ListView({ result, onCellCopy, onFilter }: ListViewProps) {
               </div>
 
               {isExpanded && (
-                <div className={styles.accordionRow}>
+                <div className="border-b border-border max-h-[400px] overflow-hidden">
                   <EventDetailInline event={row} onFilter={onFilter} />
                 </div>
               )}

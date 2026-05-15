@@ -151,7 +151,9 @@ export function FieldsPanel({
           </Badge>
         )}
         {catalog && catalog.coverage > 0 && (
-          <span className="text-[0.625rem] text-muted-foreground whitespace-nowrap">{catalog.coverage}%</span>
+          <span className="shrink-0 text-[0.625rem] tabular-nums text-muted-foreground">
+            {Math.round(catalog.coverage)}%
+          </span>
         )}
       </div>
     );

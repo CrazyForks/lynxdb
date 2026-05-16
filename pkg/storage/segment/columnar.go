@@ -2,7 +2,6 @@ package segment
 
 import (
 	"fmt"
-	"strconv"
 	"time"
 
 	"github.com/RoaringBitmap/roaring"
@@ -197,103 +196,10 @@ func (r *Reader) evaluatePredicateBitmap(preds []Predicate, searchBitmap *roarin
 		if matchBitmap.GetCardinality() == 0 {
 			return matchBitmap, nil
 		}
-		if !r.HasColumn(pred.Field) {
-			continue
+		predBitmap, err := r.predicateBitmap(pred, matchBitmap)
+		if err != nil {
+			return nil, err
 		}
-
-		predBitmap := roaring.New()
-
-		cc := r.findColumnInAllRowGroups(pred.Field)
-		if cc == nil {
-			// Column exists (HasColumn returned true) but has no chunk — const column.
-			// Fall back to ReadStrings which handles const columns correctly.
-			values, err := r.ReadStrings(pred.Field)
-			if err != nil {
-				continue
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalStringPredicate(values[pos], pred.Op, pred.Value) {
-					predBitmap.Add(pos)
-				}
-			}
-			matchBitmap.And(predBitmap)
-
-			continue
-		}
-
-		encType := column.EncodingType(cc.EncodingType)
-		switch encType {
-		case column.EncodingDict8, column.EncodingDict16:
-			// Dict-encoded: try fast DictFilter path for equality.
-			if pred.Op == "=" || pred.Op == "==" || pred.Op == "!=" {
-				rawData, err := r.readChunk(cc)
-				if err == nil {
-					df, dfErr := column.NewDictFilterFromEncoded(rawData)
-					if dfErr == nil {
-						if pred.Op == "!=" {
-							predBitmap = df.FilterNotEquality(pred.Value)
-						} else {
-							predBitmap = df.FilterEquality(pred.Value)
-						}
-						matchBitmap.And(predBitmap)
-
-						continue
-					}
-				}
-			}
-			// Fallback: full decode.
-			values, err := r.ReadStrings(pred.Field)
-			if err != nil {
-				continue
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalStringPredicate(values[pos], pred.Op, pred.Value) {
-					predBitmap.Add(pos)
-				}
-			}
-		case column.EncodingLZ4:
-			values, err := r.ReadStrings(pred.Field)
-			if err != nil {
-				continue
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalStringPredicate(values[pos], pred.Op, pred.Value) {
-					predBitmap.Add(pos)
-				}
-			}
-		case column.EncodingDelta:
-			values, err := r.ReadInt64s(pred.Field)
-			if err != nil {
-				continue
-			}
-			predValF, err := strconv.ParseFloat(pred.Value, 64)
-			if err != nil {
-				continue
-			}
-			predValI := int64(predValF)
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalInt64Predicate(values[pos], pred.Op, predValI) {
-					predBitmap.Add(pos)
-				}
-			}
-		case column.EncodingGorilla:
-			values, err := r.ReadFloat64s(pred.Field)
-			if err != nil {
-				continue
-			}
-			predVal, err := strconv.ParseFloat(pred.Value, 64)
-			if err != nil {
-				continue
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalFloat64Predicate(values[pos], pred.Op, predVal) {
-					predBitmap.Add(pos)
-				}
-			}
-		default:
-			continue
-		}
-
 		matchBitmap.And(predBitmap)
 	}
 

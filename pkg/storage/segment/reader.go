@@ -224,22 +224,32 @@ func (r *Reader) Stats() []ColumnStats {
 // ColumnNames returns all column names in the segment.
 // Includes both chunk columns and const columns.
 func (r *Reader) ColumnNames() []string {
+	if len(r.footer.Catalog) > 0 {
+		names := make([]string, 0, len(r.footer.Catalog))
+		for _, c := range r.footer.Catalog {
+			names = append(names, c.Name)
+		}
+
+		return names
+	}
 	if len(r.footer.RowGroups) == 0 {
 		return nil
 	}
-	rg := &r.footer.RowGroups[0]
-	seen := make(map[string]bool, len(rg.Columns)+len(rg.ConstColumns))
-	names := make([]string, 0, len(rg.Columns)+len(rg.ConstColumns))
-	for _, c := range rg.Columns {
-		if !seen[c.Name] {
-			names = append(names, c.Name)
-			seen[c.Name] = true
+	seen := make(map[string]bool)
+	var names []string
+	for i := range r.footer.RowGroups {
+		rg := &r.footer.RowGroups[i]
+		for _, c := range rg.Columns {
+			if !seen[c.Name] {
+				names = append(names, c.Name)
+				seen[c.Name] = true
+			}
 		}
-	}
-	for _, cc := range rg.ConstColumns {
-		if !seen[cc.Name] {
-			names = append(names, cc.Name)
-			seen[cc.Name] = true
+		for _, cc := range rg.ConstColumns {
+			if !seen[cc.Name] {
+				names = append(names, cc.Name)
+				seen[cc.Name] = true
+			}
 		}
 	}
 
@@ -249,18 +259,23 @@ func (r *Reader) ColumnNames() []string {
 // HasColumn returns true if the segment contains the named column
 // (either as a chunk or a const column).
 func (r *Reader) HasColumn(name string) bool {
+	if _, ok := r.columnIndex[name]; ok {
+		return true
+	}
 	if len(r.footer.RowGroups) == 0 {
 		return false
 	}
-	rg := &r.footer.RowGroups[0]
-	for _, c := range rg.Columns {
-		if c.Name == name {
-			return true
+	for i := range r.footer.RowGroups {
+		rg := &r.footer.RowGroups[i]
+		for _, c := range rg.Columns {
+			if c.Name == name {
+				return true
+			}
 		}
-	}
-	for _, cc := range rg.ConstColumns {
-		if cc.Name == name {
-			return true
+		for _, cc := range rg.ConstColumns {
+			if cc.Name == name {
+				return true
+			}
 		}
 	}
 
@@ -1235,104 +1250,10 @@ func (r *Reader) ReadEventsFiltered(preds []Predicate, searchBitmap *roaring.Bit
 		if matchBitmap.GetCardinality() == 0 {
 			return nil, nil
 		}
-		if !r.HasColumn(pred.Field) {
-			continue
+		predBitmap, err := r.predicateBitmap(pred, matchBitmap)
+		if err != nil {
+			return nil, err
 		}
-
-		predBitmap := roaring.New()
-
-		// Read the full column for predicate evaluation.
-		cc := r.findColumnInAllRowGroups(pred.Field)
-		if cc == nil {
-			// Column exists (HasColumn returned true) but has no chunk — const column.
-			// Fall back to ReadStrings which handles const columns correctly.
-			values, err := r.ReadStrings(pred.Field)
-			if err != nil {
-				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalStringPredicate(values[pos], pred.Op, pred.Value) {
-					predBitmap.Add(pos)
-				}
-			}
-			matchBitmap.And(predBitmap)
-
-			continue
-		}
-
-		encType := column.EncodingType(cc.EncodingType)
-		switch encType {
-		case column.EncodingDict8, column.EncodingDict16:
-			// Dict-encoded: try fast DictFilter path for equality.
-			if pred.Op == "=" || pred.Op == "==" || pred.Op == "!=" {
-				rawData, err := r.readChunk(cc)
-				if err == nil {
-					df, dfErr := column.NewDictFilterFromEncoded(rawData)
-					if dfErr == nil {
-						if pred.Op == "!=" {
-							predBitmap = df.FilterNotEquality(pred.Value)
-						} else {
-							predBitmap = df.FilterEquality(pred.Value)
-						}
-						matchBitmap.And(predBitmap)
-
-						continue
-					}
-				}
-			}
-			// Fallback: full decode.
-			values, err := r.ReadStrings(pred.Field)
-			if err != nil {
-				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalStringPredicate(values[pos], pred.Op, pred.Value) {
-					predBitmap.Add(pos)
-				}
-			}
-		case column.EncodingLZ4:
-			values, err := r.ReadStrings(pred.Field)
-			if err != nil {
-				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalStringPredicate(values[pos], pred.Op, pred.Value) {
-					predBitmap.Add(pos)
-				}
-			}
-		case column.EncodingDelta:
-			values, err := r.ReadInt64s(pred.Field)
-			if err != nil {
-				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
-			}
-			predValF, err := strconv.ParseFloat(pred.Value, 64)
-			if err != nil {
-				continue
-			}
-			predValI := int64(predValF)
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalInt64Predicate(values[pos], pred.Op, predValI) {
-					predBitmap.Add(pos)
-				}
-			}
-		case column.EncodingGorilla:
-			values, err := r.ReadFloat64s(pred.Field)
-			if err != nil {
-				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
-			}
-			predVal, err := strconv.ParseFloat(pred.Value, 64)
-			if err != nil {
-				continue
-			}
-			for _, pos := range matchBitmap.ToArray() {
-				if int(pos) < len(values) && evalFloat64Predicate(values[pos], pred.Op, predVal) {
-					predBitmap.Add(pos)
-				}
-			}
-		default:
-			continue
-		}
-
 		matchBitmap.And(predBitmap)
 	}
 
@@ -1343,13 +1264,156 @@ func (r *Reader) ReadEventsFiltered(preds []Predicate, searchBitmap *roaring.Bit
 	return r.ReadEventsByBitmap(matchBitmap, columns)
 }
 
-// findColumnInAllRowGroups finds a column chunk from the first row group (for type info).
-func (r *Reader) findColumnInAllRowGroups(name string) *ColumnChunkMeta {
-	if len(r.footer.RowGroups) == 0 {
-		return nil
+func (r *Reader) predicateBitmap(pred Predicate, matchBitmap *roaring.Bitmap) (*roaring.Bitmap, error) {
+	predBitmap := roaring.New()
+	rowOffset := uint32(0)
+
+	for rgi := range r.footer.RowGroups {
+		rg := &r.footer.RowGroups[rgi]
+		rgStart := rowOffset
+		rgEnd := rowOffset + uint32(rg.RowCount)
+		rowOffset = rgEnd
+
+		selected := roaring.New()
+		selected.AddRange(uint64(rgStart), uint64(rgEnd))
+		selected.And(matchBitmap)
+		if selected.GetCardinality() == 0 {
+			continue
+		}
+
+		if cc := findConstColumn(rg, pred.Field); cc != nil {
+			if evalConstPredicate(cc, pred) {
+				predBitmap.Or(selected)
+			}
+
+			continue
+		}
+
+		cc := findChunk(rg, pred.Field)
+		if cc == nil {
+			continue
+		}
+
+		switch column.EncodingType(cc.EncodingType) {
+		case column.EncodingDict8, column.EncodingDict16:
+			if pred.Op == "=" || pred.Op == "==" || pred.Op == "!=" {
+				if rawData, err := r.readChunk(cc); err == nil {
+					if df, dfErr := column.NewDictFilterFromEncoded(rawData); dfErr == nil {
+						var localMatches *roaring.Bitmap
+						if pred.Op == "!=" {
+							localMatches = df.FilterNotEquality(pred.Value)
+						} else {
+							localMatches = df.FilterEquality(pred.Value)
+						}
+						addSelectedLocalMatches(predBitmap, localMatches, selected, rgStart)
+
+						continue
+					}
+				}
+			}
+			values, err := r.cachedReadStrings(rgi, cc)
+			if err != nil {
+				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
+			}
+			iter := selected.Iterator()
+			for iter.HasNext() {
+				pos := iter.Next()
+				localIdx := int(pos - rgStart)
+				if localIdx >= 0 && localIdx < len(values) && evalStringPredicate(values[localIdx], pred.Op, pred.Value) {
+					predBitmap.Add(pos)
+				}
+			}
+		case column.EncodingLZ4:
+			values, err := r.cachedReadStrings(rgi, cc)
+			if err != nil {
+				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
+			}
+			iter := selected.Iterator()
+			for iter.HasNext() {
+				pos := iter.Next()
+				localIdx := int(pos - rgStart)
+				if localIdx >= 0 && localIdx < len(values) && evalStringPredicate(values[localIdx], pred.Op, pred.Value) {
+					predBitmap.Add(pos)
+				}
+			}
+		case column.EncodingDelta:
+			predValF, err := strconv.ParseFloat(pred.Value, 64)
+			if err != nil {
+				continue
+			}
+			values, err := r.cachedReadInt64s(rgi, cc)
+			if err != nil {
+				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
+			}
+			predValI := int64(predValF)
+			iter := selected.Iterator()
+			for iter.HasNext() {
+				pos := iter.Next()
+				localIdx := int(pos - rgStart)
+				if localIdx >= 0 && localIdx < len(values) && evalInt64Predicate(values[localIdx], pred.Op, predValI) {
+					predBitmap.Add(pos)
+				}
+			}
+		case column.EncodingGorilla:
+			predVal, err := strconv.ParseFloat(pred.Value, 64)
+			if err != nil {
+				continue
+			}
+			values, err := r.cachedReadFloat64s(rgi, cc)
+			if err != nil {
+				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
+			}
+			iter := selected.Iterator()
+			for iter.HasNext() {
+				pos := iter.Next()
+				localIdx := int(pos - rgStart)
+				if localIdx >= 0 && localIdx < len(values) && evalFloat64Predicate(values[localIdx], pred.Op, predVal) {
+					predBitmap.Add(pos)
+				}
+			}
+		}
 	}
 
-	return findChunk(&r.footer.RowGroups[0], name)
+	return predBitmap, nil
+}
+
+func evalConstPredicate(cc *ConstColumnEntry, pred Predicate) bool {
+	switch column.EncodingType(cc.EncodingType) {
+	case column.EncodingDelta:
+		predValF, err := strconv.ParseFloat(pred.Value, 64)
+		if err != nil {
+			return false
+		}
+		val, err := strconv.ParseInt(cc.Value, 10, 64)
+		if err != nil {
+			return false
+		}
+
+		return evalInt64Predicate(val, pred.Op, int64(predValF))
+	case column.EncodingGorilla:
+		predVal, err := strconv.ParseFloat(pred.Value, 64)
+		if err != nil {
+			return false
+		}
+		val, err := strconv.ParseFloat(cc.Value, 64)
+		if err != nil {
+			return false
+		}
+
+		return evalFloat64Predicate(val, pred.Op, predVal)
+	default:
+		return evalStringPredicate(cc.Value, pred.Op, pred.Value)
+	}
+}
+
+func addSelectedLocalMatches(dst, localMatches, selected *roaring.Bitmap, rgStart uint32) {
+	iter := localMatches.Iterator()
+	for iter.HasNext() {
+		pos := rgStart + iter.Next()
+		if selected.Contains(pos) {
+			dst.Add(pos)
+		}
+	}
 }
 
 // LoadRangeBSI returns the decoded range BSI for a row-group column.

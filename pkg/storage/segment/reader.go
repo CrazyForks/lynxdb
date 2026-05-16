@@ -34,7 +34,9 @@ type Reader struct {
 	perColBlooms    map[int]map[string]*index.BloomFilter // lazily populated: rgIdx → colName → bloom
 	perColRangeBSIs map[int]map[string]*bsi.BSI           // lazily populated: rgIdx → colName → BSI
 	perColRangeMeta map[int]map[string]rangeMeta          // lazily populated alongside perColRangeBSIs
+	bloomMu         sync.Mutex                            // guards perColBlooms
 	rangeMu         sync.Mutex                            // guards perColRangeBSIs and perColRangeMeta
+	statsMu         sync.Mutex                            // guards statsIndex
 	statsIndex      map[string]int                        // lazily built: column name → index in Stats()
 
 	// Optional column cache for decoded column data. When set, column read
@@ -371,6 +373,9 @@ func (r *Reader) ColumnChunkInRowGroup(rgIdx int, name string) *ColumnChunkMeta 
 // StatsByName returns column statistics for the named column, or nil if not found.
 func (r *Reader) StatsByName(name string) *ColumnStats {
 	stats := r.footer.Stats()
+	r.statsMu.Lock()
+	defer r.statsMu.Unlock()
+
 	if r.statsIndex == nil {
 		r.statsIndex = make(map[string]int, len(stats))
 		for i := range stats {
@@ -1626,6 +1631,12 @@ func (r *Reader) rangeSectionBytes(rgIdx int) ([]byte, error) {
 // loadPerColumnBlooms parses the per-column bloom section for a row group
 // and caches the result. Returns the cached map on subsequent calls.
 func (r *Reader) loadPerColumnBlooms(rgIdx int) (map[string]*index.BloomFilter, error) {
+	r.bloomMu.Lock()
+	defer r.bloomMu.Unlock()
+
+	if r.perColBlooms == nil {
+		r.perColBlooms = make(map[int]map[string]*index.BloomFilter)
+	}
 	if cached, ok := r.perColBlooms[rgIdx]; ok {
 		return cached, nil
 	}

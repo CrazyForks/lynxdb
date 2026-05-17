@@ -4,6 +4,7 @@ package shell
 
 import (
 	"errors"
+	"os"
 
 	tea "charm.land/bubbletea/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
@@ -41,9 +42,15 @@ func Run(mode string, opts RunOpts) error {
 	m.results.AppendText(welcomeBanner(mode, opts.Server, opts.Since))
 
 	p := tea.NewProgram(m, tea.WithEnvironment(bubbleTeaEnv()))
-	_, err := p.Run()
+	final, err := p.Run()
 
 	zone.Close()
+	if err != nil {
+		return err
+	}
+	if finalModel, ok := final.(Model); ok {
+		renderShellExit(os.Stdout, finalModel)
+	}
 
-	return err
+	return nil
 }

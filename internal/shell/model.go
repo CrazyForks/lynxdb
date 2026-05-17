@@ -90,6 +90,8 @@ func NewModel(mode string, opts RunOpts) Model {
 	sess := &Session{
 		Mode:   mode,
 		Server: opts.Server,
+		File:   opts.File,
+		Events: opts.Events,
 		Client: opts.Client,
 		Engine: opts.Engine,
 		Since:  opts.Since,
@@ -364,6 +366,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.progress = nil
 		m.session.LastQuery = msg.query
 		m.session.LastRows = msg.rows
+		m.session.QueryCount++
+		m.session.LastElapsed = msg.elapsed
+		m.session.LastError = ""
+		if msg.err != nil {
+			m.session.LastError = msg.err.Error()
+		}
 
 		// Extract field names from results and add to autocomplete.
 		if len(msg.rows) > 0 {

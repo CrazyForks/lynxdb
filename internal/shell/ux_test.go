@@ -128,6 +128,21 @@ func TestBubbleTeaEnvDisablesModeProbes(t *testing.T) {
 	}
 }
 
+func TestShellExitSummaryIncludesSessionStats(t *testing.T) {
+	model := NewModel("file", RunOpts{File: "access.log"})
+	model.session.QueryCount = 2
+	model.session.Events = 1000
+	model.session.LastRows = []map[string]interface{}{{"status": 200}, {"status": 500}}
+	model.session.LastElapsed = 120 * time.Millisecond
+
+	got := shellExitSummary(model)
+	for _, want := range []string{"summary: file", "access.log", "queries 2", "events 1000", "last 2 rows", "120ms"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("summary missing %q in %q", want, got)
+		}
+	}
+}
+
 func TestModelViewKeepsEditorInsideScreen(t *testing.T) {
 	zone.NewGlobal()
 	defer zone.Close()

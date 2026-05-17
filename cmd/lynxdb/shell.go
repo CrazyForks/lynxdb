@@ -61,7 +61,7 @@ func runShellFile(file, since string) error {
 		return fmt.Errorf("invalid file pattern: %w", err)
 	}
 	if len(matches) == 0 {
-		return fmt.Errorf("no files matching: %s", file)
+		return noFilesMatchingError{pattern: file}
 	}
 
 	eng := storage.NewEphemeralEngine()

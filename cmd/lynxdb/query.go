@@ -271,7 +271,7 @@ func queryRowsFromFile(query, file, source, sourcetype, maxMemory string, rawMod
 		return nil, fmt.Errorf("invalid file pattern: %w", err)
 	}
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("no files matching: %s", file)
+		return nil, noFilesMatchingError{pattern: file}
 	}
 
 	if !rawMode {
@@ -428,7 +428,7 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 		return fmt.Errorf("invalid file pattern: %w", err)
 	}
 	if len(matches) == 0 {
-		return fmt.Errorf("no files matching: %s", file)
+		return noFilesMatchingError{pattern: file}
 	}
 
 	var memLimit int64

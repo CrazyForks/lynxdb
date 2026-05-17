@@ -24,6 +24,14 @@ type queryError struct {
 func (e *queryError) Error() string { return e.inner.Error() }
 func (e *queryError) Unwrap() error { return e.inner }
 
+type noFilesMatchingError struct {
+	pattern string
+}
+
+func (e noFilesMatchingError) Error() string {
+	return "no files matching: " + e.pattern
+}
+
 // isConnectionError reports whether err is a network connection error.
 func isConnectionError(err error) bool {
 	if err == nil {
@@ -161,6 +169,13 @@ func renderError(err error) {
 		return
 	}
 
+	var noFiles noFilesMatchingError
+	if errors.As(err, &noFiles) {
+		renderNoFilesMatchingError(noFiles)
+
+		return
+	}
+
 	var apiErr *client.APIError
 	if errors.As(err, &apiErr) {
 		renderAPIError(apiErr)
@@ -169,6 +184,25 @@ func renderError(err error) {
 	}
 
 	ui.Stderr.RenderError(err)
+}
+
+func renderNoFilesMatchingError(err noFilesMatchingError) {
+	t := ui.Stderr
+	cwd, cwdErr := os.Getwd()
+	if cwdErr != nil {
+		cwd = "."
+	}
+
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "  %s %s\n", t.Info.Render("i"), t.Bold.Render("No files matched"))
+	fmt.Fprintf(os.Stderr, "    Pattern: %s\n", t.Info.Render(err.pattern))
+	fmt.Fprintf(os.Stderr, "    Directory: %s\n", t.Dim.Render(cwd))
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "    %s\n", t.Dim.Render("Try:"))
+	fmt.Fprintf(os.Stderr, "      %s\n", t.Info.Render("lynxdb query --file './*.log' 'level=error'"))
+	fmt.Fprintf(os.Stderr, "      %s\n", t.Info.Render("cat app.log | lynxdb query 'level=error'"))
+	fmt.Fprintf(os.Stderr, "      %s\n", t.Info.Render("ls -la"))
+	fmt.Fprintln(os.Stderr)
 }
 
 // isMemoryError reports whether err is a query memory or pool exhaustion error.

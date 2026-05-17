@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -54,8 +55,11 @@ func sourceCountFromResult(result *client.QueryResult, source string) int {
 		if totalIdx >= len(row) {
 			continue
 		}
-		if indexIdx >= 0 && indexIdx < len(row) && fmt.Sprint(row[indexIdx]) == source {
-			return intValue(row[totalIdx])
+		if indexIdx >= 0 && indexIdx < len(row) {
+			index := fmt.Sprint(row[indexIdx])
+			if index == source || strings.HasPrefix(index, source+"-") {
+				return intValue(row[totalIdx])
+			}
 		}
 		if sourceIdx >= 0 && sourceIdx < len(row) && fmt.Sprint(row[sourceIdx]) == source {
 			return intValue(row[totalIdx])

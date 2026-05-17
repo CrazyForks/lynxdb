@@ -23,6 +23,30 @@ func pipelineRowsToResultRows(rows []map[string]event.Value) []spl2.ResultRow {
 	return result
 }
 
+func ensureDefaultEventMetadataFields(rows []spl2.ResultRow) {
+	for i := range rows {
+		fields := rows[i].Fields
+		if fields == nil {
+			fields = make(map[string]interface{}, 2)
+			rows[i].Fields = fields
+		}
+		if _, ok := fields["_source"]; !ok {
+			if source, ok := fields["source"]; ok {
+				fields["_source"] = source
+			} else {
+				fields["_source"] = ""
+			}
+		}
+		if _, ok := fields["_sourcetype"]; !ok {
+			if sourceType, ok := fields["sourcetype"]; ok {
+				fields["_sourcetype"] = sourceType
+			} else {
+				fields["_sourcetype"] = ""
+			}
+		}
+	}
+}
+
 // resultRowsToCachedResult converts executor result rows to a CachedResult.
 func resultRowsToCachedResult(rows []spl2.ResultRow) *cache.CachedResult {
 	if len(rows) == 0 {

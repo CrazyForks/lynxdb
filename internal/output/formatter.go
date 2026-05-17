@@ -364,10 +364,10 @@ var builtinFieldOrder = [...]string{
 	"_time",
 	"_raw",
 	"index",
-	"source",
 	"_source",
-	"sourcetype",
 	"_sourcetype",
+	"source",
+	"sourcetype",
 	"host",
 }
 

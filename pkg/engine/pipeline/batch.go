@@ -11,7 +11,7 @@ import (
 // builtinFieldOrder defines the canonical display order for LynxDB internal
 // fields. Kept in sync with internal/output and pkg/api/rest.
 var builtinFieldOrder = [...]string{
-	"_time", "_raw", "index", "source", "_source", "sourcetype", "_sourcetype", "host",
+	"_time", "_raw", "index", "_source", "_sourcetype", "source", "sourcetype", "host",
 }
 
 var builtinFieldRank = func() map[string]int {

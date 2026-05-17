@@ -930,8 +930,8 @@ func renderMarkdownTable(rows []map[string]interface{}) string {
 // sortColumns sorts column names with builtin fields first, then alphabetical.
 func sortColumns(cols []string) {
 	rank := map[string]int{
-		"_time": 0, "_raw": 1, "index": 2, "source": 3,
-		"_source": 4, "sourcetype": 5, "_sourcetype": 6, "host": 7,
+		"_time": 0, "_raw": 1, "index": 2, "_source": 3,
+		"_sourcetype": 4, "source": 5, "sourcetype": 6, "host": 7,
 	}
 
 	for i := 1; i < len(cols); i++ {

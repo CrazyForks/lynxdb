@@ -1126,9 +1126,19 @@ func TestQuery_SyncMode(t *testing.T) {
 	if len(events) != 5 {
 		t.Errorf("events: got %d, want 5", len(events))
 	}
+	if len(events) > 0 {
+		first := events[0].(map[string]interface{})
+		if _, ok := first["_source"]; !ok {
+			t.Error("event row missing _source")
+		}
+		if _, ok := first["_sourcetype"]; !ok {
+			t.Error("event row missing _sourcetype")
+		}
+	}
 	if _, ok := meta["took_ms"]; !ok {
 		t.Error("missing took_ms")
 	}
+
 }
 
 func TestQuery_AsyncMode(t *testing.T) {

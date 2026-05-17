@@ -331,9 +331,10 @@ func TestQueryFile_FieldsProjection_JSON(t *testing.T) {
 			t.Errorf("row %d missing 'level' field", i)
 		}
 
-		// Should not have other data fields (besides _time/_timestamp which are internal).
+		// Should not have other data fields (besides default event metadata).
 		for k := range row {
-			if k != "host" && k != "level" && k != "_time" && k != "_timestamp" && k != "_raw" {
+			if k != "host" && k != "level" && k != "_time" && k != "_timestamp" &&
+				k != "_raw" && k != "_source" && k != "_sourcetype" {
 				t.Errorf("row %d has unexpected field %q", i, k)
 			}
 		}
@@ -503,6 +504,24 @@ func TestQueryFile_TableFormat(t *testing.T) {
 
 	if !strings.Contains(stdout, "WARN") {
 		t.Errorf("table output missing WARN level")
+	}
+}
+
+func TestQueryFile_TableFormat_EventMetadata(t *testing.T) {
+	stdout, _, err := runCmd(t, "query", "--file", testdataPath("logs/access.log"), "--format", "table",
+		"| fields level | head 3")
+	if err != nil {
+		t.Fatalf("query failed: %v", err)
+	}
+
+	if !strings.Contains(stdout, "_source") {
+		t.Error("table output missing '_source' column header")
+	}
+	if !strings.Contains(stdout, "_sourcetype") {
+		t.Error("table output missing '_sourcetype' column header")
+	}
+	if !strings.Contains(stdout, "level") {
+		t.Error("table output missing 'level' column header")
 	}
 }
 

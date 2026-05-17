@@ -293,6 +293,9 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 	} else if cached != nil {
 		e.metrics.QueryCacheHits.Add(1)
 		rows := cachedResultToResultRows(cached)
+		if params.ResultType == ResultTypeEvents {
+			ensureDefaultEventMetadataFields(rows)
+		}
 		elapsed := time.Since(start)
 		job.mu.Lock()
 		job.Results = rows
@@ -547,6 +550,9 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 		if suggestions := zeroResultSuggestions(hints, qr.ss); len(suggestions) > 0 {
 			job.Stats.Warnings = append(job.Stats.Warnings, suggestions...)
 		}
+	}
+	if params.ResultType == ResultTypeEvents {
+		ensureDefaultEventMetadataFields(qr.rows)
 	}
 
 	// Determine slow query flag BEFORE calling onQueryComplete so Prometheus

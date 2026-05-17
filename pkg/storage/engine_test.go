@@ -35,7 +35,23 @@ func TestEngine_EphemeralIngestAndQuery(t *testing.T) {
 
 	ctx := context.Background()
 
-	res, _, err := eng.Query(ctx, `FROM main | stats count`, QueryOpts{})
+	res, _, err := eng.Query(ctx, `FROM main | head 1`, QueryOpts{})
+	if err != nil {
+		t.Fatalf("Query event row: %v", err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("expected 1 event row, got %d", len(res.Rows))
+	}
+	if got, ok := res.Rows[0]["_source"]; !ok {
+		t.Fatal("event row missing _source")
+	} else if got != "test" {
+		t.Errorf("_source: got %v, want test", got)
+	}
+	if _, ok := res.Rows[0]["_sourcetype"]; !ok {
+		t.Fatal("event row missing _sourcetype")
+	}
+
+	res, _, err = eng.Query(ctx, `FROM main | stats count`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query stats count: %v", err)
 	}

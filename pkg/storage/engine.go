@@ -398,14 +398,7 @@ func (e *Engine) Query(ctx context.Context, spl2Query string, opts QueryOpts) (*
 	st.ProcessedBytes = e.totalRawBytes
 	st.ResultRows = int64(len(pipeRows))
 
-	rows := make([]map[string]interface{}, len(pipeRows))
-	for i, row := range pipeRows {
-		fields := make(map[string]interface{}, len(row))
-		for k, v := range row {
-			fields[k] = v.Interface()
-		}
-		rows[i] = fields
-	}
+	rows := pipelineRowsToInterfaceRows(pipeRows, queryProducesEventRows(prog.Main))
 
 	return &QueryResult{Rows: rows}, st, nil
 }
@@ -751,16 +744,63 @@ func (e *Engine) QueryReader(ctx context.Context, r io.Reader, spl2Query string,
 	st.ProcessedBytes = memEstimate
 	st.ResultRows = int64(len(pipeRows))
 
+	rows := pipelineRowsToInterfaceRows(pipeRows, queryProducesEventRows(prog.Main))
+
+	return &QueryResult{Rows: rows}, st, nil
+}
+
+func pipelineRowsToInterfaceRows(pipeRows []map[string]event.Value, addDefaultEventMetadata bool) []map[string]interface{} {
 	rows := make([]map[string]interface{}, len(pipeRows))
 	for i, row := range pipeRows {
-		fields := make(map[string]interface{}, len(row))
+		fields := make(map[string]interface{}, len(row)+2)
 		for k, v := range row {
 			fields[k] = v.Interface()
+		}
+		if addDefaultEventMetadata {
+			ensureDefaultEventMetadata(fields)
 		}
 		rows[i] = fields
 	}
 
-	return &QueryResult{Rows: rows}, st, nil
+	return rows
+}
+
+func ensureDefaultEventMetadata(fields map[string]interface{}) {
+	if _, ok := fields["_source"]; !ok {
+		if source, ok := fields["source"]; ok {
+			fields["_source"] = source
+		} else {
+			fields["_source"] = ""
+		}
+	}
+	if _, ok := fields["_sourcetype"]; !ok {
+		if sourceType, ok := fields["sourcetype"]; ok {
+			fields["_sourcetype"] = sourceType
+		} else {
+			fields["_sourcetype"] = ""
+		}
+	}
+}
+
+func queryProducesEventRows(q *spl2.Query) bool {
+	if q == nil {
+		return true
+	}
+	for i := len(q.Commands) - 1; i >= 0; i-- {
+		switch q.Commands[i].(type) {
+		case *spl2.HeadCommand, *spl2.TailCommand, *spl2.SortCommand,
+			*spl2.FieldsCommand, *spl2.TableCommand, *spl2.RenameCommand,
+			*spl2.FillnullCommand, *spl2.TopNCommand:
+			continue
+		case *spl2.StatsCommand, *spl2.ChartCommand, *spl2.TopCommand, *spl2.RareCommand,
+			*spl2.TimechartCommand, *spl2.XYSeriesCommand:
+			return false
+		default:
+			return true
+		}
+	}
+
+	return true
 }
 
 // MaterializeEvents implements pipeline.IndexStore so Engine can be used directly.

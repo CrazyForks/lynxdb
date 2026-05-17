@@ -652,21 +652,16 @@ func (m Model) View() tea.View {
 	var b strings.Builder
 
 	// Header (1 line, full width).
-	b.WriteString(m.header.View())
+	b.WriteString(oneLine(m.header.View()))
 	b.WriteByte('\n')
 
 	// Main area: results + optional sidebar.
-	resultsView := m.results.View()
+	mainH := m.mainHeight()
+	resultsView := fixedHeight(m.results.View(), mainH)
 
 	if m.sidebarOpen && m.sidebarLay.sidebarW > 0 {
-		editorH := m.editor.EditorHeight()
-		mainH := m.height - 1 - editorH - 1
-		if mainH < 1 {
-			mainH = 1
-		}
-
 		separator := renderVerticalSeparator(mainH)
-		sidebarView := m.sidebar.View()
+		sidebarView := fixedHeight(m.sidebar.View(), mainH)
 		mainArea := lipgloss.JoinHorizontal(lipgloss.Top, resultsView, separator, sidebarView)
 		b.WriteString(mainArea)
 	} else {
@@ -676,7 +671,7 @@ func (m Model) View() tea.View {
 	b.WriteByte('\n')
 
 	// Editor (full width).
-	b.WriteString(m.editor.View())
+	b.WriteString(fixedHeight(m.editor.View(), m.editor.EditorHeight()))
 	b.WriteByte('\n')
 
 	// Status bar (full width).
@@ -684,7 +679,8 @@ func (m Model) View() tea.View {
 	if m.running {
 		elapsed = time.Since(m.startTime)
 	}
-	b.WriteString(m.statusBar.View(m.focus, m.running, m.editor.InMultiLine(), m.editor.PopupVisible(), elapsed, m.progress, m.tailActive, m.sidebarOpen, m.keys))
+	status := m.statusBar.View(m.focus, m.running, m.editor.InMultiLine(), m.editor.PopupVisible(), elapsed, m.progress, m.tailActive, m.sidebarOpen, m.keys)
+	b.WriteString(oneLine(status))
 
 	output := b.String()
 
@@ -713,6 +709,26 @@ func (m Model) View() tea.View {
 	v.AltScreen = true
 
 	return v
+}
+
+func oneLine(s string) string {
+	return strings.Split(strings.TrimRight(s, "\n"), "\n")[0]
+}
+
+func fixedHeight(s string, height int) string {
+	if height <= 0 {
+		return ""
+	}
+
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	if len(lines) > height {
+		lines = lines[:height]
+	}
+	for len(lines) < height {
+		lines = append(lines, "")
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 // placeOverlay paints overlayStr on top of baseStr at the given (x, y) position.
@@ -769,15 +785,20 @@ func (m *Model) recalcLayout() {
 		m.sidebarOpen = false
 	}
 
-	editorH := m.editor.EditorHeight()
-	mainH := m.height - 1 - editorH - 1 // header(1) + statusbar(1)
-	if mainH < 1 {
-		mainH = 1
-	}
-
+	mainH := m.mainHeight()
 	m.results.SetSize(lay.mainW, mainH)
 	m.sidebar.SetSize(lay.sidebarW, mainH)
 	m.sidebar.SetCompact(lay.compactMode)
+}
+
+func (m Model) mainHeight() int {
+	editorH := m.editor.EditorHeight()
+	mainH := m.height - 1 - editorH - 1 // header(1) + statusbar(1)
+	if mainH < 1 {
+		return 1
+	}
+
+	return mainH
 }
 
 // copyLastResults copies the last query results to the clipboard via OSC 52.

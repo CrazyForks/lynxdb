@@ -36,6 +36,7 @@ const (
 func NewResults(width, height int) Results {
 	vp := viewport.New(viewport.WithWidth(width), viewport.WithHeight(height))
 	vp.SoftWrap = true
+	vp.FillHeight = true
 
 	return Results{
 		viewport: vp,

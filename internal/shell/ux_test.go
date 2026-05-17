@@ -103,6 +103,28 @@ func TestModelViewDoesNotCaptureMouse(t *testing.T) {
 	}
 }
 
+func TestModelViewKeepsEditorInsideScreen(t *testing.T) {
+	zone.NewGlobal()
+	defer zone.Close()
+
+	model := NewModel("server", RunOpts{Server: "http://localhost:3100"})
+	model.width = 72
+	model.height = 18
+	model.recalcLayout()
+	for i := 0; i < 12; i++ {
+		model.results.AppendText(strings.Repeat("result line with enough text to wrap ", 4))
+	}
+
+	view := model.View()
+	lines := strings.Split(view.Content, "\n")
+	if len(lines) != model.height {
+		t.Fatalf("view height = %d, want %d\n%s", len(lines), model.height, plain(view.Content))
+	}
+	if !strings.Contains(plain(view.Content), "lynxdb>") {
+		t.Fatalf("editor prompt is not visible in\n%s", plain(view.Content))
+	}
+}
+
 func TestPlaceOverlayUsesDisplayWidth(t *testing.T) {
 	base := "\x1b[31mabcdef\x1b[0m"
 	got := placeOverlay(base, "ZZ", 2, 0, 10, 1)

@@ -118,8 +118,8 @@ func TestEngine_WhereSourcePathBeforeParseCombined(t *testing.T) {
 
 	const sourcePath = "/var/log/app/nginx_access.log"
 	lines := []string{
-		`192.168.1.203 - - [17/May/2026:21:45:56 +0000] "OPTIONS /static/style.css HTTP/1.1" 404 109 "https://google.com/search?q=test" "kube-probe/1.30" 0.752 0.747`,
-		`192.168.1.204 - - [17/May/2026:21:45:57 +0000] "GET /health HTTP/1.1" 200 2 "-" "curl/8.0" 0.001 0.001`,
+		`{"message":"192.168.1.203 - - [17/May/2026:21:45:56 +0000] \"OPTIONS /static/style.css HTTP/1.1\" 404 109 \"https://google.com/search?q=test\" \"kube-probe/1.30\" 0.752 0.747"}`,
+		`{"message":"192.168.1.204 - - [17/May/2026:21:45:57 +0000] \"GET /health HTTP/1.1\" 200 2 \"-\" \"curl/8.0\" 0.001 0.001"}`,
 	}
 	if _, err := eng.IngestLines(context.Background(), lines, IngestOpts{
 		Index:      "nginx-access",
@@ -144,6 +144,37 @@ func TestEngine_WhereSourcePathBeforeParseCombined(t *testing.T) {
 	}
 	if _, ok := res.Rows[0]["source"]; ok {
 		t.Fatal("event row should not include source alias")
+	}
+
+	res, _, err = eng.Query(context.Background(), `FROM nginx-access | where _source="/var/log/app/nginx_access.log" | parse combined(message) | limit 1 | table referer, user_agent`, QueryOpts{})
+	if err != nil {
+		t.Fatalf("Query table without source metadata: %v", err)
+	}
+	if len(res.Rows) != 1 {
+		t.Fatalf("table rows: got %d, want 1", len(res.Rows))
+	}
+	if _, ok := res.Rows[0]["_source"]; ok {
+		t.Fatal("table result should not auto-add _source when it is not requested")
+	}
+	if _, ok := res.Rows[0]["_sourcetype"]; ok {
+		t.Fatal("table result should not auto-add _sourcetype when it is not requested")
+	}
+	if got := res.Rows[0]["referer"]; got != "https://google.com/search?q=test" {
+		t.Fatalf("referer: got %v, want https://google.com/search?q=test", got)
+	}
+	if got := res.Rows[0]["user_agent"]; got != "kube-probe/1.30" {
+		t.Fatalf("user_agent: got %v, want kube-probe/1.30", got)
+	}
+
+	res, _, err = eng.Query(context.Background(), `FROM nginx-access | where _source="/var/log/app/nginx_access.log" | parse combined(message) | limit 1 | table referer, user_agent, _source, _sourcetype`, QueryOpts{})
+	if err != nil {
+		t.Fatalf("Query table with source metadata: %v", err)
+	}
+	if got := res.Rows[0]["_source"]; got != sourcePath {
+		t.Fatalf("explicit _source: got %v, want %s", got, sourcePath)
+	}
+	if got := res.Rows[0]["_sourcetype"]; got != "json" {
+		t.Fatalf("explicit _sourcetype: got %v, want json", got)
 	}
 }
 

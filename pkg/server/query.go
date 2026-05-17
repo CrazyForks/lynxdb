@@ -293,7 +293,7 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 	} else if cached != nil {
 		e.metrics.QueryCacheHits.Add(1)
 		rows := cachedResultToResultRows(cached)
-		if params.ResultType == ResultTypeEvents {
+		if params.ResultType == ResultTypeEvents && queryAllowsDefaultEventMetadata(params.Program) {
 			ensureDefaultEventMetadataFields(rows)
 		}
 		elapsed := time.Since(start)
@@ -551,7 +551,7 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 			job.Stats.Warnings = append(job.Stats.Warnings, suggestions...)
 		}
 	}
-	if params.ResultType == ResultTypeEvents {
+	if params.ResultType == ResultTypeEvents && queryAllowsDefaultEventMetadata(params.Program) {
 		ensureDefaultEventMetadataFields(qr.rows)
 	}
 

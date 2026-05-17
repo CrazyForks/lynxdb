@@ -398,7 +398,7 @@ func (e *Engine) Query(ctx context.Context, spl2Query string, opts QueryOpts) (*
 	st.ProcessedBytes = e.totalRawBytes
 	st.ResultRows = int64(len(pipeRows))
 
-	rows := pipelineRowsToInterfaceRows(pipeRows, queryProducesEventRows(prog.Main))
+	rows := pipelineRowsToInterfaceRows(pipeRows, queryAddsDefaultEventMetadata(prog.Main))
 
 	return &QueryResult{Rows: rows}, st, nil
 }
@@ -799,6 +799,23 @@ func queryProducesEventRows(q *spl2.Query) bool {
 			return false
 		default:
 			return true
+		}
+	}
+
+	return true
+}
+
+func queryAddsDefaultEventMetadata(q *spl2.Query) bool {
+	if !queryProducesEventRows(q) {
+		return false
+	}
+	if q == nil {
+		return true
+	}
+	for _, cmd := range q.Commands {
+		switch cmd.(type) {
+		case *spl2.FieldsCommand, *spl2.TableCommand, *spl2.SelectCommand:
+			return false
 		}
 	}
 

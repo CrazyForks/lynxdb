@@ -49,6 +49,20 @@ func ensureDefaultEventMetadataFields(rows []spl2.ResultRow) {
 	}
 }
 
+func queryAllowsDefaultEventMetadata(prog *spl2.Program) bool {
+	if prog == nil || prog.Main == nil {
+		return true
+	}
+	for _, cmd := range prog.Main.Commands {
+		switch cmd.(type) {
+		case *spl2.FieldsCommand, *spl2.TableCommand, *spl2.SelectCommand:
+			return false
+		}
+	}
+
+	return true
+}
+
 // resultRowsToCachedResult converts executor result rows to a CachedResult.
 func resultRowsToCachedResult(rows []spl2.ResultRow) *cache.CachedResult {
 	if len(rows) == 0 {

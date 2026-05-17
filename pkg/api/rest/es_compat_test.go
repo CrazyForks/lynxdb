@@ -722,6 +722,23 @@ func TestESBulk_SourcePathFilterBeforeParseCombined(t *testing.T) {
 	if fmt.Sprint(events[0]["status"]) != "404" {
 		t.Fatalf("status = %v, want 404", events[0]["status"])
 	}
+
+	tableOnly := queryEvents(t, srv.Addr(), `{"q":"FROM nginx-access | where _source=\"/var/log/app/nginx_access.log\" | parse combined(message) | limit 1 | table referer, user_agent"}`)
+	if len(tableOnly) != 1 {
+		t.Fatalf("table-only events: got %d, want 1", len(tableOnly))
+	}
+	if _, ok := tableOnly[0]["_source"]; ok {
+		t.Fatal("table-only result should not auto-add _source")
+	}
+	if _, ok := tableOnly[0]["_sourcetype"]; ok {
+		t.Fatal("table-only result should not auto-add _sourcetype")
+	}
+	if tableOnly[0]["referer"] != "https://google.com/search?q=test" {
+		t.Fatalf("table-only referer = %v, want https://google.com/search?q=test", tableOnly[0]["referer"])
+	}
+	if tableOnly[0]["user_agent"] != "kube-probe/1.30" {
+		t.Fatalf("table-only user_agent = %v, want kube-probe/1.30", tableOnly[0]["user_agent"])
+	}
 }
 
 func TestESBulk_OtelCollectorAttributesTargetIndexFallback(t *testing.T) {

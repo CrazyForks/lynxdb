@@ -717,7 +717,6 @@ func (m Model) View() tea.View {
 
 	v := tea.NewView(zone.Scan(output))
 	v.AltScreen = true
-	v.MouseMode = tea.MouseModeCellMotion
 	if m.focus == EditorFocus {
 		v.Cursor = m.editor.Cursor(0, 1+mainH)
 	}

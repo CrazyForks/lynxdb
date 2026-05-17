@@ -19,6 +19,22 @@ import (
 
 const preflightAnimationInterval = 160 * time.Millisecond
 
+var preflightConnectingFrames = []string{
+	"    .        \n   /\\_/\\     \n  ( o.o )    \n   > ^ <     \n        .    ",
+	"      .      \n   /\\_/\\     \n  ( o.- )    \n   > ^ <     \n      .      ",
+	"        .    \n   /\\_/\\     \n  ( o.o )    \n   > v <     \n    .        ",
+	"      .      \n   /\\_/\\     \n  ( -.o )    \n   > ^ <     \n  .          ",
+	"    .  .     \n   /\\_/\\     \n  ( o.o )    \n   > ^ <     \n     .       ",
+	"  .          \n   /\\_/\\     \n  ( o.o )    \n   > v <     \n        .    ",
+}
+
+var preflightFailedFrames = []string{
+	"             \n   /\\_/\\     \n  ( u_u )    \n   > _ <     \n      .      ",
+	"             \n   /\\_/\\     \n  ( ;_; )    \n   > _ <     \n    .        ",
+	"             \n   /\\_/\\     \n  ( ._. )    \n   > _ <     \n        .    ",
+	"             \n   /\\_/\\     \n  ( u_u )    \n   > _ <     \n  .          ",
+}
+
 type preflightState int
 
 const (
@@ -171,16 +187,31 @@ func (m preflightModel) View() tea.View {
 }
 
 func (m preflightModel) lynxFrame() string {
-	mood := ui.LynxAlert
+	frames := preflightConnectingFrames
 	if m.state == preflightFailed {
-		mood = ui.LynxSad
-	}
-	frames := ui.LynxFrames(mood)
-	if len(frames) == 0 {
-		return ""
+		frames = preflightFailedFrames
 	}
 
-	return strings.TrimRight(ui.RenderLynxFrame(ui.Stdout, frames[m.frame%len(frames)]), "\n")
+	return renderPreflightLynxFrame(frames[m.frame%len(frames)])
+}
+
+func renderPreflightLynxFrame(frame string) string {
+	t := ui.Stdout
+	lines := strings.Split(frame, "\n")
+	for i, line := range lines {
+		switch i {
+		case 1:
+			lines[i] = t.Success.Render(line)
+		case 2:
+			lines[i] = t.Info.Render(line)
+		case 3:
+			lines[i] = t.Accent.Render(line)
+		default:
+			lines[i] = t.Dim.Render(line)
+		}
+	}
+
+	return strings.Join(lines, "\n")
 }
 
 func preflightCheckCmd(c *client.Client) tea.Cmd {

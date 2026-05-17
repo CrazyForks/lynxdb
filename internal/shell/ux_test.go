@@ -161,6 +161,17 @@ func TestPreflightViewRendersFailureState(t *testing.T) {
 	}
 }
 
+func TestPreflightLynxAnimationUsesMultipleFrames(t *testing.T) {
+	first := plain(preflightModel{state: preflightConnecting, frame: 0}.lynxFrame())
+	second := plain(preflightModel{state: preflightConnecting, frame: 1}.lynxFrame())
+	if first == second {
+		t.Fatal("preflight lynx animation should change between frames")
+	}
+	if lipgloss.Width(first) != lipgloss.Width(second) {
+		t.Fatalf("preflight frame width changed: %d != %d", lipgloss.Width(first), lipgloss.Width(second))
+	}
+}
+
 func TestPreflightQQuits(t *testing.T) {
 	model := preflightModel{
 		state: preflightFailed,

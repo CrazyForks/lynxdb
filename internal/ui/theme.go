@@ -16,6 +16,7 @@ import (
 	"image/color"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -78,7 +79,7 @@ func InitEnvWithMode(noColor bool, mode string) {
 		profile = colorprofile.ANSI
 	}
 
-	hasDark := lipgloss.HasDarkBackground(os.Stdin, os.Stdout)
+	hasDark := inferDarkBackgroundFromEnv()
 	switch mode {
 	case string(ThemeDark):
 		hasDark = true
@@ -105,6 +106,21 @@ func InitEnvWithMode(noColor bool, mode string) {
 
 // Init is the legacy entry point. It delegates to InitEnv.
 func Init(noColor bool) { InitEnv(noColor) }
+
+func inferDarkBackgroundFromEnv() bool {
+	colorFGBG := strings.TrimSpace(os.Getenv("COLORFGBG"))
+	if colorFGBG == "" {
+		return true
+	}
+
+	parts := strings.Split(colorFGBG, ";")
+	bg, err := strconv.Atoi(parts[len(parts)-1])
+	if err != nil {
+		return true
+	}
+
+	return bg < 7 || bg == 8
+}
 
 // ColorSuccess returns the semantic "success / ok" green.
 func ColorSuccess() color.Color {

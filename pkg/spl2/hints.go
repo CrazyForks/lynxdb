@@ -708,6 +708,7 @@ func GetRequiredColumns(q *Query) []string {
 	cols["_raw"] = true // always include _raw — it's the core log line field
 	cols["_source"] = true
 	cols["_sourcetype"] = true
+	cols["index"] = true
 	for _, cmd := range q.Commands {
 		switch c := cmd.(type) {
 		case *SearchCommand:

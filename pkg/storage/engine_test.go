@@ -47,6 +47,11 @@ func TestEngine_EphemeralIngestAndQuery(t *testing.T) {
 	} else if got != "test" {
 		t.Errorf("_source: got %v, want test", got)
 	}
+	if got, ok := res.Rows[0]["index"]; !ok {
+		t.Fatal("event row missing index")
+	} else if got != "main" {
+		t.Errorf("index: got %v, want main", got)
+	}
 	if _, ok := res.Rows[0]["_sourcetype"]; !ok {
 		t.Fatal("event row missing _sourcetype")
 	}

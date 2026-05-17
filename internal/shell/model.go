@@ -115,6 +115,7 @@ func NewModel(mode string, opts RunOpts) Model {
 func (m Model) Init() tea.Cmd {
 	cmds := []tea.Cmd{
 		m.statusBar.spinner.Tick,
+		lynxAnimationTickCmd(),
 	}
 
 	// Fetch fields for autocomplete and sidebar data in server mode.
@@ -147,6 +148,11 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.statusBar.spinner, cmd = m.statusBar.spinner.Update(msg)
 
 		return m, cmd
+
+	case lynxTickMsg:
+		m.results.AdvanceLynxFrame()
+
+		return m, lynxAnimationTickCmd()
 
 	case fieldsLoadedMsg:
 		if msg.err != nil {
@@ -1175,7 +1181,7 @@ func welcomeBanner(mode, server, since string) string {
 
 	var b strings.Builder
 	b.WriteString("\n")
-	b.WriteString(ui.RenderLynxFrame(t, ui.LynxFrame(ui.LynxAlert)))
+	b.WriteString(lynxAlertToken)
 	b.WriteString("\n")
 	b.WriteString("  " + t.Bold.Render("LynxDB shell") + "\n")
 	b.WriteString("\n")

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -49,7 +50,7 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:           "lynxdb",
-	Short:         "LynxDB — log analytics in a single binary",
+	Short:         "LynxDB - log analytics in a single binary",
 	Long:          `LynxDB is a columnar log storage and search engine with SPL2 query language.`,
 	RunE:          runRootCommand,
 	SilenceUsage:  true,
@@ -140,7 +141,8 @@ func applyProfile() {
 }
 
 func runWelcome(_ *cobra.Command, _ []string) error {
-	fmt.Fprintf(os.Stdout, "\n  \U0001F43E %s — log analytics in a single binary\n\n",
+	renderWelcomeLogo()
+	fmt.Fprintf(os.Stdout, "\n  %s - log analytics in a single binary\n\n",
 		ui.Stdout.Bold.Render(fmt.Sprintf("LynxDB %s", buildinfo.Version)))
 	fmt.Fprint(os.Stdout, `  Quick start:
     lynxdb demo                                  Run demo with sample data
@@ -153,6 +155,45 @@ func runWelcome(_ *cobra.Command, _ []string) error {
 `)
 
 	return nil
+}
+
+func renderWelcomeLogo() {
+	if !isTTY() || globalNoColor || globalTheme == string(ui.ThemePlain) ||
+		os.Getenv("NO_COLOR") != "" || os.Getenv("TERM") == "dumb" {
+		fmt.Fprintln(os.Stdout, ui.Stdout.Success.Render("  /\\_/\\"))
+		fmt.Fprintln(os.Stdout, ui.Stdout.Info.Render(" ( o.o )"))
+		fmt.Fprintln(os.Stdout, ui.Stdout.Accent.Render("  > ^ <"))
+
+		return
+	}
+
+	frames := []string{
+		"  /\\_/\\\n ( -.- )\n  > ^ <",
+		"  /\\_/\\\n ( o.- )\n  > ^ <",
+		"  /\\_/\\\n ( o.o )\n  > ^ <",
+		"  /\\_/\\\n ( o.o )\n  > v <",
+		"  /\\_/\\\n ( o.o )\n  > ^ <",
+	}
+
+	fmt.Fprintln(os.Stdout)
+	for i, frame := range frames {
+		if i > 0 {
+			fmt.Fprint(os.Stdout, "\033[3A")
+		}
+		fmt.Fprint(os.Stdout, styleWelcomeLogoFrame(frame))
+		time.Sleep(65 * time.Millisecond)
+	}
+}
+
+func styleWelcomeLogoFrame(frame string) string {
+	lines := strings.Split(frame, "\n")
+	if len(lines) != 3 {
+		return frame + "\n"
+	}
+
+	return "  " + ui.Stdout.Success.Render(lines[0]) + "\n" +
+		"  " + ui.Stdout.Info.Render(lines[1]) + "\n" +
+		"  " + ui.Stdout.Accent.Render(lines[2]) + "\n"
 }
 
 // runRootCommand handles bare `lynxdb` invocation. When stdin is piped, it

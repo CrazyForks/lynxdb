@@ -68,7 +68,7 @@ func runServerPreflight(c *client.Client, server string) error {
 		keys:   defaultKeyMap(),
 	}
 
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithEnvironment(bubbleTeaEnv()))
 	final, err := p.Run()
 	if err != nil {
 		return err

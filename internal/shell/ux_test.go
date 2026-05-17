@@ -104,6 +104,30 @@ func TestModelViewDoesNotCaptureMouse(t *testing.T) {
 	}
 }
 
+func TestBubbleTeaEnvDisablesModeProbes(t *testing.T) {
+	t.Setenv("TERM", "xterm-ghostty")
+	t.Setenv("TERM_PROGRAM", "WezTerm")
+
+	env := bubbleTeaEnv()
+	gotTerm := ""
+	gotTermProgram := ""
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "TERM=") {
+			gotTerm = strings.TrimPrefix(kv, "TERM=")
+		}
+		if strings.HasPrefix(kv, "TERM_PROGRAM=") {
+			gotTermProgram = strings.TrimPrefix(kv, "TERM_PROGRAM=")
+		}
+	}
+
+	if gotTerm != "xterm-256color" {
+		t.Fatalf("TERM = %q, want xterm-256color", gotTerm)
+	}
+	if gotTermProgram != "Apple_Terminal" {
+		t.Fatalf("TERM_PROGRAM = %q, want Apple_Terminal", gotTermProgram)
+	}
+}
+
 func TestModelViewKeepsEditorInsideScreen(t *testing.T) {
 	zone.NewGlobal()
 	defer zone.Close()

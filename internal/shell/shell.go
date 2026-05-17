@@ -40,7 +40,7 @@ func Run(mode string, opts RunOpts) error {
 	// Prepend welcome banner to results viewport.
 	m.results.AppendText(welcomeBanner(mode, opts.Server, opts.Since))
 
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithEnvironment(bubbleTeaEnv()))
 	_, err := p.Run()
 
 	zone.Close()

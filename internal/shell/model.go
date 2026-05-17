@@ -1152,6 +1152,8 @@ func welcomeBanner() string {
 
 	var b strings.Builder
 	b.WriteString("\n")
+	b.WriteString(ui.RenderLynxFrame(t, ui.LynxFrame(ui.LynxAlert)))
+	b.WriteString("\n")
 	b.WriteString("  " + t.Bold.Render("Welcome to LynxDB Shell") + "\n")
 	b.WriteString("\n")
 	b.WriteString("  " + t.Dim.Render("Try a query:") + "\n")

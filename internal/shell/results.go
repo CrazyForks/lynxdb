@@ -185,7 +185,10 @@ func renderResultRows(rows []map[string]interface{}, width int, format output.Fo
 		return ""
 	}
 
-	f := output.DetectFormat(format, rows, ui.Stdout)
+	f := output.DetectFormatWithOptions(format, rows, output.HumanTableOptions{
+		Theme: ui.Stdout,
+		Width: width,
+	})
 
 	var b strings.Builder
 	_ = f.Format(&b, rows)

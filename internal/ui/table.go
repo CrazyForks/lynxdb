@@ -6,6 +6,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
+	"github.com/charmbracelet/x/ansi"
 )
 
 // cellPaddingRight is the right-padding (in chars) applied to each table cell.
@@ -224,10 +225,28 @@ func (t *Table) renderRecords() string {
 			}
 
 			label := labelStyle.Render(fmt.Sprintf("  %-*s", maxLabel, col))
+			prefix := label + "  "
+			prefixWidth := ansi.StringWidth(prefix)
+			valueWidth := t.termWidth - prefixWidth
+			if valueWidth < 1 {
+				valueWidth = 1
+			}
+			wrappedValue := ansi.Wrap(val, valueWidth, " ")
+			wrappedLines := strings.Split(wrappedValue, "\n")
+			if len(wrappedLines) == 0 {
+				wrappedLines = []string{""}
+			}
+
 			b.WriteString(label)
 			b.WriteString("  ")
-			b.WriteString(val)
+			b.WriteString(wrappedLines[0])
 			b.WriteByte('\n')
+			continuationPrefix := strings.Repeat(" ", prefixWidth)
+			for _, line := range wrappedLines[1:] {
+				b.WriteString(continuationPrefix)
+				b.WriteString(line)
+				b.WriteByte('\n')
+			}
 		}
 
 		// Blank line between records (but not after the last one).

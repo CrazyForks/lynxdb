@@ -11,6 +11,7 @@ import (
 	"charm.land/lipgloss/v2"
 	zone "github.com/lrstanley/bubblezone/v2"
 
+	"github.com/lynxbase/lynxdb/internal/output"
 	"github.com/lynxbase/lynxdb/internal/ui"
 )
 
@@ -170,6 +171,27 @@ func TestEditorRendersFramedInputBlock(t *testing.T) {
 	}
 	if !strings.Contains(got, "lynxdb>") || !strings.Contains(got, "─") {
 		t.Fatalf("editor input block missing prompt or frame in %q", got)
+	}
+}
+
+func TestRenderResultRowsFitsLogTableWidth(t *testing.T) {
+	rows := []map[string]interface{}{
+		{
+			"timestamp": "2026-05-17T12:00:00Z",
+			"level":     "error",
+			"service":   "api",
+			"host":      "localhost",
+			"source":    "nginx",
+			"trace_id":  "abc123",
+			"message":   strings.Repeat("connection refused while dialing upstream ", 4),
+		},
+	}
+
+	got := plain(renderResultRows(rows, 48, output.FormatTable))
+	for _, line := range strings.Split(got, "\n") {
+		if w := lipgloss.Width(line); w > 48 {
+			t.Fatalf("rendered line width = %d, want <= 48 in %q\n%s", w, line, got)
+		}
 	}
 }
 

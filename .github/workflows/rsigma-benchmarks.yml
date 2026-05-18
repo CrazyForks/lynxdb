@@ -36,13 +36,24 @@ jobs:
           import statistics
           import sys
 
-          baseline = {}
-          row = re.compile(r"^\|\s+(Benchmark\S+)\s+\|\s+([0-9]+)\s+\|")
+          # Gate on the architecture-independent `budget` column from
+          # BENCHMARKS.md, not the M4 Pro p50 reference numbers. CI runners are
+          # ~2-3x slower and noisy, so a tight relative comparison against
+          # dev-machine p50 can never reliably pass; the budgets are absolute
+          # ceilings sized to catch catastrophic (multi-x) regressions.
+          budgets = {}
+          row = re.compile(
+              r"^\|\s*(Benchmark\S+)\s*\|\s*\d+\s*\|\s*\d+\s*\|\s*(<=?)\s*([0-9]+)\s*ns/op\s*\|"
+          )
           with open("BENCHMARKS.md", encoding="utf-8") as f:
               for line in f:
                   match = row.match(line)
                   if match:
-                      baseline[match.group(1)] = int(match.group(2))
+                      budgets[match.group(1)] = (match.group(2), int(match.group(3)))
+
+          if not budgets:
+              print("no benchmark budgets parsed from BENCHMARKS.md", file=sys.stderr)
+              sys.exit(1)
 
           samples = {}
           bench = re.compile(r"^(Benchmark\S+?)(?:-\d+)?\s+\d+\s+([0-9.]+)\s+ns/op")
@@ -53,20 +64,20 @@ jobs:
                       samples.setdefault(match.group(1), []).append(float(match.group(2)))
 
           failed = False
-          for name, base in sorted(baseline.items()):
+          for name, (op, limit) in sorted(budgets.items()):
               values = samples.get(name)
               if not values:
                   print(f"missing benchmark output for {name}", file=sys.stderr)
                   failed = True
                   continue
               current = statistics.median(values)
-              limit = base * 1.20
-              if current > limit:
-                  print(
-                      f"regression: {name} current_p50={current:.0f}ns/op "
-                      f"baseline={base}ns/op limit={limit:.0f}ns/op",
-                      file=sys.stderr,
-                  )
+              over = current >= limit if op == "<" else current > limit
+              status = "FAIL" if over else "ok"
+              print(
+                  f"{status}: {name} p50={current:.0f}ns/op "
+                  f"budget {op} {limit}ns/op"
+              )
+              if over:
                   failed = True
 
           sys.exit(1 if failed else 0)

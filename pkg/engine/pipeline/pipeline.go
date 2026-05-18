@@ -799,6 +799,30 @@ func buildFromSource(ctx context.Context, source Iterator, commands []spl2.Comma
 	return iter, nil
 }
 
+func newProjectWithAliases(child Iterator, fields []string, columns []spl2.SelectColumn) Iterator {
+	if len(columns) > 0 {
+		fields = make([]string, len(columns))
+	}
+	var renames map[string]string
+	for i, col := range columns {
+		if len(columns) > 0 {
+			fields[i] = col.Name
+		}
+		if col.Alias == "" {
+			continue
+		}
+		if renames == nil {
+			renames = make(map[string]string, len(columns))
+		}
+		renames[col.Name] = col.Alias
+	}
+	result := NewProjectIterator(child, fields, false)
+	if len(renames) > 0 {
+		return NewRenameIterator(result, renames)
+	}
+	return result
+}
+
 // BuildPipeline converts an SPL2 Query into a chain of streaming iterators.
 // For queries without CTEs. Use BuildProgram for full Program support.
 func BuildPipeline(ctx context.Context, query *spl2.Query, store IndexStore, batchSize int) (Iterator, error) {
@@ -977,27 +1001,12 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		return NewProjectIterator(child, c.Fields, c.Remove), nil
 
 	case *spl2.TableCommand:
-		return NewProjectIterator(child, c.Fields, false), nil
+		return newProjectWithAliases(child, c.Fields, c.Columns), nil
 
 	case *spl2.SelectCommand:
 		// SelectCommand is LynxFlow syntax: | select field1, field2 AS alias, ...
 		// Semantics: project + optional rename — identical to TABLE + RENAME.
-		fields := make([]string, len(c.Columns))
-		var renames map[string]string
-		for i, col := range c.Columns {
-			fields[i] = col.Name
-			if col.Alias != "" {
-				if renames == nil {
-					renames = make(map[string]string, len(c.Columns))
-				}
-				renames[col.Name] = col.Alias
-			}
-		}
-		result := NewProjectIterator(child, fields, false)
-		if len(renames) > 0 {
-			return NewRenameIterator(result, renames), nil
-		}
-		return result, nil
+		return newProjectWithAliases(child, nil, c.Columns), nil
 
 	case *spl2.RenameCommand:
 		renames := make(map[string]string, len(c.Renames))

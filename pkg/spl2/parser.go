@@ -1578,15 +1578,65 @@ func (p *Parser) parseTable() (*TableCommand, error) {
 	if p.peek().Type == TokenStar {
 		p.advance()
 
-		return &TableCommand{Fields: []string{"*"}}, nil
+		return &TableCommand{Fields: []string{"*"}, Columns: []SelectColumn{{Name: "*"}}}, nil
 	}
 
-	fields, err := p.parseIdentList()
+	columns, err := p.parseProjectionColumnList("table", true)
 	if err != nil {
 		return nil, err
 	}
 
-	return &TableCommand{Fields: fields}, nil
+	fields := make([]string, len(columns))
+	for i, col := range columns {
+		fields[i] = col.Name
+	}
+
+	return &TableCommand{Fields: fields, Columns: columns}, nil
+}
+
+func (p *Parser) parseProjectionColumnList(command string, allowGlob bool) ([]SelectColumn, error) {
+	var columns []SelectColumn
+
+	for {
+		tok := p.peek()
+		if tok.Type == TokenStar {
+			p.advance()
+			col := SelectColumn{Name: "*"}
+			if p.peek().Type == TokenAs {
+				return nil, fmt.Errorf("spl2: %s: wildcard projection cannot use AS at position %d", command, p.peek().Pos)
+			}
+			columns = append(columns, col)
+		} else if isIdentLike(tok.Type) || tok.Type == TokenString || (allowGlob && tok.Type == TokenGlob) {
+			p.advance()
+			col := SelectColumn{Name: tok.Literal}
+			if p.peek().Type == TokenAs {
+				if ContainsGlobWildcard(col.Name) {
+					return nil, fmt.Errorf("spl2: %s: wildcard projection %q cannot use AS at position %d", command, col.Name, p.peek().Pos)
+				}
+				p.advance()
+				alias, err := p.expectIdent()
+				if err != nil {
+					return nil, err
+				}
+				col.Alias = alias.Literal
+			}
+			columns = append(columns, col)
+		} else {
+			break
+		}
+
+		if p.peek().Type == TokenComma {
+			p.advance()
+		} else {
+			break
+		}
+	}
+
+	if len(columns) == 0 {
+		return nil, fmt.Errorf("spl2: %s requires at least one field at position %d", command, p.peek().Pos)
+	}
+
+	return columns, nil
 }
 
 func (p *Parser) parseDedup() (*DedupCommand, error) {

@@ -1098,6 +1098,44 @@ func TestProjectIterator(t *testing.T) {
 	}
 }
 
+func TestBuildFromSourceTableAliases(t *testing.T) {
+	query, err := spl2.Parse(`FROM main | table ngx.referer AS r, ngx.user_agent, _sourcetype AS st`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	rows := []map[string]event.Value{{
+		"ngx.referer":    event.StringValue("https://example.test"),
+		"ngx.user_agent": event.StringValue("curl/8"),
+		"_sourcetype":    event.StringValue("json"),
+		"ignored":        event.StringValue("drop"),
+	}}
+	iter, err := BuildFromSource(context.Background(), NewRowScanIterator(rows, 2), query.Commands, 2)
+	if err != nil {
+		t.Fatalf("BuildFromSource: %v", err)
+	}
+	out, err := CollectAll(context.Background(), iter)
+	if err != nil {
+		t.Fatalf("CollectAll: %v", err)
+	}
+	if len(out) != 1 {
+		t.Fatalf("rows: got %d, want 1", len(out))
+	}
+	if got := out[0]["r"].AsString(); got != "https://example.test" {
+		t.Fatalf("r: got %q", got)
+	}
+	if got := out[0]["ngx.user_agent"].AsString(); got != "curl/8" {
+		t.Fatalf("ngx.user_agent: got %q", got)
+	}
+	if got := out[0]["st"].AsString(); got != "json" {
+		t.Fatalf("st: got %q", got)
+	}
+	for _, dropped := range []string{"ngx.referer", "_sourcetype", "ignored"} {
+		if _, ok := out[0][dropped]; ok {
+			t.Fatalf("%s should not be present", dropped)
+		}
+	}
+}
+
 func TestRenameIterator(t *testing.T) {
 	events := makeEvents(5)
 	scan := NewScanIterator(events, 1024)

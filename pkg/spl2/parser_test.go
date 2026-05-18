@@ -260,6 +260,37 @@ func TestParse_TableCommand(t *testing.T) {
 	}
 }
 
+func TestParse_TableCommandAliases(t *testing.T) {
+	input := `FROM main | table ngx.referer AS r, ngx.user_agent, "_sourcetype" AS st`
+	q, err := Parse(input)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	table, ok := q.Commands[0].(*TableCommand)
+	if !ok {
+		t.Fatalf("expected TableCommand, got %T", q.Commands[0])
+	}
+	expectedFields := []string{"ngx.referer", "ngx.user_agent", "_sourcetype"}
+	if len(table.Fields) != len(expectedFields) {
+		t.Fatalf("table fields count: got %d, want %d", len(table.Fields), len(expectedFields))
+	}
+	for i, name := range expectedFields {
+		if table.Fields[i] != name {
+			t.Errorf("table.Fields[%d]: got %q, want %q", i, table.Fields[i], name)
+		}
+	}
+	expectedAliases := []string{"r", "", "st"}
+	if len(table.Columns) != len(expectedAliases) {
+		t.Fatalf("table columns count: got %d, want %d", len(table.Columns), len(expectedAliases))
+	}
+	for i, alias := range expectedAliases {
+		if table.Columns[i].Alias != alias {
+			t.Errorf("table.Columns[%d].Alias: got %q, want %q", i, table.Columns[i].Alias, alias)
+		}
+	}
+}
+
 func TestParse_DedupCommand(t *testing.T) {
 	input := `FROM main | dedup host`
 	q, err := Parse(input)

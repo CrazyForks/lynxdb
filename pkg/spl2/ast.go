@@ -311,9 +311,10 @@ func (c *FieldsCommand) String() string {
 	return fmt.Sprintf("fields %v", c.Fields)
 }
 
-// TableCommand represents: table <field1>, <field2>, ...
+// TableCommand represents: table <field1> [AS <alias>], <field2>, ...
 type TableCommand struct {
-	Fields []string
+	Fields  []string
+	Columns []SelectColumn
 }
 
 func (*TableCommand) commandNode() {}

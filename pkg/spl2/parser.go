@@ -166,14 +166,14 @@ func (p *Parser) parseQuery() (*Query, error) {
 	case TokenIndex:
 		// INDEX is an alias for FROM as a source command.
 		// Supports: index nginx, index="nginx", index=nginx
-		sc, searchCmd, err := p.parseIndexSource()
+		sc, cmds, err := p.parseIndexSource()
 		if err != nil {
 			return nil, err
 		}
 		q.Source = sc
 		// index="nginx" status>=500 desugars to: from nginx | search status>=500
-		if searchCmd != nil {
-			q.Commands = append(q.Commands, searchCmd)
+		if len(cmds) > 0 {
+			q.Commands = append(q.Commands, cmds...)
 		}
 	}
 
@@ -245,7 +245,7 @@ func isImplicitSearchStart(tok, next Token) bool {
 // those tokens are desugared into a search command:
 //
 //	index="nginx" status>=500  →  from nginx | search status>=500
-func (p *Parser) parseIndexSource() (*SourceClause, *SearchCommand, error) {
+func (p *Parser) parseIndexSource() (*SourceClause, []Command, error) {
 	p.advance() // consume "index"
 
 	// index=<name> or index="name" (SPL1 compat: equals syntax)
@@ -268,7 +268,7 @@ func (p *Parser) parseIndexSource() (*SourceClause, *SearchCommand, error) {
 			return nil, nil, err
 		}
 
-		return sc, searchCmd, nil
+		return sc, implicitSearchCommands(searchCmd), nil
 	}
 
 	// index <source> (bare form, same as: from <source>)
@@ -288,6 +288,81 @@ func (p *Parser) parseIndexSource() (*SourceClause, *SearchCommand, error) {
 	}
 
 	return sc, nil, nil
+}
+
+func implicitSearchCommands(cmd *SearchCommand) []Command {
+	if cmd == nil {
+		return nil
+	}
+	if expr, ok := systemSearchExprToWhere(cmd.Expression); ok {
+		return []Command{&WhereCommand{Expr: expr}}
+	}
+	return []Command{cmd}
+}
+
+func systemSearchExprToWhere(expr SearchExpr) (Expr, bool) {
+	switch e := expr.(type) {
+	case *SearchAndExpr:
+		left, ok := systemSearchExprToWhere(e.Left)
+		if !ok {
+			return nil, false
+		}
+		right, ok := systemSearchExprToWhere(e.Right)
+		if !ok {
+			return nil, false
+		}
+		return &BinaryExpr{Left: left, Op: "and", Right: right}, true
+	case *SearchCompareExpr:
+		field, ok := systemFilterField(e.Field)
+		if !ok || e.HasWildcard || e.CaseSensitive {
+			return nil, false
+		}
+		op, ok := searchCompareOpToWhere(e.Op)
+		if !ok {
+			return nil, false
+		}
+		return &CompareExpr{
+			Left:  &FieldExpr{Name: field},
+			Op:    op,
+			Right: &LiteralExpr{Value: e.Value},
+		}, true
+	default:
+		return nil, false
+	}
+}
+
+func systemFilterField(field string) (string, bool) {
+	switch strings.ToLower(field) {
+	case "source", "_source":
+		return "_source", true
+	case "sourcetype", "_sourcetype":
+		return "_sourcetype", true
+	case "host":
+		return "host", true
+	default:
+		return "", false
+	}
+}
+
+func searchCompareOpToWhere(op CompareOp) (string, bool) {
+	switch op {
+	case OpEq:
+		return "=", true
+	case OpNotEq:
+		return "!=", true
+	case OpLt:
+		return "<", true
+	case OpLte:
+		return "<=", true
+	case OpGt:
+		return ">", true
+	case OpGte:
+		return ">=", true
+	case OpLike:
+		return "like", true
+	default:
+		return "", false
+	}
 }
 
 // parseImplicitSearch checks for trailing tokens after an index=<name> form

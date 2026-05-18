@@ -251,6 +251,8 @@ func (e *SearchEvaluator) evalCompare(cmp *SearchCompareExpr, row map[string]eve
 	field := cmp.Field
 	if field == "source" {
 		field = "_source"
+	} else if field == "sourcetype" {
+		field = "_sourcetype"
 	}
 
 	fieldVal, fieldExists := e.resolveField(field, row)
@@ -294,6 +296,8 @@ func (e *SearchEvaluator) evalIn(in *SearchInExpr, row map[string]event.Value) b
 	field := in.Field
 	if field == "source" {
 		field = "_source"
+	} else if field == "sourcetype" {
+		field = "_sourcetype"
 	}
 
 	fieldVal, fieldExists := e.resolveField(field, row)

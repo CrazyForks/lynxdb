@@ -2069,6 +2069,50 @@ func TestParse_IndexEqualsDesugarsComplex(t *testing.T) {
 	}
 }
 
+func TestParse_IndexEqualsSystemFiltersDesugarToWhere(t *testing.T) {
+	q, err := Parse(`index=nginx-access _source="/var/log/app/nginx_access.log" _sourcetype=json | parse combined(message) as ngx`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if q.Source == nil || q.Source.Index != "nginx-access" {
+		t.Fatalf("Source: got %v, want nginx-access", q.Source)
+	}
+	if len(q.Commands) != 2 {
+		t.Fatalf("Commands: got %d, want 2", len(q.Commands))
+	}
+	where, ok := q.Commands[0].(*WhereCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected WhereCommand, got %T", q.Commands[0])
+	}
+	if got := where.Expr.String(); got != `((_source = "/var/log/app/nginx_access.log") and (_sourcetype = "json"))` {
+		t.Fatalf("where expr: got %s", got)
+	}
+	unpack, ok := q.Commands[1].(*UnpackCommand)
+	if !ok {
+		t.Fatalf("cmd[1]: expected UnpackCommand, got %T", q.Commands[1])
+	}
+	if unpack.Format != "combined" || unpack.SourceField != "message" || unpack.Prefix != "ngx." {
+		t.Fatalf("unpack: got %+v", unpack)
+	}
+}
+
+func TestParse_IndexEqualsSourceAliasesDesugarToWhere(t *testing.T) {
+	q, err := Parse(`index=nginx-access source="/var/log/app/nginx_access.log" sourcetype=json`)
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+	if len(q.Commands) != 1 {
+		t.Fatalf("Commands: got %d, want 1", len(q.Commands))
+	}
+	where, ok := q.Commands[0].(*WhereCommand)
+	if !ok {
+		t.Fatalf("cmd[0]: expected WhereCommand, got %T", q.Commands[0])
+	}
+	if got := where.Expr.String(); got != `((_source = "/var/log/app/nginx_access.log") and (_sourcetype = "json"))` {
+		t.Fatalf("where expr: got %s", got)
+	}
+}
+
 func TestParse_IndexEqualsThenPipe(t *testing.T) {
 	// index=nginx | where status>=500 — no implicit search, just source + pipe
 	q, err := Parse(`index=nginx | where status>=500`)

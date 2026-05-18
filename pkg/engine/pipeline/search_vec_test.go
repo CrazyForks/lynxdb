@@ -250,6 +250,45 @@ func TestSearchExprIterator_VectorizedSourceAlias(t *testing.T) {
 	}
 }
 
+// TestSearchExprIterator_VectorizedSourceTypeAlias tests that "sourcetype" is
+// resolved to "_sourcetype".
+func TestSearchExprIterator_VectorizedSourceTypeAlias(t *testing.T) {
+	events := make([]*event.Event, 10)
+	for i := range events {
+		ev := event.NewEvent(time.Now(), fmt.Sprintf("log line %d", i))
+		ev.Fields = map[string]event.Value{}
+		if i < 6 {
+			ev.SourceType = "json"
+		} else {
+			ev.SourceType = "raw"
+		}
+		events[i] = ev
+	}
+
+	expr := &spl2.SearchCompareExpr{
+		Field: "sourcetype",
+		Op:    spl2.OpEq,
+		Value: "json",
+	}
+	eval := spl2.NewSearchEvaluator(expr)
+
+	scan := NewScanIterator(events, 1024)
+	search := NewSearchExprIteratorWithExpr(scan, eval, expr)
+
+	ctx := context.Background()
+	_ = search.Init(ctx)
+	rows, err := CollectAll(ctx, search)
+	if err != nil {
+		t.Fatalf("CollectAll: %v", err)
+	}
+	if len(rows) != 6 {
+		t.Errorf("expected 6 rows (sourcetype=json), got %d", len(rows))
+	}
+	if search.vecField != "_sourcetype" {
+		t.Errorf("vecField=%q, want _sourcetype", search.vecField)
+	}
+}
+
 // TestSearchExprIterator_VectorizedFallbackMissingColumn tests that the
 // vectorized path falls back to per-row evaluation when the field column
 // is missing (needs JSON extraction from _raw).

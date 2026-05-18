@@ -447,6 +447,8 @@ func NewSearchExprIteratorWithExpr(child Iterator, eval *spl2.SearchEvaluator, e
 		field := cmp.Field
 		if field == "source" {
 			field = "_source"
+		} else if field == "sourcetype" {
+			field = "_sourcetype"
 		}
 		si.vecField = field
 		si.vecValue = cmp.Value

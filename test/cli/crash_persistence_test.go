@@ -18,8 +18,9 @@ func TestServer_ForcedCrash_FlushedPartSurvivesRestart(t *testing.T) {
 	srv := startServerWithDataDir(t, dataDir)
 
 	ingestFile(t, srv, testdataLog("backend_server.log"))
+	assertServerCount(t, srv, 26)
 
-	partPath := waitForFinalPart(t, dataDir, 15*time.Second)
+	partPath := waitForFinalPart(t, dataDir, 5*time.Second)
 	partDir := filepath.Dir(partPath)
 	staleTmpPath := filepath.Join(partDir, "tmp_forced_crash_cleanup.lsg")
 	if err := os.WriteFile(staleTmpPath, []byte("stale"), 0o644); err != nil {
@@ -32,20 +33,26 @@ func TestServer_ForcedCrash_FlushedPartSurvivesRestart(t *testing.T) {
 
 	restarted := startServerWithDataDir(t, dataDir)
 
-	r := runLynxDB(t, "--server", restarted.BaseURL, "query", "--format", "json",
-		`FROM main | stats count`)
-	if r.ExitCode != 0 {
-		t.Fatalf("restart query exit %d, stderr: %s", r.ExitCode, r.Stderr)
-	}
-	if got := jsonCount(t, r.Stdout); got != 26 {
-		t.Fatalf("restart count = %d, want 26", got)
-	}
+	assertServerCount(t, restarted, 26)
 
 	if _, err := os.Stat(staleTmpPath); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stale tmp file still present after restart: err=%v", err)
 	}
 	if _, err := os.Stat(partPath); err != nil {
 		t.Fatalf("final part missing after restart: %v", err)
+	}
+}
+
+func assertServerCount(t *testing.T, srv *Server, want int) {
+	t.Helper()
+
+	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
+		`FROM main | stats count`)
+	if r.ExitCode != 0 {
+		t.Fatalf("query exit %d, stderr: %s", r.ExitCode, r.Stderr)
+	}
+	if got := jsonCount(t, r.Stdout); got != want {
+		t.Fatalf("count = %d, want %d", got, want)
 	}
 }
 

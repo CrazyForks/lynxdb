@@ -70,6 +70,8 @@ func TestGolden_Server(t *testing.T) {
 		ingestFileWithIndex(t, srv, testdataLog(logFile), index)
 	}
 
+	querySlots := make(chan struct{}, 8)
+
 	for _, tc := range tests {
 		t.Run(tc.Name, func(t *testing.T) {
 			t.Parallel()
@@ -84,6 +86,9 @@ func TestGolden_Server(t *testing.T) {
 				"--format", tc.Format,
 				tc.Query,
 			}
+
+			querySlots <- struct{}{}
+			defer func() { <-querySlots }()
 
 			result := runLynxDB(t, args...)
 			assertGolden(t, tc, result)

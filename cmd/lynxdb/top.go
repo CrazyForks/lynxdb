@@ -14,6 +14,7 @@ import (
 	zone "github.com/lrstanley/bubblezone/v2"
 	"github.com/spf13/cobra"
 
+	"github.com/lynxbase/lynxdb/internal/shell"
 	"github.com/lynxbase/lynxdb/internal/ui"
 	"github.com/lynxbase/lynxdb/pkg/client"
 )
@@ -792,10 +793,20 @@ func cancelTopJobCmd(c *client.Client, jobID string) tea.Cmd {
 }
 
 func runTop(interval time.Duration) error {
+	api := apiClient()
+	if err := shell.RunServerPreflight(api, globalServer, "LynxDB top"); err != nil {
+		if shell.IsPreflightQuit(err) {
+			return nil
+		}
+
+		return err
+	}
+
 	zone.NewGlobal()
 	defer zone.Close()
 
 	m := newTopModel(globalServer, interval)
+	m.client = api
 	p := tea.NewProgram(m)
 	_, err := p.Run()
 

@@ -89,6 +89,33 @@ func TestResultsRenderConnectionDiagnostic(t *testing.T) {
 	}
 }
 
+func TestPreflightRendersCustomTitleAndFriendlyError(t *testing.T) {
+	model := preflightModel{
+		server: "http://localhost:3100",
+		title:  "LynxDB top",
+		width:  90,
+		height: 24,
+		state:  preflightFailed,
+		err:    errors.New(`Get "http://localhost:3100/api/v1/top/snapshot": dial tcp [::1]:3100: connect: connection refused`),
+		keys:   defaultKeyMap(),
+	}
+
+	got := plain(model.View().Content)
+	for _, want := range []string{
+		"LynxDB top",
+		"LynxDB server is not reachable",
+		"connection refused - no LynxDB server appears to be listening there",
+		"Press r to retry or q to quit.",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("preflight missing %q in %q", want, got)
+		}
+	}
+	if strings.Contains(got, "dial tcp") {
+		t.Fatalf("preflight leaked raw dial error: %q", got)
+	}
+}
+
 func TestModelViewDoesNotCaptureMouse(t *testing.T) {
 	zone.NewGlobal()
 	defer zone.Close()

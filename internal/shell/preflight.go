@@ -46,6 +46,7 @@ const (
 type preflightModel struct {
 	client *client.Client
 	server string
+	title  string
 	width  int
 	height int
 	frame  int
@@ -60,10 +61,15 @@ type preflightResultMsg struct {
 	err error
 }
 
-func runServerPreflight(c *client.Client, server string) error {
+// RunServerPreflight checks server reachability before starting a full-screen server TUI.
+func RunServerPreflight(c *client.Client, server, title string) error {
+	if title == "" {
+		title = "LynxDB"
+	}
 	m := preflightModel{
 		client: c,
 		server: server,
+		title:  title,
 		state:  preflightConnecting,
 		keys:   defaultKeyMap(),
 	}
@@ -79,6 +85,15 @@ func runServerPreflight(c *client.Client, server string) error {
 	}
 
 	return errPreflightQuit
+}
+
+func runServerPreflight(c *client.Client, server string) error {
+	return RunServerPreflight(c, server, "LynxDB shell")
+}
+
+// IsPreflightQuit reports whether the user quit the connection preflight screen.
+func IsPreflightQuit(err error) bool {
+	return errors.Is(err, errPreflightQuit)
 }
 
 var errPreflightQuit = fmt.Errorf("preflight quit")
@@ -141,7 +156,7 @@ func (m preflightModel) View() tea.View {
 	var lines []string
 	lines = append(lines, m.lynxFrame())
 	lines = append(lines, "")
-	lines = append(lines, t.Bold.Render("LynxDB shell"))
+	lines = append(lines, t.Bold.Render(m.title))
 	lines = append(lines, "")
 
 	switch m.state {

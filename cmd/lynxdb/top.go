@@ -60,6 +60,11 @@ type topCancelMsg struct {
 	err   error
 }
 
+type topClipboardMsg struct {
+	action string
+	err    error
+}
+
 type topTickMsg struct{}
 
 type topSortMode int
@@ -101,6 +106,9 @@ type topModel struct {
 
 	confirmCancel bool
 	cancelStatus  string
+	expandedJobID string
+	detailMode    string
+	actionStatus  string
 
 	histories map[string][]float64
 }
@@ -160,6 +168,13 @@ func (m topModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		m.confirmCancel = false
 		return m, fetchTopSnapshotCmd(m.client)
+	case topClipboardMsg:
+		if msg.err != nil {
+			m.actionStatus = fmt.Sprintf("%s failed: %v", msg.action, msg.err)
+		} else {
+			m.actionStatus = msg.action + " copied"
+		}
+		return m, nil
 	case spinner.TickMsg:
 		var cmd tea.Cmd
 		m.spinner, cmd = m.spinner.Update(msg)
@@ -247,6 +262,23 @@ func (m topModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.sortMode = (m.sortMode + 1) % topSortMode(len(topSortLabels))
 		m.selected = 0
 		m.scroll = 0
+	case "enter", "d":
+		row, ok := m.selectedRow()
+		if ok {
+			m.toggleExpanded(row.JobID, "detail")
+		}
+	case "c":
+		row, ok := m.selectedRow()
+		if ok {
+			return m, copyTopTextCmd("query", row.Query)
+		}
+	case "f":
+		row, ok := m.selectedRow()
+		if ok {
+			m.expandedJobID = row.JobID
+			m.detailMode = "profile"
+			return m, copyTopTextCmd("profile command", profileCommandForQuery(row.Query))
+		}
 	case "/":
 		m.filtering = true
 		m.filterInput = m.filter
@@ -260,7 +292,42 @@ func (m topModel) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+func (m *topModel) toggleExpanded(jobID, mode string) {
+	if m.expandedJobID == jobID && m.detailMode == mode {
+		m.expandedJobID = ""
+		m.detailMode = ""
+		return
+	}
+	m.expandedJobID = jobID
+	m.detailMode = mode
+}
+
 func (m topModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
+	for _, action := range []string{"copy", "cancel", "profile", "detail"} {
+		if z := zone.Get("top-action-" + action); z != nil && z.InBounds(msg) {
+			row, ok := m.selectedRow()
+			if !ok {
+				return m, nil
+			}
+			switch action {
+			case "copy":
+				return m, copyTopTextCmd("query", row.Query)
+			case "cancel":
+				if row.Status == "running" {
+					m.confirmCancel = true
+				}
+			case "profile":
+				m.expandedJobID = row.JobID
+				m.detailMode = "profile"
+				return m, copyTopTextCmd("profile command", profileCommandForQuery(row.Query))
+			case "detail":
+				m.toggleExpanded(row.JobID, "detail")
+			}
+
+			return m, nil
+		}
+	}
+
 	for i := 0; i < 8; i++ {
 		if z := zone.Get(fmt.Sprintf("top-panel-%d", i)); z != nil && z.InBounds(msg) {
 			m.focus = i
@@ -272,6 +339,8 @@ func (m topModel) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 		if z := zone.Get("top-query-" + row.JobID); z != nil && z.InBounds(msg) {
 			m.focus = 7
 			m.selected = i
+			m.expandedJobID = row.JobID
+			m.detailMode = "detail"
 			m.clampSelection()
 			return m, nil
 		}
@@ -330,6 +399,10 @@ func (m topModel) renderView() string {
 	if m.cancelStatus != "" {
 		b.WriteByte('\n')
 		b.WriteString(m.theme.Dim.Render(m.cancelStatus))
+	}
+	if m.actionStatus != "" {
+		b.WriteByte('\n')
+		b.WriteString(m.theme.Dim.Render(m.actionStatus))
 	}
 
 	return b.String()
@@ -531,18 +604,24 @@ func (m topModel) renderActiveQueriesPanel(id int) string {
 		titleText = "* " + title
 	}
 	lines := []string{zone.Mark(fmt.Sprintf("top-panel-%d", id), topPanelHeader(m.theme, titleText, width))}
-	header := fmt.Sprintf("%-12s %-7s %-18s %-8s %9s %-9s %-9s %-10s %s",
-		"ID", "AGE", "PHASE", "PROG", "ROWS", "SEG", "MEM", "SPILL", "QUERY")
-	lines = append(lines, topPanelLine(m.theme, m.theme.Label.Render(header), width))
+	contentW := maxInt(0, width-4)
+	layout := topQueryLayoutForWidth(contentW)
+	lines = append(lines, topPanelLine(m.theme, m.renderQueryActions(contentW), width))
+	lines = append(lines, topPanelLine(m.theme, m.theme.Label.Render(layout.header()), width))
 
 	if len(rows) == 0 {
 		lines = append(lines, topPanelLine(m.theme, m.theme.Dim.Render("no active or recent queries"), width))
 	} else {
 		for i := m.scroll; i < end; i++ {
 			row := rows[i]
-			line := m.queryRowLine(row, i == m.selected, width-4)
+			line := m.queryRowLine(row, i == m.selected, layout)
 			line = zone.Mark("top-query-"+row.JobID, line)
 			lines = append(lines, topPanelLine(m.theme, line, width))
+			if row.JobID == m.expandedJobID {
+				for _, detail := range m.renderQueryDetail(row, contentW) {
+					lines = append(lines, topPanelLine(m.theme, detail, width))
+				}
+			}
 		}
 	}
 	lines = append(lines, topPanelFooter(m.theme, width))
@@ -550,11 +629,93 @@ func (m topModel) renderActiveQueriesPanel(id int) string {
 	return strings.Join(lines, "\n") + "\n"
 }
 
-func (m topModel) queryRowLine(row client.TopQueryRow, selected bool, width int) string {
-	id := row.JobID
-	if len(id) > 12 {
-		id = id[:12]
+func (m topModel) renderQueryActions(width int) string {
+	selected := "none"
+	if row, ok := m.selectedRow(); ok {
+		selected = row.JobID
 	}
+	actions := []string{
+		zone.Mark("top-action-detail", m.theme.Info.Render("[detail]")),
+		zone.Mark("top-action-copy", m.theme.Info.Render("[copy]")),
+		zone.Mark("top-action-profile", m.theme.Info.Render("[profile]")),
+		zone.Mark("top-action-cancel", m.theme.Warning.Render("[cancel]")),
+	}
+	line := "selected " + clip(selected, 18) + "  " + strings.Join(actions, " ")
+	return fitContent(line, width)
+}
+
+type topQueryTableLayout struct {
+	id     int
+	status int
+	age    int
+	phase  int
+	prog   int
+	rows   int
+	seg    int
+	mem    int
+	spill  int
+	query  int
+}
+
+func topQueryLayoutForWidth(width int) topQueryTableLayout {
+	l := topQueryTableLayout{
+		id:     13,
+		status: 9,
+		age:    7,
+		phase:  18,
+		prog:   7,
+		rows:   10,
+		seg:    11,
+		mem:    9,
+		spill:  10,
+	}
+	fixed := l.id + l.status + l.age + l.phase + l.prog + l.rows + l.seg + l.mem + l.spill + 9
+	l.query = width - fixed
+	if l.query < 12 {
+		shortfall := 12 - l.query
+		for shortfall > 0 && l.phase > 10 {
+			l.phase--
+			shortfall--
+		}
+		for shortfall > 0 && l.rows > 7 {
+			l.rows--
+			shortfall--
+		}
+		for shortfall > 0 && l.seg > 7 {
+			l.seg--
+			shortfall--
+		}
+		for shortfall > 0 && l.mem > 7 {
+			l.mem--
+			shortfall--
+		}
+		l.query = 12
+	}
+
+	return l
+}
+
+func (l topQueryTableLayout) header() string {
+	return strings.Join([]string{
+		topCell("ID", l.id, false),
+		topCell("STATUS", l.status, false),
+		topCell("AGE", l.age, false),
+		topCell("PHASE", l.phase, false),
+		topCell("PROG", l.prog, true),
+		topCell("ROWS", l.rows, true),
+		topCell("SEGMENTS", l.seg, true),
+		topCell("MEM", l.mem, true),
+		topCell("SPILL", l.spill, true),
+		topCell("QUERY", l.query, false),
+	}, " ")
+}
+
+func (m topModel) queryRowLine(row client.TopQueryRow, selected bool, layout topQueryTableLayout) string {
+	marker := " "
+	if selected {
+		marker = ">"
+	}
+	id := marker + " " + row.JobID
 	phase := valueOr(row.Phase, row.Status)
 	segments := fmt.Sprintf("%d/%d", row.SegmentsScanned+row.SegmentsSkipped, row.SegmentsTotal)
 	if row.SegmentsTotal == 0 {
@@ -566,27 +727,118 @@ func (m topModel) queryRowLine(row client.TopQueryRow, selected bool, width int)
 	if idx != "" {
 		phase = phase + "@" + idx
 	}
-	line := fmt.Sprintf("%-12s %-7s %-18s %6.1f%% %9s %-9s %-9s %-10s %s",
-		id,
-		formatElapsed(time.Duration(row.ElapsedMS)*time.Millisecond),
-		clip(phase, 18),
-		row.Percent,
-		formatCountHuman(row.RowsReadSoFar),
-		clip(segments, 9),
-		clip(mem, 9),
-		clip(spill, 10),
-		clip(row.Query, maxInt(0, width-91)),
-	)
+
+	status := m.statusText(row.Status)
+	cells := []string{
+		topCell(id, layout.id, false),
+		topCell(status, layout.status, false),
+		topCell(formatElapsed(time.Duration(row.ElapsedMS)*time.Millisecond), layout.age, false),
+		topCell(phase, layout.phase, false),
+		topCell(fmt.Sprintf("%.1f%%", row.Percent), layout.prog, true),
+		topCell(formatCountHuman(row.RowsReadSoFar), layout.rows, true),
+		topCell(segments, layout.seg, true),
+		topCell(mem, layout.mem, true),
+		topCell(spill, layout.spill, true),
+		topCell(row.Query, layout.query, false),
+	}
 	if selected {
-		return m.theme.Accent.Render("> " + clip(line, width-2))
+		return m.theme.Accent.Render(strings.Join(cells, " "))
+	}
+	switch strings.ToLower(row.Status) {
+	case "done", "complete", "completed":
+		for i := range cells {
+			cells[i] = m.theme.Dim.Render(cells[i])
+		}
+		cells[1] = m.theme.Success.Render(topCell(status, layout.status, false))
+	case "error", "failed":
+		for i := range cells {
+			cells[i] = m.theme.Error.Render(cells[i])
+		}
+	case "canceled", "cancelled":
+		for i := range cells {
+			cells[i] = m.theme.Warning.Render(cells[i])
+		}
+	default:
+		cells[1] = m.statusStyle(row.Status).Render(topCell(status, layout.status, false))
 	}
 
-	return "  " + clip(line, width-2)
+	return strings.Join(cells, " ")
+}
+
+func (m topModel) renderQueryDetail(row client.TopQueryRow, width int) []string {
+	mode := "detail"
+	if m.detailMode != "" {
+		mode = m.detailMode
+	}
+	prefix := m.theme.Dim.Render("  ")
+	queryPrefix := "query: "
+	progress := fmt.Sprintf("progress: %.1f%%  phase: %s  rows: %s  segments: %d/%d dispatched:%d skipped:%d",
+		row.Percent,
+		valueOr(row.Phase, row.Status),
+		formatCountHuman(row.RowsReadSoFar),
+		row.SegmentsScanned,
+		row.SegmentsTotal,
+		row.SegmentsDispatched,
+		row.SegmentsSkipped)
+	resources := fmt.Sprintf("resources: memory current %s peak %s  spill %s/%d files  processed %s",
+		formatBytes(row.CurrentMemoryBytes),
+		formatBytes(row.PeakMemoryBytes),
+		formatBytes(row.SpillBytes),
+		row.SpillFiles,
+		formatBytes(row.ProcessedBytes))
+	indexes := "indexes: " + valueOr(strings.Join(row.Indexes, ", "), "n/a")
+	if mode == "profile" {
+		resources += "  profile: run copied command to collect full query profile"
+	}
+	lines := make([]string, 0, 8)
+	for _, qline := range wrapQueryDetail(queryPrefix, row.Query, width-2) {
+		lines = append(lines, prefix+qline)
+	}
+	lines = append(lines,
+		prefix+fitContent(progress, width-2),
+		prefix+fitContent(resources, width-2),
+		prefix+fitContent(indexes, width-2),
+	)
+	return lines
+}
+
+func (m topModel) statusText(status string) string {
+	if strings.TrimSpace(status) == "" {
+		return "unknown"
+	}
+	return status
+}
+
+func (m topModel) statusStyle(status string) lipgloss.Style {
+	switch strings.ToLower(status) {
+	case "running":
+		return m.theme.Accent
+	case "done", "complete", "completed":
+		return m.theme.Success
+	case "error", "failed":
+		return m.theme.Error
+	case "canceled", "cancelled":
+		return m.theme.Warning
+	default:
+		return m.theme.Dim
+	}
+}
+
+func topCell(value string, width int, right bool) string {
+	value = clip(value, width)
+	pad := width - lipgloss.Width(value)
+	if pad < 0 {
+		pad = 0
+	}
+	if right {
+		return strings.Repeat(" ", pad) + value
+	}
+	return value + strings.Repeat(" ", pad)
 }
 
 func (m topModel) renderHelp() string {
 	lines := []string{
-		"q quit  p pause  r refresh  tab focus  up/down select  s sort  / filter  x cancel  ? help",
+		"q quit  p pause  r refresh  tab focus  up/down select  enter/d detail  c copy  f profile  s sort  / filter  x cancel  ? help",
 	}
 	return m.theme.Dim.Render(strings.Join(lines, "\n"))
 }
@@ -792,6 +1044,13 @@ func cancelTopJobCmd(c *client.Client, jobID string) tea.Cmd {
 	}
 }
 
+func copyTopTextCmd(action, text string) tea.Cmd {
+	return func() tea.Msg {
+		err := writeToClipboard(text)
+		return topClipboardMsg{action: action, err: err}
+	}
+}
+
 func runTop(interval time.Duration) error {
 	api := apiClient()
 	if err := shell.RunServerPreflight(api, globalServer, "LynxDB top"); err != nil {
@@ -861,6 +1120,60 @@ func padRight(s string, width int) string {
 
 func kv(key, value string) string {
 	return fmt.Sprintf("%-10s %s", key+":", value)
+}
+
+func profileCommandForQuery(query string) string {
+	return "lynxdb query --analyze full " + shellQuote(query)
+}
+
+func shellQuote(s string) string {
+	if s == "" {
+		return "''"
+	}
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
+
+func wrapQueryDetail(prefix, query string, width int) []string {
+	if width <= 0 {
+		return []string{""}
+	}
+	firstWidth := width - lipgloss.Width(prefix)
+	if firstWidth < 8 {
+		firstWidth = width
+		prefix = ""
+	}
+	chunks := wrapPlain(query, firstWidth)
+	if len(chunks) == 0 {
+		return []string{prefix}
+	}
+	lines := []string{prefix + chunks[0]}
+	indent := strings.Repeat(" ", lipgloss.Width(prefix))
+	for _, chunk := range wrapPlain(strings.Join(chunks[1:], " "), width-lipgloss.Width(indent)) {
+		lines = append(lines, indent+chunk)
+	}
+	return lines
+}
+
+func wrapPlain(s string, width int) []string {
+	if width <= 0 {
+		return []string{s}
+	}
+	words := strings.Fields(s)
+	if len(words) == 0 {
+		return nil
+	}
+	var lines []string
+	current := words[0]
+	for _, word := range words[1:] {
+		if lipgloss.Width(current)+1+lipgloss.Width(word) <= width {
+			current += " " + word
+			continue
+		}
+		lines = append(lines, current)
+		current = word
+	}
+	lines = append(lines, current)
+	return lines
 }
 
 func sparkline(values []float64, width int) string {

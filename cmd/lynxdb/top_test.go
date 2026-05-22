@@ -75,6 +75,41 @@ func TestTopSortAndFilterRows(t *testing.T) {
 	}
 }
 
+func TestTopActiveQueryDetailActionsAndStatus(t *testing.T) {
+	resetAllFlags(t)
+	zone.NewGlobal()
+	defer zone.Close()
+
+	m := sampleTopModel(140, 34)
+	m.expandedJobID = "qry_api_highmem"
+	m.detailMode = "detail"
+
+	view := m.View().Content
+	for _, want := range []string{
+		"STATUS",
+		"[detail]",
+		"[copy]",
+		"[profile]",
+		"[cancel]",
+		"query: FROM api | where level=\"error\" | stats count by host",
+		"progress:",
+		"resources:",
+		"done",
+	} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("render missing %q in %q", want, view)
+		}
+	}
+}
+
+func TestTopProfileCommandQuotesQuery(t *testing.T) {
+	got := profileCommandForQuery("FROM api | where msg='oops'")
+	want := "lynxdb query --analyze full 'FROM api | where msg='\\''oops'\\'''"
+	if got != want {
+		t.Fatalf("profile command = %q, want %q", got, want)
+	}
+}
+
 func sampleTopModel(width, height int) topModel {
 	now := time.Date(2026, 5, 22, 10, 0, 0, 0, time.UTC)
 	m := topModel{

@@ -179,6 +179,7 @@ const sidebars: SidebarsConfig = {
         'cli/output-formats',
         'cli/completion',
         'cli/install',
+        'cli/shippers',
       ],
     },
     {

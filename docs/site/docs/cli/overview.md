@@ -120,7 +120,7 @@ Some commands have dedicated reference pages in this documentation set. Others a
 | Category | Commands |
 |----------|----------|
 | Querying and ingest | [`query`](/docs/cli/query), [`ingest`](/docs/cli/ingest), `import`, [`tail`](/docs/cli/tail), `fields`, `count`, `sample`, `watch`, `diff`, `last`, `explain`, `examples` |
-| Server and operations | [`server`](/docs/cli/server), `status`, `health`, `indexes`, `cache`, `jobs`, `doctor` |
+| Server and operations | [`server`](/docs/cli/server), `status`, `health`, `indexes`, `cache`, `jobs`, `doctor`, `shippers` |
 | Saved objects | [`mv`](/docs/cli/mv), `saved`, `save`, `run` |
 | Authentication and connection | `login`, `logout`, `auth`, [`config`](/docs/cli/config-cmd) |
 | Interactive and UI | [`shell`](/docs/cli/shell), `ui`, `open`, `share`, `top` |

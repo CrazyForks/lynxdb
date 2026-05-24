@@ -111,6 +111,44 @@ func TestSchedulerPendingInputIDsIncludesQueuedAndActive(t *testing.T) {
 	}
 }
 
+func TestSchedulerDebtSnapshotIncludesQueuedAndActiveJobs(t *testing.T) {
+	s := NewScheduler(NewCompactor(testLogger()), SchedulerConfig{Workers: 1}, testLogger())
+	queued := &Job{
+		Plan:       &Plan{OutputLevel: L1},
+		Priority:   PriorityL0ToL1,
+		Index:      "main",
+		Partition:  "p0",
+		Score:      1.25,
+		InputIDs:   []string{"queued-a", "queued-b"},
+		InputBytes: 200,
+	}
+	active := &Job{
+		Plan:       &Plan{OutputLevel: L2},
+		Priority:   PriorityL1ToL2,
+		Index:      "main",
+		Partition:  "p1",
+		Score:      0.8,
+		InputIDs:   []string{"active-a"},
+		InputBytes: 100,
+	}
+	s.Submit(queued)
+	s.activeJobs[active.DedupeKey()] = active
+
+	snap := s.DebtSnapshot()
+	if len(snap.Queued) != 1 {
+		t.Fatalf("queued: got %d, want 1", len(snap.Queued))
+	}
+	if len(snap.Active) != 1 {
+		t.Fatalf("active: got %d, want 1", len(snap.Active))
+	}
+	if snap.Queued[0].Score != 1.25 || snap.Queued[0].InputBytes != 200 || snap.Queued[0].OutputLevel != L1 {
+		t.Fatalf("queued snapshot mismatch: %+v", snap.Queued[0])
+	}
+	if snap.Active[0].Score != 0.8 || snap.Active[0].InputBytes != 100 || snap.Active[0].OutputLevel != L2 {
+		t.Fatalf("active snapshot mismatch: %+v", snap.Active[0])
+	}
+}
+
 func TestSizeTiered_SkipsNonL0(t *testing.T) {
 	st := &SizeTiered{Threshold: 4}
 

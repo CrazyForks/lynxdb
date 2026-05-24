@@ -52,6 +52,15 @@ type BatcherConfig struct {
 	FlushQueueSize int
 }
 
+// PressureEvent reports ingest backpressure decisions.
+type PressureEvent struct {
+	Index       string
+	Partition   string
+	L0PartCount int
+	Delay       time.Duration
+	Rejected    bool
+}
+
 // DefaultBatcherConfig returns a BatcherConfig with production-ready defaults.
 func DefaultBatcherConfig() BatcherConfig {
 	return BatcherConfig{
@@ -131,8 +140,9 @@ type AsyncBatcher struct {
 	// onCommit is called after each part is committed to disk and registered
 	// for admission/backpressure accounting.
 	// Engine uses this to open the mmap'd reader and register for queries.
-	onCommit func(meta *Meta) error
-	runCtx   context.Context
+	onCommit   func(meta *Meta) error
+	onPressure func(PressureEvent)
+	runCtx     context.Context
 }
 
 // batchShard holds buffered events for a single index.
@@ -174,6 +184,11 @@ func NewAsyncBatcher(writer *Writer, registry *Registry, cfg BatcherConfig, logg
 // Must be called before Start.
 func (b *AsyncBatcher) SetOnCommit(fn func(meta *Meta) error) {
 	b.onCommit = fn
+}
+
+// SetOnPressure sets the callback invoked when ingest is delayed or rejected.
+func (b *AsyncBatcher) SetOnPressure(fn func(PressureEvent)) {
+	b.onPressure = fn
 }
 
 // Start starts the background goroutine that flushes idle shards.
@@ -368,6 +383,12 @@ func (b *AsyncBatcher) checkBackpressure(ctx context.Context, events []*event.Ev
 			"l0_part_count", partCount,
 			"reject_threshold", b.cfg.RejectThreshold,
 		)
+		b.reportPressure(PressureEvent{
+			Index:       hottestKey.index,
+			Partition:   hottestKey.partition,
+			L0PartCount: partCount,
+			Rejected:    true,
+		})
 
 		return ErrTooManyParts
 	}
@@ -387,6 +408,13 @@ func (b *AsyncBatcher) checkBackpressure(ctx context.Context, events []*event.Ev
 			)
 			timer := time.NewTimer(time.Duration(delayMs) * time.Millisecond)
 			defer timer.Stop()
+			delay := time.Duration(delayMs) * time.Millisecond
+			b.reportPressure(PressureEvent{
+				Index:       hottestKey.index,
+				Partition:   hottestKey.partition,
+				L0PartCount: partCount,
+				Delay:       delay,
+			})
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
@@ -396,6 +424,12 @@ func (b *AsyncBatcher) checkBackpressure(ctx context.Context, events []*event.Ev
 	}
 
 	return nil
+}
+
+func (b *AsyncBatcher) reportPressure(ev PressureEvent) {
+	if b.onPressure != nil {
+		b.onPressure(ev)
+	}
 }
 
 func (b *AsyncBatcher) pressureKeys(events []*event.Event) map[batchKey]struct{} {

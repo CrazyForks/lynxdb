@@ -155,6 +155,16 @@ func (e *Engine) initDiskPersistence(ctx context.Context) error {
 	batcherCfg := batcherConfigFromStorageConfig(e.storageCfg)
 
 	e.batcher = part.NewAsyncBatcher(e.partWriter, e.partRegistry, batcherCfg, e.logger)
+	e.batcher.SetOnPressure(func(ev part.PressureEvent) {
+		if ev.Rejected {
+			e.metrics.IngestRejects.Add(1)
+			return
+		}
+		if ev.Delay > 0 {
+			e.metrics.IngestDelays.Add(1)
+			e.metrics.IngestDelayNs.Add(ev.Delay.Nanoseconds())
+		}
+	})
 	e.batcher.SetOnCommit(func(meta *part.Meta) error {
 		// Open mmap'd reader and add to query-visible segments.
 		if loadErr := e.loadPartAsSegment(meta); loadErr != nil {

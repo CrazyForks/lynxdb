@@ -586,6 +586,41 @@ func TestAsyncBatcher_Backpressure_IsPartitionScoped(t *testing.T) {
 	}
 }
 
+func TestAsyncBatcher_BackpressureObserver(t *testing.T) {
+	cfg := BatcherConfig{
+		MaxEvents:       1_000_000,
+		MaxBytes:        1 << 30,
+		MaxWait:         10 * time.Second,
+		DelayThreshold:  1,
+		RejectThreshold: 2,
+		MaxDelayMs:      10,
+	}
+	batcher, registry, _ := testBatcher(t, cfg)
+	defer batcher.Close()
+
+	var observed []PressureEvent
+	batcher.SetOnPressure(func(ev PressureEvent) {
+		observed = append(observed, ev)
+	})
+	batcher.Start(context.Background())
+	partition := batcher.writer.layout.PartitionKey(time.Now())
+	registry.Add(&Meta{ID: "l0-part-a", Index: "main", Partition: partition, Level: 0})
+	registry.Add(&Meta{ID: "l0-part-b", Index: "main", Partition: partition, Level: 0})
+
+	if err := batcher.Add(makeEvents(1, "main")); !errors.Is(err, ErrTooManyParts) {
+		t.Fatalf("Add with L0 pressure: got %v, want ErrTooManyParts", err)
+	}
+	if len(observed) != 1 {
+		t.Fatalf("observed pressure events: got %d, want 1", len(observed))
+	}
+	if !observed[0].Rejected {
+		t.Fatalf("observed event should be rejected")
+	}
+	if observed[0].Index != "main" || observed[0].Partition != partition {
+		t.Fatalf("observed key: got %s/%s, want main/%s", observed[0].Index, observed[0].Partition, partition)
+	}
+}
+
 func TestAsyncBatcher_Backpressure_Delay(t *testing.T) {
 	// Test that delay is applied between DelayThreshold and RejectThreshold.
 	cfg := BatcherConfig{

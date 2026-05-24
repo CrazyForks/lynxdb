@@ -3,6 +3,7 @@ package compaction
 import (
 	"container/heap"
 	"context"
+	"fmt"
 	"log/slog"
 	"runtime"
 	"sync"
@@ -46,9 +47,28 @@ type Scheduler struct {
 	logger       *slog.Logger
 	onComplete   func(*Job, *SegmentInfo, error) // callback after each job
 	onError      func(*Job, error)               // callback for metrics on failure
+	lastError    string
 
 	running atomic.Bool
 	wg      sync.WaitGroup
+}
+
+// DebtJobSnapshot describes queued or active compaction debt.
+type DebtJobSnapshot struct {
+	Index       string      `json:"index"`
+	Partition   string      `json:"partition"`
+	Priority    JobPriority `json:"priority"`
+	Score       float64     `json:"score"`
+	InputIDs    []string    `json:"input_ids"`
+	InputBytes  int64       `json:"input_bytes"`
+	OutputLevel int         `json:"output_level"`
+}
+
+// DebtSnapshot describes current scheduler compaction debt.
+type DebtSnapshot struct {
+	Queued    []DebtJobSnapshot `json:"queued"`
+	Active    []DebtJobSnapshot `json:"active"`
+	LastError string            `json:"last_error,omitempty"`
 }
 
 // SchedulerConfig configures the compaction scheduler.
@@ -221,6 +241,39 @@ func (s *Scheduler) PendingInputIDs() map[string]struct{} {
 	return ids
 }
 
+// DebtSnapshot returns queued and active compaction debt details.
+func (s *Scheduler) DebtSnapshot() DebtSnapshot {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	snap := DebtSnapshot{LastError: s.lastError}
+	for _, job := range s.queuedJobs {
+		snap.Queued = append(snap.Queued, debtJobSnapshot(job))
+	}
+	for _, job := range s.activeJobs {
+		snap.Active = append(snap.Active, debtJobSnapshot(job))
+	}
+
+	return snap
+}
+
+func debtJobSnapshot(job *Job) DebtJobSnapshot {
+	outputLevel := 0
+	if job.Plan != nil {
+		outputLevel = job.Plan.OutputLevel
+	}
+
+	return DebtJobSnapshot{
+		Index:       job.Index,
+		Partition:   job.Partition,
+		Priority:    job.Priority,
+		Score:       job.Score,
+		InputIDs:    append([]string(nil), job.InputIDs...),
+		InputBytes:  job.InputBytes,
+		OutputLevel: outputLevel,
+	}
+}
+
 // Start launches worker goroutines. Call Stop to shut down.
 func (s *Scheduler) Start(ctx context.Context) {
 	if !s.running.CompareAndSwap(false, true) {
@@ -379,6 +432,7 @@ func (s *Scheduler) worker(ctx context.Context, id int) {
 		)
 
 		if err != nil {
+			errText := fmt.Sprintf("%s/%s: %v", job.Index, job.Partition, err)
 			s.logger.Error("compaction job failed",
 				"worker", id,
 				"priority", job.Priority,
@@ -389,6 +443,9 @@ func (s *Scheduler) worker(ctx context.Context, id int) {
 			if onError != nil {
 				onError(job, err)
 			}
+			s.mu.Lock()
+			s.lastError = errText
+			s.mu.Unlock()
 		}
 
 		// Release the (index, partition) lock and wake other workers that may

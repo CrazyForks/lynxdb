@@ -528,6 +528,25 @@ func (b *AsyncBatcher) BufferedBytes() int64 {
 	return total
 }
 
+// SnapshotEvents returns a point-in-time copy of buffered events without
+// forcing them into durable parts.
+func (b *AsyncBatcher) SnapshotEvents() []*event.Event {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	var total int
+	for _, shard := range b.shards {
+		total += len(shard.events)
+	}
+
+	events := make([]*event.Event, 0, total)
+	for _, shard := range b.shards {
+		events = append(events, shard.events...)
+	}
+
+	return events
+}
+
 // idleFlushLoop runs in a background goroutine and flushes any shard that
 // has been idle for longer than MaxWait.
 func (b *AsyncBatcher) idleFlushLoop(ctx context.Context) {

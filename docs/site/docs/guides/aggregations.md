@@ -87,7 +87,7 @@ Compute latency percentiles:
 lynxdb query '_source=nginx | stats avg(duration_ms) AS avg_lat, perc50(duration_ms) AS p50, perc95(duration_ms) AS p95, perc99(duration_ms) AS p99 by uri'
 ```
 
-Available percentile functions: `perc50`, `perc75`, `perc90`, `perc95`, `perc99`.
+Available percentile functions: `perc50`, `perc75`, `perc90`, `perc95`, `perc99`. Short aliases `p50`, `p75`, `p90`, `p95`, `p99` are also accepted.
 
 ### Standard deviation
 

@@ -132,7 +132,11 @@ func (e *Engine) submitCompactionJobs() {
 	e.mu.RUnlock()
 
 	for _, idx := range indexNames {
-		jobs := e.compactor.PlanAllCompactions(idx)
+		filter := compaction.PlanFilter{}
+		if e.compactionSched != nil {
+			filter.ExcludedInputIDs = e.compactionSched.PendingInputIDs()
+		}
+		jobs := e.compactor.PlanAllCompactionsFiltered(idx, filter)
 		if len(jobs) > 0 {
 			e.compactionSched.SubmitAll(jobs)
 		}
@@ -631,7 +635,11 @@ func (e *Engine) maybeCompactAfterFlush(_ context.Context, index, partition stri
 		return
 	}
 
-	jobs := e.compactor.PlanAllCompactions(index)
+	filter := compaction.PlanFilter{}
+	if e.compactionSched != nil {
+		filter.ExcludedInputIDs = e.compactionSched.PendingInputIDs()
+	}
+	jobs := e.compactor.PlanAllCompactionsFiltered(index, filter)
 	if len(jobs) == 0 {
 		return
 	}

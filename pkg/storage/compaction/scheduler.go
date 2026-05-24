@@ -34,6 +34,8 @@ type Scheduler struct {
 	queue      jobQueue
 	jobReady   *sync.Cond
 	activeKeys map[compactionKey]bool // tracks which (index, partition) pairs have in-flight jobs
+	queuedJobs map[string]*Job        // dedupe key -> queued job
+	activeJobs map[string]*Job        // dedupe key -> active job
 
 	compactor    *Compactor
 	executor     ExecutorFn // optional: custom execution logic (replaces compactor.Execute)
@@ -80,6 +82,8 @@ func NewScheduler(c *Compactor, cfg SchedulerConfig, logger *slog.Logger) *Sched
 		workers:    workers,
 		logger:     logger,
 		activeKeys: make(map[compactionKey]bool),
+		queuedJobs: make(map[string]*Job),
+		activeJobs: make(map[string]*Job),
 	}
 	s.jobReady = sync.NewCond(&s.mu)
 	heap.Init(&s.queue)
@@ -123,6 +127,11 @@ func (s *Scheduler) SetOnError(fn func(*Job, error)) {
 // Submit adds a compaction job to the priority queue.
 func (s *Scheduler) Submit(job *Job) {
 	s.mu.Lock()
+	if !s.admitLocked(job) {
+		s.mu.Unlock()
+
+		return
+	}
 	heap.Push(&s.queue, job)
 	queueLen := s.queue.Len()
 	s.jobReady.Signal()
@@ -139,17 +148,43 @@ func (s *Scheduler) Submit(job *Job) {
 // SubmitAll adds multiple jobs to the queue.
 func (s *Scheduler) SubmitAll(jobs []*Job) {
 	s.mu.Lock()
+	submitted := 0
 	for _, j := range jobs {
+		if !s.admitLocked(j) {
+			continue
+		}
 		heap.Push(&s.queue, j)
+		submitted++
 	}
-	if len(jobs) > 0 {
+	if submitted > 0 {
 		s.jobReady.Broadcast()
 		s.logger.Debug("compaction jobs batch submitted",
-			"count", len(jobs),
+			"count", submitted,
+			"deduped", len(jobs)-submitted,
 			"queue_depth", s.queue.Len(),
 		)
 	}
 	s.mu.Unlock()
+}
+
+func (s *Scheduler) admitLocked(job *Job) bool {
+	key := job.DedupeKey()
+	if key == "" {
+		return true
+	}
+	if s.queuedJobs[key] != nil || s.activeJobs[key] != nil {
+		s.logger.Debug("compaction job deduped",
+			"index", job.Index,
+			"partition", job.Partition,
+			"priority", job.Priority,
+			"input_ids", job.InputIDs,
+		)
+
+		return false
+	}
+	s.queuedJobs[key] = job
+
+	return true
 }
 
 // Limiter returns the rate limiter so the adaptive controller can update the rate.
@@ -163,6 +198,27 @@ func (s *Scheduler) QueueLen() int {
 	defer s.mu.Unlock()
 
 	return s.queue.Len()
+}
+
+// PendingInputIDs returns input IDs from queued and active jobs so planning can
+// avoid proposing duplicate work.
+func (s *Scheduler) PendingInputIDs() map[string]struct{} {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ids := make(map[string]struct{})
+	for _, job := range s.queuedJobs {
+		for _, id := range job.InputIDs {
+			ids[id] = struct{}{}
+		}
+	}
+	for _, job := range s.activeJobs {
+		for _, id := range job.InputIDs {
+			ids[id] = struct{}{}
+		}
+	}
+
+	return ids
 }
 
 // Start launches worker goroutines. Call Stop to shut down.
@@ -229,7 +285,12 @@ func (s *Scheduler) worker(ctx context.Context, id int) {
 		}
 
 		key := compactionKey{Index: job.Index, Partition: job.Partition}
+		jobKey := job.DedupeKey()
 		s.activeKeys[key] = true
+		if jobKey != "" {
+			delete(s.queuedJobs, jobKey)
+			s.activeJobs[jobKey] = job
+		}
 		executor := s.executor
 		adaptiveCtrl := s.adaptiveCtrl
 		onComplete := s.onComplete
@@ -248,6 +309,10 @@ func (s *Scheduler) worker(ctx context.Context, id int) {
 		if adaptiveCtrl != nil && adaptiveCtrl.Paused() {
 			s.mu.Lock()
 			heap.Push(&s.queue, job)
+			if jobKey != "" {
+				delete(s.activeJobs, jobKey)
+				s.queuedJobs[jobKey] = job
+			}
 			delete(s.activeKeys, key)
 			s.jobReady.Signal()
 			s.logger.Debug("compaction paused, requeueing",
@@ -278,6 +343,10 @@ func (s *Scheduler) worker(ctx context.Context, id int) {
 			s.mu.Lock()
 			delete(s.activeKeys, key)
 			heap.Push(&s.queue, job)
+			if jobKey != "" {
+				delete(s.activeJobs, jobKey)
+				s.queuedJobs[jobKey] = job
+			}
 			s.jobReady.Signal()
 			s.mu.Unlock()
 
@@ -326,6 +395,9 @@ func (s *Scheduler) worker(ctx context.Context, id int) {
 		// be waiting for this key to become available.
 		s.mu.Lock()
 		delete(s.activeKeys, key)
+		if jobKey != "" {
+			delete(s.activeJobs, jobKey)
+		}
 		s.jobReady.Broadcast()
 		s.mu.Unlock()
 

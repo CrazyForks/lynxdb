@@ -60,6 +60,57 @@ func TestSizeTiered_GroupsBySize(t *testing.T) {
 	}
 }
 
+func TestSchedulerDedupesQueuedJobs(t *testing.T) {
+	s := NewScheduler(NewCompactor(testLogger()), SchedulerConfig{Workers: 1}, testLogger())
+	job := &Job{
+		Plan:      &Plan{OutputLevel: L1},
+		Priority:  PriorityL0ToL1,
+		Index:     "main",
+		Partition: "p0",
+		InputIDs:  []string{"a", "b"},
+	}
+
+	s.Submit(job)
+	s.Submit(&Job{
+		Plan:      &Plan{OutputLevel: L1},
+		Priority:  PriorityL0ToL1,
+		Index:     "main",
+		Partition: "p0",
+		InputIDs:  []string{"b", "a"},
+	})
+
+	if got := s.QueueLen(); got != 1 {
+		t.Fatalf("QueueLen: got %d, want 1", got)
+	}
+}
+
+func TestSchedulerPendingInputIDsIncludesQueuedAndActive(t *testing.T) {
+	s := NewScheduler(NewCompactor(testLogger()), SchedulerConfig{Workers: 1}, testLogger())
+	queued := &Job{
+		Plan:      &Plan{OutputLevel: L1},
+		Priority:  PriorityL0ToL1,
+		Index:     "main",
+		Partition: "p0",
+		InputIDs:  []string{"queued-a", "queued-b"},
+	}
+	active := &Job{
+		Plan:      &Plan{OutputLevel: L1},
+		Priority:  PriorityL0ToL1,
+		Index:     "main",
+		Partition: "p1",
+		InputIDs:  []string{"active-a"},
+	}
+	s.Submit(queued)
+	s.activeJobs[active.DedupeKey()] = active
+
+	ids := s.PendingInputIDs()
+	for _, id := range []string{"queued-a", "queued-b", "active-a"} {
+		if _, ok := ids[id]; !ok {
+			t.Fatalf("missing pending input id %q", id)
+		}
+	}
+}
+
 func TestSizeTiered_SkipsNonL0(t *testing.T) {
 	st := &SizeTiered{Threshold: 4}
 

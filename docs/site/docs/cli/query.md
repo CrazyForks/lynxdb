@@ -31,6 +31,12 @@ lynxdb query [SPL2 query] [flags]
 | `--fail-on-empty` | | `false` | Exit with code 6 if no results |
 | `--copy` | | `false` | Copy results to clipboard as TSV |
 | `--explain` | | `false` | Show query plan without executing |
+| `--raw` | | `false` | Disable auto-format detection |
+| `--no-lint` | | `false` | Disable advisory query lints |
+| `--no-suggestions` | | `false` | Disable advisory query suggestions |
+| `--show-rewritten` | | `false` | Show normalized query rewrites |
+| `--queries-file` | | | Run queries from a file |
+| `--param` | `-D` | | Set query parameter (`--param name=value`) |
 
 The query argument is required. `FROM main` is automatically prepended if the query starts with `|` or a command name.
 

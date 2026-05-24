@@ -81,7 +81,7 @@ See [Query Engine](/docs/architecture/query-engine) for how the parser fits into
 
 ### `pkg/engine/pipeline/` -- Volcano Iterator Pipeline
 
-The streaming query execution engine. Implements the Volcano iterator model with 18 operators.
+The streaming query execution engine. Implements the Volcano iterator model.
 
 ```
 pkg/engine/pipeline/

@@ -618,15 +618,16 @@ func (e *Engine) maybeCompactAfterFlush(_ context.Context, index, partition stri
 	}
 
 	l0Count := len(e.compactor.SegmentsByLevelPartition(index, partition, 0))
+	compactionCfg := e.compactor.Config()
 
 	e.logger.Debug("reactive compaction check",
 		"index", index,
 		"partition", partition,
 		"l0_count", l0Count,
-		"threshold", compaction.L0CompactionThreshold,
+		"threshold", compactionCfg.L0Threshold,
 	)
 
-	if l0Count < compaction.L0CompactionThreshold {
+	if l0Count < compactionCfg.L0Threshold {
 		return
 	}
 

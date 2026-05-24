@@ -90,6 +90,7 @@ type Compactor struct {
 	mu         sync.Mutex
 	segments   map[string]*SegmentInfo // id -> info
 	logger     *slog.Logger
+	cfg        Config
 	l0Strategy Strategy
 	l1Strategy Strategy
 	l2Strategy Strategy
@@ -99,15 +100,31 @@ type Compactor struct {
 
 // NewCompactor creates a new compactor with default strategies.
 func NewCompactor(logger *slog.Logger) *Compactor {
+	return NewCompactorWithConfig(DefaultConfig(), logger)
+}
+
+// NewCompactorWithConfig creates a compactor from normalized compaction config.
+func NewCompactorWithConfig(cfg Config, logger *slog.Logger) *Compactor {
+	cfg = cfg.withDefaults()
+
 	return &Compactor{
 		segments:   make(map[string]*SegmentInfo),
 		logger:     logger,
-		l0Strategy: &SizeTiered{Threshold: L0CompactionThreshold, Logger: logger},
-		l1Strategy: &LevelBased{Threshold: L1CompactionThreshold, TargetSize: L2TargetSize, Logger: logger},
+		cfg:        cfg,
+		l0Strategy: &SizeTiered{Threshold: cfg.L0Threshold, Logger: logger},
+		l1Strategy: &LevelBased{Threshold: cfg.L1Threshold, TargetSize: cfg.L2TargetSize, Logger: logger},
 		l2Strategy: &TimeWindow{ColdThreshold: 48 * time.Hour, Logger: logger},
-		intraL0:    &IntraL0{Threshold: 2 * L0CompactionThreshold},
-		intraL2:    &IntraL2{Threshold: L1CompactionThreshold, TargetSize: L2TargetSize, Logger: logger},
+		intraL0:    &IntraL0{Threshold: 2 * cfg.L0Threshold, BatchSize: cfg.L0Threshold},
+		intraL2:    &IntraL2{Threshold: cfg.L1Threshold, TargetSize: cfg.L2TargetSize, Logger: logger},
 	}
+}
+
+// Config returns the normalized compaction configuration used by the compactor.
+func (c *Compactor) Config() Config {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.cfg
 }
 
 // AddSegment registers a segment for compaction tracking.

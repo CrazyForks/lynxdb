@@ -20,8 +20,11 @@ const (
 
 // Job wraps a Plan with scheduling metadata.
 type Job struct {
-	Plan      *Plan
-	Priority  JobPriority
-	Index     string
-	Partition string // time partition key (e.g., "2026-03-02"); empty for in-memory mode
+	Plan       *Plan
+	Priority   JobPriority
+	Index      string
+	Partition  string // time partition key (e.g., "2026-03-02"); empty for in-memory mode
+	Score      float64
+	InputIDs   []string
+	InputBytes int64
 }

@@ -380,7 +380,13 @@ type jobQueue []*Job
 
 func (q jobQueue) Len() int { return len(q) }
 func (q jobQueue) Less(i, j int) bool {
-	return q[i].Priority < q[j].Priority // lower = higher priority
+	if q[i].Priority != q[j].Priority {
+		return q[i].Priority < q[j].Priority // lower = higher priority
+	}
+	if q[i].Score != q[j].Score {
+		return q[i].Score > q[j].Score // higher score = higher debt
+	}
+	return q[i].InputBytes > q[j].InputBytes
 }
 func (q jobQueue) Swap(i, j int) { q[i], q[j] = q[j], q[i] }
 

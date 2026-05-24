@@ -898,6 +898,9 @@ func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
 
 	// Fallback: single IndexName exact match (existing behavior).
 	if hints.IndexName != "" {
+		if hints.IndexName == "*" {
+			return true
+		}
 		return segIndex == hints.IndexName
 	}
 

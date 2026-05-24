@@ -632,14 +632,12 @@ func (e *Engine) bufferedEventsForHints(hints *spl2.QueryHints) []*event.Event {
 
 	filtered := events[:0]
 	for _, ev := range events {
-		if hints.IndexName != "" {
-			idx := ev.Index
-			if idx == "" {
-				idx = DefaultIndexName
-			}
-			if idx != hints.IndexName {
-				continue
-			}
+		idx := ev.Index
+		if idx == "" {
+			idx = DefaultIndexName
+		}
+		if !matchesSourceScope(idx, hints) {
+			continue
 		}
 		if hints.TimeBounds != nil {
 			if !hints.TimeBounds.Earliest.IsZero() && ev.Time.Before(hints.TimeBounds.Earliest) {

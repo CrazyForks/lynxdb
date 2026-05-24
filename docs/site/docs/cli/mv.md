@@ -39,7 +39,7 @@ lynxdb mv create daily_summary \
 
 # Time-bucketed view for repeated aggregations
 lynxdb mv create errors_5m \
-  'FROM main | where level="ERROR" | stats count, avg(duration) by source, time_bucket(timestamp, "5m") AS bucket' \
+  'FROM main | where level="ERROR" | stats count, avg(duration) by source, time_bucket(_time, "5m") AS bucket' \
   --retention 90d
 
 # Cascading view (build on top of another view)

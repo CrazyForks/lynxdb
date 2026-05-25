@@ -174,6 +174,7 @@ func (e *Engine) SubmitQuery(ctx context.Context, params QueryParams) (*SearchJo
 	e.jobsWG.Add(1)
 	go func() {
 		defer e.jobsWG.Done()
+		defer jobCancel()
 		e.executeQuery(jobCtx, job, params)
 	}()
 

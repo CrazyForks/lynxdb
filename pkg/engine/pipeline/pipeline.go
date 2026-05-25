@@ -2,6 +2,7 @@ package pipeline
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1828,13 +1829,16 @@ type CollectOptions struct {
 }
 
 // CollectAll runs a pipeline to completion and returns all result rows.
-func CollectAll(ctx context.Context, iter Iterator, opts ...CollectOptions) ([]map[string]event.Value, error) {
+func CollectAll(ctx context.Context, iter Iterator, opts ...CollectOptions) (rows []map[string]event.Value, err error) {
 	if err := iter.Init(ctx); err != nil {
 		return nil, err
 	}
-	defer iter.Close()
+	defer func() {
+		if closeErr := iter.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
+		}
+	}()
 
-	var rows []map[string]event.Value
 	for {
 		batch, err := iter.Next(ctx)
 		if err != nil {

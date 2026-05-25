@@ -134,8 +134,8 @@ Some commands have dedicated reference pages in this documentation set. Others a
 | Saved objects | [`mv`](/docs/cli/mv), `saved`, `save`, `run` |
 | Authentication and connection | `login`, `logout`, `auth`, [`config`](/docs/cli/config-cmd) |
 | Interactive and UI | [`shell`](/docs/cli/shell), `ui`, `open`, `share`, `top` |
-| Setup and maintenance | `init`, [`install`](/docs/cli/install), `uninstall`, `upgrade`, `version`, [`completion`](/docs/cli/completion) |
-| Diagnostics and misc | [`bench`](/docs/cli/bench-demo), `demo`, `grammar`, `explain-error` |
+| Setup and maintenance | `init`, [`install`](/docs/cli/install), `uninstall`, `upgrade`, `version`, [`completion`](/docs/cli/completion), `admin format-upgrade` |
+| Diagnostics and misc | [`bench`](/docs/cli/bench-demo), `demo`, `grammar`, `explain-error`, `sigma` |
 
 ## SPL Compatibility Hints
 

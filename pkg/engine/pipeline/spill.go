@@ -134,7 +134,9 @@ func (sw *SpillWriter) WriteRow(row map[string]event.Value) error {
 	// Track estimated bytes written for SpillManager quota enforcement.
 	// A fixed estimate is used rather than Seek-based position tracking to
 	// avoid overhead on hot paths and interaction with encoder buffering.
-	sw.mgr.TrackBytes(estimatedSpillRowBytes)
+	if sw.mgr != nil {
+		sw.mgr.TrackBytes(estimatedSpillRowBytes)
+	}
 
 	return nil
 }

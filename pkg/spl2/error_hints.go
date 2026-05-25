@@ -507,27 +507,12 @@ func levenshtein(a, b string) int {
 			if a[i-1] == b[j-1] {
 				cost = 0
 			}
-			curr[j] = min3(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
+			curr[j] = min(curr[j-1]+1, prev[j]+1, prev[j-1]+cost)
 		}
 		prev = curr
 	}
 
 	return prev[lb]
-}
-
-func min3(a, b, c int) int {
-	if a < b {
-		if a < c {
-			return a
-		}
-
-		return c
-	}
-	if b < c {
-		return b
-	}
-
-	return c
 }
 
 // suggestClauseAsCommand detects when a Lynx Flow clause keyword (like

@@ -469,7 +469,7 @@ func summarizeRemovedFields(stage client.ExplainStage) string {
 
 func topOptimizerRuleLines(parsed *client.ExplainParsed) []string {
 	if len(parsed.OptimizerRules) > 0 {
-		lines := make([]string, 0, minInt(5, len(parsed.OptimizerRules)))
+		lines := make([]string, 0, min(5, len(parsed.OptimizerRules)))
 		for i, rd := range parsed.OptimizerRules {
 			if i >= 5 {
 				break
@@ -506,7 +506,7 @@ func topOptimizerRuleLines(parsed *client.ExplainParsed) []string {
 		return stats[i].count > stats[j].count
 	})
 
-	lines := make([]string, 0, minInt(5, len(stats)))
+	lines := make([]string, 0, min(5, len(stats)))
 	for i, st := range stats {
 		if i >= 5 {
 			break
@@ -653,14 +653,6 @@ func nonEmpty(value, fallback string) string {
 	}
 
 	return value
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-
-	return b
 }
 
 func dedupeStrings(values []string) []string {

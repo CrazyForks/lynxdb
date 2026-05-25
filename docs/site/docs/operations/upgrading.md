@@ -356,7 +356,7 @@ lynxdb version
 
 # Output:
 # LynxDB v0.5.0 (abc1234) built 2026-03-01T10:00:00Z
-# Go: go1.25.4 linux/amd64
+# Go: go1.26.3 linux/amd64
 ```
 
 ## Next Steps

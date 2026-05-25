@@ -186,7 +186,7 @@ The `lynxdb doctor` command runs a comprehensive health check:
 lynxdb doctor
 
 # Output:
-#   ok Binary        vX.Y.Z (linux/amd64, go1.25.4)
+#   ok Binary        vX.Y.Z (linux/amd64, go1.26.3)
 #   ok Config        /home/user/.config/lynxdb/config.yaml (valid)
 #   ok Data dir      /var/lib/lynxdb (42 GB free)
 #   ok Server        localhost:3100 (healthy, uptime 2d 5h)

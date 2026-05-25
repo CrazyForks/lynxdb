@@ -125,7 +125,7 @@ volumes:
 
 ## From Source
 
-Requires Go 1.25+:
+Requires Go 1.26+:
 
 ```bash
 # Via go install
@@ -142,7 +142,7 @@ go build -o lynxdb ./cmd/lynxdb/
 ```bash
 lynxdb version
 # LynxDB v0.5.0 (abc1234) built 2026-03-01T10:00:00Z
-# Go: go1.25.4 darwin/arm64
+# Go: go1.26.3 darwin/arm64
 ```
 
 ## Set Up as a Service

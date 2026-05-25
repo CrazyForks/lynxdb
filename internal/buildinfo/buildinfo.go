@@ -28,7 +28,7 @@ func Short() string {
 }
 
 // Runtime returns Go version and platform info,
-// e.g. "go1.25.4 linux/amd64".
+// e.g. "go1.26.3 linux/amd64".
 func Runtime() string {
 	return fmt.Sprintf("%s %s/%s", runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }

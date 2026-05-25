@@ -58,14 +58,6 @@ Returns `null` if the two arguments are equal, otherwise the first argument.
 | eval clean = nullif(host, "unknown")
 ```
 
-### null
-
-The `null` literal as a zero-argument function. Use inside `case`/`validate` to return null.
-
-```spl
-| eval owner = case(team != "", team, 1=1, null())
-```
-
 ### searchmatch
 
 Returns true when the current event matches a search expression (the same syntax accepted by [`search`](/docs/lynx-flow/commands/search)).

@@ -163,6 +163,10 @@ func DefaultTimestampNormalizer() *TimestampNormalizer {
 }
 
 func (t *TimestampNormalizer) Process(events []*event.Event) ([]*event.Event, error) {
+	// Snapshot the current year once per batch — year-zero timestamps
+	// (e.g. syslog "Jan 02 15:04:05") would otherwise call time.Now() per event.
+	now := time.Now()
+	currentYear := now.Year()
 	for _, e := range events {
 		if !e.Time.IsZero() {
 			continue
@@ -171,7 +175,7 @@ func (t *TimestampNormalizer) Process(events []*event.Event) ([]*event.Event, er
 		if v := t.hint.Load(); v != nil {
 			h := v.(timestampHint)
 			if h.fmtIdx >= 0 && h.fmtIdx < len(t.Formats) {
-				if ts, ok := tryParseExact(e.Raw, h.pos, h.length, t.Formats[h.fmtIdx]); ok {
+				if ts, ok := tryParseExact(e.Raw, h.pos, h.length, t.Formats[h.fmtIdx], currentYear); ok {
 					e.Time = ts
 					continue
 				}
@@ -179,14 +183,14 @@ func (t *TimestampNormalizer) Process(events []*event.Event) ([]*event.Event, er
 		}
 		// Slow path: scan all formats and positions.
 		for fi, format := range t.Formats {
-			if ts, pos, length, err := tryParseTime(e.Raw, format); err == nil {
+			if ts, pos, length, err := tryParseTime(e.Raw, format, currentYear); err == nil {
 				e.Time = ts
 				t.hint.Store(timestampHint{fmtIdx: fi, pos: pos, length: length})
 				break
 			}
 		}
 		if e.Time.IsZero() {
-			e.Time = time.Now()
+			e.Time = now
 		}
 	}
 
@@ -194,7 +198,7 @@ func (t *TimestampNormalizer) Process(events []*event.Event) ([]*event.Event, er
 }
 
 // tryParseExact tries a single time.Parse at an exact (position, length) — the cached hint path.
-func tryParseExact(raw string, pos, length int, format string) (time.Time, bool) {
+func tryParseExact(raw string, pos, length int, format string, currentYear int) (time.Time, bool) {
 	end := pos + length
 	if pos < 0 || end > len(raw) {
 		return time.Time{}, false
@@ -204,7 +208,7 @@ func tryParseExact(raw string, pos, length int, format string) (time.Time, bool)
 		return time.Time{}, false
 	}
 	if t.Year() == 0 {
-		t = t.AddDate(time.Now().Year(), 0, 0)
+		t = t.AddDate(currentYear, 0, 0)
 	}
 	return t, true
 }
@@ -225,14 +229,14 @@ func looksLikeTimestamp(raw string, start int, format string) bool {
 	return true
 }
 
-func tryParseTime(raw, format string) (time.Time, int, int, error) {
+func tryParseTime(raw, format string, currentYear int) (time.Time, int, int, error) {
 	fmtLen := len(format)
 	if len(raw) < fmtLen {
 		return time.Time{}, 0, 0, errTSTooShort
 	}
 	// Try at position 0 first (fast path).
 	if looksLikeTimestamp(raw, 0, format) {
-		if t, length, ok := tryParseAt(raw, 0, format, fmtLen); ok {
+		if t, length, ok := tryParseAt(raw, 0, format, fmtLen, currentYear); ok {
 			return t, 0, length, nil
 		}
 	}
@@ -245,7 +249,7 @@ func tryParseTime(raw, format string) (time.Time, int, int, error) {
 		if raw[i] == ' ' || raw[i] == '"' {
 			pos := i + 1
 			if looksLikeTimestamp(raw, pos, format) {
-				if t, length, ok := tryParseAt(raw, pos, format, fmtLen); ok {
+				if t, length, ok := tryParseAt(raw, pos, format, fmtLen, currentYear); ok {
 					return t, pos, length, nil
 				}
 			}
@@ -255,7 +259,7 @@ func tryParseTime(raw, format string) (time.Time, int, int, error) {
 	return time.Time{}, 0, 0, errTSNoMatch
 }
 
-func tryParseAt(raw string, start int, format string, fmtLen int) (time.Time, int, bool) {
+func tryParseAt(raw string, start int, format string, fmtLen, currentYear int) (time.Time, int, bool) {
 	maxEnd := start + fmtLen + 10
 	if maxEnd > len(raw) {
 		maxEnd = len(raw)
@@ -265,7 +269,7 @@ func tryParseAt(raw string, start int, format string, fmtLen int) (time.Time, in
 		t, err := time.Parse(format, raw[start:end])
 		if err == nil {
 			if t.Year() == 0 {
-				t = t.AddDate(time.Now().Year(), 0, 0)
+				t = t.AddDate(currentYear, 0, 0)
 			}
 			return t, end - start, true
 		}

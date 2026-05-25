@@ -9,7 +9,7 @@ make build
 make test
 ```
 
-Go 1.25.4+. No other dependencies.
+Go 1.26.3+. No other dependencies.
 
 ## Branches
 

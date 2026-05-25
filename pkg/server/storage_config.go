@@ -38,7 +38,7 @@ func batcherConfigFromStorageConfig(storageCfg config.StorageConfig) part.Batche
 	}
 	if compactionCfg.L0Threshold > 0 {
 		cfg.DelayThreshold = compactionCfg.L0Threshold
-		cfg.RejectThreshold = maxInt(part.DefaultRejectThreshold, compactionCfg.L0Threshold*2)
+		cfg.RejectThreshold = max(part.DefaultRejectThreshold, compactionCfg.L0Threshold*2)
 	}
 
 	return cfg
@@ -50,12 +50,4 @@ func compactionWorkersFromStorageConfig(storageCfg config.StorageConfig) int {
 	}
 
 	return config.DefaultConfig().Storage.CompactionWorkers
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-
-	return b
 }

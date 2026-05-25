@@ -12,7 +12,7 @@ This guide covers everything you need to build, test, and run LynxDB from source
 
 | Requirement | Minimum Version | Check |
 |------------|----------------|-------|
-| **Go** | 1.25.4+ | `go version` |
+| **Go** | 1.26.3+ | `go version` |
 | **Git** | 2.x | `git --version` |
 | **Make** | 3.x | `make --version` |
 

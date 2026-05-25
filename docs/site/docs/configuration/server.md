@@ -151,7 +151,7 @@ http:
   idle_timeout: "120s"
   shutdown_timeout: "30s"
   read_header_timeout: "10s"
-  rate_limit: 1000
+  rate_limit: 0
 ```
 
 | Config Key | Env Var | Default | Description |
@@ -159,7 +159,7 @@ http:
 | `http.idle_timeout` | `LYNXDB_HTTP_IDLE_TIMEOUT` | `120s` | Idle keep-alive timeout |
 | `http.shutdown_timeout` | `LYNXDB_HTTP_SHUTDOWN_TIMEOUT` | `30s` | Graceful shutdown deadline |
 | `http.read_header_timeout` | `LYNXDB_HTTP_READ_HEADER_TIMEOUT` | `10s` | Header read deadline |
-| `http.rate_limit` | `LYNXDB_HTTP_RATE_LIMIT` | `1000` | Per-IP request rate limit in requests per second (`0` disables it) |
+| `http.rate_limit` | `LYNXDB_HTTP_RATE_LIMIT` | `0` | Per-IP request rate limit in requests per second. `0` means unlimited; set a positive value to opt in per deployment. |
 
 ## Query Memory and Spill Settings
 

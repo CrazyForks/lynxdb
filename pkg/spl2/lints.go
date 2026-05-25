@@ -1402,22 +1402,14 @@ func lintDeepSearchNestingInQuery(q *Query) []QueryLint {
 func searchBooleanDepth(expr SearchExpr) int {
 	switch e := expr.(type) {
 	case *SearchAndExpr:
-		return 1 + maxInt(searchBooleanDepth(e.Left), searchBooleanDepth(e.Right))
+		return 1 + max(searchBooleanDepth(e.Left), searchBooleanDepth(e.Right))
 	case *SearchOrExpr:
-		return 1 + maxInt(searchBooleanDepth(e.Left), searchBooleanDepth(e.Right))
+		return 1 + max(searchBooleanDepth(e.Left), searchBooleanDepth(e.Right))
 	case *SearchNotExpr:
 		return 1 + searchBooleanDepth(e.Operand)
 	default:
 		return 0
 	}
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-
-	return b
 }
 
 func lintRawExactCompareInQuery(q *Query) []QueryLint {

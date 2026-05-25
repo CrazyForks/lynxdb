@@ -135,7 +135,7 @@ func rangeBSISoakConfigFromEnv(t *testing.T) rangeBSISoakConfig {
 		queryInterval:      durationEnv(t, "LYNXDB_RANGE_BSI_SOAK_QUERY_INTERVAL", 250*time.Millisecond),
 		queryTimeout:       durationEnv(t, "LYNXDB_RANGE_BSI_SOAK_QUERY_TIMEOUT", 15*time.Second),
 		compactionInterval: compactionInterval,
-		postCompactionWait: durationEnv(t, "LYNXDB_RANGE_BSI_SOAK_POST_COMPACTION_WAIT", maxDuration(2*time.Second, 2*compactionInterval)),
+		postCompactionWait: durationEnv(t, "LYNXDB_RANGE_BSI_SOAK_POST_COMPACTION_WAIT", max(2*time.Second, 2*compactionInterval)),
 		flushWait:          durationEnv(t, "LYNXDB_RANGE_BSI_SOAK_FLUSH_WAIT", 5*time.Second),
 		seedSegments:       intEnv(t, "LYNXDB_RANGE_BSI_SOAK_SEED_SEGMENTS", 1),
 		goroutineTolerance: intEnv(t, "LYNXDB_RANGE_BSI_SOAK_GOROUTINE_TOLERANCE", 40),
@@ -167,13 +167,6 @@ func durationEnv(t *testing.T, name string, def time.Duration) time.Duration {
 		t.Fatalf("%s = %q, want positive duration", name, raw)
 	}
 	return d
-}
-
-func maxDuration(a, b time.Duration) time.Duration {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 type rangeBSISoakServer struct {
@@ -469,7 +462,7 @@ func verifyRangeBSIPartWriterOutput(t *testing.T, cfg rangeBSISoakConfig) {
 		t.Fatalf("NewPartStreamWriter: %v", err)
 	}
 	writer.SetRowGroupSize(cfg.batchSize)
-	events := makeRangeBSIPartEvents(0, maxInt(cfg.batchSize, 512))
+	events := makeRangeBSIPartEvents(0, max(cfg.batchSize, 512))
 	if err := writer.WriteRowGroup(context.Background(), events); err != nil {
 		t.Fatalf("PartStreamWriter.WriteRowGroup: %v", err)
 	}
@@ -526,13 +519,6 @@ func makeRangeBSIPartEvents(start int64, n int) []*event.Event {
 		events[i] = e
 	}
 	return events
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
 }
 
 func queryRangeBSIMetaStats(t *testing.T, baseURL string) map[string]interface{} {

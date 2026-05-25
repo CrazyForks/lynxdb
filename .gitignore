@@ -50,3 +50,8 @@ internal/webui/dist/*
 /web/test-results/
 /.e2e-lynxdb
 /web/screens/
+
+# mise local overrides
+mise.local.toml
+.mise/
+mise.lock

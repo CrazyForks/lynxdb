@@ -10,7 +10,7 @@ This page describes the coding conventions and standards for the LynxDB codebase
 
 ## Go Version and Style
 
-LynxDB targets **Go 1.25.4+**. Use modern Go idioms and features.
+LynxDB targets **Go 1.26.3+**. Use modern Go idioms and features.
 
 ### Formatting
 

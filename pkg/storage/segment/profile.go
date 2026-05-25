@@ -213,8 +213,8 @@ func unsignedSpread(minV, maxV int64) uint64 {
 }
 
 func spreadFitsInt64(minV, maxV int64) bool {
-	const maxInt64 = uint64(1<<63 - 1)
-	return unsignedSpread(minV, maxV) <= maxInt64
+	const maxSignedInt64 = uint64(1<<63 - 1)
+	return unsignedSpread(minV, maxV) <= maxSignedInt64
 }
 
 func bitCountForSpread(minV, maxV int64) int {

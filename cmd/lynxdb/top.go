@@ -431,7 +431,7 @@ func (m topModel) renderHeader() string {
 	if m.err != nil {
 		right = right + "  " + clip(m.err.Error(), 42)
 	}
-	if maxRight := maxInt(12, m.width/2); lipgloss.Width(right) > maxRight {
+	if maxRight := max(12, m.width/2); lipgloss.Width(right) > maxRight {
 		right = clip(right, maxRight)
 	}
 	if maxLeft := m.width - lipgloss.Width(right) - 1; maxLeft > 0 && lipgloss.Width(left) > maxLeft {
@@ -569,7 +569,7 @@ func (m topModel) renderTopIndexesPanel(id int) []string {
 				maxEvents = idx.EventCount
 			}
 		}
-		limit := topMinInt(5, len(indexes))
+		limit := min(5, len(indexes))
 		for i := 0; i < limit; i++ {
 			idx := indexes[i]
 			body = append(body, fmt.Sprintf("%-12s %7s %4d seg %2d q %s",
@@ -584,16 +584,16 @@ func (m topModel) renderTopIndexesPanel(id int) []string {
 }
 
 func (m topModel) renderActiveQueriesPanel(id int) string {
-	width := maxInt(48, m.width-4)
+	width := max(48, m.width-4)
 	rows := m.sortedFilteredRows()
 	visible := m.visibleQueryRows()
 	if visible < 1 {
 		visible = 1
 	}
-	if m.scroll > maxInt(0, len(rows)-visible) {
-		m.scroll = maxInt(0, len(rows)-visible)
+	if m.scroll > max(0, len(rows)-visible) {
+		m.scroll = max(0, len(rows)-visible)
 	}
-	end := topMinInt(len(rows), m.scroll+visible)
+	end := min(len(rows), m.scroll+visible)
 
 	title := "Active Queries"
 	if m.filter != "" {
@@ -604,7 +604,7 @@ func (m topModel) renderActiveQueriesPanel(id int) string {
 		titleText = "* " + title
 	}
 	lines := []string{zone.Mark(fmt.Sprintf("top-panel-%d", id), topPanelHeader(m.theme, titleText, width))}
-	contentW := maxInt(0, width-4)
+	contentW := max(0, width-4)
 	layout := topQueryLayoutForWidth(contentW)
 	lines = append(lines, topPanelLine(m.theme, m.renderQueryActions(contentW), width))
 	lines = append(lines, topPanelLine(m.theme, m.theme.Label.Render(layout.header()), width))
@@ -721,7 +721,7 @@ func (m topModel) queryRowLine(row client.TopQueryRow, selected bool, layout top
 	if row.SegmentsTotal == 0 {
 		segments = "-"
 	}
-	mem := formatBytes(maxInt64(row.CurrentMemoryBytes, row.PeakMemoryBytes))
+	mem := formatBytes(max(row.CurrentMemoryBytes, row.PeakMemoryBytes))
 	spill := formatBytes(row.SpillBytes)
 	idx := strings.Join(row.Indexes, ",")
 	if idx != "" {
@@ -851,7 +851,7 @@ func (m topModel) renderPanelGrid(panels [][]string) string {
 		cols = 2
 	}
 	gap := 2
-	totalW := maxInt(48, m.width-4)
+	totalW := max(48, m.width-4)
 	panelW := (totalW - gap*(cols-1)) / cols
 	if panelW < 36 {
 		panelW = totalW
@@ -865,10 +865,10 @@ func (m topModel) renderPanelGrid(panels [][]string) string {
 
 	var b strings.Builder
 	for i := 0; i < len(rendered); i += cols {
-		row := rendered[i:topMinInt(i+cols, len(rendered))]
+		row := rendered[i:min(i+cols, len(rendered))]
 		maxH := 0
 		for _, p := range row {
-			maxH = maxInt(maxH, len(p))
+			maxH = max(maxH, len(p))
 		}
 		for line := 0; line < maxH; line++ {
 			b.WriteString("  ")
@@ -890,7 +890,7 @@ func (m topModel) renderPanelGrid(panels [][]string) string {
 }
 
 func (m topModel) panel(id int, title string, body []string) []string {
-	width := maxInt(48, m.width-4)
+	width := max(48, m.width-4)
 	if m.width >= 128 {
 		width = (m.width - 8) / 3
 	} else if m.width >= 86 {
@@ -932,8 +932,8 @@ func (m topModel) sortedFilteredRows() []client.TopQueryRow {
 				return a.Percent < b.Percent
 			}
 		case topSortMemory:
-			am := maxInt64(a.CurrentMemoryBytes, a.PeakMemoryBytes)
-			bm := maxInt64(b.CurrentMemoryBytes, b.PeakMemoryBytes)
+			am := max(a.CurrentMemoryBytes, a.PeakMemoryBytes)
+			bm := max(b.CurrentMemoryBytes, b.PeakMemoryBytes)
 			if am != bm {
 				return am > bm
 			}
@@ -990,7 +990,7 @@ func (m topModel) visibleQueryRows() int {
 	} else if m.width >= 86 {
 		used = 22
 	}
-	return maxInt(3, m.height-used)
+	return max(3, m.height-used)
 }
 
 func (m topModel) activeFilterText() string {
@@ -1083,11 +1083,11 @@ func topPanelHeader(t *ui.Theme, title string, width int) string {
 }
 
 func topPanelFooter(t *ui.Theme, width int) string {
-	return t.Rule.Render("└" + strings.Repeat("─", maxInt(0, width-2)) + "┘")
+	return t.Rule.Render("└" + strings.Repeat("─", max(0, width-2)) + "┘")
 }
 
 func topPanelLine(t *ui.Theme, content string, width int) string {
-	content = fitContent(content, maxInt(0, width-4))
+	content = fitContent(content, max(0, width-4))
 	pad := width - lipgloss.Width(content) - 4
 	if pad < 0 {
 		pad = 0
@@ -1291,25 +1291,4 @@ func clip(s string, maxLen int) string {
 		return string(runes[:maxLen])
 	}
 	return string(runes[:maxLen-1]) + "…"
-}
-
-func topMinInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func maxInt64(a, b int64) int64 {
-	if a > b {
-		return a
-	}
-	return b
 }

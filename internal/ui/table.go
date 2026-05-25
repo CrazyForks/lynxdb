@@ -190,11 +190,11 @@ func (t *Table) visibleRows() [][]string {
 func (t *Table) columnWidths(rows [][]string) []int {
 	widths := make([]int, len(t.columns))
 	for i, col := range t.columns {
-		widths[i] = maxInt(1, ansi.StringWidth(col))
+		widths[i] = max(1, ansi.StringWidth(col))
 	}
 	for _, row := range rows {
 		for i, cell := range row {
-			widths[i] = maxInt(widths[i], ansi.StringWidth(cell))
+			widths[i] = max(widths[i], ansi.StringWidth(cell))
 		}
 	}
 
@@ -231,7 +231,7 @@ func (t *Table) rowLine(sep string, widths []int, values []string, header bool) 
 		}
 		value = truncateCell(value, width)
 		cellWidth := ansi.StringWidth(value)
-		pad := strings.Repeat(" ", maxInt(0, width-cellWidth))
+		pad := strings.Repeat(" ", max(0, width-cellWidth))
 
 		style := t.cellStyle(i, header)
 		if t.isRightAligned(i) && !header {
@@ -368,14 +368,6 @@ func widestColumn(widths []int) int {
 	}
 
 	return idx
-}
-
-func maxInt(a, b int) int {
-	if a > b {
-		return a
-	}
-
-	return b
 }
 
 // renderRecords renders rows as vertical key-value records. This layout is used

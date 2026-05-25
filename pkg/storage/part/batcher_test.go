@@ -301,6 +301,18 @@ func TestAsyncBatcher_CloseContextDoesNotBlockOnThresholdFlush(t *testing.T) {
 	}
 }
 
+func TestAsyncBatcher_AddAfterCloseReturnsError(t *testing.T) {
+	batcher, _, _ := testBatcher(t, BatcherConfig{})
+	batcher.Start(context.Background())
+
+	if err := batcher.CloseContext(context.Background()); err != nil {
+		t.Fatalf("CloseContext: %v", err)
+	}
+	if err := batcher.Add(makeEvents(1, "main")); err == nil {
+		t.Fatal("Add after Close returned nil error")
+	}
+}
+
 func TestAsyncBatcher_OnCommitCallback(t *testing.T) {
 	cfg := BatcherConfig{
 		MaxEvents: 50,

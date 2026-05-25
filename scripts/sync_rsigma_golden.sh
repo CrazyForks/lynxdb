@@ -84,7 +84,7 @@ for i in "${!yaml_files[@]}"; do
   name="$(basename "$yml" .yml)"
   cp "$yml" "$golden_dir/$name.yml"
   "$rsigma_bin" convert -t lynxdb -f default "$yml" >"$golden_dir/$name.spl2"
-  if [[ "$with_matches" == false ]]; then
+  if [[ "$with_matches" == false && ! -e "$golden_dir/$name.matches.json" ]]; then
     printf '{"events": [], "matches": []}\n' >"$golden_dir/$name.matches.json"
   fi
 

@@ -56,13 +56,13 @@ compat-manifest:
 	go run ./cmd/lynxdb-compat-manifest --lynxdb-version "$(VERSION)"
 
 lint-build:
-	$(shell go env GOPATH)/bin/golangci-lint custom
+	golangci-lint custom
 
 lint: $(CUSTOM_GCL)
 	$(CUSTOM_GCL) run ./...
 
 $(CUSTOM_GCL): .custom-gcl.yml
-	$(shell go env GOPATH)/bin/golangci-lint custom
+	golangci-lint custom
 
 clean:
 	rm -f lynxdb custom-gcl

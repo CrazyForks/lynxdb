@@ -613,7 +613,7 @@ func TestQueryFile_ParseError(t *testing.T) {
 }
 
 func TestValidateQueryBeforeTUI_ParseError(t *testing.T) {
-	err := validateQueryBeforeTUI(`search login | not_a_command`)
+	err := validateQueryBeforeServer(`search login | not_a_command`)
 	if err == nil {
 		t.Fatal("expected parse error, got nil")
 	}

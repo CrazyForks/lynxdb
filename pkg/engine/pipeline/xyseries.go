@@ -240,7 +240,6 @@ func (x *XYSeriesIterator) spillAndMaterialize(ctx context.Context, pivot map[st
 		}
 	}
 	x.acct.Shrink(x.acct.Used())
-	pivot = nil
 
 	writeBatchRows := func(batch *Batch, start int) error {
 		for i := start; i < batch.Len; i++ {

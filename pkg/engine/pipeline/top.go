@@ -275,7 +275,6 @@ func (t *TopIterator) spillAndMaterialize(ctx context.Context, counts map[topCou
 		}
 	}
 	t.acct.Shrink(t.acct.Used())
-	counts = nil
 
 	writeBatchRows := func(batch *Batch, start int) error {
 		for i := start; i < batch.Len; i++ {

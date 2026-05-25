@@ -149,7 +149,7 @@ func (r *RollupIterator) addToRollupState(state *rollupSpanState, row map[string
 	bucket := ts.Truncate(state.dur)
 
 	key := state.name + "|" + fmt.Sprintf("%d", bucket.UnixNano())
-	var keyBytes int64 = int64(len(key))
+	keyBytes := int64(len(key))
 	for _, f := range r.groupBy {
 		key += "|"
 		if v, ok := row[f]; ok {

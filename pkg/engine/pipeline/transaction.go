@@ -397,7 +397,6 @@ func (t *TransactionIterator) spillAndMaterialize(ctx context.Context, groups ma
 		}
 		t.releaseTransactionGroup(g)
 	}
-	groups = nil
 
 	writeRows := func(rows []map[string]event.Value) error {
 		for _, row := range rows {

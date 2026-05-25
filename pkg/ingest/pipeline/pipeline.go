@@ -406,10 +406,8 @@ func (p *MetadataOnlyParser) Process(events []*event.Event) ([]*event.Event, err
 				switch nv := v.(type) {
 				case float64:
 					strVal = fmt.Sprintf("%g", nv)
-					ok = true
 				case bool:
 					strVal = fmt.Sprintf("%t", nv)
-					ok = true
 				default:
 					continue
 				}

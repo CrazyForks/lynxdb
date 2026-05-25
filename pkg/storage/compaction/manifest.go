@@ -122,13 +122,13 @@ func (ms *ManifestStore) Complete(m *Manifest) error {
 	}
 
 	if err := os.Rename(tmpPath, histPath); err != nil {
-		os.Remove(tmpPath)
+		_ = os.Remove(tmpPath)
 
 		return fmt.Errorf("compaction.ManifestStore.Complete: rename history: %w", err)
 	}
 
 	// Remove from pending.
-	ms.Remove(m.ID)
+	_ = ms.Remove(m.ID)
 
 	// Enforce history retention limit.
 	ms.trimHistory()
@@ -249,7 +249,7 @@ func (ms *ManifestStore) CleanupInterrupted(manifests []*Manifest, existsFn func
 	var cleaned []string
 
 	for _, m := range manifests {
-		ms.Remove(m.ID)
+		_ = ms.Remove(m.ID)
 		cleaned = append(cleaned, m.ID)
 	}
 

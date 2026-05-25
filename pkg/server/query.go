@@ -609,14 +609,6 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 	}
 }
 
-func (e *Engine) flushBatcherForQuery() {
-	if e.batcher != nil {
-		if err := e.batcher.Flush(); err != nil {
-			e.logger.Warn("pre-query batcher flush failed", "error", err)
-		}
-	}
-}
-
 func (e *Engine) bufferedEventsForQuery() []*event.Event {
 	if e.batcher == nil {
 		return nil

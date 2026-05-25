@@ -439,64 +439,6 @@ func (e *RGFilterEvaluator) attachRowMask(rgIdx int, field string, mask *roaring
 	fieldMask.And(mask)
 }
 
-func lowerBSIPredicate(
-	node *RGFilterNode,
-	meta rangeMeta,
-	idx *bsi.BSI,
-) (bsi.Operation, int64, int64, *roaring.Bitmap, bool, error) {
-	raw, ok, err := parseRangeBSIValue(meta.ValueKind, node.RangeVal, node.RangeOp)
-	if err != nil {
-		return 0, 0, 0, nil, false, err
-	}
-	if !ok {
-		return 0, 0, 0, nil, false, nil
-	}
-
-	empty := func() *roaring.Bitmap { return roaring.New() }
-	all := func() *roaring.Bitmap { return idx.GetExistenceBitmap().Clone() }
-
-	switch node.RangeOp {
-	case ">":
-		if raw >= meta.MaxValue {
-			return 0, 0, 0, empty(), true, nil
-		}
-		if raw < meta.MinValue {
-			return 0, 0, 0, all(), true, nil
-		}
-
-		return bsi.GT, rangeBSIOffset(raw, meta.MinValue), 0, nil, true, nil
-	case ">=":
-		if raw > meta.MaxValue {
-			return 0, 0, 0, empty(), true, nil
-		}
-		if raw <= meta.MinValue {
-			return 0, 0, 0, all(), true, nil
-		}
-
-		return bsi.GE, rangeBSIOffset(raw, meta.MinValue), 0, nil, true, nil
-	case "<":
-		if raw <= meta.MinValue {
-			return 0, 0, 0, empty(), true, nil
-		}
-		if raw > meta.MaxValue {
-			return 0, 0, 0, all(), true, nil
-		}
-
-		return bsi.LT, rangeBSIOffset(raw, meta.MinValue), 0, nil, true, nil
-	case "<=":
-		if raw < meta.MinValue {
-			return 0, 0, 0, empty(), true, nil
-		}
-		if raw >= meta.MaxValue {
-			return 0, 0, 0, all(), true, nil
-		}
-
-		return bsi.LE, rangeBSIOffset(raw, meta.MinValue), 0, nil, true, nil
-	default:
-		return 0, 0, 0, nil, false, nil
-	}
-}
-
 func parseRangeBSIValue(valueKind uint8, value, op string) (int64, bool, error) {
 	switch valueKind {
 	case index.RangeBSIValueInt:

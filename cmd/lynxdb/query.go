@@ -663,7 +663,7 @@ func runQueryServer(query, since, from, to, timeout string, failEmpty bool, anal
 		return fmt.Errorf("--from and --to must both be specified")
 	}
 
-	if err := validateQueryBeforeTUI(query); err != nil {
+	if err := validateQueryBeforeServer(query); err != nil {
 		return err
 	}
 
@@ -692,7 +692,7 @@ func stripVerticalQuerySuffix(query string) (string, bool) {
 	return stripped, true
 }
 
-func validateQueryBeforeTUI(query string) error {
+func validateQueryBeforeServer(query string) error {
 	if err := spl2.CheckUnsupportedCommands(query); err != nil {
 		return err
 	}

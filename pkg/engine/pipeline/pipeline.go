@@ -1712,7 +1712,7 @@ func (qc *queryContext) convertAggs(aggs []spl2.AggExpr) []AggFunc {
 			if fc, ok := a.Args[0].(*spl2.FuncCallExpr); ok {
 				// Unwrap eval() wrapper — compile the inner condition directly.
 				// count(eval(status>=500)) → compile "status>=500", not "eval(status>=500)".
-				expr := a.Args[0].(spl2.Expr)
+				expr := a.Args[0]
 				if strings.EqualFold(fc.Name, "eval") && len(fc.Args) == 1 {
 					expr = fc.Args[0]
 				}

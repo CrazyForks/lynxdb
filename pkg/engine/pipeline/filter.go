@@ -465,9 +465,10 @@ func NewSearchExprIteratorWithExpr(child Iterator, eval *spl2.SearchEvaluator, e
 		// Resolve "source" alias to physical column name "_source",
 		// matching the SearchEvaluator.evalCompare behavior.
 		field := cmp.Field
-		if field == "source" {
+		switch field {
+		case "source":
 			field = "_source"
-		} else if field == "sourcetype" {
+		case "sourcetype":
 			field = "_sourcetype"
 		}
 		si.vecField = field

@@ -165,7 +165,9 @@ func (r *Receiver) handleMetrics(w http.ResponseWriter, req *http.Request) {
 func decodeRequest(w http.ResponseWriter, req *http.Request, msg proto.Message) (string, int, bool) {
 	encoding := requestEncoding(req)
 	body := req.Body
-	defer body.Close()
+	defer func() {
+		_ = body.Close()
+	}()
 
 	switch encoding {
 	case "protobuf":

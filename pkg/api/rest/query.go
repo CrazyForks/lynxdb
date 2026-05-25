@@ -146,7 +146,7 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 			return
 		}
 		writeSyncResultFromUsecase(w, result, limit, req.Offset, normalizedQuery, queryCfg,
-			!(req.Lint != nil && !*req.Lint), req.LintLimit, req.LintFull)
+			req.Lint == nil || *req.Lint, req.LintLimit, req.LintFull)
 	} else {
 		writeJobHandleFromUsecase(w, result)
 	}

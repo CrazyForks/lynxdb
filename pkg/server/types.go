@@ -69,14 +69,14 @@ func (sh *segmentHandle) decRef() bool {
 	}
 	if new == 0 {
 		if sh.mmap != nil {
-			sh.mmap.Close() // idempotent via atomic.CompareAndSwap inside MmapSegment.Close
+			_ = sh.mmap.Close() // idempotent via atomic.CompareAndSwap inside MmapSegment.Close
 		}
 		for _, p := range sh.pendingDelete {
 			if sh.deleteFunc != nil {
 				sh.deleteFunc(p, sh.meta.SizeBytes)
 			} else {
 				if err := os.Remove(p); err == nil {
-					os.Remove(filepath.Dir(p)) // clean up empty partition dir; fails on non-empty (ENOTEMPTY)
+					_ = os.Remove(filepath.Dir(p)) // clean up empty partition dir; fails on non-empty (ENOTEMPTY)
 				}
 			}
 		}

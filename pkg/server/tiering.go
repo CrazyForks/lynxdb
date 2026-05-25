@@ -292,7 +292,7 @@ func (e *Engine) doRemoteSegmentLoad(ctx context.Context, sh *segmentHandle, cac
 		e.logger.Warn("failed to write segment cache temp file", "id", sh.meta.ID, "error", werr)
 	} else if rerr := os.Rename(tmpPath, cachePath); rerr != nil {
 		e.logger.Warn("failed to rename segment cache file", "id", sh.meta.ID, "error", rerr)
-		os.Remove(tmpPath) // clean up orphan
+		_ = os.Remove(tmpPath) // clean up orphan
 	}
 
 	// Open from cache.

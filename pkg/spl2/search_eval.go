@@ -283,9 +283,10 @@ func (e *SearchEvaluator) evalCompare(cmp *SearchCompareExpr, row map[string]eve
 	// Resolve "source" alias: pipeline rows store the value under "_source"
 	// (the physical column name), but search expressions use "source".
 	field := cmp.Field
-	if field == "source" {
+	switch field {
+	case "source":
 		field = "_source"
-	} else if field == "sourcetype" {
+	case "sourcetype":
 		field = "_sourcetype"
 	}
 
@@ -328,9 +329,10 @@ func (e *SearchEvaluator) evalCompare(cmp *SearchCompareExpr, row map[string]eve
 func (e *SearchEvaluator) evalIn(in *SearchInExpr, row map[string]event.Value) bool {
 	// Resolve "source" alias: pipeline rows use "_source" as the physical column name.
 	field := in.Field
-	if field == "source" {
+	switch field {
+	case "source":
 		field = "_source"
-	} else if field == "sourcetype" {
+	case "sourcetype":
 		field = "_sourcetype"
 	}
 
@@ -529,10 +531,11 @@ func appendGlobClass(buf *strings.Builder, pattern string, start int) (int, bool
 
 	var class strings.Builder
 	class.WriteByte('[')
-	if pattern[i] == '!' {
+	switch pattern[i] {
+	case '!':
 		class.WriteByte('^')
 		i++
-	} else if pattern[i] == '^' {
+	case '^':
 		class.WriteByte('\\')
 		class.WriteByte('^')
 		i++

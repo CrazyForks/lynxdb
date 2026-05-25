@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"time"
@@ -303,7 +304,7 @@ func (e *Engine) doRemoteSegmentLoad(ctx context.Context, sh *segmentHandle, cac
 	// Fallback: open from downloaded bytes directly (no mmap to cache).
 	sr, err := segment.OpenSegment(data)
 	if err != nil {
-		return nil, nil // non-fatal: segment may be corrupt
+		return nil, fmt.Errorf("open downloaded remote segment %s: %w", sh.meta.ID, err)
 	}
 
 	return sr, nil

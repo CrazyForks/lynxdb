@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"sort"
-	"strings"
 	"sync/atomic"
 	"time"
 
@@ -63,44 +62,28 @@ func DetectResultType(prog *spl2.Program) ResultType {
 
 // ParseTimeBounds parses from/to time strings into TimeBounds.
 func ParseTimeBounds(from, to string) *spl2.TimeBounds {
-	if from == "" && to == "" {
-		return nil
-	}
-	tb := &spl2.TimeBounds{}
-	now := time.Now()
-	if from != "" {
-		if t, err := parseTimeValue(from, now); err == nil {
-			tb.Earliest = t
-		}
-	}
-	if to != "" {
-		if t, err := parseTimeValue(to, now); err == nil {
-			tb.Latest = t
-		}
-	}
-
+	tb, _ := ParseTimeBoundsStrict(from, to)
 	return tb
 }
 
-func parseTimeValue(s string, now time.Time) (time.Time, error) {
-	s = strings.TrimSpace(s)
-	if strings.EqualFold(s, "now") {
-		return now, nil
-	}
-	if strings.HasPrefix(s, "-") {
-		dur, err := timerange.ParseRelative(s[1:])
-		if err != nil {
-			return time.Time{}, err
-		}
+// ErrInvalidTimeBounds is returned when query from/to parameters cannot be parsed.
+var ErrInvalidTimeBounds = errors.New("invalid query time bounds")
 
-		return now.Add(-dur), nil
+// ParseTimeBoundsStrict parses from/to time strings into TimeBounds and returns
+// explicit errors instead of silently dropping invalid bounds.
+func ParseTimeBoundsStrict(from, to string) (*spl2.TimeBounds, error) {
+	tr, err := timerange.ParseOptionalRange(from, to, time.Now())
+	if err != nil {
+		return nil, fmt.Errorf("%w: %w", ErrInvalidTimeBounds, err)
 	}
-	// Try RFC3339Nano first (exact format from CLI flags).
-	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
-		return t, nil
+	if tr == nil {
+		return nil, nil
 	}
 
-	return timerange.ParseAbsolute(s)
+	return &spl2.TimeBounds{
+		Earliest: tr.Earliest,
+		Latest:   tr.Latest,
+	}, nil
 }
 
 // ErrTooManyQueries is returned when the concurrency limit is exceeded.

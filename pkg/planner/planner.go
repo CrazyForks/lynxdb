@@ -63,12 +63,17 @@ func (p *plannerImpl) Plan(req PlanRequest) (*Plan, error) {
 	// before parsing so all clients benefit from bare field=value support.
 	query := spl2.NormalizeQuery(req.Query)
 
+	externalTB, err := server.ParseTimeBoundsStrict(req.From, req.To)
+	if err != nil {
+		return nil, err
+	}
+
 	if p.planCache != nil {
 		if cached, ok := p.planCache.Get(query); ok {
 			// Deep clone to prevent mutation of cached plan.
 			plan := cached.Clone()
 			// Always apply fresh external time bounds.
-			plan.ExternalTimeBounds = server.ParseTimeBounds(req.From, req.To)
+			plan.ExternalTimeBounds = externalTB
 
 			return plan, nil
 		}
@@ -125,7 +130,6 @@ func (p *plannerImpl) Plan(req PlanRequest) (*Plan, error) {
 
 	resultType := server.DetectResultType(prog)
 	hints := spl2.ExtractQueryHints(prog)
-	externalTB := server.ParseTimeBounds(req.From, req.To)
 
 	plan := &Plan{
 		RawQuery:           query,

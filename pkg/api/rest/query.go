@@ -210,6 +210,11 @@ func handlePlanError(w http.ResponseWriter, err error) {
 
 		return
 	}
+	if errors.Is(err, server.ErrInvalidTimeBounds) {
+		respondError(w, ErrCodeValidationError, http.StatusBadRequest, err.Error())
+
+		return
+	}
 	respondInternalError(w, err.Error())
 }
 

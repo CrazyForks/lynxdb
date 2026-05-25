@@ -87,6 +87,17 @@ func TestPlan_NoTimeBounds(t *testing.T) {
 	}
 }
 
+func TestPlan_InvalidTimeBounds(t *testing.T) {
+	p := New()
+	_, err := p.Plan(PlanRequest{
+		Query: "search error",
+		From:  "not-a-time",
+	})
+	if !errors.Is(err, server.ErrInvalidTimeBounds) {
+		t.Fatalf("error = %v, want ErrInvalidTimeBounds", err)
+	}
+}
+
 func TestPlan_ImplicitSearch(t *testing.T) {
 	p := New()
 

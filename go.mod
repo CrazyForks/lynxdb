@@ -1,6 +1,6 @@
 module github.com/lynxbase/lynxdb
 
-go 1.25.4
+go 1.26.0
 
 require (
 	charm.land/bubbles/v2 v2.0.0

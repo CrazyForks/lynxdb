@@ -33,12 +33,12 @@ Multi-way conditional. Pairs of `condition, value`. The first true condition win
 
 ### validate
 
-Like `case`, but pairs are `condition, error_value`. The function returns `null` when every condition is false. Useful for whitelist checks.
+Inverse of `case`: pairs are `must_be_true, error_value`. Returns the error value paired with the first condition that is **false**, or `null` when every condition is true. Useful for accumulating validation errors.
 
 ```spl
 | eval err = validate(
-    status >= 200 AND status < 600, null(),
-    1=1, "invalid HTTP status"
+    status >= 200, "status too low",
+    status < 600, "status too high"
   )
 ```
 

@@ -186,13 +186,15 @@ func compareSpillValues(a, b event.Value) int {
 // use CloseFile() instead of Close() — it always preserves the file.
 func (sw *SpillWriter) Close() error {
 	name := sw.file.Name()
-	sw.file.Close()
+	closeErr := sw.file.Close()
 
 	if sw.mgr == nil {
-		return os.Remove(name)
+		if rmErr := os.Remove(name); rmErr != nil && closeErr == nil {
+			return rmErr
+		}
 	}
 
-	return nil
+	return closeErr
 }
 
 // CloseFile closes the underlying file handle without removing it.

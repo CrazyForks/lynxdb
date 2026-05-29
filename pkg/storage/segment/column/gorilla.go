@@ -107,6 +107,9 @@ func (g *GorillaEncoder) DecodeFloat64s(data []byte) ([]float64, error) {
 				meaningful = 64 // Edge case: 0 means all 64 bits are meaningful.
 			}
 			trailing := 64 - int(leading) - int(meaningful)
+			if trailing < 0 {
+				return nil, fmt.Errorf("%w: invalid leading=%d meaningful=%d at index %d", ErrCorruptData, leading, meaningful, i)
+			}
 			xorBits, err := br.readBits(int(meaningful))
 			if err != nil {
 				return nil, fmt.Errorf("%w: reading xor bits at index %d: %w", ErrCorruptData, i, err)

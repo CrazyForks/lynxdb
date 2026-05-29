@@ -89,6 +89,35 @@ func TestRetentionManager_DeletesOldPartitions(t *testing.T) {
 	}
 }
 
+func TestRetentionManager_SkipsFlatLayout(t *testing.T) {
+	dir := t.TempDir()
+	layout := NewLayoutWithGranularity(dir, GranularityNone)
+	registry := NewRegistry(testLogger())
+
+	// A flat (GranularityNone) layout has a single "all" partition with no time.
+	// Even far past the max age it must not be age-deleted, or the whole index
+	// would be dropped.
+	old := time.Now().UTC().Add(-100 * 24 * time.Hour)
+	meta := writeTestPart(t, layout, "main", old)
+	registry.Add(meta)
+
+	rm := NewRetentionManager(layout, registry, RetentionConfig{
+		MaxAge:   90 * 24 * time.Hour,
+		Interval: 1 * time.Hour,
+	}, testLogger())
+
+	deleted, err := rm.RunOnce()
+	if err != nil {
+		t.Fatalf("RunOnce: %v", err)
+	}
+	if deleted != 0 {
+		t.Errorf("flat layout must not be age-deleted, got %d deleted", deleted)
+	}
+	if registry.Get(meta.ID) == nil {
+		t.Error("expected part to be retained in registry")
+	}
+}
+
 func TestRetentionManager_MultipleIndexes(t *testing.T) {
 	dir := t.TempDir()
 	layout := NewLayout(dir)

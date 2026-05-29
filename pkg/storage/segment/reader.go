@@ -1003,6 +1003,8 @@ func (r *Reader) readFieldColumn(rgIdx int, cc *ColumnChunkMeta, events []*event
 		for i, v := range values {
 			events[i].SetField(cc.Name, event.FloatValue(v))
 		}
+	default:
+		return fmt.Errorf("%w: field %q encoding %d", ErrUnsupportedCapability, cc.Name, cc.EncodingType)
 	}
 
 	return nil

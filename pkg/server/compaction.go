@@ -292,6 +292,18 @@ func (e *Engine) executeCompactionPlan(ctx context.Context, idx, partition strin
 	// the old inputs remain active and restart must not load both old and output.
 	e.partRegistry.Add(outputMeta)
 
+	// Record the output in the pending manifest before removing inputs. If we
+	// crash after this point, recovery sees the output is durable and removes
+	// the now-redundant inputs instead of loading both (which would duplicate
+	// events). The rename is atomic, so a registered output is fully written.
+	if manifest != nil && e.manifestStore != nil {
+		manifest.OutputSegmentID = outputMeta.ID
+		if err := e.manifestStore.Write(manifest); err != nil {
+			e.logger.Warn("failed to record compaction output in manifest",
+				"id", manifest.ID, "error", err)
+		}
+	}
+
 	e.logger.Debug("compaction output registered",
 		"id", outputMeta.ID,
 		"level", outputMeta.Level,
@@ -494,8 +506,7 @@ func (e *Engine) executeTrivialMove(_ context.Context, idx, partition string, pl
 	renamedMeta.Level = plan.OutputLevel
 	renamedMeta.CreatedAt = time.Now()
 	renamedMeta.ID = part.ID(oldMeta.Index, plan.OutputLevel, renamedMeta.CreatedAt)
-	renamedMeta.Path = filepath.Join(filepath.Dir(oldMeta.Path),
-		part.Filename(oldMeta.Index, plan.OutputLevel, renamedMeta.CreatedAt))
+	renamedMeta.Path = filepath.Join(filepath.Dir(oldMeta.Path), part.Filename(renamedMeta.ID))
 
 	if err := os.Rename(oldMeta.Path, renamedMeta.Path); err != nil {
 		e.logger.Error("trivial move rename failed",
@@ -508,6 +519,14 @@ func (e *Engine) executeTrivialMove(_ context.Context, idx, partition string, pl
 		)
 
 		return err
+	}
+
+	// fsync the directory so the rename is durable; every other part rename
+	// path syncs, and without it a crash could leave the file under its old
+	// level or missing entirely.
+	if err := syncDir(filepath.Dir(renamedMeta.Path)); err != nil {
+		e.logger.Warn("trivial move dir sync failed",
+			"index", idx, "partition", partition, "path", renamedMeta.Path, "error", err)
 	}
 
 	newHandle, err := e.openPartSegmentHandle(&renamedMeta)

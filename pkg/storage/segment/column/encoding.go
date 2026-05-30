@@ -55,3 +55,8 @@ var (
 	ErrInvalidEncoding  = errors.New("column: invalid encoding type marker")
 	ErrInsufficientData = errors.New("column: insufficient data")
 )
+
+// maxDecodedColumnBytes caps the decompressed size of a single column block.
+// A row-group column never approaches this; the bound exists to reject a
+// malformed header that claims an implausible size before allocating for it.
+const maxDecodedColumnBytes = 1 << 30 // 1 GiB

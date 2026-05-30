@@ -163,6 +163,37 @@ func TestViewRegistry_Drop(t *testing.T) {
 	}
 }
 
+func TestViewRegistry_DropRemovesDataDir(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer r.Close()
+
+	if err := r.Create(testDef("mv_data")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// The view data dir lives alongside the registry (r.dir/name), matching
+	// Layout.ViewDir. Seed it so Drop has something to remove.
+	viewDir := filepath.Join(dir, "mv_data")
+	if err := os.MkdirAll(filepath.Join(viewDir, "segments"), 0o755); err != nil {
+		t.Fatalf("mkdir view data: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(viewDir, "segments", "x.lsg"), []byte("x"), 0o600); err != nil {
+		t.Fatalf("write view data: %v", err)
+	}
+
+	if err := r.Drop("mv_data"); err != nil {
+		t.Fatalf("Drop: %v", err)
+	}
+
+	if _, err := os.Stat(viewDir); !os.IsNotExist(err) {
+		t.Errorf("view data dir should be removed, stat err = %v", err)
+	}
+}
+
 func TestViewRegistry_DropNotFound(t *testing.T) {
 	dir := t.TempDir()
 	r, err := Open(dir)

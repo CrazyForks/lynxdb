@@ -143,6 +143,13 @@ func (rm *RetentionManager) RunOnce() (int, error) {
 
 // retainIndex checks partitions for a single index and deletes expired ones.
 func (rm *RetentionManager) retainIndex(index string) (int, error) {
+	// With no time partitioning the index lives in a single flat "all" partition
+	// whose key carries no time, so age-based retention does not apply. Treating
+	// it as expired would delete the entire index.
+	if rm.layout.Granularity() == GranularityNone {
+		return 0, nil
+	}
+
 	partitions, err := rm.layout.ListPartitions(index)
 	if err != nil {
 		return 0, fmt.Errorf("list partitions for %s: %w", index, err)
@@ -218,9 +225,10 @@ func (rm *RetentionManager) deletePartition(index, partition string) error {
 
 // parsePartitionTime parses a partition key string into a time.Time.
 // Supports daily (YYYY-MM-DD), hourly (YYYY-MM-DD-HH), weekly (YYYY-Www),
-// and monthly (YYYY-MM) formats. GranularityNone partitions ("all") return
-// time.Time{} which is always before any cutoff, so they are never deleted
-// by age-based retention.
+// and monthly (YYYY-MM) formats. GranularityNone partitions ("all") have no
+// time and return time.Time{}; callers must not apply age-based retention to
+// them (retainIndex skips the flat layout entirely), since the zero time is
+// before any cutoff and would otherwise mark the partition expired.
 func parsePartitionTime(key string, granularity PartitionGranularity) (time.Time, error) {
 	switch granularity {
 	case GranularityHourly:

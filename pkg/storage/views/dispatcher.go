@@ -100,6 +100,31 @@ func (av *activeView) sortedEvents() []*event.Event {
 	return av.events
 }
 
+// reinsertEvents prepends events back into the memtable after a failed flush so
+// they are retried on the next flush instead of being lost. flushPendingLocked
+// already moved pending into events, and Dispatch may have added more since the
+// flush snapshot, so merge rather than overwrite.
+func (av *activeView) reinsertEvents(events []*event.Event) {
+	av.mu.Lock()
+	av.events = append(events, av.events...)
+	av.mu.Unlock()
+}
+
+// viewDirLocks serializes mutations of a view's segment directory across the
+// flush, merge, and retention paths, which each ReadDir/Remove/write there and
+// would otherwise race (e.g. merge deleting a segment flush is still writing).
+var viewDirLocks sync.Map // view name -> *sync.Mutex
+
+// lockViewDir locks the named view's segment directory and returns the unlock
+// function, intended for use with defer.
+func lockViewDir(name string) func() {
+	mu, _ := viewDirLocks.LoadOrStore(name, &sync.Mutex{})
+	m := mu.(*sync.Mutex)
+	m.Lock()
+
+	return m.Unlock
+}
+
 // flushIfExpired flushes the batch if it has exceeded the max delay.
 func (av *activeView) flushIfExpired() {
 	av.mu.Lock()
@@ -512,6 +537,9 @@ func (d *Dispatcher) FlushView(name string) error {
 		return ErrViewNotFound
 	}
 
+	// Serialize against merge/retention which mutate the same segment directory.
+	defer lockViewDir(name)()
+
 	// Atomic swap: flush pending into events, snapshot and clear — all under
 	// a single lock acquisition.
 	av.mu.Lock()
@@ -528,6 +556,8 @@ func (d *Dispatcher) FlushView(name string) error {
 	// Write segment outside lock — no concurrent access to oldMemtable.
 	if d.layout != nil {
 		if err := d.layout.EnsureViewDirs(name); err != nil {
+			av.reinsertEvents(events)
+
 			return fmt.Errorf("views: ensure dirs: %w", err)
 		}
 	}
@@ -538,8 +568,9 @@ func (d *Dispatcher) FlushView(name string) error {
 	segPath := d.viewSegmentPath(name)
 	f, err := os.Create(segPath)
 	if err != nil {
-		// Events lost from view on disk error — recoverable via re-backfill.
-		d.logger.Error("views: segment create failed, events lost from view",
+		// Return the events to the memtable so they are retried, not lost.
+		av.reinsertEvents(events)
+		d.logger.Error("views: segment create failed, events requeued",
 			"view", name, "events", len(events), "err", err)
 
 		return fmt.Errorf("views: create segment: %w", err)
@@ -552,7 +583,8 @@ func (d *Dispatcher) FlushView(name string) error {
 	if _, err := sw.Write(events); err != nil {
 		f.Close()
 		os.Remove(segPath)
-		d.logger.Error("views: segment write failed, events lost from view",
+		av.reinsertEvents(events)
+		d.logger.Error("views: segment write failed, events requeued",
 			"view", name, "events", len(events), "err", err)
 
 		return fmt.Errorf("views: write segment: %w", err)
@@ -560,6 +592,7 @@ func (d *Dispatcher) FlushView(name string) error {
 	if err := f.Sync(); err != nil {
 		f.Close()
 		os.Remove(segPath)
+		av.reinsertEvents(events)
 
 		return fmt.Errorf("views: sync segment: %w", err)
 	}
@@ -600,10 +633,13 @@ func (d *Dispatcher) ViewBufferedEvents(name string) []*event.Event {
 		return nil
 	}
 
-	// Flush pending before reading.
+	// Flush pending before reading. Return a copy: sortedEvents returns the
+	// view's internal slice, which the caller must not mutate or race against.
 	av.mu.Lock()
 	av.flushPendingLocked()
-	result := av.sortedEvents()
+	sorted := av.sortedEvents()
+	result := make([]*event.Event, len(sorted))
+	copy(result, sorted)
 	av.mu.Unlock()
 
 	return result
@@ -660,9 +696,14 @@ func (d *Dispatcher) ViewAllEvents(name string) ([]*event.Event, error) {
 		return nil, ErrViewNotFound
 	}
 
-	// Flush any pending batched events to the memtable first.
+	// Flush pending into the memtable and snapshot it under the lock. Sorting
+	// happens here (not later, unlocked) so a concurrent Dispatch cannot race
+	// the in-place sort, and the copy keeps the internal slice private.
 	av.mu.Lock()
 	av.flushPendingLocked()
+	sorted := av.sortedEvents()
+	memEvents := make([]*event.Event, len(sorted))
+	copy(memEvents, sorted)
 	av.mu.Unlock()
 
 	var all []*event.Event
@@ -679,8 +720,8 @@ func (d *Dispatcher) ViewAllEvents(name string) ([]*event.Event, error) {
 		}
 	}
 
-	// Append current unflushed events.
-	all = append(all, av.sortedEvents()...)
+	// Append the memtable snapshot taken under the lock above.
+	all = append(all, memEvents...)
 
 	// For aggregation views: deserialize → merge → finalize → events.
 	spec := av.def.AggSpec

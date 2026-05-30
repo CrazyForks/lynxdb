@@ -18,6 +18,9 @@ func EnforceRetention(def ViewDefinition, layout *storage.Layout, logger *slog.L
 		return nil // No retention limit.
 	}
 
+	// Serialize against flush/merge which mutate the same segment directory.
+	defer lockViewDir(def.Name)()
+
 	segDir := layout.ViewSegmentDir(def.Name)
 	entries, err := os.ReadDir(segDir)
 	if err != nil {

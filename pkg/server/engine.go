@@ -481,8 +481,8 @@ func (e *Engine) Shutdown(timeout time.Duration) error {
 	// queriesDrained is true only when every executeQuery goroutine has returned
 	// (e.jobsWG fully drained). It gates the segment mmap force-close below: we
 	// must never Munmap a segment while a query goroutine can still read its
-	// memory. jobsWG covers queries pinned to any epoch — more robust than
-	// old.done, which reflects only the final epoch.
+	// memory. jobsWG covers queries pinned to any epoch, whereas old.done
+	// reflects only the final epoch.
 	queriesDrained := false
 	select {
 	case <-jobsDone:

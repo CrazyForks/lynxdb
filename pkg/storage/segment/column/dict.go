@@ -104,6 +104,13 @@ func (d *DictEncoder) DecodeStrings(data []byte) ([]string, error) {
 	count := binary.LittleEndian.Uint32(data[1:5])
 	dictSize := binary.LittleEndian.Uint32(data[5:9])
 
+	// Each dict entry carries at least a 4-byte length prefix and each index is
+	// at least 1 byte, so sizes that cannot fit in the remaining data are
+	// corrupt. Reject before allocating to avoid huge make() from a bad header.
+	if uint64(dictSize) > uint64(len(data))/4 || uint64(count) > uint64(len(data)) {
+		return nil, fmt.Errorf("%w: sizes implausible (count=%d dict=%d len=%d)", ErrCorruptData, count, dictSize, len(data))
+	}
+
 	pos := 9
 
 	// Read dictionary entries.

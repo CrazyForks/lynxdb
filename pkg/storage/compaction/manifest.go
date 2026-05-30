@@ -69,7 +69,7 @@ func (ms *ManifestStore) Write(m *Manifest) error {
 	path := filepath.Join(ms.pendingDir, m.ID+".json")
 	tmpPath := path + ".tmp"
 
-	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+	if err := writeFileSync(tmpPath, data, 0o644); err != nil {
 		return fmt.Errorf("compaction.ManifestStore.Write: write tmp: %w", err)
 	}
 
@@ -77,6 +77,12 @@ func (ms *ManifestStore) Write(m *Manifest) error {
 		os.Remove(tmpPath)
 
 		return fmt.Errorf("compaction.ManifestStore.Write: rename: %w", err)
+	}
+
+	// fsync the directory so the rename survives a crash — the manifest is the
+	// crash-recovery signal and must be durable once Write returns.
+	if err := syncDir(ms.pendingDir); err != nil {
+		return fmt.Errorf("compaction.ManifestStore.Write: sync dir: %w", err)
 	}
 
 	return nil
@@ -116,6 +122,11 @@ func (ms *ManifestStore) Complete(m *Manifest) error {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("compaction.ManifestStore.Complete: write history: %w", err)
 	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("compaction.ManifestStore.Complete: sync history: %w", err)
+	}
 	if err := tmp.Close(); err != nil {
 		_ = os.Remove(tmpPath)
 		return fmt.Errorf("compaction.ManifestStore.Complete: close history: %w", err)
@@ -125,6 +136,9 @@ func (ms *ManifestStore) Complete(m *Manifest) error {
 		_ = os.Remove(tmpPath)
 
 		return fmt.Errorf("compaction.ManifestStore.Complete: rename history: %w", err)
+	}
+	if err := syncDir(ms.historyDir); err != nil {
+		return fmt.Errorf("compaction.ManifestStore.Complete: sync history dir: %w", err)
 	}
 
 	// Remove from pending.
@@ -256,15 +270,31 @@ func compactManifestHistoryEntries(entries []os.DirEntry) []os.DirEntry {
 	return entries[:n]
 }
 
-// CleanupInterrupted handles recovery for interrupted compactions.
-// For each pending manifest, it removes the manifest file. The actual segment
-// cleanup is handled by the filesystem scan (which ignores tmp_ files) and the
-// next compaction cycle (which will re-plan if needed). This is the safe,
-// conservative recovery path.
-func (ms *ManifestStore) CleanupInterrupted(manifests []*Manifest, existsFn func(id string) bool) []string {
+// CleanupInterrupted handles recovery for interrupted compactions. For each
+// pending manifest it decides the fate of the input segments:
+//
+//   - If the output segment became durable (the merge wrote and registered it
+//     before crashing, so outputExists reports it present), the inputs it
+//     replaced are still on disk and would produce duplicate events on reload.
+//     removeInputs is called to drop them.
+//   - Otherwise the output never materialized — any partial output was a tmp_
+//     file already removed by the filesystem scan — so the inputs are left for
+//     the next compaction cycle to re-merge.
+//
+// The pending manifest is always removed. Returns the cleaned manifest IDs.
+func (ms *ManifestStore) CleanupInterrupted(
+	manifests []*Manifest,
+	outputExists func(id string) bool,
+	removeInputs func(m *Manifest),
+) []string {
 	var cleaned []string
 
 	for _, m := range manifests {
+		if m.OutputSegmentID != "" && outputExists != nil && outputExists(m.OutputSegmentID) {
+			if removeInputs != nil {
+				removeInputs(m)
+			}
+		}
 		_ = ms.Remove(m.ID)
 		cleaned = append(cleaned, m.ID)
 	}

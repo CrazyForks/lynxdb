@@ -91,6 +91,9 @@ func (e *LZ4Encoder) DecodeStrings(data []byte) ([]string, error) {
 	if 13+int(compSize) > len(data) {
 		return nil, fmt.Errorf("%w: truncated compressed data", ErrCorruptData)
 	}
+	if uint64(uncompSize) > maxDecodedColumnBytes {
+		return nil, fmt.Errorf("%w: uncompressed size %d exceeds limit", ErrCorruptData, uncompSize)
+	}
 
 	compressed := data[13 : 13+compSize]
 
@@ -107,6 +110,12 @@ func (e *LZ4Encoder) DecodeStrings(data []byte) ([]string, error) {
 		if n != int(uncompSize) {
 			return nil, fmt.Errorf("%w: decompressed size mismatch: got %d, want %d", ErrCorruptData, n, uncompSize)
 		}
+	}
+
+	// Each encoded string carries at least a 4-byte length prefix, so a count
+	// that cannot fit in the uncompressed buffer is corrupt.
+	if uint64(count) > uint64(len(uncompressed))/4 {
+		return nil, fmt.Errorf("%w: count %d implausible for %d bytes", ErrCorruptData, count, len(uncompressed))
 	}
 
 	result := make([]string, 0, count)

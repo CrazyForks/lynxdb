@@ -169,8 +169,11 @@ func (r *ViewRegistry) Drop(name string) error {
 	}
 	r.persistMu.Unlock()
 
-	// Remove view data directory if it exists.
-	viewDir := filepath.Join(filepath.Dir(r.dir), name)
+	// Remove view data directory if it exists. The registry lives in the views
+	// dir itself (views.json sits in r.dir), so a view's data dir is r.dir/name
+	// — matching Layout.ViewDir. Using filepath.Dir(r.dir) here pointed one level
+	// too high and left the data behind.
+	viewDir := filepath.Join(r.dir, name)
 	if _, err := os.Stat(viewDir); err == nil {
 		if rmErr := os.RemoveAll(viewDir); rmErr != nil {
 			slog.Warn("views: failed to remove view data directory", "dir", viewDir, "error", rmErr)

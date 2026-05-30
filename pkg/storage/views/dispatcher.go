@@ -615,10 +615,13 @@ func (d *Dispatcher) ViewBufferedEvents(name string) []*event.Event {
 		return nil
 	}
 
-	// Flush pending before reading.
+	// Flush pending before reading. Return a copy: sortedEvents returns the
+	// view's internal slice, which the caller must not mutate or race against.
 	av.mu.Lock()
 	av.flushPendingLocked()
-	result := av.sortedEvents()
+	sorted := av.sortedEvents()
+	result := make([]*event.Event, len(sorted))
+	copy(result, sorted)
 	av.mu.Unlock()
 
 	return result
@@ -675,9 +678,14 @@ func (d *Dispatcher) ViewAllEvents(name string) ([]*event.Event, error) {
 		return nil, ErrViewNotFound
 	}
 
-	// Flush any pending batched events to the memtable first.
+	// Flush pending into the memtable and snapshot it under the lock. Sorting
+	// happens here (not later, unlocked) so a concurrent Dispatch cannot race
+	// the in-place sort, and the copy keeps the internal slice private.
 	av.mu.Lock()
 	av.flushPendingLocked()
+	sorted := av.sortedEvents()
+	memEvents := make([]*event.Event, len(sorted))
+	copy(memEvents, sorted)
 	av.mu.Unlock()
 
 	var all []*event.Event
@@ -694,8 +702,8 @@ func (d *Dispatcher) ViewAllEvents(name string) ([]*event.Event, error) {
 		}
 	}
 
-	// Append current unflushed events.
-	all = append(all, av.sortedEvents()...)
+	// Append the memtable snapshot taken under the lock above.
+	all = append(all, memEvents...)
 
 	// For aggregation views: deserialize → merge → finalize → events.
 	spec := av.def.AggSpec

@@ -509,6 +509,14 @@ func (e *Engine) executeTrivialMove(_ context.Context, idx, partition string, pl
 		return err
 	}
 
+	// fsync the directory so the rename is durable; every other part rename
+	// path syncs, and without it a crash could leave the file under its old
+	// level or missing entirely.
+	if err := syncDir(filepath.Dir(renamedMeta.Path)); err != nil {
+		e.logger.Warn("trivial move dir sync failed",
+			"index", idx, "partition", partition, "path", renamedMeta.Path, "error", err)
+	}
+
 	newHandle, err := e.openPartSegmentHandle(&renamedMeta)
 	if err != nil {
 		e.logger.Error("trivial move reopen failed",

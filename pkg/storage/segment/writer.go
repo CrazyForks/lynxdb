@@ -1165,9 +1165,10 @@ func decompressZSTDBlock(data []byte) ([]byte, error) {
 	}
 	defer putZSTDDecoder(dec)
 
-	// Cap the pre-allocation hint: a malformed header may claim an implausible
-	// size. zstd grows the buffer as needed for legitimate data, and the size
-	// check below rejects any mismatch.
+	// Cap the pre-allocation hint so a malformed header claiming an implausible
+	// size cannot force a multi-gigabyte up-front allocation. DecodeAll still
+	// grows the buffer for legitimate data, and the post-decode length check
+	// below errors out if the real size differs from uncompSize.
 	capHint := int(uncompSize)
 	if capHint > maxDecompressedBlockBytes {
 		capHint = maxDecompressedBlockBytes

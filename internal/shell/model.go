@@ -390,7 +390,6 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.results.AppendResult(msg.query, msg.rows, msg.elapsed, msg.err, resultW,
 			m.session.Format, m.session.Timing, msg.hints, zeroCtx)
 
-		// Update sidebar with query stats.
 		if msg.err == nil {
 			m.sidebar.SetQueryStats(buildQueryStats(msg.query, msg.rows, msg.elapsed, msg.meta))
 		}

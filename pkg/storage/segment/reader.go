@@ -405,7 +405,13 @@ func (r *Reader) readChunk(cc *ColumnChunkMeta) ([]byte, error) {
 	// Layer 2 decompression.
 	switch cc.Compression {
 	case CompressionNone:
-		return chunkData, nil
+		// chunkData aliases the mmap'd file. Copy so the result is owned by the
+		// caller and safe to retain after the segment is unmapped, matching the
+		// LZ4/ZSTD branches which already return fresh buffers.
+		out := make([]byte, len(chunkData))
+		copy(out, chunkData)
+
+		return out, nil
 	case CompressionLZ4:
 		return decompressLZ4Block(chunkData)
 	case CompressionZSTD:

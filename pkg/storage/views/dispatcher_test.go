@@ -862,3 +862,32 @@ func makeTestEventAtTime(index string, t time.Time) *event.Event {
 
 	return e
 }
+
+func TestDispatcher_FlushViewRequeuesOnError(t *testing.T) {
+	d, reg, dir := setupDispatcher(t)
+	def := createProjectionView(t, reg, "mv_block", "_source=nginx")
+	d.ActivateView(def)
+
+	if err := d.Dispatch([]*event.Event{
+		makeTestEvent("nginx", "/a", "500"),
+		makeTestEvent("nginx", "/b", "500"),
+	}); err != nil {
+		t.Fatalf("Dispatch: %v", err)
+	}
+
+	// Block the view directory with a regular file so the flush fails before it
+	// can write a segment.
+	blocker := filepath.Join(dir, "views", "mv_block")
+	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
+		t.Fatalf("write blocker: %v", err)
+	}
+
+	if err := d.FlushView("mv_block"); err == nil {
+		t.Fatal("expected flush to fail with blocked view dir")
+	}
+
+	// Events must be retained for retry, not lost.
+	if got := d.ViewBufferedEvents("mv_block"); len(got) != 2 {
+		t.Fatalf("expected 2 events retained after failed flush, got %d", len(got))
+	}
+}

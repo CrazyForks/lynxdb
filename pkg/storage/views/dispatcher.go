@@ -20,6 +20,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/memgov"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment"
+	"github.com/lynxbase/lynxdb/pkg/vm"
 )
 
 const (
@@ -1136,10 +1137,9 @@ func sortEventsBySortKey(events []*event.Event, sortKey []string) {
 	}
 	sort.SliceStable(events, func(i, j int) bool {
 		for _, field := range sortKey {
-			vi := events[i].GetField(field).String()
-			vj := events[j].GetField(field).String()
-			if vi != vj {
-				return vi < vj
+			cmp := vm.CompareValues(events[i].GetField(field), events[j].GetField(field))
+			if cmp != 0 {
+				return cmp < 0
 			}
 		}
 

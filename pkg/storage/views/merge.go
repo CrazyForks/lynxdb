@@ -89,17 +89,7 @@ func MergeView(def ViewDefinition, layout *storage.Layout, logger *slog.Logger) 
 
 	// Sort events by sort key (falls back to time order if no sort key).
 	if len(def.SortKey) > 0 {
-		sort.SliceStable(allEvents, func(i, j int) bool {
-			for _, field := range def.SortKey {
-				vi := allEvents[i].GetField(field).String()
-				vj := allEvents[j].GetField(field).String()
-				if vi != vj {
-					return vi < vj
-				}
-			}
-
-			return false
-		})
+		sortEventsBySortKey(allEvents, def.SortKey)
 	} else {
 		sort.Slice(allEvents, func(i, j int) bool {
 			return allEvents[i].Time.Before(allEvents[j].Time)

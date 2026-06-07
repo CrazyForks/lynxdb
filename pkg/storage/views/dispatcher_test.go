@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -409,6 +410,29 @@ func TestDispatcher_SortKeyEnforcement(t *testing.T) {
 		if prev > curr {
 			t.Errorf("sort order violated at %d: %q > %q", i, prev, curr)
 		}
+	}
+}
+
+func TestSortEventsBySortKey_Numeric(t *testing.T) {
+	events := []*event.Event{
+		event.NewEvent(time.Now(), "ten"),
+		event.NewEvent(time.Now(), "two"),
+		event.NewEvent(time.Now(), "one"),
+	}
+	events[0].SetField("n", event.IntValue(10))
+	events[1].SetField("n", event.IntValue(2))
+	events[2].SetField("n", event.IntValue(1))
+
+	sortEventsBySortKey(events, []string{"n"})
+
+	got := []int64{
+		events[0].GetField("n").AsInt(),
+		events[1].GetField("n").AsInt(),
+		events[2].GetField("n").AsInt(),
+	}
+	want := []int64{1, 2, 10}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("numeric sort order: got %v, want %v", got, want)
 	}
 }
 

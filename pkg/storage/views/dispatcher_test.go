@@ -141,6 +141,11 @@ func TestDispatcher_FlushView_SegmentReadable(t *testing.T) {
 	if len(entries) == 0 {
 		t.Fatal("no segment files")
 	}
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Name(), ".tmp") {
+			t.Fatalf("temporary segment file was exposed: %s", entry.Name())
+		}
+	}
 
 	segPath := filepath.Join(segDir, entries[0].Name())
 	ms, err := segment.OpenSegmentFile(segPath)

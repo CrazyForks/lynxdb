@@ -563,8 +563,7 @@ func (d *Dispatcher) FlushView(name string) error {
 	// Sort by sort key if defined.
 	sortEventsBySortKey(events, av.def.SortKey)
 
-	segPath := d.viewSegmentPath(name)
-	f, err := os.Create(segPath)
+	segPath, tmpPath, f, err := d.createViewSegmentTemp(name)
 	if err != nil {
 		// Return the events to the memtable so they are retried, not lost.
 		av.reinsertEvents(events)
@@ -580,7 +579,7 @@ func (d *Dispatcher) FlushView(name string) error {
 	}
 	if _, err := sw.Write(events); err != nil {
 		f.Close()
-		os.Remove(segPath)
+		os.Remove(tmpPath)
 		av.reinsertEvents(events)
 		d.logger.Error("views: segment write failed, events requeued",
 			"view", name, "events", len(events), "err", err)
@@ -589,13 +588,36 @@ func (d *Dispatcher) FlushView(name string) error {
 	}
 	if err := f.Sync(); err != nil {
 		f.Close()
-		os.Remove(segPath)
+		os.Remove(tmpPath)
 		av.reinsertEvents(events)
 
 		return fmt.Errorf("views: sync segment: %w", err)
 	}
 	if err := f.Close(); err != nil {
+		os.Remove(tmpPath)
+		av.reinsertEvents(events)
+
 		return fmt.Errorf("views: close segment: %w", err)
+	}
+	if err := verifyMergedSegment(tmpPath, len(events)); err != nil {
+		os.Remove(tmpPath)
+		av.reinsertEvents(events)
+
+		return fmt.Errorf("views: verify segment: %w", err)
+	}
+	if err := os.Rename(tmpPath, segPath); err != nil {
+		os.Remove(tmpPath)
+		av.reinsertEvents(events)
+
+		return fmt.Errorf("views: rename segment: %w", err)
+	}
+	if err := syncDir(filepath.Dir(segPath)); err != nil {
+		if rmErr := os.Remove(segPath); rmErr == nil {
+			_ = syncDir(filepath.Dir(segPath))
+			av.reinsertEvents(events)
+		}
+
+		return fmt.Errorf("views: sync segment dir: %w", err)
 	}
 
 	d.logger.Info("views: flushed view", "name", name, "events", len(events), "path", segPath)
@@ -1113,8 +1135,34 @@ func (d *Dispatcher) viewSegmentPath(name string) string {
 	ts := time.Now()
 	segName := fmt.Sprintf("seg-%s-L0-%d.lsg", name, ts.UnixNano())
 	if d.layout != nil {
-		return fmt.Sprintf("%s/%s", d.layout.ViewSegmentDir(name), segName)
+		return filepath.Join(d.layout.ViewSegmentDir(name), segName)
 	}
 
 	return segName
+}
+
+func (d *Dispatcher) createViewSegmentTemp(name string) (string, string, *os.File, error) {
+	var lastErr error
+	for attempt := 0; attempt < 16; attempt++ {
+		segPath := d.viewSegmentPath(name)
+		if _, err := os.Stat(segPath); err == nil {
+			lastErr = fmt.Errorf("segment path exists: %s", segPath)
+
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", "", nil, fmt.Errorf("stat segment path: %w", err)
+		}
+
+		tmpPath := segPath + ".tmp"
+		f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, 0o600)
+		if err == nil {
+			return segPath, tmpPath, f, nil
+		}
+		if !os.IsExist(err) {
+			return "", "", nil, err
+		}
+		lastErr = err
+	}
+
+	return "", "", nil, fmt.Errorf("allocate segment path: %w", lastErr)
 }

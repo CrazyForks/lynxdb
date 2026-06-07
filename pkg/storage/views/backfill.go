@@ -71,6 +71,10 @@ type Backfiller struct {
 
 // NewBackfiller creates a new backfiller.
 func NewBackfiller(registry *ViewRegistry, logger *slog.Logger) *Backfiller {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &Backfiller{
 		registry: registry,
 		logger:   logger,
@@ -87,6 +91,10 @@ func NewBackfillerWithBudget(
 	cfg BackfillConfig,
 	logger *slog.Logger,
 ) *Backfiller {
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	return &Backfiller{
 		registry: registry,
 		gov:      gov,

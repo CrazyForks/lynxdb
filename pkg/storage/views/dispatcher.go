@@ -176,6 +176,9 @@ func NewDispatcherWithBudget(
 	if batchMaxDelay <= 0 {
 		batchMaxDelay = defaultBatchMaxDelay
 	}
+	if logger == nil {
+		logger = slog.Default()
+	}
 	return &Dispatcher{
 		views:          make(map[string]*activeView),
 		registry:       registry,

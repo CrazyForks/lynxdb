@@ -337,6 +337,38 @@ func TestBackfiller_Backpressure(t *testing.T) {
 	}
 }
 
+func TestBackfiller_NilLogger(t *testing.T) {
+	dir := t.TempDir()
+	viewsDir := filepath.Join(dir, "views")
+	os.MkdirAll(viewsDir, 0o755)
+
+	reg, _ := Open(viewsDir)
+	def := ViewDefinition{
+		Name:    "mv_nil_logger",
+		Version: 1,
+		Type:    ViewTypeProjection,
+		Filter:  "",
+		Columns: []ColumnDef{{Name: "_time", Type: event.FieldTypeTimestamp}},
+		Status:  ViewStatusBackfill,
+	}
+	reg.Create(def)
+
+	source := &poolExhaustedSource{
+		inner:     &mockSource{events: []*event.Event{makeTestEvent("nginx", "/a", "200")}},
+		failCount: 1,
+	}
+	cfg := BackfillConfig{
+		BackpressureWait: time.Millisecond,
+		MaxRetries:       2,
+	}
+	backfiller := NewBackfillerWithBudget(reg, nil, cfg, nil)
+	if err := backfiller.Run(context.Background(), "mv_nil_logger", source, func([]*event.Event) error {
+		return nil
+	}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+}
+
 func TestBackfiller_BackpressureMaxRetries(t *testing.T) {
 	dir := t.TempDir()
 	viewsDir := filepath.Join(dir, "views")

@@ -243,6 +243,37 @@ func TestDispatcher_ActivateViewRejectsInvalidQuery(t *testing.T) {
 	}
 }
 
+func TestDispatcher_NilLogger(t *testing.T) {
+	dir := t.TempDir()
+	viewsDir := filepath.Join(dir, "views")
+	if err := os.MkdirAll(viewsDir, 0o755); err != nil {
+		t.Fatalf("mkdir views dir: %v", err)
+	}
+	reg, err := Open(viewsDir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+
+	d := NewDispatcher(reg, storage.NewLayout(dir), nil, 0, 0)
+	def := ViewDefinition{
+		Name:    "mv_invalid_logger",
+		Version: 1,
+		Type:    ViewTypeAggregation,
+		Query:   `FROM main | stats values(host)`,
+		Columns: []ColumnDef{
+			{Name: "_time", Type: event.FieldTypeTimestamp},
+		},
+		Status: ViewStatusActive,
+	}
+	if err := reg.Create(def); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := d.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer d.Stop()
+}
+
 func TestDispatcher_StartSkipsInvalidQuery(t *testing.T) {
 	d, reg, _ := setupDispatcher(t)
 	def := ViewDefinition{

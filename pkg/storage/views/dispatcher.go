@@ -312,15 +312,13 @@ func (d *Dispatcher) activateView(def ViewDefinition) error {
 	if def.Query != "" {
 		analysis, err := AnalyzeQuery(def.Query)
 		if err != nil {
-			d.logger.Warn("views: query analysis failed for view",
-				"name", def.Name, "err", err, "query", def.Query)
-		} else {
-			av.analysis = analysis
-			// If the definition doesn't have AggSpec populated (e.g., older
-			// views created before this code), populate it from analysis.
-			if def.AggSpec == nil && analysis.AggSpec != nil {
-				av.def.AggSpec = analysis.AggSpec
-			}
+			return fmt.Errorf("views: analyze query for %s: %w", def.Name, err)
+		}
+		av.analysis = analysis
+		// If the definition doesn't have AggSpec populated (e.g., older
+		// views created before this code), populate it from analysis.
+		if def.AggSpec == nil && analysis.AggSpec != nil {
+			av.def.AggSpec = analysis.AggSpec
 		}
 	}
 

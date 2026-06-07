@@ -214,6 +214,54 @@ func TestDispatcher_StartLoadsViews(t *testing.T) {
 	}
 }
 
+func TestDispatcher_ActivateViewRejectsInvalidQuery(t *testing.T) {
+	d, _, _ := setupDispatcher(t)
+	def := ViewDefinition{
+		Name:    "mv_invalid",
+		Version: 1,
+		Type:    ViewTypeAggregation,
+		Query:   `FROM main | stats values(host)`,
+		Columns: []ColumnDef{
+			{Name: "_time", Type: event.FieldTypeTimestamp},
+		},
+		Status: ViewStatusActive,
+	}
+
+	if err := d.ActivateView(def); err == nil {
+		t.Fatal("ActivateView succeeded with an unsupported aggregation query")
+	}
+
+	if got := d.ViewBufferedEvents("mv_invalid"); got != nil {
+		t.Fatalf("invalid view was activated, buffered events = %d", len(got))
+	}
+}
+
+func TestDispatcher_StartSkipsInvalidQuery(t *testing.T) {
+	d, reg, _ := setupDispatcher(t)
+	def := ViewDefinition{
+		Name:    "mv_invalid_start",
+		Version: 1,
+		Type:    ViewTypeAggregation,
+		Query:   `FROM main | stats values(host)`,
+		Columns: []ColumnDef{
+			{Name: "_time", Type: event.FieldTypeTimestamp},
+		},
+		Status: ViewStatusActive,
+	}
+	if err := reg.Create(def); err != nil {
+		t.Fatalf("Create invalid view: %v", err)
+	}
+
+	if err := d.Start(context.Background()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	defer d.Stop()
+
+	if got := d.ViewBufferedEvents("mv_invalid_start"); got != nil {
+		t.Fatalf("invalid persisted view was activated, buffered events = %d", len(got))
+	}
+}
+
 func TestDispatcher_ViewAllEvents(t *testing.T) {
 	d, reg, _ := setupDispatcher(t)
 	def := createProjectionView(t, reg, "mv_all", "_source=nginx")

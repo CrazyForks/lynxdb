@@ -24,6 +24,7 @@ type ViewRegistry struct {
 	views         map[string]ViewDefinition
 	dir           string
 	formatVersion int
+	persistData   func([]byte) error
 }
 
 // Open loads or creates a view registry in the given directory.
@@ -41,6 +42,7 @@ func OpenWithFormatVersion(dir string, formatVersion int) (*ViewRegistry, error)
 		dir:           dir,
 		formatVersion: formatVersion,
 	}
+	r.persistData = r.persist
 
 	path := filepath.Join(dir, viewsFile)
 	data, err := os.ReadFile(path)
@@ -72,25 +74,30 @@ func (r *ViewRegistry) Create(def ViewDefinition) error {
 		return err
 	}
 
-	r.mu.Lock()
+	r.persistMu.Lock()
+	defer r.persistMu.Unlock()
 
+	r.mu.Lock()
 	if _, exists := r.views[def.Name]; exists {
 		r.mu.Unlock()
 
 		return ErrViewAlreadyExists
 	}
-
-	r.views[def.Name] = def
-	data, err := r.snapshotLocked()
+	data, err := r.snapshotWithLocked(def, true)
 	r.mu.Unlock()
 	if err != nil {
 		return err
 	}
 
-	r.persistMu.Lock()
-	defer r.persistMu.Unlock()
+	if err := r.persistBytes(data); err != nil {
+		return err
+	}
 
-	return r.persist(data)
+	r.mu.Lock()
+	r.views[def.Name] = def
+	r.mu.Unlock()
+
+	return nil
 }
 
 // Get returns a view definition by name.
@@ -123,6 +130,9 @@ func (r *ViewRegistry) List() []ViewDefinition {
 }
 
 func (r *ViewRegistry) Update(def ViewDefinition) error {
+	r.persistMu.Lock()
+	defer r.persistMu.Unlock()
+
 	r.mu.Lock()
 
 	if _, exists := r.views[def.Name]; !exists {
@@ -131,42 +141,52 @@ func (r *ViewRegistry) Update(def ViewDefinition) error {
 		return ErrViewNotFound
 	}
 
-	r.views[def.Name] = def
-	data, err := r.snapshotLocked()
+	data, err := r.snapshotWithLocked(def, true)
 	r.mu.Unlock()
 	if err != nil {
 		return err
 	}
 
-	r.persistMu.Lock()
-	defer r.persistMu.Unlock()
+	if err := r.persistBytes(data); err != nil {
+		return err
+	}
 
-	return r.persist(data)
+	r.mu.Lock()
+	r.views[def.Name] = def
+	r.mu.Unlock()
+
+	return nil
 }
 
 // Drop removes a view definition and its data directory.
 func (r *ViewRegistry) Drop(name string) error {
+	r.persistMu.Lock()
+
 	r.mu.Lock()
 
 	if _, exists := r.views[name]; !exists {
 		r.mu.Unlock()
+		r.persistMu.Unlock()
 
 		return ErrViewNotFound
 	}
 
-	delete(r.views, name)
-	data, err := r.snapshotLocked()
+	data, err := r.snapshotWithLocked(ViewDefinition{Name: name}, false)
 	r.mu.Unlock()
 	if err != nil {
-		return err
-	}
-
-	r.persistMu.Lock()
-	if err := r.persist(data); err != nil {
 		r.persistMu.Unlock()
 
 		return err
 	}
+
+	if err := r.persistBytes(data); err != nil {
+		r.persistMu.Unlock()
+
+		return err
+	}
+	r.mu.Lock()
+	delete(r.views, name)
+	r.mu.Unlock()
 	r.persistMu.Unlock()
 
 	// Remove view data directory if it exists. The registry lives in the views
@@ -191,9 +211,28 @@ func (r *ViewRegistry) Close() error {
 
 // snapshotLocked marshals the current views to JSON. Caller must hold r.mu.
 func (r *ViewRegistry) snapshotLocked() ([]byte, error) {
+	return r.snapshotWithLocked(ViewDefinition{}, false)
+}
+
+func (r *ViewRegistry) snapshotWithLocked(def ViewDefinition, include bool) ([]byte, error) {
 	defs := make([]ViewDefinition, 0, len(r.views))
+	if include {
+		defs = make([]ViewDefinition, 0, len(r.views)+1)
+	}
 	for _, d := range r.views {
+		if d.Name == def.Name {
+			if include {
+				defs = append(defs, def)
+			}
+
+			continue
+		}
 		defs = append(defs, d)
+	}
+	if include {
+		if _, exists := r.views[def.Name]; !exists {
+			defs = append(defs, def)
+		}
 	}
 	sort.Slice(defs, func(i, j int) bool {
 		return defs[i].Name < defs[j].Name
@@ -209,6 +248,14 @@ func (r *ViewRegistry) snapshotLocked() ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+func (r *ViewRegistry) persistBytes(data []byte) error {
+	if r.persistData != nil {
+		return r.persistData(data)
+	}
+
+	return r.persist(data)
 }
 
 // persist writes pre-marshaled data to disk atomically with full durability.

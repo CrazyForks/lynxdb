@@ -267,6 +267,80 @@ func TestViewRegistry_Update(t *testing.T) {
 	}
 }
 
+func TestViewRegistry_CreatePersistsBeforeMemoryUpdate(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer r.Close()
+
+	persistErr := errors.New("persist failed")
+	r.persistData = func([]byte) error { return persistErr }
+
+	if err := r.Create(testDef("mv_failed")); !errors.Is(err, persistErr) {
+		t.Fatalf("Create error: got %v, want %v", err, persistErr)
+	}
+	if _, err := r.Get("mv_failed"); !errors.Is(err, ErrViewNotFound) {
+		t.Fatalf("Get after failed create: got %v, want %v", err, ErrViewNotFound)
+	}
+}
+
+func TestViewRegistry_UpdatePersistsBeforeMemoryUpdate(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer r.Close()
+
+	def := testDef("mv_update_failed")
+	def.Status = ViewStatusCreating
+	if err := r.Create(def); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	persistErr := errors.New("persist failed")
+	r.persistData = func([]byte) error { return persistErr }
+
+	updated := def
+	updated.Status = ViewStatusActive
+	if err := r.Update(updated); !errors.Is(err, persistErr) {
+		t.Fatalf("Update error: got %v, want %v", err, persistErr)
+	}
+	got, err := r.Get(def.Name)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Status != ViewStatusCreating {
+		t.Fatalf("status after failed update: got %v, want %v", got.Status, ViewStatusCreating)
+	}
+}
+
+func TestViewRegistry_DropPersistsBeforeMemoryUpdate(t *testing.T) {
+	dir := t.TempDir()
+	r, err := Open(dir)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer r.Close()
+
+	def := testDef("mv_drop_failed")
+	if err := r.Create(def); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	persistErr := errors.New("persist failed")
+	r.persistData = func([]byte) error { return persistErr }
+
+	if err := r.Drop(def.Name); !errors.Is(err, persistErr) {
+		t.Fatalf("Drop error: got %v, want %v", err, persistErr)
+	}
+	if _, err := r.Get(def.Name); err != nil {
+		t.Fatalf("Get after failed drop: %v", err)
+	}
+}
+
 func TestViewRegistry_ConcurrentAccess(t *testing.T) {
 	dir := t.TempDir()
 	r, err := Open(dir)

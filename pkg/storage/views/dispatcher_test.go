@@ -589,8 +589,8 @@ func TestDispatcher_AggregationInsertBudgetRejectsLargeGroupKey(t *testing.T) {
 
 	ev := event.NewEvent(time.Now(), strings.Repeat("x", 4096))
 	ev.Index = "main"
-	if err := d.Dispatch([]*event.Event{ev}); err != nil {
-		t.Fatalf("Dispatch: %v", err)
+	if err := d.Dispatch([]*event.Event{ev}); err == nil {
+		t.Fatal("expected Dispatch to return insert budget error")
 	}
 
 	if got := d.ViewBufferedEvents("mv_budgeted"); len(got) != 0 {

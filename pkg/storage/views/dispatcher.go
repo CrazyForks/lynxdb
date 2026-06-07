@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -386,6 +387,7 @@ func (d *Dispatcher) dispatch(events []*event.Event, adapter *memgov.BudgetAdapt
 	d.mu.RUnlock()
 
 	// Process pipelines outside lock (expensive: rex, eval, partial agg).
+	var dispatchErrs []error
 	for _, vb := range batches {
 		// Re-check closed — view may have been deactivated between collect and process.
 		if vb.av.closed.Load() {
@@ -409,6 +411,7 @@ func (d *Dispatcher) dispatch(events []*event.Event, adapter *memgov.BudgetAdapt
 			if err != nil {
 				d.logger.Warn("views: insert pipeline failed",
 					"view", vb.av.def.Name, "err", err)
+				dispatchErrs = append(dispatchErrs, fmt.Errorf("views: insert pipeline for %s: %w", vb.av.def.Name, err))
 
 				continue
 			}
@@ -425,7 +428,7 @@ func (d *Dispatcher) dispatch(events []*event.Event, adapter *memgov.BudgetAdapt
 		}
 	}
 
-	return nil
+	return errors.Join(dispatchErrs...)
 }
 
 func (d *Dispatcher) newInsertBudgetAdapter(viewName string) *memgov.BudgetAdapter {

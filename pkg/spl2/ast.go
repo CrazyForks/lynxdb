@@ -1101,15 +1101,22 @@ func (c *CapabilityCommand) String() string {
 	return fmt.Sprintf("%s <%d args>", c.Name, len(c.Args))
 }
 
-// TeeCommand represents: | tee "<destination>" — side-effect passthrough.
-// Writes each batch to a destination file, then yields the batch unchanged.
+// TeeCommand represents: | tee [format=json|csv|raw] "<destination>" —
+// side-effect passthrough. Writes each batch to a destination file, then
+// yields the batch unchanged.
 type TeeCommand struct {
 	Destination string // file path
-	Format      string // "json" (default)
+	Format      string // "json" (default), "csv", or "raw"
 }
 
-func (*TeeCommand) commandNode()     {}
-func (c *TeeCommand) String() string { return fmt.Sprintf("tee %q", c.Destination) }
+func (*TeeCommand) commandNode() {}
+func (c *TeeCommand) String() string {
+	if c.Format != "" && c.Format != "json" {
+		return fmt.Sprintf("tee format=%s %q", c.Format, c.Destination)
+	}
+
+	return fmt.Sprintf("tee %q", c.Destination)
+}
 
 // PackJsonCommand represents: | pack_json [<f1>, <f2>, ...] into <target>.
 // Assembles event fields into a JSON string stored in target field.

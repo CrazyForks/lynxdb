@@ -1471,6 +1471,10 @@ func (qc *queryContext) buildCommand(child Iterator, cmd spl2.Command) (Iterator
 		return NewPackJsonIterator(child, c.Fields, c.Target), nil
 
 	case *spl2.TeeCommand:
+		if c.Format != "" && !ValidTeeFormat(c.Format) {
+			return nil, fmt.Errorf("tee: unsupported format %q (want json, csv, or raw)", c.Format)
+		}
+
 		return NewTeeIterator(child, c.Destination, c.Format), nil
 
 	default:

@@ -3265,3 +3265,45 @@ func TestParse_FString(t *testing.T) {
 		}
 	})
 }
+
+func TestParse_TeeFormats(t *testing.T) {
+	cases := []struct {
+		input      string
+		wantDest   string
+		wantFormat string
+		wantErr    string
+	}{
+		{input: `level=error | tee "/tmp/out.json"`, wantDest: "/tmp/out.json", wantFormat: "json"},
+		{input: `level=error | tee format=csv "/tmp/out.csv"`, wantDest: "/tmp/out.csv", wantFormat: "csv"},
+		{input: `level=error | tee "/tmp/out.txt" format=raw`, wantDest: "/tmp/out.txt", wantFormat: "raw"},
+		{input: `level=error | tee format=JSON "/tmp/out"`, wantDest: "/tmp/out", wantFormat: "json"},
+		{input: `level=error | tee format=xml "/tmp/out"`, wantErr: "format must be json, csv, or raw"},
+		{input: `level=error | tee compress=true "/tmp/out"`, wantErr: "unsupported tee option"},
+		{input: `level=error | tee format=csv`, wantErr: "requires a destination path"},
+	}
+
+	for _, tc := range cases {
+		q, err := Parse(tc.input)
+		if tc.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("%q: expected error containing %q, got %v", tc.input, tc.wantErr, err)
+			}
+			continue
+		}
+		if err != nil {
+			t.Errorf("%q: unexpected error: %v", tc.input, err)
+			continue
+		}
+		tee, ok := q.Commands[len(q.Commands)-1].(*TeeCommand)
+		if !ok {
+			t.Errorf("%q: last command is %T, want *TeeCommand", tc.input, q.Commands[len(q.Commands)-1])
+			continue
+		}
+		if tee.Destination != tc.wantDest {
+			t.Errorf("%q: destination = %q, want %q", tc.input, tee.Destination, tc.wantDest)
+		}
+		if tee.Format != tc.wantFormat {
+			t.Errorf("%q: format = %q, want %q", tc.input, tee.Format, tc.wantFormat)
+		}
+	}
+}

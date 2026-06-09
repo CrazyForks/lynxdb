@@ -3185,13 +3185,45 @@ func (p *Parser) parsePackJson() (*PackJsonCommand, error) {
 func (p *Parser) parseTee() (*TeeCommand, error) {
 	p.advance() // consume "tee"
 
-	tok := p.peek()
-	if tok.Type != TokenString {
+	cmd := &TeeCommand{Format: "json"}
+	for {
+		tok := p.peek()
+		if isIdentLike(tok.Type) && p.peekAt(1).Type == TokenEq {
+			name := strings.ToLower(p.advance().Literal)
+			p.advance() // consume "="
+			if name != "format" {
+				return nil, fmt.Errorf("spl2: unsupported tee option %q", name)
+			}
+			// Match on the literal, not the token type: format names may
+			// lex as keywords (e.g. "json" is the json command token).
+			val := p.peek()
+			switch format := strings.ToLower(val.Literal); format {
+			case "json", "csv", "raw":
+				p.advance()
+				cmd.Format = format
+			default:
+				return nil, fmt.Errorf("spl2: tee format must be json, csv, or raw, got %q", val.Literal)
+			}
+
+			continue
+		}
+		if tok.Type == TokenString {
+			if cmd.Destination != "" {
+				return nil, fmt.Errorf("spl2: tee accepts a single destination path")
+			}
+			p.advance()
+			cmd.Destination = tok.Literal
+
+			continue
+		}
+
+		break
+	}
+	if cmd.Destination == "" {
 		return nil, fmt.Errorf("spl2: tee requires a destination path (string literal)")
 	}
-	p.advance()
 
-	return &TeeCommand{Destination: tok.Literal, Format: "json"}, nil
+	return cmd, nil
 }
 
 // parseExpr parses a boolean expression with ?? (null coalesce) as lowest precedence.

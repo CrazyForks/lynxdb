@@ -183,7 +183,7 @@ lynxdb server                start server
 lynxdb query <query>         run a query (Lynx Flow or SPL2)
 lynxdb tail <query>          live tail
 lynxdb ingest <file>         ingest a file
-lynxdb shell                 interactive REPL with completion
+lynxdb shell                 interactive REPL (tab completion, /help, PgUp scrollback)
 lynxdb count <query>         quick event count
 lynxdb sample N <query>      peek at data shape
 lynxdb watch <query> -i 5s   periodic refresh with deltas

@@ -61,11 +61,11 @@ func defaultKeyMap() keyMap {
 			key.WithHelp("shift+enter", "newline"),
 		),
 		ScrollUp: key.NewBinding(
-			key.WithKeys("pgup"),
+			key.WithKeys("pgup", "alt+up"),
 			key.WithHelp("pgup", "scroll up"),
 		),
 		ScrollDn: key.NewBinding(
-			key.WithKeys("pgdown"),
+			key.WithKeys("pgdown", "alt+down"),
 			key.WithHelp("pgdn", "scroll down"),
 		),
 		ScrollTop: key.NewBinding(

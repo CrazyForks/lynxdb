@@ -38,6 +38,10 @@ func NewResults(width, height int) Results {
 	vp.SoftWrap = true
 	vp.FillHeight = true
 
+	// Page with Option+arrows too — Mac keyboards lack physical PgUp/PgDn.
+	vp.KeyMap.PageUp.SetKeys("pgup", "b", "alt+up")
+	vp.KeyMap.PageDown.SetKeys("pgdown", "space", "f", "alt+down")
+
 	return Results{
 		viewport: vp,
 		theme:    NewShellTheme(),

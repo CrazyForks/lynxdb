@@ -36,6 +36,26 @@ func TestPgUpEntersScrollModeAndScrolls(t *testing.T) {
 	}
 }
 
+func TestAltUpEntersScrollModeAndScrolls(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+
+	model := newScrollModel(t)
+
+	before := model.results.viewport.YOffset()
+	model, _ = pressKey(t, model, tea.KeyPressMsg{Code: tea.KeyUp, Mod: tea.ModAlt})
+	if model.focus != ResultsFocus {
+		t.Fatal("Option+Up should move focus to results")
+	}
+	if got := model.results.viewport.YOffset(); got >= before {
+		t.Fatalf("Option+Up did not scroll up: y offset %d, was %d", got, before)
+	}
+
+	model, _ = pressKey(t, model, tea.KeyPressMsg{Code: tea.KeyDown, Mod: tea.ModAlt})
+	if !model.results.viewport.AtBottom() {
+		t.Fatal("Option+Down should page back down")
+	}
+}
+
 func TestScrollModeVimTopBottomKeys(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 

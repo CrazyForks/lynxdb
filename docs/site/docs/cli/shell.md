@@ -94,12 +94,21 @@ Meta-operations available inside the shell:
 ## Scrolling Results
 
 Press `PgUp` or `PgDn` to move focus from the prompt into the results area
-(scroll mode). The mouse wheel over the results area does the same. Inside
-scroll mode:
+(scroll mode). Inside scroll mode the full set of Vim-style keys works:
 
-- `j` / `k` or arrow keys scroll line by line, `PgUp` / `PgDn` page through
-- `y` copies the last result table to the clipboard, `Y` copies it as Markdown
-- `Esc` returns focus to the prompt
+| Key | Action |
+|-----|--------|
+| `j` / `k`, arrow keys | Scroll line by line |
+| `u` / `d` (also `Ctrl+U`) | Half page up / down |
+| `b` / `f`, `PgUp` / `PgDn`, `Space` | Page up / down |
+| `g` / `G` (also `Home` / `End`) | Jump to top / bottom |
+| `y` / `Y` | Copy last result table (plain / Markdown) |
+| `Esc` | Back to the prompt |
+
+While in scroll mode the shell also captures the mouse, so the wheel scrolls
+the results and sidebar fields are clickable. At the prompt the mouse is left
+to the terminal for native text selection - note that in most terminals the
+wheel then sends arrow keys, which navigate query history instead.
 
 The status bar at the bottom always shows the shortcuts available in the
 current mode.

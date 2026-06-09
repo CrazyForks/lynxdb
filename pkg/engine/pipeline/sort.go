@@ -17,8 +17,9 @@ import (
 const DefaultMaxSortRows = 10_000_000
 
 // ErrSortLimitExceeded is returned when a sort operation exceeds the maximum
-// number of materializable rows.
-var ErrSortLimitExceeded = fmt.Errorf("sort: row limit exceeded (max %d rows)", DefaultMaxSortRows)
+// number of materializable rows. Return sites wrap it with the effective
+// per-query limit; match with errors.Is.
+var ErrSortLimitExceeded = errors.New("sort: row limit exceeded")
 
 // SortField describes a sort key.
 type SortField struct {
@@ -256,7 +257,7 @@ func (s *SortIterator) materialize(ctx context.Context) error {
 			} else {
 				if columnarRows+batch.Len > s.maxSortRows {
 					if s.spillMgr == nil {
-						return ErrSortLimitExceeded
+						return fmt.Errorf("%w (limit %d rows)", ErrSortLimitExceeded, s.maxSortRows)
 					}
 					// Degrade to row path and spill.
 					s.degradeToRowPath()
@@ -282,7 +283,7 @@ func (s *SortIterator) materialize(ctx context.Context) error {
 			// Row count safety valve.
 			if len(s.rows)+1 > s.maxSortRows {
 				if s.spillMgr == nil {
-					return ErrSortLimitExceeded
+					return fmt.Errorf("%w (limit %d rows)", ErrSortLimitExceeded, s.maxSortRows)
 				}
 				if len(s.rows) > 0 {
 					if err := s.spillCurrentRun(); err != nil {

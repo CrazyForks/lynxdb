@@ -42,6 +42,12 @@ func (td *TDigest) Add(value float64) {
 }
 
 // Quantile returns the approximate value at the given quantile (0.0 to 1.0).
+//
+// Interpolation follows the t-digest paper: each centroid's mean is anchored
+// at the midpoint of its weight span (cumulative + count/2), and the target
+// rank is interpolated between adjacent centroid midpoints. Anchoring at
+// midpoints (rather than spans) keeps tail quantiles from being biased toward
+// heavy centroids.
 func (td *TDigest) Quantile(q float64) float64 {
 	if len(td.centroids) == 0 {
 		return 0
@@ -57,20 +63,22 @@ func (td *TDigest) Quantile(q float64) float64 {
 
 	target := q * td.count
 	cumulative := 0.0
+	prevCenter := 0.0
+	prevMean := td.centroids[0].mean
 
 	for i, c := range td.centroids {
-		cumulative += c.count
-		if cumulative >= target {
-			if i == 0 {
+		center := cumulative + c.count/2
+		if target < center {
+			if i == 0 || center == prevCenter {
 				return c.mean
 			}
-			// Linear interpolation between centroids.
-			prev := td.centroids[i-1]
-			prevCum := cumulative - c.count
-			frac := (target - prevCum) / c.count
+			frac := (target - prevCenter) / (center - prevCenter)
 
-			return prev.mean + frac*(c.mean-prev.mean)
+			return prevMean + frac*(c.mean-prevMean)
 		}
+		prevCenter = center
+		prevMean = c.mean
+		cumulative += c.count
 	}
 
 	return td.centroids[len(td.centroids)-1].mean
@@ -94,8 +102,14 @@ func (td *TDigest) compress() {
 	if len(td.centroids) <= 1 {
 		return
 	}
+	// Tie-break equal means by count so compression outcomes are
+	// deterministic across runs (sort.Slice is not stable).
 	sort.Slice(td.centroids, func(i, j int) bool {
-		return td.centroids[i].mean < td.centroids[j].mean
+		if td.centroids[i].mean != td.centroids[j].mean {
+			return td.centroids[i].mean < td.centroids[j].mean
+		}
+
+		return td.centroids[i].count < td.centroids[j].count
 	})
 
 	// Merge adjacent centroids respecting the k-size bound from the t-digest

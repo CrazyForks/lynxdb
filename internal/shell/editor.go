@@ -401,6 +401,41 @@ func (e *Editor) navigateHistoryNext() {
 	e.refreshSuggestions()
 }
 
+// exitWords are bare inputs that exit the shell, matched case-insensitively
+// after stripping trailing semicolons — the ClickHouse exit_strings set,
+// including the Russian-layout variants (учше = exit, йгше = quit, жй = :q;
+// the "ж" suffix is ";" typed in the Russian layout).
+var exitWords = map[string]struct{}{
+	"exit":    {},
+	"quit":    {},
+	"logout":  {},
+	"q":       {},
+	":q":      {},
+	`\q`:      {},
+	"учше":    {},
+	"йгше":    {},
+	"дщпщге":  {},
+	"учшеж":   {},
+	"йгшеж":   {},
+	"дщпщгеж": {},
+	"й":       {},
+	`\й`:      {},
+	"жй":      {},
+}
+
+// isExitCommand reports whether the submitted input is a bare exit word.
+func isExitCommand(value string) bool {
+	v := strings.ToLower(strings.TrimSpace(value))
+	v = strings.TrimSpace(strings.TrimRight(v, ";"))
+	if v == "" {
+		return false
+	}
+
+	_, ok := exitWords[v]
+
+	return ok
+}
+
 func (e *Editor) handleSubmit() (tea.Cmd, *querySubmitMsg, *slashCommandMsg) {
 	value := strings.TrimSpace(e.input.Value())
 	if value == "" {
@@ -418,6 +453,11 @@ func (e *Editor) handleSubmit() (tea.Cmd, *querySubmitMsg, *slashCommandMsg) {
 	e.input.Reset()
 	e.updateHeight()
 	e.ghostText = ""
+
+	// Bare exit words quit the shell and are kept out of history.
+	if isExitCommand(fullQuery) {
+		return nil, nil, &slashCommandMsg{quit: true}
+	}
 
 	// Slash commands.
 	if strings.HasPrefix(fullQuery, "/") {
@@ -439,7 +479,8 @@ func (e *Editor) handleCancel() (tea.Cmd, *querySubmitMsg, *slashCommandMsg) {
 		return nil, nil, nil
 	}
 
-	// Empty input + Ctrl+C → no-op hint.
+	// Empty input + Ctrl+C is intercepted by the model (double-press quit);
+	// the editor only sees it when the popup was open.
 	return nil, nil, nil
 }
 

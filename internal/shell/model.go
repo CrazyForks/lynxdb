@@ -25,6 +25,13 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/timerange"
 )
 
+// quitConfirmWindow is how long a first Ctrl+C/Esc press keeps quit armed —
+// a second press within this window exits the shell.
+const quitConfirmWindow = 3 * time.Second
+
+// shellNow is time.Now, swappable in tests.
+var shellNow = time.Now
+
 // Model is the root Bubble Tea model composing all shell sub-components.
 type Model struct {
 	header    Header
@@ -45,6 +52,7 @@ type Model struct {
 	focus         Focus
 	running       bool
 	startTime     time.Time
+	quitArmedAt   time.Time // non-zero while a Ctrl+C/Esc quit confirmation is pending
 
 	// Sidebar state.
 	sidebarOpen   bool
@@ -455,7 +463,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// confirmQuit implements double-press quit: the first press arms and shows a
+// hint, a second press within quitConfirmWindow exits the shell.
+func (m Model) confirmQuit(keyName string) (tea.Model, tea.Cmd) {
+	if !m.quitArmedAt.IsZero() && shellNow().Sub(m.quitArmedAt) <= quitConfirmWindow {
+		_ = m.history.Save()
+
+		return m, tea.Quit
+	}
+
+	m.quitArmedAt = shellNow()
+	m.statusBar.SetFlash(fmt.Sprintf("Press %s again to exit — or type quit (or Ctrl+D)", keyName), quitConfirmWindow)
+
+	return m, nil
+}
+
 func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	// Any key other than Cancel/Esc disarms a pending quit confirmation.
+	if !m.quitArmedAt.IsZero() && !key.Matches(msg, m.keys.Cancel) && !key.Matches(msg, m.keys.FocusBack) {
+		m.quitArmedAt = time.Time{}
+		m.statusBar.SetFlash("", 0)
+	}
+
 	// Toggle sidebar — F2.
 	if key.Matches(msg, m.keys.ToggleSidebar) {
 		m.sidebarOpen = !m.sidebarOpen
@@ -495,6 +524,11 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 
+	// Ctrl+C on empty input (popup closed) — double-press to quit.
+	if key.Matches(msg, m.keys.Cancel) && m.editor.Value() == "" && !m.editor.PopupVisible() {
+		return m.confirmQuit("Ctrl+C")
+	}
+
 	// Clear screen.
 	if key.Matches(msg, m.keys.ClearScr) {
 		m.results.Clear()
@@ -507,6 +541,13 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.focus = EditorFocus
 
 		return m, nil
+	}
+
+	// Esc on an idle empty editor — double-press to quit.
+	if key.Matches(msg, m.keys.FocusBack) && m.focus == EditorFocus &&
+		!m.editor.PopupVisible() && m.editor.Value() == "" &&
+		!m.running && !m.tailActive {
+		return m.confirmQuit("Esc")
 	}
 
 	if key.Matches(msg, m.keys.ScrollUp) || key.Matches(msg, m.keys.ScrollDn) {

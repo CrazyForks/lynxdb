@@ -197,7 +197,7 @@ func helpText() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "\n  %s\n\n", t.Bold.Render("Shell Commands:"))
 	b.WriteString("  /help              Show this help\n")
-	b.WriteString("  /quit              Exit the shell (or Ctrl+D)\n")
+	b.WriteString("  /quit              Exit the shell (also: quit, exit, logout, q, :q, \\q, Ctrl+D)\n")
 	b.WriteString("  /clear             Clear the screen\n")
 	b.WriteString("  /history           Show query history\n")
 	b.WriteString("  /fields            List known fields\n")
@@ -218,8 +218,9 @@ func helpText() string {
 	b.WriteString("  - Ctrl+P / Ctrl+N for history recall\n")
 	b.WriteString("  - Arrow keys to navigate within editor\n")
 	b.WriteString("  - Ctrl+A/E for line start/end, Alt+Left/Right for word nav\n")
-	b.WriteString("  - Ctrl+C cancels current input\n")
-	b.WriteString("  - PgUp/PgDn to scroll results\n")
+	b.WriteString("  - Ctrl+C clears input; press twice on empty input to exit\n")
+	b.WriteString("  - Esc twice on an idle empty prompt also exits\n")
+	b.WriteString("  - PgUp/PgDn to scroll results (j/k inside, Esc back to prompt)\n")
 
 	return b.String()
 }

@@ -132,8 +132,8 @@ func (sb StatusBar) View(focus Focus, running bool, inMulti bool, popupOpen bool
 			keys.Submit,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("up/down", "history")),
 			keys.AcceptSugg,
-			keys.CompletePopup,
 			keys.ToggleSidebar,
+			keys.Quit,
 		})
 	}
 

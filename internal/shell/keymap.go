@@ -14,6 +14,8 @@ type keyMap struct {
 	InsertNewline key.Binding
 	ScrollUp      key.Binding
 	ScrollDn      key.Binding
+	ScrollTop     key.Binding
+	ScrollBottom  key.Binding
 	FocusBack     key.Binding
 	ToggleSidebar key.Binding
 	CopyResults   key.Binding
@@ -65,6 +67,14 @@ func defaultKeyMap() keyMap {
 		ScrollDn: key.NewBinding(
 			key.WithKeys("pgdown"),
 			key.WithHelp("pgdn", "scroll down"),
+		),
+		ScrollTop: key.NewBinding(
+			key.WithKeys("g", "home"),
+			key.WithHelp("g", "top"),
+		),
+		ScrollBottom: key.NewBinding(
+			key.WithKeys("G", "end"),
+			key.WithHelp("G", "bottom"),
 		),
 		FocusBack: key.NewBinding(
 			key.WithKeys("esc"),

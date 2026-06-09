@@ -567,6 +567,19 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
+		// Jump to top/bottom — g/G (vim style) or Home/End.
+		if key.Matches(msg, m.keys.ScrollTop) {
+			m.results.GotoTop()
+
+			return m, nil
+		}
+
+		if key.Matches(msg, m.keys.ScrollBottom) {
+			m.results.GotoBottom()
+
+			return m, nil
+		}
+
 		// Pass scroll keys to viewport.
 		cmd := m.results.Update(msg)
 
@@ -757,6 +770,13 @@ func (m Model) View() tea.View {
 	v.AltScreen = true
 	if m.focus == EditorFocus {
 		v.Cursor = m.editor.Cursor(0, 1+mainH)
+	}
+
+	// Capture the mouse only in scroll mode so the wheel scrolls results and
+	// sidebar fields are clickable; at the prompt the terminal keeps the mouse
+	// for native text selection.
+	if m.focus == ResultsFocus {
+		v.MouseMode = tea.MouseModeCellMotion
 	}
 
 	return v

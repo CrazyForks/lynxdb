@@ -57,6 +57,16 @@ func (r *Results) Update(msg tea.Msg) tea.Cmd {
 	return cmd
 }
 
+// GotoTop scrolls the viewport to the first line.
+func (r *Results) GotoTop() {
+	r.viewport.GotoTop()
+}
+
+// GotoBottom scrolls the viewport to the last line.
+func (r *Results) GotoBottom() {
+	r.viewport.GotoBottom()
+}
+
 // AppendResult adds a query + result to the scrollback.
 func (r *Results) AppendResult(query string, rows []map[string]interface{},
 	elapsed time.Duration, err error, width int,

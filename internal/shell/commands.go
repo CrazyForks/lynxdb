@@ -220,7 +220,8 @@ func helpText() string {
 	b.WriteString("  - Ctrl+A/E for line start/end, Alt+Left/Right for word nav\n")
 	b.WriteString("  - Ctrl+C clears input; press twice on empty input to exit\n")
 	b.WriteString("  - Esc twice on an idle empty prompt also exits\n")
-	b.WriteString("  - PgUp/PgDn to scroll results (j/k inside, Esc back to prompt)\n")
+	b.WriteString("  - PgUp/PgDn to scroll results (j/k line, u/d half page, g/G top/bottom)\n")
+	b.WriteString("  - Mouse wheel scrolls while in scroll mode; Esc returns to the prompt\n")
 
 	return b.String()
 }

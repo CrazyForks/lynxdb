@@ -116,7 +116,7 @@ func TestPreflightRendersCustomTitleAndFriendlyError(t *testing.T) {
 	}
 }
 
-func TestModelViewDoesNotCaptureMouse(t *testing.T) {
+func TestModelViewCapturesMouseOnlyInScrollMode(t *testing.T) {
 	zone.NewGlobal()
 	defer zone.Close()
 
@@ -125,9 +125,13 @@ func TestModelViewDoesNotCaptureMouse(t *testing.T) {
 	model.height = 30
 	model.recalcLayout()
 
-	view := model.View()
-	if view.MouseMode != tea.MouseModeNone {
-		t.Fatalf("shell view captures mouse with mode %v", view.MouseMode)
+	if view := model.View(); view.MouseMode != tea.MouseModeNone {
+		t.Fatalf("editor focus captures mouse with mode %v", view.MouseMode)
+	}
+
+	model.focus = ResultsFocus
+	if view := model.View(); view.MouseMode != tea.MouseModeCellMotion {
+		t.Fatalf("scroll mode mouse mode = %v, want %v", view.MouseMode, tea.MouseModeCellMotion)
 	}
 }
 

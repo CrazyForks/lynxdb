@@ -113,10 +113,10 @@ func (sb StatusBar) View(focus Focus, running bool, inMulti bool, popupOpen bool
 	case focus == ResultsFocus:
 		content = sb.help.View(statusHelp{
 			key.NewBinding(key.WithKeys("j", "k"), key.WithHelp("j/k", "scroll")),
+			key.NewBinding(key.WithKeys("g", "G"), key.WithHelp("g/G", "top/bottom")),
 			keys.FocusBack,
+			key.NewBinding(key.WithKeys("y", "Y"), key.WithHelp("y/Y", "copy")),
 			keys.ToggleSidebar,
-			keys.CopyResults,
-			keys.CopyResultsMD,
 		})
 
 	case inMulti:
@@ -132,7 +132,7 @@ func (sb StatusBar) View(focus Focus, running bool, inMulti bool, popupOpen bool
 			keys.Submit,
 			key.NewBinding(key.WithKeys("up", "down"), key.WithHelp("up/down", "history")),
 			keys.AcceptSugg,
-			keys.ToggleSidebar,
+			key.NewBinding(key.WithKeys("pgup"), key.WithHelp("pgup", "scroll")),
 			keys.Quit,
 		})
 	}

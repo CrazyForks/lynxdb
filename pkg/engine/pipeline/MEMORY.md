@@ -20,8 +20,14 @@
 | Dedup       | Yes    | External hash table               |
 | EventStats  | Yes    | External row buffer               |
 | Join        | Yes    | Grace hash join                   |
+| Outliers    | Yes    | Columnar spill + replay           |
+| XYSeries    | Yes    | Columnar pivot spill              |
+| Reverse     | Yes    | Chunked columnar spill, chunks emitted newest-to-oldest |
 | Scan        | No     | Streams one batch at a time       |
 | Tail        | No     | O(N) ring buffer (bounded by count)|
+| Appendcols/Appendpipe/Compare/Mvcombine | No | Budget-accounted materialization; fails with BudgetExceededError |
+| StreamStats values()/list() | No | Budget-accounted ring buffers; fails with BudgetExceededError |
+| Correlate (Spearman) | No | Rank computation needs all pairs; budget-accounted, fails on exceed |
 
 ## Data Flow
 

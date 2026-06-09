@@ -58,10 +58,11 @@ type DedupIterator struct {
 	spillBytesTotal     int64             // persisted spill bytes (survives Close)
 	bloomAllocBytes     int64             // bloom filter heap allocation (tracked but not budget-bound)
 	externalLimitCounts map[uint64]int    // per-hash counts for limit>1 in external mode
-	// externalLimitCounts grows unboundedly for limit>1 dedup on high-
-	// cardinality fields. Each entry is ~40 bytes (uint64 key + int value
-	// + map overhead). For 10M unique keys this is ~400MB. May need capping
-	// or an approximate counter for extreme cardinalities.
+	// externalLimitCounts is capped at maxExternalLimitEntries (~40 bytes per
+	// entry: uint64 key + int value + map overhead). Past the cap, limit>1
+	// tracking degrades to limit=1 behavior; limitCapDegraded records that the
+	// degradation happened so it can be surfaced as a query warning.
+	limitCapDegraded bool
 }
 
 // NewDedupIterator creates a dedup operator with optional limit.

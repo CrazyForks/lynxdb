@@ -259,6 +259,13 @@ func enrichWithVMStats(st *stats.StageStats, inner Iterator) {
 	}
 }
 
+// Warner is implemented by operators that accumulate user-visible warnings
+// during execution (e.g. silent accuracy degradations). CollectWarnings
+// gathers them after the pipeline is drained.
+type Warner interface {
+	Warnings() []string
+}
+
 // CollectWarnings walks an iterator chain and collects user-visible warnings.
 func CollectWarnings(iter Iterator) []string {
 	var warnings []string
@@ -271,6 +278,10 @@ func CollectWarnings(iter Iterator) []string {
 func collectWarningsRecurse(iter Iterator, out *[]string) {
 	if iter == nil {
 		return
+	}
+
+	if w, ok := iter.(Warner); ok {
+		*out = append(*out, w.Warnings()...)
 	}
 
 	switch it := iter.(type) {

@@ -608,6 +608,7 @@ func (d *DedupIterator) processRemainingExternal(batch *Batch, startRow int, mat
 			// Re-check cap after insertion.
 			if len(d.externalLimitCounts) > maxExternalLimitEntries {
 				limitCapped = true
+				d.limitCapDegraded = true
 				slog.Warn("dedup: externalLimitCounts exceeded cap, degrading to limit=1 behavior",
 					"cap", maxExternalLimitEntries, "entries", len(d.externalLimitCounts))
 			}
@@ -622,6 +623,18 @@ func (d *DedupIterator) processRemainingExternal(batch *Batch, startRow int, mat
 // dedupExternal performs dedup using the external set for a full batch.
 func (d *DedupIterator) dedupExternal(batch *Batch, matches []bool) (int, error) {
 	return d.processRemainingExternal(batch, 0, matches)
+}
+
+// Warnings implements Warner. It surfaces silent accuracy degradations so the
+// server can attach them to the query result meta.
+func (d *DedupIterator) Warnings() []string {
+	if !d.limitCapDegraded {
+		return nil
+	}
+
+	return []string{fmt.Sprintf(
+		"dedup: distinct key count exceeded %d; limit=%d tracking degraded to limit=1, so only the first occurrence per key is kept",
+		maxExternalLimitEntries, d.limit)}
 }
 
 // ResourceStats implements ResourceReporter for per-operator spill metrics.

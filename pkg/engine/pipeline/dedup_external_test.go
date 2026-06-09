@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
@@ -406,5 +407,27 @@ func findDedupIterator(iter Iterator) *DedupIterator {
 		return findDedupIterator(it.inner)
 	default:
 		return nil
+	}
+}
+
+// TestDedupLimitCapWarning verifies that the limit-cap degradation is surfaced
+// as a user-visible warning through CollectWarnings.
+func TestDedupLimitCapWarning(t *testing.T) {
+	scan := NewRowScanIterator([]map[string]event.Value{
+		{"host": event.StringValue("a")},
+	}, 1)
+	dedup := NewDedupIterator(scan, []string{"host"}, 5)
+
+	if got := CollectWarnings(dedup); len(got) != 0 {
+		t.Fatalf("expected no warnings before degradation, got %v", got)
+	}
+
+	dedup.limitCapDegraded = true
+	got := CollectWarnings(dedup)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 warning after degradation, got %d: %v", len(got), got)
+	}
+	if !strings.Contains(got[0], "degraded to limit=1") {
+		t.Errorf("warning should mention degradation, got %q", got[0])
 	}
 }

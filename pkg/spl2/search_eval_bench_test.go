@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lynxbase/lynxdb/internal/glob"
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
@@ -17,7 +18,7 @@ const benchNonMatchLine = `2026-02-14T14:23:01.345Z INFO api-gw request complete
 // BenchmarkGlobMatch_Regex benchmarks the current regex-based wildcard matching.
 func BenchmarkGlobMatch_Regex(b *testing.B) {
 	// Simulate the matchGlobContains path: compile unanchored regex for "*/user_*"
-	re := globToContainsRegex("*/user_*", false)
+	re := glob.ToContainsRegex("*/user_*", false)
 	raw := benchRawLine
 
 	b.ReportAllocs()
@@ -29,7 +30,7 @@ func BenchmarkGlobMatch_Regex(b *testing.B) {
 
 // BenchmarkGlobMatch_RegexCaseInsensitive benchmarks case-insensitive regex matching.
 func BenchmarkGlobMatch_RegexCaseInsensitive(b *testing.B) {
-	re := globToContainsRegex("*/user_*", true)
+	re := glob.ToContainsRegex("*/user_*", true)
 	raw := benchRawLine
 
 	b.ReportAllocs()

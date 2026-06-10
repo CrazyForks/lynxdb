@@ -6,7 +6,7 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/internal/glob"
 )
 
 // Registry provides fast lookups of known source names.
@@ -52,7 +52,7 @@ func (r *Registry) Match(pattern string) []string {
 
 	var matched []string
 	for _, name := range r.names {
-		if spl2.MatchGlob(pattern, name, false) {
+		if glob.Match(pattern, name, false) {
 			matched = append(matched, name)
 		}
 	}

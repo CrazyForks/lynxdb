@@ -204,6 +204,12 @@ func lfPipelineClean(p ast.Pipeline) bool {
 }
 
 func lfStageClean(s ast.Stage) bool {
+	// Stages the LynxFlow physical builder cannot execute yet must not
+	// capture ambiguous queries away from the working SPL2 path.
+	switch s.Name {
+	case "compare", "materialize", "tee":
+		return false
+	}
 	if sp := s.Stats; sp != nil {
 		if !lfAggListClean(sp) {
 			return false

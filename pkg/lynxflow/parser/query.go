@@ -673,6 +673,18 @@ func (p *parser) parseSearchValue() ast.Expr {
 			Pos: ast.Span{Start: tok.Start, End: tok.End}}
 	}
 
+	// Backtick idents keep their quoting and never join adjacency runs.
+	if p.at(lexer.BacktickIdent) {
+		raw := p.cur.Text
+		name := raw
+		if len(raw) >= 2 && raw[0] == '`' && raw[len(raw)-1] == '`' {
+			name = raw[1 : len(raw)-1]
+		}
+		end := p.cur.End
+		p.advance()
+		return &ast.Ident{Name: name, Quoted: true, Pos: ast.Span{Start: start, End: end}}
+	}
+
 	// Check for glob or dashed value: span-adjacent run starting at an ident
 	if n, ok := p.identLike(); ok {
 		nameEnd := p.cur.End

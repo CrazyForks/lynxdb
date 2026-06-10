@@ -780,9 +780,9 @@ func formatRenamePayload(b *strings.Builder, p *ast.RenamePayload) {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		b.WriteString(r.Old)
+		writeFieldName(b, r.Old)
 		b.WriteString(" as ")
-		b.WriteString(r.New)
+		writeFieldName(b, r.New)
 	}
 }
 

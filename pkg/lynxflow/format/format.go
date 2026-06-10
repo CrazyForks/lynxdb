@@ -962,7 +962,7 @@ func formatParsePayload(b *strings.Builder, p *ast.ParsePayload) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			b.WriteString(c.Name)
+			writeFieldName(b, c.Name)
 			if c.Type != "" {
 				b.WriteString(" as ")
 				b.WriteString(c.Type)

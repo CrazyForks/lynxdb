@@ -1477,10 +1477,24 @@ func (p *parser) parseParseBody(s *ast.Stage) {
 
 func (p *parser) parseCaptureField() ast.CaptureField {
 	cf := ast.CaptureField{Pos: p.curSpan()}
-	if n, ok := p.identLike(); ok {
+	if p.at(lexer.BacktickIdent) {
+		raw := p.cur.Text
+		if len(raw) >= 2 && raw[0] == '`' && raw[len(raw)-1] == '`' {
+			cf.Name = raw[1 : len(raw)-1]
+		}
+		cf.Pos = p.curSpan()
+		p.advance()
+	} else if n, ok := p.identLike(); ok {
 		cf.Name = n
 		cf.Pos = p.curSpan()
 		p.advance()
+	} else {
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    "expected a capture name in into (...)",
+			Span:       p.curSpan(),
+			Suggestion: "into (status as int, dur as duration)",
+		})
 	}
 	if p.consume(lexer.KwAs) {
 		if t, ok := p.identLike(); ok {

@@ -26,6 +26,7 @@ type queryStreamRequest struct {
 	Format    *string           `json:"format"`
 	Wait      *float64          `json:"wait"`
 	Profile   *string           `json:"profile"`
+	Language  string            `json:"language,omitempty"`
 }
 
 func (r queryStreamRequest) toQueryRequest() QueryRequest {
@@ -101,6 +102,20 @@ func (s *Server) handleQueryStream(w http.ResponseWriter, r *http.Request) {
 	}
 	query = substituteVariables(query, req.Variables)
 	if !s.checkQueryLength(w, query) {
+		return
+	}
+
+	// Validate explicit language parameter.
+	if msg := validateExplicitLanguage(rawReq.Language); msg != "" {
+		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,
+			WithSuggestion(`use language="lynxflow" or language="spl2"`))
+		return
+	}
+
+	// Language routing.
+	lang := detectQueryLanguage(query, rawReq.Language)
+	if lang.Language == LangLynxFlow {
+		s.executeLynxFlowStream(w, r, query, req, lang)
 		return
 	}
 

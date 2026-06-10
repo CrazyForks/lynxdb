@@ -50,11 +50,12 @@ func (s *Server) handleQueryGet(w http.ResponseWriter, r *http.Request) {
 	}
 	limit := parseIntParam(r, "limit", 0)
 	req := QueryRequest{
-		Q:      q,
-		From:   r.URL.Query().Get("from"),
-		To:     r.URL.Query().Get("to"),
-		Limit:  limit,
-		Format: format,
+		Q:        q,
+		From:     r.URL.Query().Get("from"),
+		To:       r.URL.Query().Get("to"),
+		Limit:    limit,
+		Format:   format,
+		Language: r.URL.Query().Get("language"),
 	}
 	s.executeQuery(w, r, req)
 }
@@ -106,6 +107,30 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 		return
 	}
 
+	// Validate explicit language parameter.
+	if msg := validateExplicitLanguage(req.Language); msg != "" {
+		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,
+			WithSuggestion(`use language="lynxflow" or language="spl2"`))
+		return
+	}
+
+	// Language routing: detect or use explicit language.
+	lang := detectQueryLanguage(query, req.Language)
+	if lang.Language == LangLynxFlow {
+		s.executeLynxFlowQuery(w, r, req, lang)
+		return
+	}
+
+	// SPL2 path (existing behavior, byte-identical).
+	s.executeSPL2Query(w, r, req, lang)
+}
+
+// executeSPL2Query runs the SPL2 path — factored out of executeQuery for
+// language routing. Behavior is byte-identical to the pre-routing code.
+func (s *Server) executeSPL2Query(w http.ResponseWriter, r *http.Request, req QueryRequest, lang langDetectResult) {
+	query := req.effectiveQuery()
+	query = substituteVariables(query, req.Variables)
+
 	if ucErr := spl2.CheckUnsupportedCommands(query); ucErr != nil {
 		respondError(w, ErrCodeUnsupportedCommand, http.StatusBadRequest,
 			ucErr.Error(), WithSuggestion(ucErr.Hint))
@@ -149,9 +174,10 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 			return
 		}
 		writeSyncResultFromUsecase(w, result, limit, req.Offset, normalizedQuery, queryCfg,
-			req.Lint == nil || *req.Lint, req.LintLimit, req.LintFull)
+			req.Lint == nil || *req.Lint, req.LintLimit, req.LintFull,
+			WithLanguage(string(lang.Language)))
 	} else {
-		writeJobHandleFromUsecase(w, result)
+		writeJobHandleFromUsecase(w, result, WithLanguage(string(lang.Language)))
 	}
 }
 
@@ -225,7 +251,7 @@ func handlePlanError(w http.ResponseWriter, err error) {
 }
 
 // writeSyncResultFromUsecase writes 200 with full results from a SubmitResult.
-func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int, query string, queryCfg config.QueryConfig, lintsEnabled bool, lintLimit int, lintFull bool) {
+func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, limit, offset int, query string, queryCfg config.QueryConfig, lintsEnabled bool, lintLimit int, lintFull bool, extraOpts ...MetaOpt) {
 	var data interface{}
 	switch result.ResultType {
 	case server.ResultTypeAggregate, server.ResultTypeTimechart:
@@ -237,7 +263,7 @@ func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitRe
 	}
 
 	lints := lintsWithBroadScope(result.Lints, query, &result.Stats, queryCfg, lintsEnabled, lintLimit, lintFull)
-	respondData(w, http.StatusOK, data,
+	opts := []MetaOpt{
 		WithTookMS(result.Stats.ElapsedMS),
 		WithScanned(result.Stats.RowsScanned),
 		WithQueryID(result.QueryID),
@@ -247,7 +273,10 @@ func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitRe
 		WithLints(lints),
 		WithSuggestions(result.Suggestions),
 		WithRewrites(result.Rewrites),
-		WithExplain(explainFromSearchStats(&result.Stats, query)))
+		WithExplain(explainFromSearchStats(&result.Stats, query)),
+	}
+	opts = append(opts, extraOpts...)
+	respondData(w, http.StatusOK, data, opts...)
 }
 
 const restDefaultLintLimit = 5
@@ -557,7 +586,7 @@ func searchStatsToMeta(ss *server.SearchStats) *metaStats {
 }
 
 // writeJobHandleFromUsecase writes 202 Accepted with a job handle from a SubmitResult.
-func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult) {
+func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitResult, extraOpts ...MetaOpt) {
 	data := map[string]interface{}{
 		"type":   "job",
 		"job_id": result.JobID,
@@ -566,12 +595,15 @@ func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitRes
 	if result.Progress != nil {
 		data["progress"] = result.Progress
 	}
-	respondData(w, http.StatusAccepted, data,
+	opts := []MetaOpt{
 		WithQueryID(result.JobID),
 		WithWarnings(result.Warnings),
 		WithLints(result.Lints),
 		WithSuggestions(result.Suggestions),
-		WithRewrites(result.Rewrites))
+		WithRewrites(result.Rewrites),
+	}
+	opts = append(opts, extraOpts...)
+	respondData(w, http.StatusAccepted, data, opts...)
 }
 
 func buildEventsResponse(rows []spl2.ResultRow, limit, offset int) map[string]interface{} {

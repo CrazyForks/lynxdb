@@ -338,6 +338,9 @@ func NewServer(cfg Config) (*Server, error) {
 	mux.HandleFunc("POST /services/collector/raw", s.handleSplunkHECRaw)
 	mux.HandleFunc("POST /services/collector/ack", s.handleSplunkHECAck)
 	mux.HandleFunc("GET /services/collector/health", s.handleSplunkHECHealth)
+	// LynxFlow language catalog (RFC-002 §12).
+	mux.HandleFunc("GET /api/v1/catalog", s.handleCatalog)
+
 	// Field catalog.
 	mux.HandleFunc("GET /api/v1/fields", s.handleListFields)
 

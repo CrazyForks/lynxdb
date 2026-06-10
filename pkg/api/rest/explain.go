@@ -21,6 +21,21 @@ func (s *Server) handleQueryExplain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate explicit language parameter.
+	langParam := r.URL.Query().Get("language")
+	if msg := validateExplicitLanguage(langParam); msg != "" {
+		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,
+			WithSuggestion(`use language=lynxflow or language=spl2`))
+		return
+	}
+
+	// Language routing for explain.
+	lang := detectQueryLanguage(q, langParam)
+	if lang.Language == LangLynxFlow {
+		s.executeLynxFlowExplain(w, q, lang)
+		return
+	}
+
 	// EXPLAIN ANALYZE: execute the query with profiling and return plan + stats.
 	if r.URL.Query().Get("analyze") == "true" {
 		s.handleExplainAnalyze(w, r, q)

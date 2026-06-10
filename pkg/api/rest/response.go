@@ -96,6 +96,7 @@ type metaFields struct {
 	TookMS          *float64               `json:"took_ms,omitempty"`
 	Scanned         *int64                 `json:"scanned,omitempty"`
 	QueryID         string                 `json:"query_id,omitempty"`
+	Language        string                 `json:"language,omitempty"`         // "lynxflow" or "spl2" — always present on query responses
 	SegmentsErrored *int                   `json:"segments_errored,omitempty"` // E7: surface segment read errors
 	SearchStats     *metaStats             `json:"stats,omitempty"`            // rich query stats for CLI display
 	Warnings        []string               `json:"warnings,omitempty"`         // user-facing warnings about the query
@@ -349,6 +350,15 @@ func WithExplain(explain *metaExplain) MetaOpt {
 	}
 }
 
+// WithLanguage adds the resolved query language to the meta.
+func WithLanguage(lang string) MetaOpt {
+	return func(m *metaFields) {
+		if lang != "" {
+			m.Language = lang
+		}
+	}
+}
+
 // respondData writes {"data": payload, "meta": {...}}.
 // When a query_id is present, it is also set as an X-Query-ID response header
 // so the logging middleware can correlate HTTP requests with query execution (O1).
@@ -359,7 +369,7 @@ func respondData(w http.ResponseWriter, httpStatus int, data interface{}, opts .
 	}
 	envelope := map[string]interface{}{"data": data}
 	// Only include meta if it has content.
-	if meta.TookMS != nil || meta.Scanned != nil || meta.QueryID != "" || meta.SegmentsErrored != nil || meta.SearchStats != nil || len(meta.Warnings) > 0 || len(meta.Lints) > 0 || len(meta.Suggestions) > 0 || len(meta.Rewrites) > 0 {
+	if meta.TookMS != nil || meta.Scanned != nil || meta.QueryID != "" || meta.Language != "" || meta.SegmentsErrored != nil || meta.SearchStats != nil || len(meta.Warnings) > 0 || len(meta.Lints) > 0 || len(meta.Suggestions) > 0 || len(meta.Rewrites) > 0 {
 		envelope["meta"] = meta
 	}
 	// Expose query_id as a response header for logging middleware correlation.

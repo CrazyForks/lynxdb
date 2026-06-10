@@ -22,6 +22,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/engine/unpack"
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/explain"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
 	"github.com/lynxbase/lynxdb/pkg/vm"
 )
@@ -43,6 +44,13 @@ type BuildOptions struct {
 	// nodes (e.g. -1h, -7d). Injected for testability. Zero means time.Now()
 	// at build time (resolved lazily in the Source callback).
 	Now time.Time
+
+	// Collect, when non-nil, enables EXPLAIN ANALYZE instrumentation.
+	// Every built node is wrapped with a StatsIterator that records
+	// per-node rows/batches/wall-time into this map. The map is keyed
+	// by the logical.Node pointer so the EXPLAIN renderer can correlate
+	// runtime data with the plan tree.
+	Collect map[logical.Node]*explain.NodeStats
 }
 
 func (o *BuildOptions) batchSize() int {
@@ -90,40 +98,45 @@ type builder struct {
 }
 
 // buildNode dispatches on the concrete logical node type.
+// When opts.Collect is non-nil, the returned iterator is wrapped with a
+// StatsIterator for EXPLAIN ANALYZE instrumentation.
 func (b *builder) buildNode(n logical.Node) (pipeline.Iterator, error) {
+	var iter pipeline.Iterator
+	var err error
+
 	switch nd := n.(type) {
 	case *logical.Scan:
-		return b.buildScan(nd)
+		iter, err = b.buildScan(nd)
 	case *logical.Empty:
-		return newEmptyIterator(), nil
+		iter, err = newEmptyIterator(), nil
 	case *logical.Filter:
-		return b.buildFilter(nd)
+		iter, err = b.buildFilter(nd)
 	case *logical.Extend:
-		return b.buildExtend(nd)
+		iter, err = b.buildExtend(nd)
 	case *logical.Project:
-		return b.buildProject(nd)
+		iter, err = b.buildProject(nd)
 	case *logical.Aggregate:
-		return b.buildAggregate(nd)
+		iter, err = b.buildAggregate(nd)
 	case *logical.TopK:
-		return b.buildTopK(nd)
+		iter, err = b.buildTopK(nd)
 	case *logical.Sort:
-		return b.buildSort(nd)
+		iter, err = b.buildSort(nd)
 	case *logical.Limit:
-		return b.buildLimit(nd)
+		iter, err = b.buildLimit(nd)
 	case *logical.Dedup:
-		return b.buildDedup(nd)
+		iter, err = b.buildDedup(nd)
 	case *logical.Join:
-		return b.buildJoin(nd)
+		iter, err = b.buildJoin(nd)
 	case *logical.Union:
-		return b.buildUnion(nd)
+		iter, err = b.buildUnion(nd)
 	case *logical.Explode:
-		return b.buildExplode(nd)
+		iter, err = b.buildExplode(nd)
 	case *logical.Describe:
-		return b.buildDescribe(nd)
+		iter, err = b.buildDescribe(nd)
 	case *logical.Parse:
-		return b.buildParse(nd)
+		iter, err = b.buildParse(nd)
 	case *logical.Helper:
-		return b.buildHelper(nd)
+		iter, err = b.buildHelper(nd)
 	case *logical.Materialize:
 		return nil, &NotYetImplementedError{Feature: "Materialize (Phase 8)"}
 	case *logical.Tee:
@@ -131,6 +144,10 @@ func (b *builder) buildNode(n logical.Node) (pipeline.Iterator, error) {
 	default:
 		return nil, fmt.Errorf("physical.Build: unknown node type %T", n)
 	}
+	if err != nil {
+		return nil, err
+	}
+	return wrapCollect(iter, n, b.opts.Collect), nil
 }
 
 // NotYetImplementedError is returned for nodes whose physical mapping is

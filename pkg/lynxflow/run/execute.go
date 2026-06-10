@@ -18,6 +18,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/explain"
 	"github.com/lynxbase/lynxdb/pkg/logical/opt"
 	"github.com/lynxbase/lynxdb/pkg/logical/physical"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/desugar"
@@ -105,4 +106,84 @@ func Execute(ctx context.Context, query string, events map[string][]*event.Event
 	}
 
 	return rows, nil
+}
+
+// ExecuteExplain parses, desugars, lowers, and optimizes a LynxFlow query,
+// then renders the EXPLAIN tree WITHOUT executing it. This is the
+// parse -> desugar -> lower -> optimize -> render path.
+func ExecuteExplain(query string, opts Options) (string, error) {
+	plan, info, err := prepareExplain(query, opts)
+	if err != nil {
+		return "", err
+	}
+	return explain.Render(plan, info, nil), nil
+}
+
+// ExecuteAnalyze parses, desugars, lowers, optimizes, builds (with
+// instrumentation), executes, and renders the EXPLAIN ANALYZE tree with
+// per-node rows/batches/wall-time statistics.
+func ExecuteAnalyze(ctx context.Context, query string, events map[string][]*event.Event, opts Options) (string, error) {
+	plan, info, err := prepareExplain(query, opts)
+	if err != nil {
+		return "", err
+	}
+
+	now := opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+
+	source := physical.NewStorageSourceFromMap(events, opts.defaultSource())
+	collect := make(map[logical.Node]*explain.NodeStats)
+
+	iter, err := physical.Build(plan, physical.BuildOptions{
+		Source:    source,
+		BatchSize: opts.BatchSize,
+		Now:       now,
+		Collect:   collect,
+	})
+	if err != nil {
+		return "", fmt.Errorf("lynxflow.ExecuteAnalyze: build: %w", err)
+	}
+
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	// Drain the iterator to collect stats.
+	_, err = pipeline.CollectAll(ctx, iter)
+	if err != nil {
+		return "", fmt.Errorf("lynxflow.ExecuteAnalyze: execute: %w", err)
+	}
+
+	return explain.Render(plan, info, collect), nil
+}
+
+// prepareExplain runs the front-end pipeline (parse -> desugar -> lower ->
+// optimize) and returns the plan and EXPLAIN metadata.
+func prepareExplain(query string, opts Options) (*logical.Plan, explain.Info, error) {
+	defaultSrc := opts.defaultSource()
+
+	q, diags := parser.Parse(query)
+	for _, d := range diags {
+		if d.Severity == parser.SeverityError {
+			return nil, explain.Info{}, fmt.Errorf("lynxflow.Explain: parse: %s", d.Message)
+		}
+	}
+
+	desugared, rewrites := desugar.Desugar(q, desugar.Options{DefaultSource: defaultSrc})
+
+	plan, lowerDiags := logical.Lower(desugared, logical.Options{DefaultSource: defaultSrc})
+	for _, d := range lowerDiags {
+		if d.Severity == parser.SeverityError {
+			return nil, explain.Info{}, fmt.Errorf("lynxflow.Explain: lower: %s", d.Message)
+		}
+	}
+
+	plan, applied := opt.Optimize(plan)
+
+	info := explain.Info{
+		Rewrites: rewrites,
+		Applied:  applied,
+	}
+	return plan, info, nil
 }

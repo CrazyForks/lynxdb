@@ -327,6 +327,8 @@ func (r *Reader) readRowGroupColumnar(rgIdx int, rg *RowGroupMeta, need map[stri
 //   - Dict8/Dict16/LZ4 (string) to StringValue (empty string becomes NullValue, matching readFieldColumn).
 //   - Delta (int64) to IntValue.
 //   - Gorilla (float64) to FloatValue.
+//   - DeltaDuration (int64 nanoseconds) to DurationValue.
+//   - MsgpackArray/MsgpackObject to ArrayValue/ObjectValue.
 func (r *Reader) readFieldColumnValues(rgIdx int, cc *ColumnChunkMeta) ([]event.Value, error) {
 	encType := column.EncodingType(cc.EncodingType)
 	switch encType {
@@ -367,6 +369,19 @@ func (r *Reader) readFieldColumnValues(rgIdx int, cc *ColumnChunkMeta) ([]event.
 		}
 
 		return result, nil
+	case column.EncodingDeltaDuration:
+		values, err := r.cachedReadInt64s(rgIdx, cc)
+		if err != nil {
+			return nil, fmt.Errorf("segment: read field %q: %w", cc.Name, err)
+		}
+		result := make([]event.Value, len(values))
+		for i, v := range values {
+			result[i] = event.DurationValue(time.Duration(v))
+		}
+
+		return result, nil
+	case column.EncodingMsgpackArray, column.EncodingMsgpackObject:
+		return r.readMsgpackValues(rgIdx, cc)
 	default:
 		return nil, fmt.Errorf("segment: field %q unsupported encoding %d", cc.Name, cc.EncodingType)
 	}

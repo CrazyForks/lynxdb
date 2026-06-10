@@ -99,7 +99,7 @@ func inferRangeBSIValueKind(events []*event.Event, name string) (uint8, bool) {
 		}
 		next := v.Type()
 		switch next {
-		case event.FieldTypeInt, event.FieldTypeFloat, event.FieldTypeTimestamp, event.FieldTypeBool:
+		case event.FieldTypeInt, event.FieldTypeFloat, event.FieldTypeTimestamp, event.FieldTypeBool, event.FieldTypeDuration:
 		default:
 			return 0, false
 		}
@@ -125,6 +125,9 @@ func inferRangeBSIValueKind(events []*event.Event, name string) (uint8, bool) {
 		return index.RangeBSIValueFloat64Bits, true
 	case event.FieldTypeTimestamp:
 		return index.RangeBSIValueTimestampNS, true
+	case event.FieldTypeDuration:
+		// Duration is int64 nanoseconds, same range index treatment as int.
+		return index.RangeBSIValueInt, true
 	case event.FieldTypeBool:
 		return index.RangeBSIValueBool, true
 	default:
@@ -186,8 +189,14 @@ func rawRangeBSIValue(e *event.Event, name string, kind uint8) (int64, bool) {
 	}
 	switch kind {
 	case index.RangeBSIValueInt:
-		n, ok := v.TryAsInt()
-		return n, ok
+		if n, ok := v.TryAsInt(); ok {
+			return n, true
+		}
+		// Duration is stored as int64 nanoseconds, same BSI treatment.
+		if d, ok := v.TryAsDuration(); ok {
+			return int64(d), true
+		}
+		return 0, false
 	case index.RangeBSIValueFloat64Bits:
 		if n, ok := v.TryAsInt(); ok {
 			return index.FloatToOrderedInt64(float64(n)), true

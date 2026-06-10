@@ -11,6 +11,16 @@ const (
 	EncodingLZ4     EncodingType = 3 // LZ4 block compression for strings
 	EncodingDelta   EncodingType = 4 // Delta + zigzag varint for monotonic int64s
 	EncodingGorilla EncodingType = 5 // Gorilla XOR encoding for float64s
+
+	// RFC-002 new column types — tags are append-only, never renumber.
+	// An old binary that encounters these tags returns ErrUnsupportedCapability
+	// from readFieldColumn, which is the safe "I cannot decode this column"
+	// path. No format version bump needed; the encoding byte in each column
+	// chunk is the discriminator.
+
+	EncodingDeltaDuration EncodingType = 6 // Delta int64 (nanoseconds), reconstructed as DurationValue
+	EncodingMsgpackArray  EncodingType = 7 // Per-cell msgpack, stored via string/LZ4 machinery, reconstructed as ArrayValue
+	EncodingMsgpackObject EncodingType = 8 // Per-cell msgpack, stored via string/LZ4 machinery, reconstructed as ObjectValue
 )
 
 func (e EncodingType) String() string {
@@ -25,6 +35,12 @@ func (e EncodingType) String() string {
 		return "delta"
 	case EncodingGorilla:
 		return "gorilla"
+	case EncodingDeltaDuration:
+		return "delta_duration"
+	case EncodingMsgpackArray:
+		return "msgpack_array"
+	case EncodingMsgpackObject:
+		return "msgpack_object"
 	default:
 		return "unknown"
 	}

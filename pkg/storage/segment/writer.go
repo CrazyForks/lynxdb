@@ -598,6 +598,25 @@ func (sw *Writer) writeRowGroup(events []*event.Event, fieldSet map[string]event
 				}
 			}
 			chunk, err = sw.writeInt64Chunk(name, values)
+		case event.FieldTypeDuration:
+			// Duration is stored as delta-encoded int64 nanoseconds,
+			// identical to timestamp/int64 encoding, but tagged with
+			// EncodingDeltaDuration so reads reconstruct DurationValue.
+			values := make([]int64, len(events))
+			for i, e := range events {
+				v := e.GetField(name)
+				if d, ok := v.TryAsDuration(); ok {
+					values[i] = int64(d)
+				}
+			}
+			chunk, err = sw.writeDurationChunk(name, values)
+		case event.FieldTypeArray:
+			// Array columns: each cell is msgpack-encoded and stored via
+			// the string/LZ4 column machinery with EncodingMsgpackArray tag.
+			chunk, err = sw.writeMsgpackChunk(name, events, column.EncodingMsgpackArray)
+		case event.FieldTypeObject:
+			// Object columns: same as array but with EncodingMsgpackObject tag.
+			chunk, err = sw.writeMsgpackChunk(name, events, column.EncodingMsgpackObject)
 		default:
 			continue
 		}
@@ -802,6 +821,12 @@ func buildCatalog(fieldSet map[string]event.FieldType, fieldNames []string) []Ca
 			enc = uint8(column.EncodingDelta)
 		case event.FieldTypeFloat:
 			enc = uint8(column.EncodingGorilla)
+		case event.FieldTypeDuration:
+			enc = uint8(column.EncodingDeltaDuration)
+		case event.FieldTypeArray:
+			enc = uint8(column.EncodingMsgpackArray)
+		case event.FieldTypeObject:
+			enc = uint8(column.EncodingMsgpackObject)
 		}
 		catalog = append(catalog, CatalogEntry{Name: name, DominantType: enc})
 	}
@@ -811,7 +836,9 @@ func buildCatalog(fieldSet map[string]event.FieldType, fieldNames []string) []Ca
 
 // collectBloomColumns returns the ordered list of column names that get per-column blooms.
 // Includes: _raw, _source, _sourcetype, host, index, + user-defined string fields.
-// Excludes: _time (numeric), numeric fields (zone maps suffice).
+// Excludes: _time (numeric), numeric fields (zone maps suffice),
+// duration fields (numeric, zone maps suffice),
+// array/object fields (composite values, tokenization is meaningless in v1).
 func collectBloomColumns(fieldSet map[string]event.FieldType, fieldNames []string) []string {
 	// Stable order: builtins first, then user fields alphabetical.
 	cols := []string{"_raw", "_source", "_sourcetype", "host", "index"}
@@ -1036,6 +1063,160 @@ func (sw *Writer) writeFloat64Chunk(name string, values []float64) (ColumnChunkM
 		Count:        stat.Count,
 		NullCount:    stat.NullCount,
 	}, nil
+}
+
+// writeDurationChunk encodes and writes a duration column chunk (int64 nanoseconds)
+// with the EncodingDeltaDuration tag so reads reconstruct DurationValue.
+func (sw *Writer) writeDurationChunk(name string, values []int64) (ColumnChunkMeta, error) {
+	enc := column.NewDeltaEncoder()
+	data, err := enc.EncodeInt64s(values)
+	if err != nil {
+		return ColumnChunkMeta{}, fmt.Errorf("segment: encode duration column %q: %w", name, err)
+	}
+
+	rawSize := int64(len(data))
+	compression := CompressionNone
+
+	// Layer 2: block compression (configurable).
+	if len(data) > 64 {
+		compressed, compType := sw.compressLayer2(data)
+		if compressed != nil {
+			compression = compType
+			data = compressed
+		}
+	}
+
+	offset := sw.w.written
+	checksum := crc32.ChecksumIEEE(data)
+
+	// Zone maps for duration use the same int64 representation as timestamp.
+	stat := int64ColumnStats(name, values)
+
+	if _, err := sw.w.Write(data); err != nil {
+		return ColumnChunkMeta{}, fmt.Errorf("segment: write duration column %q: %w", name, err)
+	}
+
+	return ColumnChunkMeta{
+		Name:         name,
+		EncodingType: uint8(column.EncodingDeltaDuration),
+		Compression:  compression,
+		Offset:       offset,
+		Length:       int64(len(data)),
+		RawSize:      rawSize,
+		CRC32:        checksum,
+		MinValue:     stat.MinValue,
+		MaxValue:     stat.MaxValue,
+		Count:        stat.Count,
+		NullCount:    stat.NullCount,
+	}, nil
+}
+
+// writeMsgpackChunk encodes and writes an array or object column chunk.
+// Each cell is independently msgpack-encoded, then stored via the string/LZ4
+// column machinery. The encoding marker distinguishes array vs object.
+func (sw *Writer) writeMsgpackChunk(name string, events []*event.Event, encType column.EncodingType) (ColumnChunkMeta, error) {
+	cells := make([][]byte, len(events))
+	nullCount := int64(0)
+	for i, e := range events {
+		v := e.GetField(name)
+		if v.IsNull() {
+			nullCount++
+			continue
+		}
+		cv := eventValueToMsgpackCell(v)
+		encoded, err := column.EncodeMsgpackCell(&cv)
+		if err != nil {
+			return ColumnChunkMeta{}, fmt.Errorf("segment: encode msgpack cell %q row %d: %w", name, i, err)
+		}
+		cells[i] = encoded
+	}
+
+	enc := column.NewMsgpackCellEncoder()
+	data, err := enc.EncodeCells(cells, encType)
+	if err != nil {
+		return ColumnChunkMeta{}, fmt.Errorf("segment: encode msgpack column %q: %w", name, err)
+	}
+
+	rawSize := int64(len(data))
+	compression := CompressionNone
+
+	// Layer 2: block compression (configurable).
+	if len(data) > 64 {
+		compressed, compType := sw.compressLayer2(data)
+		if compressed != nil {
+			compression = compType
+			data = compressed
+		}
+	}
+
+	offset := sw.w.written
+	checksum := crc32.ChecksumIEEE(data)
+
+	if _, err := sw.w.Write(data); err != nil {
+		return ColumnChunkMeta{}, fmt.Errorf("segment: write msgpack column %q: %w", name, err)
+	}
+
+	// Array/object columns: zone maps are meaningless for composite values.
+	// MinValue and MaxValue are left empty so zone map pruning is a safe no-op.
+	return ColumnChunkMeta{
+		Name:         name,
+		EncodingType: uint8(encType),
+		Compression:  compression,
+		Offset:       offset,
+		Length:       int64(len(data)),
+		RawSize:      rawSize,
+		CRC32:        checksum,
+		MinValue:     "",
+		MaxValue:     "",
+		Count:        int64(len(events)),
+		NullCount:    nullCount,
+	}, nil
+}
+
+// eventValueToMsgpackCell converts an event.Value into the recursive msgpack
+// cell format. The wire type tags match FieldType constants (append-only).
+func eventValueToMsgpackCell(v event.Value) column.MsgpackCellValue {
+	switch v.Type() {
+	case event.FieldTypeNull:
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeNull)}
+	case event.FieldTypeString:
+		s, _ := v.TryAsString()
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeString), Str: s}
+	case event.FieldTypeInt:
+		n, _ := v.TryAsInt()
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeInt), Num: n}
+	case event.FieldTypeFloat:
+		f, _ := v.TryAsFloat()
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeFloat), Flt: f}
+	case event.FieldTypeBool:
+		b, _ := v.TryAsBool()
+		if b {
+			return column.MsgpackCellValue{Type: uint8(event.FieldTypeBool), Num: 1}
+		}
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeBool), Num: 0}
+	case event.FieldTypeTimestamp:
+		t, _ := v.TryAsTimestamp()
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeTimestamp), Num: t.UnixNano()}
+	case event.FieldTypeDuration:
+		d, _ := v.TryAsDuration()
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeDuration), Num: int64(d)}
+	case event.FieldTypeArray:
+		elems := v.AsArray()
+		arr := make([]column.MsgpackCellValue, len(elems))
+		for i, e := range elems {
+			arr[i] = eventValueToMsgpackCell(e)
+		}
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeArray), Arr: arr}
+	case event.FieldTypeObject:
+		fields := v.AsObject()
+		obj := make(map[string]column.MsgpackCellValue, len(fields))
+		for k, e := range fields {
+			obj[k] = eventValueToMsgpackCell(e)
+		}
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeObject), Obj: obj}
+	default:
+		return column.MsgpackCellValue{Type: uint8(event.FieldTypeString), Str: v.String()}
+	}
 }
 
 // compressLayer2 applies the configured layer 2 compression. Returns nil if not beneficial.

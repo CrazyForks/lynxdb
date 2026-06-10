@@ -486,12 +486,16 @@ func (r *Reader) readStringsFromChunk(cc *ColumnChunkMeta) ([]string, error) {
 }
 
 // readInt64sFromChunk decodes an int64 column chunk (uncached).
+// Accepts both EncodingDelta and EncodingDeltaDuration — both use the same
+// delta encoding on the wire; the distinction is in the metadata tag only
+// so that the reader can reconstruct the correct Value type.
 func (r *Reader) readInt64sFromChunk(cc *ColumnChunkMeta) ([]int64, error) {
 	data, err := r.readChunk(cc)
 	if err != nil {
 		return nil, err
 	}
-	if column.EncodingType(cc.EncodingType) != column.EncodingDelta {
+	enc := column.EncodingType(cc.EncodingType)
+	if enc != column.EncodingDelta && enc != column.EncodingDeltaDuration {
 		return nil, fmt.Errorf("%w: column %q has encoding %v, expected delta", ErrCorruptSegment, cc.Name, cc.EncodingType)
 	}
 
@@ -566,6 +570,70 @@ func (r *Reader) cachedReadFloat64s(rgIdx int, cc *ColumnChunkMeta) ([]float64, 
 	}
 
 	return vals, nil
+}
+
+// readMsgpackValues decodes a msgpack-encoded column chunk (array or object) into []event.Value.
+// The underlying data uses the LZ4 string encoder format with a different encoding marker.
+func (r *Reader) readMsgpackValues(rgIdx int, cc *ColumnChunkMeta) ([]event.Value, error) {
+	data, err := r.readChunk(cc)
+	if err != nil {
+		return nil, err
+	}
+
+	enc := column.NewMsgpackCellEncoder()
+	cells, err := enc.DecodeCells(data)
+	if err != nil {
+		return nil, fmt.Errorf("segment: decode msgpack column %q: %w", cc.Name, err)
+	}
+
+	values := make([]event.Value, len(cells))
+	for i, cell := range cells {
+		if cell == nil {
+			continue // null
+		}
+		cv, err := column.DecodeMsgpackCell(cell)
+		if err != nil {
+			return nil, fmt.Errorf("segment: decode msgpack cell %q row %d: %w", cc.Name, i, err)
+		}
+		values[i] = msgpackCellToEventValue(cv)
+	}
+
+	return values, nil
+}
+
+// msgpackCellToEventValue converts a decoded msgpack cell back to an event.Value.
+func msgpackCellToEventValue(cv *column.MsgpackCellValue) event.Value {
+	switch event.FieldType(cv.Type) {
+	case event.FieldTypeNull:
+		return event.NullValue()
+	case event.FieldTypeString:
+		return event.StringValue(cv.Str)
+	case event.FieldTypeInt:
+		return event.IntValue(cv.Num)
+	case event.FieldTypeFloat:
+		return event.FloatValue(cv.Flt)
+	case event.FieldTypeBool:
+		return event.BoolValue(cv.Num != 0)
+	case event.FieldTypeTimestamp:
+		return event.TimestampValue(time.Unix(0, cv.Num))
+	case event.FieldTypeDuration:
+		return event.DurationValue(time.Duration(cv.Num))
+	case event.FieldTypeArray:
+		elems := make([]event.Value, len(cv.Arr))
+		for i := range cv.Arr {
+			elems[i] = msgpackCellToEventValue(&cv.Arr[i])
+		}
+		return event.ArrayValue(elems)
+	case event.FieldTypeObject:
+		fields := make(map[string]event.Value, len(cv.Obj))
+		for k := range cv.Obj {
+			obj := cv.Obj[k]
+			fields[k] = msgpackCellToEventValue(&obj)
+		}
+		return event.ObjectValue(fields)
+	default:
+		return event.StringValue(cv.Str)
+	}
 }
 
 // ReadStrings decodes a string column by name (all row groups concatenated).
@@ -1150,6 +1218,24 @@ func (r *Reader) readFieldColumn(rgIdx int, cc *ColumnChunkMeta, events []*event
 		for i, v := range values {
 			events[i].SetField(cc.Name, event.FloatValue(v))
 		}
+	case column.EncodingDeltaDuration:
+		values, err := r.cachedReadInt64s(rgIdx, cc)
+		if err != nil {
+			return fmt.Errorf("segment: read field %q: %w", cc.Name, err)
+		}
+		for i, v := range values {
+			events[i].SetField(cc.Name, event.DurationValue(time.Duration(v)))
+		}
+	case column.EncodingMsgpackArray, column.EncodingMsgpackObject:
+		values, err := r.readMsgpackValues(rgIdx, cc)
+		if err != nil {
+			return fmt.Errorf("segment: read field %q: %w", cc.Name, err)
+		}
+		for i, v := range values {
+			if !v.IsNull() {
+				events[i].SetField(cc.Name, v)
+			}
+		}
 	default:
 		return fmt.Errorf("%w: field %q encoding %d", ErrUnsupportedCapability, cc.Name, cc.EncodingType)
 	}
@@ -1190,6 +1276,24 @@ func (r *Reader) readFieldColumnSelected(
 		}
 		for i, localIdx := range localRows {
 			events[i].SetField(cc.Name, event.FloatValue(values[localIdx]))
+		}
+	case column.EncodingDeltaDuration:
+		values, err := r.cachedReadInt64s(rgIdx, cc)
+		if err != nil {
+			return fmt.Errorf("segment: read field %q: %w", cc.Name, err)
+		}
+		for i, localIdx := range localRows {
+			events[i].SetField(cc.Name, event.DurationValue(time.Duration(values[localIdx])))
+		}
+	case column.EncodingMsgpackArray, column.EncodingMsgpackObject:
+		values, err := r.readMsgpackValues(rgIdx, cc)
+		if err != nil {
+			return fmt.Errorf("segment: read field %q: %w", cc.Name, err)
+		}
+		for i, localIdx := range localRows {
+			if !values[localIdx].IsNull() {
+				events[i].SetField(cc.Name, values[localIdx])
+			}
 		}
 	default:
 		return fmt.Errorf("%w: field %q encoding %d", ErrUnsupportedCapability, cc.Name, cc.EncodingType)
@@ -1726,6 +1830,50 @@ func (r *Reader) predicateBitmap(pred Predicate, matchBitmap *roaring.Bitmap) (*
 					predBitmap.Add(pos)
 				}
 			}
+		case column.EncodingDeltaDuration:
+			if pred.Op == "in" {
+				values, err := r.cachedReadInt64s(rgi, cc)
+				if err != nil {
+					return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
+				}
+				iter := selected.Iterator()
+				for iter.HasNext() {
+					pos := iter.Next()
+					localIdx := int(pos - rgStart)
+					if localIdx >= 0 && localIdx < len(values) && int64InPredicate(values[localIdx], pred.Values) {
+						predBitmap.Add(pos)
+					}
+				}
+
+				continue
+			}
+			predVal, mode, ok := coerceIntPredicateValue(pred.Value, pred.Op)
+			if !ok {
+				continue
+			}
+			if mode == intPredicateAlways {
+				predBitmap.Or(selected)
+				continue
+			}
+			if mode == intPredicateNever {
+				continue
+			}
+			values, err := r.cachedReadInt64s(rgi, cc)
+			if err != nil {
+				return nil, fmt.Errorf("segment.ReadEventsFiltered: read column %q for predicate: %w", pred.Field, err)
+			}
+			iter := selected.Iterator()
+			for iter.HasNext() {
+				pos := iter.Next()
+				localIdx := int(pos - rgStart)
+				if localIdx >= 0 && localIdx < len(values) && evalInt64Predicate(values[localIdx], pred.Op, predVal) {
+					predBitmap.Add(pos)
+				}
+			}
+		case column.EncodingMsgpackArray, column.EncodingMsgpackObject:
+			// Composite columns: predicates are not meaningful.
+			// Conservative: all selected rows match.
+			predBitmap.Or(selected)
 		}
 	}
 
@@ -1874,6 +2022,50 @@ func (r *Reader) predicateBitmapForRowGroup(
 				predBitmap.Add(pos)
 			}
 		}
+	case column.EncodingDeltaDuration:
+		// Duration columns support the same int64 predicates as delta.
+		if pred.Op == "in" {
+			values, err := r.cachedReadInt64s(rgIdx, cc)
+			if err != nil {
+				return nil, fmt.Errorf("segment.ReadRowGroupFiltered: read column %q for predicate: %w", pred.Field, err)
+			}
+			iter := selected.Iterator()
+			for iter.HasNext() {
+				pos := iter.Next()
+				localIdx := int(pos - rgStart)
+				if localIdx >= 0 && localIdx < len(values) && int64InPredicate(values[localIdx], pred.Values) {
+					predBitmap.Add(pos)
+				}
+			}
+
+			return predBitmap, nil
+		}
+		predVal, mode, ok := coerceIntPredicateValue(pred.Value, pred.Op)
+		if !ok {
+			return predBitmap, nil
+		}
+		if mode == intPredicateAlways {
+			return selected.Clone(), nil
+		}
+		if mode == intPredicateNever {
+			return predBitmap, nil
+		}
+		values, err := r.cachedReadInt64s(rgIdx, cc)
+		if err != nil {
+			return nil, fmt.Errorf("segment.ReadRowGroupFiltered: read column %q for predicate: %w", pred.Field, err)
+		}
+		iter := selected.Iterator()
+		for iter.HasNext() {
+			pos := iter.Next()
+			localIdx := int(pos - rgStart)
+			if localIdx >= 0 && localIdx < len(values) && evalInt64Predicate(values[localIdx], pred.Op, predVal) {
+				predBitmap.Add(pos)
+			}
+		}
+	case column.EncodingMsgpackArray, column.EncodingMsgpackObject:
+		// Composite columns: predicates are not meaningful in v1.
+		// Conservative: all selected rows match.
+		return selected.Clone(), nil
 	}
 
 	return predBitmap, nil

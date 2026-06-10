@@ -11,6 +11,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/logical"
 	"github.com/lynxbase/lynxdb/pkg/logical/opt"
 	"github.com/lynxbase/lynxdb/pkg/logical/physical"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/desugar"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/lint"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
@@ -58,14 +59,26 @@ func (s *Server) executeLynxFlowQuery(w http.ResponseWriter, r *http.Request, re
 	plan, _ = opt.Optimize(plan)
 
 	// 7. Build event store from engine (reuse the SPL2 path's storage access).
-	// We build a minimal QueryHints to get the engine to produce events.
-	hints := &spl2.QueryHints{IndexName: "main"}
+	// Extract the source index from the desugared AST so that queries like
+	// "FROM logs" correctly read from the "logs" index, not the hardcoded "main".
+	defaultSrc := "main"
+	indexName, scopeType := extractLynxFlowSourceScope(desugared)
+	if indexName != "" {
+		defaultSrc = indexName
+	}
+	hints := &spl2.QueryHints{IndexName: indexName}
+	if scopeType != "" {
+		hints.SourceScopeType = scopeType
+		if scopeType == "single" && indexName != "" {
+			hints.SourceScopeSources = []string{indexName}
+		}
+	}
 	applyTimeRangeToHints(hints, req.effectiveFrom(), req.effectiveTo())
 
 	eventStore := s.engine.BuildEventStoreFromHints(hints)
 
 	// 8. Build physical pipeline with the engine's event store.
-	source := physical.NewStorageSourceFromMap(eventStore, "main")
+	source := physical.NewStorageSourceFromMap(eventStore, defaultSrc)
 	iter, err := physical.Build(plan, physical.BuildOptions{
 		Source: source,
 		Now:    time.Now(),
@@ -88,7 +101,7 @@ func (s *Server) executeLynxFlowQuery(w http.ResponseWriter, r *http.Request, re
 	queryCfg := s.currentQueryConfig()
 	limit := clampLimit(req.Limit, queryCfg)
 
-	data := buildLynxFlowEventsResponse(rows, limit, req.Offset)
+	data := buildLynxFlowResponse(rows, limit, req.Offset, plan)
 
 	// Build meta options.
 	metaOpts := []MetaOpt{
@@ -148,12 +161,23 @@ func (s *Server) executeLynxFlowStream(w http.ResponseWriter, r *http.Request, q
 	plan, _ = opt.Optimize(plan)
 
 	// 5. Build event store.
-	hints := &spl2.QueryHints{IndexName: "main"}
+	defaultSrc := "main"
+	indexName, scopeType := extractLynxFlowSourceScope(desugared)
+	if indexName != "" {
+		defaultSrc = indexName
+	}
+	hints := &spl2.QueryHints{IndexName: indexName}
+	if scopeType != "" {
+		hints.SourceScopeType = scopeType
+		if scopeType == "single" && indexName != "" {
+			hints.SourceScopeSources = []string{indexName}
+		}
+	}
 	applyTimeRangeToHints(hints, req.effectiveFrom(), req.effectiveTo())
 	eventStore := s.engine.BuildEventStoreFromHints(hints)
 
 	// 6. Build physical pipeline.
-	source := physical.NewStorageSourceFromMap(eventStore, "main")
+	source := physical.NewStorageSourceFromMap(eventStore, defaultSrc)
 	iter, err := physical.Build(plan, physical.BuildOptions{
 		Source: source,
 		Now:    time.Now(),
@@ -235,6 +259,150 @@ func applyTimeRangeToHints(hints *spl2.QueryHints, from, to string) {
 		return
 	}
 	hints.TimeBounds = tb
+}
+
+// extractLynxFlowSourceScope extracts the source index name and scope type
+// from a desugared LynxFlow AST. This is used to build QueryHints that match
+// the SPL2 path's data access behavior (source routing, buffered events, disk parts).
+//
+// Returns ("main", "single") for a bare "from main", ("logs", "single") for
+// "from logs", ("", "all") for "from *", and ("main", "single") as default
+// when no from stage is present (the desugarer inserts from main).
+func extractLynxFlowSourceScope(q *ast.Query) (indexName, scopeType string) {
+	if q == nil {
+		return "main", "single"
+	}
+	src := q.Pipeline.Source
+	if src == nil {
+		return "main", "single"
+	}
+	if len(src.Sources) == 0 {
+		return "main", "single"
+	}
+	// Single named source.
+	if len(src.Sources) == 1 {
+		s := src.Sources[0]
+		switch s.Kind {
+		case ast.SourceStar:
+			return "*", "all"
+		case ast.SourceName:
+			name := s.Name
+			if name == "" {
+				name = "main"
+			}
+			return name, "single"
+		case ast.SourceGlob:
+			return s.Pattern, "glob"
+		case ast.SourceCTE:
+			// CTE: scan the default index.
+			return "main", "single"
+		}
+	}
+	// Multiple sources: list scope.
+	names := make([]string, 0, len(src.Sources))
+	for _, s := range src.Sources {
+		switch s.Kind {
+		case ast.SourceStar:
+			return "*", "all"
+		case ast.SourceName:
+			if s.Name != "" {
+				names = append(names, s.Name)
+			}
+		}
+	}
+	if len(names) == 1 {
+		return names[0], "single"
+	}
+	// For multi-source, use the first name as indexName (the hints will use
+	// SourceScopeSources for multi-source). We set IndexName="" so all indexes
+	// are scanned and the physical layer resolves per-source.
+	return "", "all"
+}
+
+// buildLynxFlowResponse converts LynxFlow result rows to the correct response
+// envelope: "aggregate" (with columns+rows) when the plan root is an Aggregate
+// or TopK over Aggregate, or "events" (with events array) otherwise.
+// This produces byte-compatible output with the SPL2 path's writeSyncResultFromUsecase.
+func buildLynxFlowResponse(rows []map[string]event.Value, limit, offset int, plan *logical.Plan) map[string]interface{} {
+	if isAggregatePlan(plan) {
+		return buildLynxFlowAggregateResponse(rows, limit, offset)
+	}
+	return buildLynxFlowEventsResponse(rows, limit, offset)
+}
+
+// isAggregatePlan walks the plan root backwards through transparent nodes
+// (Limit, Sort, Project, TopK) to find whether the plan is aggregate-rooted.
+func isAggregatePlan(plan *logical.Plan) bool {
+	if plan == nil || plan.Root == nil {
+		return false
+	}
+	return isAggregateNode(plan.Root)
+}
+
+// isAggregateNode checks if a node is or wraps an aggregate.
+func isAggregateNode(n logical.Node) bool {
+	switch nd := n.(type) {
+	case *logical.Aggregate:
+		return nd.Window == nil // windowed (eventstats/streamstats) produce events, not aggregate
+	case *logical.TopK:
+		return true
+	case *logical.Describe:
+		return true
+	// Transparent nodes: check child.
+	case *logical.Limit:
+		return isAggregateNode(nd.Input)
+	case *logical.Sort:
+		return isAggregateNode(nd.Input)
+	case *logical.Project:
+		return isAggregateNode(nd.Input)
+	}
+	return false
+}
+
+// buildLynxFlowAggregateResponse converts LynxFlow result rows to the
+// aggregate response shape with columns and row arrays, byte-compatible
+// with the SPL2 path's buildAggregateResponse.
+func buildLynxFlowAggregateResponse(rows []map[string]event.Value, limit, offset int) map[string]interface{} {
+	total := len(rows)
+	if offset > 0 && offset < len(rows) {
+		rows = rows[offset:]
+	} else if offset >= len(rows) {
+		rows = nil
+	}
+	hasMore := limit > 0 && len(rows) > limit
+	if limit > 0 && limit < len(rows) {
+		rows = rows[:limit]
+	}
+
+	if len(rows) == 0 {
+		return map[string]interface{}{
+			"type": "aggregate", "columns": []string{}, "rows": [][]interface{}{}, "total_rows": total, "has_more": false,
+		}
+	}
+
+	// Collect column names from all rows.
+	seen := map[string]struct{}{}
+	for _, row := range rows {
+		for k := range row {
+			seen[k] = struct{}{}
+		}
+	}
+	cols := orderColumns(seen)
+
+	tableRows := make([][]interface{}, len(rows))
+	for i, row := range rows {
+		r := make([]interface{}, len(cols))
+		for j, col := range cols {
+			if v, ok := row[col]; ok {
+				r[j] = v.Interface()
+			}
+		}
+		tableRows[i] = r
+	}
+
+	return map[string]interface{}{
+		"type": "aggregate", "columns": cols, "rows": tableRows, "total_rows": total, "has_more": hasMore,
+	}
 }
 
 // buildLynxFlowEventsResponse converts LynxFlow result rows to the standard
@@ -349,6 +517,7 @@ func streamLynxFlowResults(w http.ResponseWriter, r *http.Request, iter pipeline
 		"__meta": map[string]interface{}{
 			"total":   total,
 			"took_ms": elapsed.Milliseconds(),
+			"scanned": total, // parity with the SPL2 stream path
 		},
 	})
 	if flusher != nil {

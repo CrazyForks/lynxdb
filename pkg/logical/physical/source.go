@@ -395,9 +395,10 @@ func eventsToRows(events []*event.Event) []map[string]event.Value {
 	}
 	rows := make([]map[string]event.Value, len(events))
 	for i, ev := range events {
-		row := make(map[string]event.Value, len(ev.Fields)+4)
+		row := make(map[string]event.Value, len(ev.Fields)+6)
 
-		// Core fields.
+		// Core fields — must match the SPL2 path's EventsToBatch to ensure
+		// field parity between the two execution paths.
 		if !ev.Time.IsZero() {
 			row["_time"] = event.TimestampValue(ev.Time)
 		}
@@ -409,6 +410,12 @@ func eventsToRows(events []*event.Event) []map[string]event.Value {
 		}
 		if ev.SourceType != "" {
 			row["_sourcetype"] = event.StringValue(ev.SourceType)
+		}
+		if ev.Host != "" {
+			row["host"] = event.StringValue(ev.Host)
+		}
+		if ev.Index != "" {
+			row["index"] = event.StringValue(ev.Index)
 		}
 
 		// Extracted fields.

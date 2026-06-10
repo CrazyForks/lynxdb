@@ -116,6 +116,19 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 
 	// Language routing: detect or use explicit language.
 	lang := detectQueryLanguage(query, req.Language)
+
+	// Async/hybrid mode: route through SPL2 path when language was auto-detected
+	// (not explicit). The LynxFlow execution path does not yet integrate with the
+	// engine's job infrastructure, so async polling (/query/jobs/{id}) only works
+	// with the SPL2 pipeline. Ambiguous queries are valid SPL2 by definition, so
+	// this is always safe. Explicit language=lynxflow with wait=0 is not supported
+	// and returns a sync result instead (the caller asked for lynxflow explicitly).
+	if lang.Language == LangLynxFlow && !lang.Explicit && req.Wait != nil {
+		lang.Language = LangSPL2
+		lang.DetectNotice = "async query routed to spl2 (lynxflow async not yet supported); " +
+			"set language=spl2 to suppress this notice"
+	}
+
 	if lang.Language == LangLynxFlow {
 		s.executeLynxFlowQuery(w, r, req, lang)
 		return

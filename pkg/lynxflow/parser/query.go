@@ -1048,11 +1048,52 @@ func (p *parser) parseDedupBody(s *ast.Stage) {
 
 	// Optional leading integer.
 	if p.at(lexer.Int) {
+		nSpan := p.curSpan()
 		payload.N = p.parseIntValue()
+		if payload.N < 1 {
+			p.diags = append(p.diags, Diag{
+				Code:       CodeStageError,
+				Message:    "dedup keeps at least one row per key; N must be >= 1",
+				Span:       nSpan,
+				Suggestion: "use dedup <fields> to keep one row per key",
+			})
+		}
 	}
 
 	payload.Fields = p.parseFieldList()
+	if len(payload.Fields) == 0 {
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    "expected at least one field name after dedup",
+			Span:       ast.Span{Start: s.NamePos.Start, End: p.prev.End},
+			Suggestion: "dedup [N] <field>[, <field>...]",
+		})
+	}
+	for _, f := range payload.Fields {
+		if !isFieldRef(f) {
+			p.diags = append(p.diags, Diag{
+				Code:    CodeStageError,
+				Message: "dedup keys must be field names",
+				Span:    f.ExprSpan(),
+			})
+		}
+	}
 	s.Dedup = payload
+}
+
+// isFieldRef reports whether e is a plain field reference (ident or a
+// member-access chain), as required by field-list positions.
+func isFieldRef(e ast.Expr) bool {
+	switch v := e.(type) {
+	case *ast.Ident:
+		return true
+	case *ast.Member:
+		return isFieldRef(v.Object)
+	case *ast.SafeMember:
+		return isFieldRef(v.Object)
+	default:
+		return false
+	}
 }
 
 func (p *parser) parseFieldPatternsBody(s *ast.Stage, isKeep bool) {

@@ -1,0 +1,4 @@
+# format: json
+# language: lynxflow
+from idx_backend
+| every 1h by level stats count() as rate

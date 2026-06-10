@@ -1,0 +1,5 @@
+# format: json
+# language: lynxflow
+from frontend
+| where has(_raw, "ERROR")
+| stats count()

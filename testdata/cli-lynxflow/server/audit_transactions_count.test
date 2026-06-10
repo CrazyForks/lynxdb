@@ -1,0 +1,4 @@
+# format: json
+# language: lynxflow
+from audit_transactions
+| stats count()

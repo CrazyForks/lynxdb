@@ -1,0 +1,7 @@
+# format: json
+# language: lynxflow
+from backend
+| stats count() as n by service
+| eventstats sum(n) as total
+| extend pct = round((float((n * 100)) / total), 1)
+| sort -pct, service

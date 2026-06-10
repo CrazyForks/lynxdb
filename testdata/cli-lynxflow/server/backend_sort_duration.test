@@ -1,0 +1,6 @@
+# format: json
+# language: lynxflow
+from backend
+| sort -duration_ms
+| head 3
+| keep duration_ms, service, level

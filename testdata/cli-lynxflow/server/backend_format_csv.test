@@ -1,0 +1,5 @@
+# format: csv
+# language: lynxflow
+from backend
+| stats count() by level
+| sort level

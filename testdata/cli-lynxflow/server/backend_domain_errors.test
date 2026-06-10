@@ -1,0 +1,5 @@
+# format: json
+# language: lynxflow
+from idx_backend
+| where level in ["error", "fatal"]
+| stats count() by service

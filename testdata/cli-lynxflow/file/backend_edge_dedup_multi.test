@@ -1,0 +1,7 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| dedup 2 level
+| keep level, service
+| sort level, service

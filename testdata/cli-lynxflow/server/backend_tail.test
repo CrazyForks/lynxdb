@@ -1,0 +1,6 @@
+# format: json
+# language: lynxflow
+from backend
+| sort timestamp
+| tail 3
+| keep level, service, status

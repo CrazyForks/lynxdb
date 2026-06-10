@@ -1,0 +1,6 @@
+# format: json
+# language: lynxflow
+from idx_backend
+| extend hour = strftime(_time, "%H")
+| stats count() by hour
+| sort hour

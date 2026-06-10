@@ -1,0 +1,5 @@
+# format: json
+# language: lynxflow
+from idx_backend
+| dedup level, service
+| stats count() as unique_pairs

@@ -174,8 +174,9 @@ func startServerWithDataDir(t *testing.T, dataDir string) *Server {
 	}
 	go srv.wait()
 
-	// Wait for server to be healthy.
-	waitForHealth(t, srv.BaseURL, 15*time.Second)
+	// Wait for server to be healthy. Use a generous timeout to handle
+	// race-instrumented binaries and CPU-constrained CI environments.
+	waitForHealth(t, srv.BaseURL, 60*time.Second)
 
 	// Register cleanup: graceful SIGTERM, then SIGKILL fallback.
 	t.Cleanup(func() {

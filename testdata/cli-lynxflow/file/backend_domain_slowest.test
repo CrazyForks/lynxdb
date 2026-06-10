@@ -1,0 +1,7 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| stats max(service) as max_service by duration_ms
+| sort -max_service
+| head 5

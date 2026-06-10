@@ -31,12 +31,11 @@ func TestGolden_File(t *testing.T) {
 
 			logPath := testdataLog(tc.File)
 
-			args := []string{
-				"query",
-				"--file", logPath,
-				"--format", tc.Format,
-				tc.Query,
+			args := []string{"query", "--file", logPath, "--format", tc.Format}
+			if tc.Language != "" {
+				args = append(args, "--language", tc.Language)
 			}
+			args = append(args, tc.Query)
 
 			result := runLynxDB(t, args...)
 			assertGolden(t, tc, result)
@@ -80,12 +79,11 @@ func TestGolden_Server(t *testing.T) {
 				t.Skip(tc.Skip)
 			}
 
-			args := []string{
-				"--server", srv.BaseURL,
-				"query",
-				"--format", tc.Format,
-				tc.Query,
+			args := []string{"--server", srv.BaseURL, "query", "--format", tc.Format}
+			if tc.Language != "" {
+				args = append(args, "--language", tc.Language)
 			}
+			args = append(args, tc.Query)
 
 			querySlots <- struct{}{}
 			defer func() { <-querySlots }()

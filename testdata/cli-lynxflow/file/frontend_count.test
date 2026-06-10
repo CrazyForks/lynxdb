@@ -1,0 +1,5 @@
+# file: frontend_console.log
+# format: json
+# language: lynxflow
+from main
+| stats count()

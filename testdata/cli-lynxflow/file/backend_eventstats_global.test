@@ -1,0 +1,7 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| eventstats avg(duration_ms) as global_avg
+| where duration_ms > (global_avg * 2)
+| keep service, duration_ms, global_avg

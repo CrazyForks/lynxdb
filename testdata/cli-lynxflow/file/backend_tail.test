@@ -1,0 +1,7 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| tail 3
+| keep level, service, duration_ms
+| sort duration_ms

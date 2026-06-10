@@ -1,0 +1,6 @@
+# format: json
+# language: lynxflow
+from backend
+| stats count() by service, level
+| xyseries service level count
+| sort service

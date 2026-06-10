@@ -1,0 +1,5 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| stats dc(service) as unique_services

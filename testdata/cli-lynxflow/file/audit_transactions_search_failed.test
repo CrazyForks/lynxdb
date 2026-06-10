@@ -1,0 +1,6 @@
+# file: audit_transactions.log
+# format: json
+# language: lynxflow
+from main
+| where has(_raw, "status=failed")
+| stats count()

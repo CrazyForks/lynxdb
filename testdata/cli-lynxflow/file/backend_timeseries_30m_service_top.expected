@@ -1,0 +1,10 @@
+{"bucket":1800000000000,"count()":1,"service":"analytics-service"}
+{"bucket":1800000000000,"count()":1,"service":"auth-service"}
+{"bucket":1800000000000,"count()":1,"service":"import-service"}
+{"bucket":1800000000000,"count()":1,"service":"notification-service"}
+{"bucket":1800000000000,"count()":1,"service":"report-service"}
+{"bucket":1800000000000,"count()":2,"service":"deploy-service"}
+{"bucket":1800000000000,"count()":3,"service":"project-service"}
+{"bucket":1800000000000,"count()":4,"service":"user-service"}
+{"bucket":1800000000000,"count()":5,"service":"gateway-service"}
+{"bucket":1800000000000,"count()":7,"service":"payment-service"}

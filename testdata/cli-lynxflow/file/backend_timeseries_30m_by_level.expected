@@ -1,0 +1,3 @@
+{"bucket":1800000000000,"count()":5,"level":"ERROR"}
+{"bucket":1800000000000,"count()":15,"level":"INFO"}
+{"bucket":1800000000000,"count()":6,"level":"WARN"}

@@ -1,0 +1,8 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| extend err = coalesce(error, "none")
+| extend amt = coalesce(amount_cents, 0)
+| stats count() by err
+| sort err

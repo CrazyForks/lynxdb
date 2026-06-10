@@ -1,0 +1,8 @@
+Query
+  Pipeline
+    Stage parse
+      Format json
+    Stage where
+      Binary >=
+        Ident status
+        Int 500

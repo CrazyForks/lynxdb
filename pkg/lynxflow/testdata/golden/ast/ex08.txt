@@ -1,0 +1,5 @@
+Query
+  Pipeline
+    Stage keep
+      StarExcept
+      Pattern _raw

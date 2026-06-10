@@ -1,0 +1,1 @@
+search-sugar: (status>=400 and status<500) => where ((status >= 400) and (status < 500))

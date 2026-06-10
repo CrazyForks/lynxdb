@@ -1,0 +1,20 @@
+Query
+  Pipeline
+    Stage extend
+      Assign err
+        Binary ??
+          Ident error
+          String "none"
+      Assign amt
+        Binary ??
+          Ident amount_cents
+          Int 0
+    Stage stats
+      Aggs
+        Agg
+          Call count
+      By
+        Ident err
+    Stage sort
+      SortKey +
+        Ident err

@@ -1,0 +1,1 @@
+search-sugar: "connection refused" => where contains(_raw, "connection refused")

@@ -1,0 +1,12 @@
+Query
+  Pipeline
+    From
+      Source app
+      TimeRange
+        Start
+          Unary neg
+            Duration 1h
+      SugarTerms
+        SearchBinary and
+          BareWord "error"
+          BareWord "timeout"

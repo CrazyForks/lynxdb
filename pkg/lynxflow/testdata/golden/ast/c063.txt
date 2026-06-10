@@ -1,0 +1,8 @@
+Query
+  Pipeline
+    From
+      Source main
+    Stage where
+      Call matches
+        Ident CommandLine
+        RawString ".*whoami.*"

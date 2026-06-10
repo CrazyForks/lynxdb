@@ -1,0 +1,2 @@
+implicit-source:  => from main
+sugar:top: top 3 service => stats count() as count by service | sort -count | head 3

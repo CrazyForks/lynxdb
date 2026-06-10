@@ -1,0 +1,1 @@
+search-sugar: CommandLine="whoami" => where (CommandLine == "whoami")

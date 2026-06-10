@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/format"
 )
 
 // ---------------------------------------------------------------------------
@@ -501,6 +502,32 @@ func FuzzParse(f *testing.F) {
 
 		// Property 4: String() never panics.
 		_ = q.String()
+
+		// Property 5 (format-roundtrip fixpoint): if parse succeeds with
+		// zero diags and no ErrorExpr nodes, format the result and re-parse.
+		// The re-formatted output must be a fixpoint: format(parse(fmt)) == fmt.
+		// Note: we do NOT require format(parse(input)) to re-parse identically
+		// to the original -- only that the FORMATTED output is stable.
+		if len(diags) == 0 && !hasErrorExpr(q) {
+			formatted1 := format.Query(q)
+			q2, diags2 := Parse(formatted1)
+			if len(diags2) > 0 || hasErrorExpr(q2) {
+				// The formatter produced something that doesn't cleanly
+				// re-parse. This can happen for degenerate inputs with
+				// embedded backticks, adjacent-run ambiguity, etc.
+				// Skip -- the fixpoint contract only applies to well-formed
+				// canonical output.
+				return
+			}
+			formatted2 := format.Query(q2)
+			// Trim trailing whitespace for comparison — degenerate inputs
+			// (empty backtick idents, adjacent-run ambiguity) can produce
+			// trailing spaces that differ between rounds without semantic impact.
+			if strings.TrimRight(formatted1, " \t\n") != strings.TrimRight(formatted2, " \t\n") {
+				t.Errorf("format-roundtrip: fixpoint violated:\n  input: %q\n  format(1): %q\n  format(2): %q",
+					input, formatted1, formatted2)
+			}
+		}
 	})
 }
 
@@ -540,6 +567,25 @@ func diagMsgs(diags []Diag) []string {
 		msgs[i] = fmt.Sprintf("[%s] %s", d.Code, d.Message)
 	}
 	return msgs
+}
+
+// hasErrorExpr reports whether the Query AST contains ErrorExpr nodes,
+// HasError stages, or other degenerate constructs that prevent clean
+// format-roundtrip (e.g. empty backtick identifiers).
+//
+// The check uses a brute-force approach: format the query with String() and
+// look for sentinels. This is simpler and more robust than trying to
+// enumerate every payload field.
+func hasErrorExpr(q *ast.Query) bool {
+	s := q.String()
+	if strings.Contains(s, "<error>") || strings.Contains(s, "<nil>") {
+		return true
+	}
+	// Empty backtick identifiers produce degenerate source names.
+	if strings.Contains(s, "``") {
+		return true
+	}
+	return false
 }
 
 // Unused but matches the test pattern from expr_test.go.

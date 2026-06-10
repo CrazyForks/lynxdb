@@ -1,0 +1,20 @@
+Query
+  Pipeline
+    Stage parse
+      Format docker
+    Stage parse
+      Format json
+      From
+        Ident message
+    Stage explode
+      Ident errors
+    Stage stats
+      Aggs
+        Agg
+          Call count
+          Alias cnt
+      By
+        Member .code
+          Ident errors
+        Member .service
+          Ident errors

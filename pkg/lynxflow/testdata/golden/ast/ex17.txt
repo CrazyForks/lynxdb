@@ -1,0 +1,14 @@
+Query
+  Pipeline
+    From
+      Source nginx
+    Stage parse
+      Format combined
+    Stage where
+      Binary and
+        Binary ==
+          Ident status
+          Int 500
+        Call has
+          Ident _raw
+          String "upstream"

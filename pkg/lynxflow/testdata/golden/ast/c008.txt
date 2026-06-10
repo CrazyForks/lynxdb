@@ -1,0 +1,10 @@
+Query
+  Pipeline
+    Stage where
+      Call starts_with
+        Ident path
+        String "/api/v2/users"
+    Stage stats
+      Aggs
+        Agg
+          Call count

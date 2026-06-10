@@ -1,0 +1,10 @@
+Query
+  Pipeline
+    Stage where
+      Binary ==
+        Ident status
+        Int 500
+    Stage stats
+      Aggs
+        Agg
+          Call count

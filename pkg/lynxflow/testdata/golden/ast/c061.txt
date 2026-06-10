@@ -1,0 +1,15 @@
+Query
+  Pipeline
+    From
+      Source main
+    Stage where
+      Binary and
+        Binary and
+          Call exists
+            Ident FieldA
+          Unary not
+            Call exists
+              Ident FieldB
+        Binary ==
+          Ident Enabled
+          Bool true

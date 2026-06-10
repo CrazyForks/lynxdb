@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/format"
 )
 
 // ---------------------------------------------------------------------------
@@ -699,6 +700,24 @@ func FuzzParseExpr(f *testing.F) {
 
 		// Property 5: String() never panics.
 		_ = expr.String()
+
+		// Property 6 (format-roundtrip): if parse succeeds with zero diags,
+		// formatting and re-parsing must also produce zero diags and the
+		// same formatted output (fixpoint).
+		if len(diags) == 0 {
+			formatted := format.Expr(expr)
+			expr2, diags2 := ParseExpr(formatted)
+			if len(diags2) > 0 {
+				t.Errorf("format-roundtrip: re-parse has diags:\n  input: %q\n  formatted: %q\n  diags: %v",
+					input, formatted, diagMessages(diags2))
+				return
+			}
+			formatted2 := format.Expr(expr2)
+			if formatted != formatted2 {
+				t.Errorf("format-roundtrip: fixpoint violated:\n  input: %q\n  f1: %q\n  f2: %q",
+					input, formatted, formatted2)
+			}
+		}
 	})
 }
 

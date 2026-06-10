@@ -1,0 +1,4 @@
+Query
+  Pipeline
+    Stage rename
+      Rename duration_ms as latency

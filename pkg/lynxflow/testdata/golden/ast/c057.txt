@@ -1,0 +1,11 @@
+Query
+  Pipeline
+    From
+      Source main
+      SugarTerms
+        SearchBinary and
+          KeyValue EventID=
+            Int 4625
+          SearchNot
+            KeyValue SubStatus=
+              String "0xC0000064"

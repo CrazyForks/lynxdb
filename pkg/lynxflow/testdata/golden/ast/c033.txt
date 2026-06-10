@@ -1,0 +1,10 @@
+Query
+  Pipeline
+    Stage every
+      Span
+        Duration 1h
+      By
+        Ident level
+      Aggs
+        Agg
+          Call count

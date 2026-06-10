@@ -1,0 +1,10 @@
+Query
+  Pipeline
+    Stage every
+      Span
+        Duration 5m
+      By
+        Ident service
+      Aggs
+        Agg
+          Call count

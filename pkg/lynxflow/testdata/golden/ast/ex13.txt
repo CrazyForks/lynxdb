@@ -1,0 +1,9 @@
+Query
+  Pipeline
+    Stage latency
+      Field
+        Ident dur
+      Every
+        Duration 5m
+      By
+        Ident endpoint

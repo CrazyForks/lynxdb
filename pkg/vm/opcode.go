@@ -197,6 +197,25 @@ const (
 	OpExtractAll   Opcode = 0xFD // 2-byte operand: regex pool index; pop string, push array of all matches
 	OpSubstr0Based Opcode = 0xFE // pop 3 (str, start, len); 0-based start per RFC-002
 
+	// RFC-002 lambda + array/object function opcodes (b2).
+	OpArrayAny        Opcode = 0x03 // 2-byte operand: sub-program index; pop array, push bool (3VL)
+	OpArrayAll        Opcode = 0x04 // 2-byte operand: sub-program index; pop array, push bool (3VL)
+	OpArrayFilter     Opcode = 0x05 // 2-byte operand: sub-program index; pop array, push filtered array
+	OpArrayMap        Opcode = 0x06 // 2-byte operand: sub-program index; pop array, push mapped array
+	OpLoadLambdaParam Opcode = 0x07 // 2-byte operand: depth (0 = current lambda param)
+	OpSlice           Opcode = 0x08 // pop 2 or 3 (arr, start[, end]); push sliced array
+	OpArrayConcat     Opcode = 0x09 // 2-byte operand: count N; pop N arrays, push concatenated
+	OpArrayDistinct   Opcode = 0x0A // pop array, push order-preserving deduplicated array
+	OpArraySort       Opcode = 0x0B // pop array, push sorted array (CompareValues; nulls last)
+	OpFlatten         Opcode = 0x0C // pop array, push one-level-flattened array
+	OpKeys            Opcode = 0x23 // pop object, push sorted array of key strings
+	OpValues          Opcode = 0x24 // pop object, push array of values in key-sorted order
+	OpMerge           Opcode = 0x25 // pop 2 objects (a, b), push merged (b wins)
+	OpHasKey          Opcode = 0x26 // pop object + string key, push bool
+	OpURLParse        Opcode = 0x27 // pop string, push object {scheme, host, port, path, query, fragment}
+	OpIPParseObj      Opcode = 0x28 // pop string, push object {version, private, loopback}
+	OpFromJSONNative  Opcode = 0x29 // pop string, push native Value (recursive arrays/objects)
+
 	// JSON Functions.
 	OpJsonExtract  Opcode = 0xD0 // pop path, pop field, push extracted value
 	OpJsonValid    Opcode = 0xD1 // pop field, push bool
@@ -405,6 +424,25 @@ var definitions = map[Opcode]*Definition{
 	OpJsonSet:      {"OpJsonSet", nil},
 	OpJsonRemove:   {"OpJsonRemove", nil},
 	OpJsonMerge:    {"OpJsonMerge", nil},
+
+	// RFC-002 b2 lambda + array/object
+	OpArrayAny:        {"OpArrayAny", []int{2}},
+	OpArrayAll:        {"OpArrayAll", []int{2}},
+	OpArrayFilter:     {"OpArrayFilter", []int{2}},
+	OpArrayMap:        {"OpArrayMap", []int{2}},
+	OpLoadLambdaParam: {"OpLoadLambdaParam", []int{2}},
+	OpSlice:           {"OpSlice", nil},
+	OpArrayConcat:     {"OpArrayConcat", []int{2}},
+	OpArrayDistinct:   {"OpArrayDistinct", nil},
+	OpArraySort:       {"OpArraySort", nil},
+	OpFlatten:         {"OpFlatten", nil},
+	OpKeys:            {"OpKeys", nil},
+	OpValues:          {"OpValues", nil},
+	OpMerge:           {"OpMerge", nil},
+	OpHasKey:          {"OpHasKey", nil},
+	OpURLParse:        {"OpURLParse", nil},
+	OpIPParseObj:      {"OpIPParseObj", nil},
+	OpFromJSONNative:  {"OpFromJSONNative", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

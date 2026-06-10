@@ -385,11 +385,27 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "ip_parse", minArgs: 1, maxArgs: 1, emit: lfEmitIPParse},
 		{name: "ipmask", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIPMask)},
 
+		// ---- Array (§10) ----
+		{name: "slice", minArgs: 2, maxArgs: 3, emit: lfEmitSlice},
+		{name: "array_concat", minArgs: 1, maxArgs: -1, emit: lfEmitArrayConcat},
+		{name: "array_distinct", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpArrayDistinct)},
+		{name: "array_sort", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpArraySort)},
+		{name: "flatten", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpFlatten)},
+		{name: "any", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayAny)},
+		{name: "all", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayAll)},
+		{name: "filter", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayFilter)},
+		{name: "map", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayMap)},
+
 		// ---- Object (§10) ----
+		{name: "keys", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpKeys)},
+		{name: "values", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpValues)},
+		{name: "merge", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpMerge)},
+		{name: "has_key", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpHasKey)},
+		{name: "url_parse", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpURLParse)},
 		{name: "to_json", minArgs: 1, maxArgs: 1, emit: lfEmitToJSON},
 		{name: "from_json", minArgs: 1, maxArgs: 1, strict: true,
-			emit:       lfEmitFromJSON,
-			emitStrict: lfStrictFromJSON},
+			emit:       lfEmitFromJSONNative,
+			emitStrict: lfStrictFromJSONNative},
 	}
 }
 
@@ -959,19 +975,17 @@ func lfEmitCIDRMatch(c *lfCompiler, call *lfast.Call) error {
 }
 
 func lfEmitIPParse(c *lfCompiler, call *lfast.Call) error {
-	// ip_parse(s) → object
-	// No dedicated opcode yet. Compile arg and push null for now.
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
-	// TODO: add OpIPParse
-	c.prog.EmitOp(OpPop)
-	c.prog.EmitOp(OpConstNull)
+	c.prog.EmitOp(OpIPParseObj)
 	return nil
 }
 
 func lfEmitToJSON(c *lfCompiler, call *lfast.Call) error {
 	// to_json(x) → string JSON representation
+	// For now, use OpToString which calls event.Value.String() and produces
+	// a JSON-compatible representation for arrays and objects.
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
@@ -979,24 +993,80 @@ func lfEmitToJSON(c *lfCompiler, call *lfast.Call) error {
 	return nil
 }
 
-func lfEmitFromJSON(c *lfCompiler, call *lfast.Call) error {
-	// from_json(s) → any (parsed JSON value)
-	// Use the existing json extract with empty path
+func lfEmitFromJSONNative(c *lfCompiler, call *lfast.Call) error {
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
-	// No dedicated opcode. For now, pass through. The value will remain a string.
-	// TODO: add OpFromJSON
+	c.prog.EmitOp(OpFromJSONNative)
 	return nil
 }
 
-func lfStrictFromJSON(c *lfCompiler, call *lfast.Call) error {
-	if err := lfEmitFromJSON(c, call); err != nil {
+func lfStrictFromJSONNative(c *lfCompiler, call *lfast.Call) error {
+	if err := lfEmitFromJSONNative(c, call); err != nil {
 		return err
 	}
-	// For from_json!, strict check would verify the parse succeeded.
-	// TODO: implement when OpFromJSON exists
+	// Strict check: null result means parse failure
+	c.prog.EmitOp(OpDup)
+	c.prog.EmitOp(OpIsNull)
+	jumpOk := c.prog.EmitOp(OpJumpIfFalse, 0)
+	c.prog.EmitOp(OpPop)
+	nameIdx := c.prog.AddConstant(event.StringValue("from_json!"))
+	c.prog.EmitOp(OpStrictCastFail, nameIdx)
+	okLabel := c.prog.Len()
+	c.prog.PatchUint16(jumpOk+1, uint16(okLabel))
 	return nil
+}
+
+func lfEmitSlice(c *lfCompiler, call *lfast.Call) error {
+	// slice(arr, start[, end])
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	if err := c.compile(call.Args[1]); err != nil {
+		return err
+	}
+	if len(call.Args) == 3 {
+		if err := c.compile(call.Args[2]); err != nil {
+			return err
+		}
+	} else {
+		c.prog.EmitOp(OpConstNull)
+	}
+	c.prog.EmitOp(OpSlice)
+	return nil
+}
+
+func lfEmitArrayConcat(c *lfCompiler, call *lfast.Call) error {
+	for _, arg := range call.Args {
+		if err := c.compile(arg); err != nil {
+			return err
+		}
+	}
+	c.prog.EmitOp(OpArrayConcat, len(call.Args))
+	return nil
+}
+
+// lfEmitLambdaOp compiles a higher-order function call (any, all, filter, map)
+// that takes (array, lambda) arguments. The lambda body is compiled into a
+// sub-program; the opcode references the sub-program by index.
+func lfEmitLambdaOp(op Opcode) func(*lfCompiler, *lfast.Call) error {
+	return func(c *lfCompiler, call *lfast.Call) error {
+		// First arg: the array expression
+		if err := c.compile(call.Args[0]); err != nil {
+			return err
+		}
+		// Second arg: must be a Lambda
+		lambda, ok := call.Args[1].(*lfast.Lambda)
+		if !ok {
+			return fmt.Errorf("lynxflow.Compile: %s requires a lambda as second argument, got %T", call.Callee, call.Args[1])
+		}
+		subIdx, err := c.compileLambdaBody(lambda)
+		if err != nil {
+			return err
+		}
+		c.prog.EmitOp(op, subIdx)
+		return nil
+	}
 }
 
 // lfExprToString extracts a string from a LynxFlow expression literal.

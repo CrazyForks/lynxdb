@@ -7,10 +7,16 @@ package vm
 // and §5.5 (case sensitivity). The old SPL2 opcodes are untouched.
 
 import (
+	"bytes"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
+	"net"
+	"net/url"
 	"regexp"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode"
@@ -575,6 +581,590 @@ type ErrStrictCast struct {
 
 func (e *ErrStrictCast) Error() string {
 	return fmt.Sprintf("strict cast %s failed: cannot convert %s (type %s)", e.Func, e.Value, e.Type)
+}
+
+// ---------------------------------------------------------------------------
+// Lambda execution: any, all, filter, map
+// ---------------------------------------------------------------------------
+
+// execLambdaForElement runs a sub-program against the current row with a
+// lambda parameter value pushed onto the lambda param stack. Pool lookups
+// (constants, field names, regex, sub-programs) use the root program.
+func (vm *VM) execLambdaForElement(rootProg *Program, subIdx int, elem event.Value, fields map[string]event.Value) (event.Value, error) {
+	sub := rootProg.SubPrograms[subIdx]
+	// Build an execution program that uses the sub's instructions but the
+	// root's pools. This avoids copying pools to every sub-program.
+	execProg := &Program{
+		Instructions:  sub.Instructions,
+		Constants:     rootProg.Constants,
+		FieldNames:    rootProg.FieldNames,
+		RegexPatterns: rootProg.RegexPatterns,
+		CIDRNets:      rootProg.CIDRNets,
+		SubPrograms:   rootProg.SubPrograms,
+	}
+	// Push lambda param
+	vm.lambdaParams = append(vm.lambdaParams, elem)
+	// Save and reset SP for sub-program execution
+	savedSP := vm.sp
+	vm.sp = 0
+	result, err := vm.ExecuteWithContext(execProg, fields, vm.predicateCtx)
+	vm.sp = savedSP
+	// Pop lambda param
+	vm.lambdaParams = vm.lambdaParams[:len(vm.lambdaParams)-1]
+	return result, err
+}
+
+// execArrayAny implements any(arr, lambda) with 3VL semantics:
+// - Empty array: false
+// - If any element pred is true: true
+// - If no true and any null: null
+// - Otherwise: false
+func (vm *VM) execArrayAny(prog *Program, subIdx int, arrVal event.Value, fields map[string]event.Value) (event.Value, error) {
+	if arrVal.IsNull() {
+		return event.NullValue(), nil
+	}
+	if arrVal.Type() != event.FieldTypeArray {
+		return event.NullValue(), nil
+	}
+	arr := arrVal.AsArray()
+	if len(arr) == 0 {
+		return event.BoolValue(false), nil
+	}
+	hasNull := false
+	for _, elem := range arr {
+		result, err := vm.execLambdaForElement(prog, subIdx, elem, fields)
+		if err != nil {
+			return event.NullValue(), err
+		}
+		if result.IsNull() {
+			hasNull = true
+			continue
+		}
+		if result.Type() == event.FieldTypeBool && result.AsBool() {
+			return event.BoolValue(true), nil
+		}
+	}
+	if hasNull {
+		return event.NullValue(), nil
+	}
+	return event.BoolValue(false), nil
+}
+
+// execArrayAll implements all(arr, lambda) with 3VL semantics:
+// - Empty array: true
+// - If any element pred is false: false
+// - If no false and any null: null
+// - Otherwise: true
+func (vm *VM) execArrayAll(prog *Program, subIdx int, arrVal event.Value, fields map[string]event.Value) (event.Value, error) {
+	if arrVal.IsNull() {
+		return event.NullValue(), nil
+	}
+	if arrVal.Type() != event.FieldTypeArray {
+		return event.NullValue(), nil
+	}
+	arr := arrVal.AsArray()
+	if len(arr) == 0 {
+		return event.BoolValue(true), nil
+	}
+	hasNull := false
+	for _, elem := range arr {
+		result, err := vm.execLambdaForElement(prog, subIdx, elem, fields)
+		if err != nil {
+			return event.NullValue(), err
+		}
+		if result.IsNull() {
+			hasNull = true
+			continue
+		}
+		if result.Type() == event.FieldTypeBool && !result.AsBool() {
+			return event.BoolValue(false), nil
+		}
+	}
+	if hasNull {
+		return event.NullValue(), nil
+	}
+	return event.BoolValue(true), nil
+}
+
+// execArrayFilter implements filter(arr, lambda):
+// - Keeps elements where pred is true (null/false dropped)
+// - Empty array: []
+func (vm *VM) execArrayFilter(prog *Program, subIdx int, arrVal event.Value, fields map[string]event.Value) (event.Value, error) {
+	if arrVal.IsNull() {
+		return event.NullValue(), nil
+	}
+	if arrVal.Type() != event.FieldTypeArray {
+		return event.NullValue(), nil
+	}
+	arr := arrVal.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil), nil
+	}
+	result := make([]event.Value, 0, len(arr))
+	for _, elem := range arr {
+		pred, err := vm.execLambdaForElement(prog, subIdx, elem, fields)
+		if err != nil {
+			return event.NullValue(), err
+		}
+		if pred.Type() == event.FieldTypeBool && pred.AsBool() {
+			result = append(result, elem)
+		}
+		// null/false: dropped
+	}
+	return event.ArrayValue(result), nil
+}
+
+// execArrayMap implements map(arr, lambda):
+// - Applies lambda to each element, collecting results
+// - null results kept as null elements
+// - Empty array: []
+func (vm *VM) execArrayMap(prog *Program, subIdx int, arrVal event.Value, fields map[string]event.Value) (event.Value, error) {
+	if arrVal.IsNull() {
+		return event.NullValue(), nil
+	}
+	if arrVal.Type() != event.FieldTypeArray {
+		return event.NullValue(), nil
+	}
+	arr := arrVal.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil), nil
+	}
+	result := make([]event.Value, len(arr))
+	for i, elem := range arr {
+		mapped, err := vm.execLambdaForElement(prog, subIdx, elem, fields)
+		if err != nil {
+			return event.NullValue(), err
+		}
+		result[i] = mapped
+	}
+	return event.ArrayValue(result), nil
+}
+
+// ---------------------------------------------------------------------------
+// Slice, ArrayConcat, ArrayDistinct, ArraySort, Flatten
+// ---------------------------------------------------------------------------
+
+// execSlice implements slice(arr, start[, end]).
+// Stack: [..., arr, start, end] or [..., arr, start] (end=null means to end).
+// 0-based indexing, negative from end, clamped.
+func (vm *VM) execSlice() {
+	endVal := vm.stack[vm.sp-1]
+	startVal := vm.stack[vm.sp-2]
+	arrVal := vm.stack[vm.sp-3]
+	vm.sp -= 2
+
+	if arrVal.IsNull() || startVal.IsNull() {
+		vm.stack[vm.sp-1] = event.NullValue()
+		return
+	}
+	if arrVal.Type() != event.FieldTypeArray {
+		vm.stack[vm.sp-1] = event.NullValue()
+		return
+	}
+
+	arr := arrVal.AsArray()
+	n := int64(len(arr))
+
+	si, ok := valueToInt64(startVal)
+	if !ok {
+		vm.stack[vm.sp-1] = event.NullValue()
+		return
+	}
+	if si < 0 {
+		si += n
+	}
+	if si < 0 {
+		si = 0
+	}
+	if si > n {
+		si = n
+	}
+
+	var ei int64
+	if endVal.IsNull() {
+		ei = n
+	} else {
+		e, eok := valueToInt64(endVal)
+		if !eok {
+			vm.stack[vm.sp-1] = event.NullValue()
+			return
+		}
+		ei = e
+		if ei < 0 {
+			ei += n
+		}
+		if ei < 0 {
+			ei = 0
+		}
+		if ei > n {
+			ei = n
+		}
+	}
+
+	if si >= ei {
+		vm.stack[vm.sp-1] = event.ArrayValue(nil)
+		return
+	}
+
+	result := make([]event.Value, ei-si)
+	copy(result, arr[si:ei])
+	vm.stack[vm.sp-1] = event.ArrayValue(result)
+}
+
+// execArrayConcat implements array_concat(variadic).
+func (vm *VM) execArrayConcat(count int) {
+	if count == 0 {
+		vm.stack[vm.sp] = event.ArrayValue(nil)
+		vm.sp++
+		return
+	}
+	var result []event.Value
+	for i := vm.sp - count; i < vm.sp; i++ {
+		v := vm.stack[i]
+		if v.IsNull() {
+			continue
+		}
+		if v.Type() == event.FieldTypeArray {
+			result = append(result, v.AsArray()...)
+		}
+	}
+	vm.sp -= count
+	if result == nil {
+		result = []event.Value{}
+	}
+	vm.stack[vm.sp] = event.ArrayValue(result)
+	vm.sp++
+}
+
+// execArrayDistinct returns order-preserving first-wins deduplicated array.
+func execArrayDistinct(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := v.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil)
+	}
+	// Order-preserving dedup using deep equality (valuesEqual).
+	// O(n^2) in worst case but arrays in log analytics are typically small.
+	result := make([]event.Value, 0, len(arr))
+	for _, elem := range arr {
+		found := false
+		for _, existing := range result {
+			if valuesEqual(elem, existing) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			result = append(result, elem)
+		}
+	}
+	return event.ArrayValue(result)
+}
+
+// execArraySort sorts using CompareValues order; nulls last.
+func execArraySort(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := v.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil)
+	}
+	// Copy to avoid mutating the original
+	sorted := make([]event.Value, len(arr))
+	copy(sorted, arr)
+	sort.SliceStable(sorted, func(i, j int) bool {
+		ai, aj := sorted[i], sorted[j]
+		// Nulls last
+		if ai.IsNull() && aj.IsNull() {
+			return false
+		}
+		if ai.IsNull() {
+			return false
+		}
+		if aj.IsNull() {
+			return true
+		}
+		return CompareValues(ai, aj) < 0
+	})
+	return event.ArrayValue(sorted)
+}
+
+// execFlatten flattens one level of nested arrays.
+func execFlatten(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := v.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil)
+	}
+	var result []event.Value
+	for _, elem := range arr {
+		if elem.Type() == event.FieldTypeArray {
+			result = append(result, elem.AsArray()...)
+		} else {
+			result = append(result, elem)
+		}
+	}
+	return event.ArrayValue(result)
+}
+
+// ---------------------------------------------------------------------------
+// Object functions: keys, values, merge, has_key
+// ---------------------------------------------------------------------------
+
+// execKeys returns sorted array of key strings.
+func execKeys(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeObject {
+		return event.NullValue()
+	}
+	obj := v.AsObject()
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	result := make([]event.Value, len(keys))
+	for i, k := range keys {
+		result[i] = event.StringValue(k)
+	}
+	return event.ArrayValue(result)
+}
+
+// execValues returns array of values in key-sorted order (deterministic).
+func execValues(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeObject {
+		return event.NullValue()
+	}
+	obj := v.AsObject()
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	result := make([]event.Value, len(keys))
+	for i, k := range keys {
+		result[i] = obj[k]
+	}
+	return event.ArrayValue(result)
+}
+
+// execMerge merges two objects (right wins on key collision).
+func execMerge(a, b event.Value) event.Value {
+	if a.IsNull() || b.IsNull() {
+		return event.NullValue()
+	}
+	if a.Type() != event.FieldTypeObject || b.Type() != event.FieldTypeObject {
+		return event.NullValue()
+	}
+	aObj := a.AsObject()
+	bObj := b.AsObject()
+	result := make(map[string]event.Value, len(aObj)+len(bObj))
+	for k, v := range aObj {
+		result[k] = v
+	}
+	for k, v := range bObj {
+		result[k] = v // right wins
+	}
+	return event.ObjectValue(result)
+}
+
+// execHasKey checks if an object has a key.
+func execHasKey(obj, key event.Value) event.Value {
+	if obj.IsNull() || key.IsNull() {
+		return event.NullValue()
+	}
+	if obj.Type() != event.FieldTypeObject {
+		return event.NullValue()
+	}
+	k := valueToString(key)
+	_, ok := obj.AsObject()[k]
+	return event.BoolValue(ok)
+}
+
+// ---------------------------------------------------------------------------
+// url_parse, ip_parse, from_json (native)
+// ---------------------------------------------------------------------------
+
+// execURLParse parses a URL into an object.
+func execURLParse(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	s := v.AsString()
+	u, err := url.Parse(s)
+	if err != nil {
+		return event.NullValue()
+	}
+	result := map[string]event.Value{
+		"scheme":   event.StringValue(u.Scheme),
+		"host":     event.StringValue(u.Hostname()),
+		"path":     event.StringValue(u.Path),
+		"fragment": event.StringValue(u.Fragment),
+	}
+	// Port: int if numeric, else null
+	if portStr := u.Port(); portStr != "" {
+		if port, pErr := strconv.ParseInt(portStr, 10, 64); pErr == nil {
+			result["port"] = event.IntValue(port)
+		} else {
+			result["port"] = event.NullValue()
+		}
+	} else {
+		result["port"] = event.NullValue()
+	}
+	// Query: object of string key-value pairs
+	queryObj := make(map[string]event.Value, len(u.Query()))
+	for k, vals := range u.Query() {
+		if len(vals) > 0 {
+			queryObj[k] = event.StringValue(vals[0])
+		}
+	}
+	result["query"] = event.ObjectValue(queryObj)
+	return event.ObjectValue(result)
+}
+
+// execIPParse parses an IP address into an object.
+func execIPParse(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	s := v.AsString()
+	ip := net.ParseIP(s)
+	if ip == nil {
+		return event.NullValue()
+	}
+	var version int64
+	if ip.To4() != nil {
+		version = 4
+	} else {
+		version = 6
+	}
+	isPrivate := isPrivateIP(ip)
+	isLoopback := ip.IsLoopback()
+	return event.ObjectValue(map[string]event.Value{
+		"version":  event.IntValue(version),
+		"private":  event.BoolValue(isPrivate),
+		"loopback": event.BoolValue(isLoopback),
+	})
+}
+
+// isPrivateIP checks if an IP address is in a private range (RFC 1918 / RFC 4193).
+func isPrivateIP(ip net.IP) bool {
+	privateRanges := []struct {
+		network *net.IPNet
+	}{
+		{network: mustParseCIDR("10.0.0.0/8")},
+		{network: mustParseCIDR("172.16.0.0/12")},
+		{network: mustParseCIDR("192.168.0.0/16")},
+		{network: mustParseCIDR("fc00::/7")},
+	}
+	for _, r := range privateRanges {
+		if r.network.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func mustParseCIDR(s string) *net.IPNet {
+	_, n, err := net.ParseCIDR(s)
+	if err != nil {
+		panic(err)
+	}
+	return n
+}
+
+// execFromJSONNative parses a JSON string into native Values (recursive).
+func execFromJSONNative(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	if v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	s := v.AsString()
+	return parseJSONToValue([]byte(s))
+}
+
+// parseJSONToValue recursively converts JSON bytes to event.Value.
+func parseJSONToValue(data []byte) event.Value {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 {
+		return event.NullValue()
+	}
+	switch data[0] {
+	case '{':
+		var obj map[string]json.RawMessage
+		if err := json.Unmarshal(data, &obj); err != nil {
+			return event.NullValue()
+		}
+		result := make(map[string]event.Value, len(obj))
+		for k, raw := range obj {
+			result[k] = parseJSONToValue(raw)
+		}
+		return event.ObjectValue(result)
+	case '[':
+		var arr []json.RawMessage
+		if err := json.Unmarshal(data, &arr); err != nil {
+			return event.NullValue()
+		}
+		result := make([]event.Value, len(arr))
+		for i, raw := range arr {
+			result[i] = parseJSONToValue(raw)
+		}
+		return event.ArrayValue(result)
+	case '"':
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return event.NullValue()
+		}
+		return event.StringValue(s)
+	case 't', 'f':
+		var b bool
+		if err := json.Unmarshal(data, &b); err != nil {
+			return event.NullValue()
+		}
+		return event.BoolValue(b)
+	case 'n':
+		return event.NullValue()
+	default:
+		// Number
+		s := string(data)
+		// Try int first
+		if !strings.Contains(s, ".") && !strings.Contains(s, "e") && !strings.Contains(s, "E") {
+			if i, err := strconv.ParseInt(s, 10, 64); err == nil {
+				return event.IntValue(i)
+			}
+		}
+		if f, err := strconv.ParseFloat(s, 64); err == nil {
+			return event.FloatValue(f)
+		}
+		return event.NullValue()
+	}
 }
 
 // Ensure unused imports are referenced.

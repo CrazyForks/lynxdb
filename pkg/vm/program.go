@@ -15,7 +15,20 @@ type Program struct {
 	RegexPatterns []string
 	CIDRNets      []*net.IPNet // compiled CIDR networks for cidrmatch()
 
+	// SubPrograms stores compiled lambda bodies. OpArrayAny/All/Filter/Map
+	// reference sub-programs by index. Sub-programs share the parent's
+	// Constants, FieldNames, and RegexPatterns pools (they use the parent
+	// program for pool lookups). Each sub-program contains only its own
+	// Instructions.
+	SubPrograms []*Program
+
 	BSIHandledComparisons int
+}
+
+// AddSubProgram appends a compiled sub-program and returns its index.
+func (p *Program) AddSubProgram(sub *Program) int {
+	p.SubPrograms = append(p.SubPrograms, sub)
+	return len(p.SubPrograms) - 1
 }
 
 // AddConstant appends a constant and returns its index.

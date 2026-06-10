@@ -37,6 +37,12 @@ func CompileLynxFlow(e lfast.Expr) (*Program, error) {
 // lfCompiler compiles LynxFlow v2 AST expressions to bytecode.
 type lfCompiler struct {
 	prog *Program
+
+	// lambdaParams tracks the names of lambda parameters currently in scope,
+	// from outermost to innermost. When compiling a lambda body, the lambda's
+	// parameter name is pushed here. An Ident whose name matches a lambda
+	// param compiles to OpLoadLambdaParam with a depth operand (0 = innermost).
+	lambdaParams []string
 }
 
 // compile dispatches on expression node type.
@@ -45,8 +51,13 @@ func (c *lfCompiler) compile(e lfast.Expr) error {
 	case *lfast.Literal:
 		return c.compileLiteral(n)
 	case *lfast.Ident:
-		idx := c.prog.AddFieldName(n.Name)
-		c.prog.EmitOp(OpLoadField, idx)
+		// Check if this identifier is a lambda parameter (innermost first).
+		if depth, ok := c.lambdaParamDepth(n.Name); ok {
+			c.prog.EmitOp(OpLoadLambdaParam, depth)
+		} else {
+			idx := c.prog.AddFieldName(n.Name)
+			c.prog.EmitOp(OpLoadField, idx)
+		}
 	case *lfast.Paren:
 		return c.compile(n.Inner)
 	case *lfast.Unary:
@@ -72,8 +83,10 @@ func (c *lfCompiler) compile(e lfast.Expr) error {
 	case *lfast.ErrorExpr:
 		return fmt.Errorf("lynxflow.Compile: error node in AST: %s", n.Message)
 	case *lfast.Lambda:
-		// Lambdas beyond literal/index come in a later PR.
-		return fmt.Errorf("lynxflow.Compile: lambda expressions are not yet supported")
+		// Lambdas are compiled only when used as arguments to higher-order
+		// functions (any, all, filter, map). A bare lambda in expression
+		// position is a compile-time error.
+		return fmt.Errorf("lynxflow.Compile: lambda expressions are only valid as arguments to higher-order functions (any, all, filter, map)")
 	default:
 		return fmt.Errorf("lynxflow.Compile: unsupported expression type: %T", e)
 	}
@@ -348,7 +361,22 @@ func (c *lfCompiler) compileCoalesce(b *lfast.Binary) error {
 // and emit OpLoadPath (flat-column first, then object walk, no _raw fallback).
 // If rooted at a non-Ident (e.g. f(x).b), evaluate then OpMember.
 func (c *lfCompiler) compileMember(m *lfast.Member) error {
+	// Check if the member chain root is a lambda parameter. If so, we
+	// must evaluate the root via OpLoadLambdaParam and then walk with OpMember.
 	if parts, ok := collectIdentMemberPath(m); ok {
+		rootName := parts[0]
+		if _, isLambdaParam := c.lambdaParamDepth(rootName); isLambdaParam {
+			// Lambda param root: load param, then chain OpMember for each part.
+			if err := c.compile(&lfast.Ident{Name: rootName}); err != nil {
+				return err
+			}
+			for _, part := range parts[1:] {
+				keyIdx := c.prog.AddConstant(event.StringValue(part))
+				c.prog.EmitOp(OpMember, keyIdx)
+			}
+			return nil
+		}
+		// Normal field path: flat-column first, then object walk.
 		path := strings.Join(parts, ".")
 		idx := c.prog.AddConstant(event.StringValue(path))
 		c.prog.EmitOp(OpLoadPath, idx)
@@ -485,25 +513,35 @@ func (c *lfCompiler) compileObject(obj *lfast.Object) error {
 // The old OpInList uses 2VL equality; we need strict semantics.
 func (c *lfCompiler) compileIn(in *lfast.In) error {
 	arr, isArray := in.RHS.(*lfast.Array)
-	if !isArray {
-		return fmt.Errorf("lynxflow.Compile: 'in' with non-array RHS is not yet supported; use a literal array")
-	}
-
-	if len(arr.Elems) == 0 {
-		c.prog.EmitOp(OpConstFalse)
+	if isArray {
+		// Literal array: compile to inline OpInStrict with counted elements.
+		if len(arr.Elems) == 0 {
+			c.prog.EmitOp(OpConstFalse)
+			return nil
+		}
+		if err := c.compile(in.LHS); err != nil {
+			return err
+		}
+		for _, elem := range arr.Elems {
+			if err := c.compile(elem); err != nil {
+				return err
+			}
+		}
+		c.prog.EmitOp(OpInStrict, len(arr.Elems))
 		return nil
 	}
 
-	// Compile LHS, then all list elements, then OpInStrict.
+	// Non-array RHS (e.g. `x in field` where field is an array Value at runtime):
+	// compile both sides, then use OpInStrict with count=0 which signals
+	// "RHS is a runtime array on the stack".
 	if err := c.compile(in.LHS); err != nil {
 		return err
 	}
-	for _, elem := range arr.Elems {
-		if err := c.compile(elem); err != nil {
-			return err
-		}
+	if err := c.compile(in.RHS); err != nil {
+		return err
 	}
-	c.prog.EmitOp(OpInStrict, len(arr.Elems))
+	// Use count=0 as sentinel: OpInStrict with 0 items means "pop container (array), pop value, check membership"
+	c.prog.EmitOp(OpInStrict, 0)
 	return nil
 }
 
@@ -756,6 +794,63 @@ func min3(a, b, c int) int {
 		return b
 	}
 	return c
+}
+
+// lambdaParamDepth returns the depth of a lambda parameter name in the current
+// scope, where 0 = innermost (last element of lambdaParams). Returns (depth, false)
+// if the name is not a lambda parameter.
+func (c *lfCompiler) lambdaParamDepth(name string) (int, bool) {
+	for i := len(c.lambdaParams) - 1; i >= 0; i-- {
+		if c.lambdaParams[i] == name {
+			return len(c.lambdaParams) - 1 - i, true
+		}
+	}
+	return 0, false
+}
+
+// compileLambdaBody compiles a lambda body expression into a sub-program.
+// The lambda parameter is pushed onto the lambdaParams scope. The sub-program
+// shares the parent's constant/field/regex pools (it writes to the same Program).
+// Returns the sub-program index.
+func (c *lfCompiler) compileLambdaBody(lambda *lfast.Lambda) (int, error) {
+	// Save the parent instruction stream
+	parentInstructions := c.prog.Instructions
+
+	// Create a sub-program instruction stream
+	c.prog.Instructions = nil
+
+	// Push lambda param into scope
+	c.lambdaParams = append(c.lambdaParams, lambda.Param)
+
+	// Compile the body
+	err := c.compile(lambda.Body)
+
+	// Pop lambda param
+	c.lambdaParams = c.lambdaParams[:len(c.lambdaParams)-1]
+
+	if err != nil {
+		c.prog.Instructions = parentInstructions
+		return 0, err
+	}
+
+	// Emit return in the sub-program
+	c.prog.EmitOp(OpReturn)
+
+	// Capture the sub-program instructions
+	subInstructions := c.prog.Instructions
+
+	// Restore parent instructions
+	c.prog.Instructions = parentInstructions
+
+	// Create the sub-program. It only carries its own instructions.
+	// Pool lookups (Constants, FieldNames, RegexPatterns, CIDRNets, SubPrograms)
+	// are resolved against the ROOT program at execution time, since all pool
+	// writes during compilation go to c.prog (the root).
+	sub := &Program{
+		Instructions: subInstructions,
+	}
+	idx := c.prog.AddSubProgram(sub)
+	return idx, nil
 }
 
 // Ensure we reference all needed imports.

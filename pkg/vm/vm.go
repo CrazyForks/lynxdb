@@ -67,6 +67,13 @@ type VM struct {
 
 	predicateCtx *PredicateContext
 
+	// lambdaParams is a stack of lambda parameter values, used during
+	// OpArrayAny/All/Filter/Map execution. The last element is the current
+	// (innermost) lambda parameter. Nested lambdas push additional values.
+	// OpLoadLambdaParam reads from this stack by depth: 0 = current (last),
+	// 1 = enclosing, etc.
+	lambdaParams []event.Value
+
 	// Warnings tracks RFC-002 runtime warning counters (incompatible
 	// comparisons, not-on-non-bool, etc.). Nil for SPL2 programs; set
 	// explicitly by the caller when running LynxFlow programs.
@@ -1553,11 +1560,32 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			}
 			count := int(operand)
 			ip += 2
-			val := vm.stack[vm.sp-count-1]
-			items := make([]event.Value, count)
-			copy(items, vm.stack[vm.sp-count:vm.sp])
-			vm.sp -= count
-			vm.stack[vm.sp-1] = inStrict(val, items, vm.Warnings)
+			if count == 0 {
+				// Sentinel: RHS is a runtime value (expected to be an array).
+				// Stack: [..., val, container]
+				container := vm.stack[vm.sp-1]
+				val := vm.stack[vm.sp-2]
+				vm.sp--
+				if container.IsNull() {
+					vm.stack[vm.sp-1] = event.NullValue()
+				} else if container.Type() == event.FieldTypeArray {
+					vm.stack[vm.sp-1] = inStrict(val, container.AsArray(), vm.Warnings)
+				} else {
+					// Non-array container: treat as single-element check
+					eq, isNull := strictEq(val, container, vm.Warnings)
+					if isNull {
+						vm.stack[vm.sp-1] = event.NullValue()
+					} else {
+						vm.stack[vm.sp-1] = event.BoolValue(eq)
+					}
+				}
+			} else {
+				val := vm.stack[vm.sp-count-1]
+				items := make([]event.Value, count)
+				copy(items, vm.stack[vm.sp-count:vm.sp])
+				vm.sp -= count
+				vm.stack[vm.sp-1] = inStrict(val, items, vm.Warnings)
+			}
 
 		// --- RFC-002 function opcodes ---
 
@@ -1627,6 +1655,153 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 				Value: "<null>",
 				Type:  "null",
 			}
+
+		// --- RFC-002 b2 lambda + array/object opcodes ---
+
+		case OpLoadLambdaParam:
+			if vm.sp >= StackSize {
+				return event.NullValue(), ErrStackOverflow
+			}
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			depth := int(operand)
+			ip += 2
+			paramIdx := len(vm.lambdaParams) - 1 - depth
+			if paramIdx < 0 || paramIdx >= len(vm.lambdaParams) {
+				return event.NullValue(), fmt.Errorf("%w: lambda param depth %d out of range (stack size %d)", ErrInvalidBytecode, depth, len(vm.lambdaParams))
+			}
+			vm.stack[vm.sp] = vm.lambdaParams[paramIdx]
+			vm.sp++
+
+		case OpArrayAny:
+			subIdx, opErr := readIndexSafe(ins, ip, len(prog.SubPrograms), "sub-program")
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			arr := vm.stack[vm.sp-1]
+			vm.sp--
+			result, execErr := vm.execArrayAny(prog, subIdx, arr, fields)
+			if execErr != nil {
+				return event.NullValue(), execErr
+			}
+			if vm.sp >= StackSize {
+				return event.NullValue(), ErrStackOverflow
+			}
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpArrayAll:
+			subIdx, opErr := readIndexSafe(ins, ip, len(prog.SubPrograms), "sub-program")
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			arr := vm.stack[vm.sp-1]
+			vm.sp--
+			result, execErr := vm.execArrayAll(prog, subIdx, arr, fields)
+			if execErr != nil {
+				return event.NullValue(), execErr
+			}
+			if vm.sp >= StackSize {
+				return event.NullValue(), ErrStackOverflow
+			}
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpArrayFilter:
+			subIdx, opErr := readIndexSafe(ins, ip, len(prog.SubPrograms), "sub-program")
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			arr := vm.stack[vm.sp-1]
+			vm.sp--
+			result, execErr := vm.execArrayFilter(prog, subIdx, arr, fields)
+			if execErr != nil {
+				return event.NullValue(), execErr
+			}
+			if vm.sp >= StackSize {
+				return event.NullValue(), ErrStackOverflow
+			}
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpArrayMap:
+			subIdx, opErr := readIndexSafe(ins, ip, len(prog.SubPrograms), "sub-program")
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			arr := vm.stack[vm.sp-1]
+			vm.sp--
+			result, execErr := vm.execArrayMap(prog, subIdx, arr, fields)
+			if execErr != nil {
+				return event.NullValue(), execErr
+			}
+			if vm.sp >= StackSize {
+				return event.NullValue(), ErrStackOverflow
+			}
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpSlice:
+			vm.execSlice()
+
+		case OpArrayConcat:
+			operand, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			count := int(operand)
+			ip += 2
+			vm.execArrayConcat(count)
+
+		case OpArrayDistinct:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayDistinct(a)
+
+		case OpArraySort:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArraySort(a)
+
+		case OpFlatten:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execFlatten(a)
+
+		case OpKeys:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execKeys(a)
+
+		case OpValues:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execValues(a)
+
+		case OpMerge:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execMerge(a, b)
+
+		case OpHasKey:
+			key := vm.stack[vm.sp-1]
+			obj := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execHasKey(obj, key)
+
+		case OpURLParse:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execURLParse(a)
+
+		case OpIPParseObj:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execIPParse(a)
+
+		case OpFromJSONNative:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execFromJSONNative(a)
 
 		case OpReturn:
 			if vm.sp > 0 {

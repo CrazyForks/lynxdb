@@ -1350,6 +1350,7 @@ func (p *parser) parseParseBody(s *ast.Stage) {
 			// kv(sep=..., assign=...)
 			payload.FormatArgs = append(payload.FormatArgs, p.parseParen())
 		}
+		p.checkParseFormatArgs(payload)
 	}
 
 	// Parse options: from, into, prefix, on_error
@@ -2368,4 +2369,38 @@ func stageSignature(op registry.Operator) string {
 		}
 	}
 	return sb.String()
+}
+
+// checkParseFormatArgs validates per-format argument shapes (RFC-002 §7.1):
+// regex and pattern take exactly one string pattern, kv takes parenthesized
+// options, all other formats take no arguments.
+func (p *parser) checkParseFormatArgs(payload *ast.ParsePayload) {
+	diag := func(msg, suggestion string) {
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    msg,
+			Span:       payload.FormatPos,
+			Suggestion: suggestion,
+		})
+	}
+	isStringLit := func(e ast.Expr) bool {
+		l, ok := e.(*ast.Literal)
+		return ok && (l.Kind == ast.LitString || l.Kind == ast.LitRawString)
+	}
+	switch payload.Format {
+	case "regex":
+		if len(payload.FormatArgs) != 1 || !isStringLit(payload.FormatArgs[0]) {
+			diag("parse regex requires a pattern", `parse regex r"user=(?<user>\w+)"`)
+		}
+	case "pattern":
+		if len(payload.FormatArgs) != 1 || !isStringLit(payload.FormatArgs[0]) {
+			diag("parse pattern requires a pattern string", `parse pattern "<ip> - <user>"`)
+		}
+	case "kv":
+		// kv accepts optional parenthesized options; anything parsed is fine.
+	default:
+		if len(payload.FormatArgs) > 0 {
+			diag(fmt.Sprintf("parse %s takes no arguments", payload.Format), "parse "+payload.Format)
+		}
+	}
 }

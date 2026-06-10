@@ -184,6 +184,14 @@ func (p *parser) parseFromStage() ast.FromStage {
 
 	// Parse source atoms: names, globs, !-excludes, *, $cte refs.
 	from.Sources = p.parseSourceList()
+	if len(from.Sources) == 0 {
+		p.diags = append(p.diags, Diag{
+			Code:       "E015",
+			Message:    "expected a source name after 'from'",
+			Span:       ast.Span{Start: start, End: p.cur.End},
+			Suggestion: "write from <source>, from <glob*>, from *, or from $cte",
+		})
+	}
 
 	// Parse optional bracket time ranges.
 	for p.at(lexer.LBracket) {

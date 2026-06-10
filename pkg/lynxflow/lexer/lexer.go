@@ -476,6 +476,10 @@ func (l *Lexer) lexBacktickIdent() Token {
 	for l.pos < len(l.src) {
 		if l.src[l.pos] == '`' {
 			l.pos++
+			if l.pos-start == 2 {
+				return Token{Kind: Error, Start: start, End: l.pos,
+					Text: "empty backtick-quoted identifier"}
+			}
 			return Token{Kind: BacktickIdent, Start: start, End: l.pos, Text: l.src[start:l.pos]}
 		}
 		l.pos++

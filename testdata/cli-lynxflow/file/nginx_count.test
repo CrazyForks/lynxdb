@@ -1,0 +1,5 @@
+# file: nginx_access.log
+# format: json
+# language: lynxflow
+from main
+| stats count()

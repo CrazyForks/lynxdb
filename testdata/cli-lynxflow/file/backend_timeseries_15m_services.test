@@ -1,0 +1,7 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| extend bucket = bin(timestamp, 15m)
+| stats count(), dc(service) as services by bucket
+| sort bucket

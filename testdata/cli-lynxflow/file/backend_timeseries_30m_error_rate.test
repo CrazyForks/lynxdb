@@ -1,0 +1,8 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| extend bucket = bin(timestamp, 30m)
+| stats count() as total, count(where level == "ERROR") as errors by bucket
+| extend error_pct = round((float("errors*100") / total), 1)
+| sort bucket

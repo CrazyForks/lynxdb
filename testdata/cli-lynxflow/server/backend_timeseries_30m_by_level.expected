@@ -1,3 +1,10 @@
-{"bucket":1800000000000,"count()":5,"level":"ERROR"}
-{"bucket":1800000000000,"count()":15,"level":"INFO"}
-{"bucket":1800000000000,"count()":6,"level":"WARN"}
+{"bucket":"2026-02-10T08:00:00Z","count()":2,"level":"ERROR"}
+{"bucket":"2026-02-10T08:00:00Z","count()":3,"level":"INFO"}
+{"bucket":"2026-02-10T08:30:00Z","count()":3,"level":"INFO"}
+{"bucket":"2026-02-10T08:30:00Z","count()":3,"level":"WARN"}
+{"bucket":"2026-02-10T09:00:00Z","count()":3,"level":"ERROR"}
+{"bucket":"2026-02-10T09:00:00Z","count()":2,"level":"INFO"}
+{"bucket":"2026-02-10T09:00:00Z","count()":3,"level":"WARN"}
+{"bucket":"2026-02-10T09:30:00Z","count()":2,"level":"INFO"}
+{"bucket":"2026-02-10T10:00:00Z","count()":3,"level":"INFO"}
+{"bucket":"2026-02-10T10:30:00Z","count()":2,"level":"INFO"}

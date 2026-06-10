@@ -1,117 +1,91 @@
-# Skipped LynxFlow Transcripts
+# Skipped Transcripts
 
-Total: 51 of 187 transcripts not included in the LynxFlow dual suite.
+Total skipped: 40
 
-## Translation refused -- unsupported commands (31)
+## already a lynxflow test (5)
 
-### unsupported command: streamstats (6)
+- `backend_lynxflow_chain`: already a lynxflow test
+- `backend_lynxflow_enrich_outlier`: already a lynxflow test
+- `backend_lynxflow_group`: already a lynxflow test
+- `backend_lynxflow_keep_omit`: already a lynxflow test
+- `backend_lynxflow_let`: already a lynxflow test
 
-- `backend_streamstats`: order-dependent running aggregate
-- `backend_streamstats_by_service`: order-dependent running aggregate
-- `backend_streamstats_cumulative`: order-dependent running aggregate
-- `backend_streamstats_rolling`: order-dependent running aggregate
-- `backend_streamstats_sorted_tail`: order-dependent running aggregate
-- `backend_streamstats_window`: order-dependent running aggregate
+## error test (non-zero exit code) (2)
 
-### unsupported command: multisearch (5)
+- `error_bad_query`: error test (non-zero exit code)
+- `error_nonexistent_file`: error test (non-zero exit code)
 
-- `backend_multisearch_mixed`: use union in LynxFlow
-- `backend_multisearch_union`: use union in LynxFlow
-- `cross_multisearch_summary`: use union in LynxFlow
-- `multisearch_cross_agg`: use union in LynxFlow
-- `multisearch_cross_index`: use union in LynxFlow
+## skip: glimpse output is non-deterministic due to sampling (2)
 
-### unsupported command: transaction (3)
+- `backend_glimpse`: skip: glimpse output is non-deterministic due to sampling
+- `backend_glimpse`: skip: glimpse output is non-deterministic due to sampling
 
-- `backend_transaction_maxspan`: cross-event session state
-- `backend_transaction_user` (file): cross-event session state
-- `backend_transaction_user` (server): cross-event session state
+## translation error (1)
 
-### unsupported command: outliers (3)
+- `backend_where_like`: translate.SPL2ToLynxFlow: output failed LynxFlow validation: unknown stage "like" (generated: from main
+| where path like "/api/v2/users%"
+| stats count())
 
-- `backend_outliers_iqr` (file): unsupported command
-- `backend_outliers_zscore`: unsupported command
-- `backend_outliers_iqr` (server): unsupported command
+## unsupported command: *spl2.CompareCommand (2)
 
-### unsupported command: append (2)
+- `backend_compare_shift`: translate.SPL2ToLynxFlow: unsupported command: *spl2.CompareCommand
+- `backend_compare_shift`: translate.SPL2ToLynxFlow: unsupported command: *spl2.CompareCommand
 
-- `backend_append_error_warn`: use union in LynxFlow
-- `cross_append_errors`: use union in LynxFlow
+## unsupported command: *spl2.CorrelateCommand (2)
 
-### unsupported command: compare (2)
+- `backend_correlate_pearson`: translate.SPL2ToLynxFlow: unsupported command: *spl2.CorrelateCommand
+- `backend_correlate_pearson`: translate.SPL2ToLynxFlow: unsupported command: *spl2.CorrelateCommand
 
-- `backend_compare_shift` (file): unsupported command
-- `backend_compare_shift` (server): unsupported command
+## unsupported command: *spl2.OutliersCommand (3)
 
-### unsupported command: correlate (2)
+- `backend_outliers_iqr`: translate.SPL2ToLynxFlow: unsupported command: *spl2.OutliersCommand
+- `backend_outliers_zscore`: translate.SPL2ToLynxFlow: unsupported command: *spl2.OutliersCommand
+- `backend_outliers_iqr`: translate.SPL2ToLynxFlow: unsupported command: *spl2.OutliersCommand
 
-- `backend_correlate_pearson` (file): unsupported command
-- `backend_correlate_pearson` (server): unsupported command
+## unsupported command: *spl2.PatternsCommand (2)
 
-### unsupported command: patterns (2)
+- `backend_patterns_message`: translate.SPL2ToLynxFlow: unsupported command: *spl2.PatternsCommand
+- `backend_patterns_message`: translate.SPL2ToLynxFlow: unsupported command: *spl2.PatternsCommand
 
-- `backend_patterns_message` (file): unsupported command
-- `backend_patterns_message` (server): unsupported command
+## unsupported command: *spl2.RollupCommand (2)
 
-### unsupported command: rollup (2)
+- `backend_rollup_multi`: translate.SPL2ToLynxFlow: unsupported command: *spl2.RollupCommand
+- `backend_rollup_multi`: translate.SPL2ToLynxFlow: unsupported command: *spl2.RollupCommand
 
-- `backend_rollup_multi` (file): unsupported command
-- `backend_rollup_multi` (server): unsupported command
+## unsupported command: *spl2.SelectCommand (1)
 
-### unsupported command: sessionize (2)
+- `backend_eventstats_pct`: translate.SPL2ToLynxFlow: unsupported command: *spl2.SelectCommand
 
-- `backend_sessionize_user` (file): unsupported command
-- `backend_sessionize_user` (server): unsupported command
+## unsupported command: *spl2.SessionizeCommand (2)
 
-### unsupported command: select (1)
+- `backend_sessionize_user`: translate.SPL2ToLynxFlow: unsupported command: *spl2.SessionizeCommand
+- `backend_sessionize_user`: translate.SPL2ToLynxFlow: unsupported command: *spl2.SessionizeCommand
 
-- `backend_eventstats_pct`: unsupported command
+## unsupported command: append (2)
 
-### translation validation failure (1)
+- `backend_append_error_warn`: translate.SPL2ToLynxFlow: unsupported command: append (use union in LynxFlow)
+- `cross_append_errors`: translate.SPL2ToLynxFlow: unsupported command: append (use union in LynxFlow)
 
-- `backend_where_like`: generated `where like(...)` which LynxFlow parser rejects as unknown stage
+## unsupported command: multisearch (5)
 
-## Already LynxFlow tests (5)
+- `backend_multisearch_mixed`: translate.SPL2ToLynxFlow: unsupported command: multisearch (use union in LynxFlow)
+- `backend_multisearch_union`: translate.SPL2ToLynxFlow: unsupported command: multisearch (use union in LynxFlow)
+- `cross_multisearch_summary`: translate.SPL2ToLynxFlow: unsupported command: multisearch (use union in LynxFlow)
+- `multisearch_cross_agg`: translate.SPL2ToLynxFlow: unsupported command: multisearch (use union in LynxFlow)
+- `multisearch_cross_index`: translate.SPL2ToLynxFlow: unsupported command: multisearch (use union in LynxFlow)
 
-- `backend_lynxflow_chain`
-- `backend_lynxflow_enrich_outlier`
-- `backend_lynxflow_group`
-- `backend_lynxflow_keep_omit`
-- `backend_lynxflow_let`
+## unsupported command: streamstats (6)
 
-## Error tests (2)
+- `backend_streamstats_by_service`: translate.SPL2ToLynxFlow: unsupported command: streamstats (order-dependent running aggregate)
+- `backend_streamstats_cumulative`: translate.SPL2ToLynxFlow: unsupported command: streamstats (order-dependent running aggregate)
+- `backend_streamstats_sorted_tail`: translate.SPL2ToLynxFlow: unsupported command: streamstats (order-dependent running aggregate)
+- `backend_streamstats_window`: translate.SPL2ToLynxFlow: unsupported command: streamstats (order-dependent running aggregate)
+- `backend_streamstats`: translate.SPL2ToLynxFlow: unsupported command: streamstats (order-dependent running aggregate)
+- `backend_streamstats_rolling`: translate.SPL2ToLynxFlow: unsupported command: streamstats (order-dependent running aggregate)
 
-- `error_bad_query`: tests SPL2 error path
-- `error_nonexistent_file`: tests file-not-found path
+## unsupported command: transaction (3)
 
-## Non-deterministic output (2)
+- `backend_transaction_maxspan`: translate.SPL2ToLynxFlow: unsupported command: transaction (cross-event session state)
+- `backend_transaction_user`: translate.SPL2ToLynxFlow: unsupported command: transaction (cross-event session state)
+- `backend_transaction_user`: translate.SPL2ToLynxFlow: unsupported command: transaction (cross-event session state)
 
-- `backend_glimpse` (file): glimpse output is non-deterministic due to sampling
-- `backend_glimpse` (server): glimpse output is non-deterministic due to sampling
-
-## Runtime failures -- LynxFlow execution errors (3)
-
-- `nginx_count`: parse combined(_raw) auto-injection fails in LynxFlow parser
-- `nginx_search_401`: parse combined(_raw) auto-injection fails in LynxFlow parser
-- `nginx_search_500`: parse combined(_raw) auto-injection fails in LynxFlow parser
-
-## Empty-result guard -- bugs (8)
-
-These transcripts translated successfully but produce fewer rows than the SPL2
-golden. Excluded to avoid recording incorrect goldens. These are bugs in the
-LynxFlow execution engine or translator.
-
-### bin() returns nanoseconds instead of ISO timestamps (7)
-
-Timechart/bin translations produce a single bucket with nanosecond values
-instead of multiple ISO-formatted time buckets.
-
-- `backend_timeseries_15m_services` (file): spl2=12 rows, lf=1 row
-- `backend_timeseries_30m_avg_duration` (file): spl2=6 rows, lf=1 row
-- `backend_timeseries_30m_count` (file+server): spl2=6 rows, lf=1 row
-- `backend_timeseries_30m_error_rate` (file): spl2=6 rows, lf=1 row
-- `backend_timeseries_30m_pivot` (file+server): spl2=6 rows, lf=1 row
-
-### CTE conditional eval produces empty string instead of expected values (1)
-
-- `access_cte_error_50x` (file): spl2=2 rows with is_50x="yes"/"no", lf=1 row with is_50x=""

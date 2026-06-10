@@ -1,5 +1,5 @@
+# unordered: true
 # file: backend_server.log
-# skip: lynxflow output row order is non-deterministic for this query
 # format: json
 # language: lynxflow
 from main

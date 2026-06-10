@@ -1,0 +1,6 @@
+# format: json
+# language: lynxflow
+from backend
+| extend bucket = bin(timestamp, 30m)
+| stats count() by bucket
+| sort bucket

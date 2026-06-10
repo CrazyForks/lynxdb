@@ -1,0 +1,7 @@
+# file: backend_server.log
+# format: json
+# language: lynxflow
+from main
+| extend bucket = bin(timestamp, 30m)
+| stats avg(duration_ms) as avg_dur by bucket
+| sort bucket

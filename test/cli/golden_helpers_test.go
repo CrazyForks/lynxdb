@@ -28,6 +28,7 @@ type goldenTest struct {
 	Skip           string // skip reason (empty = don't skip)
 	StderrContains string // substring that must appear in stderr
 	Language       string // query language override: "lynxflow", "spl2", or "" (auto-detect)
+	Unordered      bool   // sort output lines before comparing (hash-ordered aggregate output)
 	Query          string // SPL2 query (everything after headers)
 }
 
@@ -72,6 +73,8 @@ func parseTestFile(t *testing.T, path string) goldenTest {
 					tc.Format = v
 				case "exit":
 					tc.ExitCode = v
+				case "unordered":
+					tc.Unordered = v == "true"
 				case "skip":
 					tc.Skip = v
 				case "stderr-contains":
@@ -286,6 +289,9 @@ func assertGolden(t *testing.T, tc goldenTest, result Result) {
 	default:
 		actual = normalizeText(result.Stdout)
 	}
+	if tc.Unordered {
+		actual = sortLines(actual)
+	}
 
 	if *update {
 		if err := os.WriteFile(tc.ExpectedPath, []byte(actual), 0644); err != nil {
@@ -309,6 +315,9 @@ func assertGolden(t *testing.T, tc goldenTest, result Result) {
 		expected = normalizeNDJSON(string(expectedData))
 	default:
 		expected = normalizeText(string(expectedData))
+	}
+	if tc.Unordered {
+		expected = sortLines(expected)
 	}
 
 	if actual != expected {
@@ -385,4 +394,13 @@ func diffStrings(expected, actual string) string {
 	}
 
 	return sb.String()
+}
+
+// sortLines sorts output lines for transcripts marked `# unordered: true`,
+// whose row order is hash-iteration dependent. Ordered transcripts (anything
+// with a sort stage) compare verbatim.
+func sortLines(s string) string {
+	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
+	sort.Strings(lines)
+	return strings.Join(lines, "\n") + "\n"
 }

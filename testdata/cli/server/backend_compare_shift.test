@@ -1,2 +1,3 @@
+# language: spl2
 # format: json
 FROM backend | compare previous -1h | head 5

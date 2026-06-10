@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **LynxFlow v2 query language** ([RFC-002](docs/grammar/RFC-002.md)): Clean-break language redesign replacing the SPL2 surface. One expression grammar with standard boolean precedence (AND before OR), typed values (int/float/string/bool/timestamp/duration/array/object/null/missing), and a registry-driven operator/function/aggregate catalog.
+  - **18 core operators**: `from`, `where`, `parse`, `extend`, `keep`, `drop`, `rename`, `stats`, `eventstats`, `streamstats`, `sort`, `head`, `tail`, `dedup`, `join`, `union`, `explode`, `describe`.
+  - **12 sugar operators** with mechanical desugaring (`--show-rewritten`): `top`, `rare`, `every`, `rate`, `latency`, `percentiles`, `proportion`, `facets`, `impact`, `baseline`, `changes`, `exemplars`.
+  - **13 helper operators**: `patterns`, `compare`, `outliers`, `sessionize`, `transaction`, `trace`, `topology`, `correlate`, `rollup`, `xyseries`, `materialize`, `tee`, `use`.
+  - **78 scalar functions** across 10 categories (conversion, conditional, string, search, regex, math, time, hash, network, array, object) with `name!` strict variants for fallible functions.
+  - **26 aggregate functions** including `perc(x, p)` and the `p50/p75/p90/p95/p99` alias family, plus 5 window-only functions (`lag`, `lead`, `row_number`, `running_sum`, `moving_avg`).
+  - **Unified `parse` stage** replacing 16 `unpack_*` commands: `parse json`, `parse logfmt`, `parse regex r"..."`, `parse first_of(json, logfmt)`, etc.
+  - **Conditional aggregates**: `count(where status >= 500)` replaces `count(eval(status>=500))`.
+  - **Array/object literals and lambdas**: `[1, 2, 3]`, `{key: value}`, `any(tags, t -> t.name == "vip")`.
+  - **Null/missing distinction**: `exists(f)` (non-null present), `is_null(f)` (explicit null), `is_missing(f)` (never extracted), `f ?? default` coalesce.
+  - **Registry-generated documentation**: `go run ./internal/docgen` generates operator pages, function/aggregate tables, and EBNF grammar from the single source of truth (`pkg/lynxflow/registry`). CI drift-guard test prevents stale docs.
+- **Dual-runtime migration path**: Both SPL2 and LynxFlow parsers are active. Query routing: explicit `language=lynxflow` or `language=spl2` always wins; ambiguous queries auto-detect and route to LynxFlow; killed SPL2 spellings (`mean`, `percentile95`, etc.) fall through to SPL2 for backward compatibility. Use `lynxdb mv migrate` to convert saved queries and materialized views.
+
+### Changed
+
+- **LLM cookbook** (`docs/grammar/llm-cookbook.md`): Rewritten for LynxFlow with updated system prompt, few-shot examples, error correction patterns, and SPL2-to-LynxFlow migration hints.
+- **EBNF grammar**: New `docs/grammar/lynxflow.ebnf` generated from registry; the old `docs/grammar/spl2.ebnf` is retained during the dual-runtime window.
+- **Docs site sidebar**: New "LynxFlow v2 Reference" section with registry-generated operator pages and function/aggregate tables. Old SPL2 pages moved to "Legacy SPL2" collapsed section.
+
+### Breaking Changes (LynxFlow vs SPL2)
+
+- **Expression grammar**: SEARCH precedence killed; standard boolean precedence everywhere (`and` before `or`).
+- **`==` for comparison, `=` for assignment**: `status == 500` not `status = 500` in expressions.
+- **`count()` requires parentheses**: `stats count()` not `stats count`.
+- **Renamed commands**: `eval` -> `extend`, `table`/`fields +/-` -> `keep`/`drop`, `rex` -> `parse regex`, `timechart` -> `every ... stats` or `stats ... by bin(_time, dur)`, `fillnull` -> `extend f = f ?? v`, `unpack_*` -> `parse <format>`.
+- **Killed commands**: `search` (mid-pipeline; use `where has(...)`), `chart`, `untable`, `reverse`, `appendcols`, `appendpipe`, `fieldformat`, `makemv`, `mvcombine`, `mvexpand`, `nomv`, `makeresults`, `addinfo`, `convert`, `fieldsummary`, `flatten`, `iplocation`, `lookup`, `regex` command, `replace` command, `tags`, `thru`, `timewrap`, `tstats`, `mstats`.
+- **Killed functions/aggregates**: `mean` (use `avg`), `percentile95`/`exactperc95`/`upperperc95`/`median` zoo (use `p95`/`perc(x, 95)`/`p50`), `tonumber`/`toint`/`todouble` (use `int`/`float`), `isnull`/`isnotnull` (use `is_null`/`exists`), `mv*` family (use native array functions), `json_*` string family (use `parse json` + object access).
+- **CTE syntax**: `$x = query;` -> `let $x = query;`.
+- **Comments**: `--` killed; use `//` or `/* */`.
+- **Quoted identifiers**: Single-quote identifiers killed; use backticks.
+- **F-strings**: Killed; use `printf` or string concatenation.
+
 ### Removed
 
 - **Dashboards**: Entire dashboards feature removed — REST API (`/api/v1/dashboards`), CLI (`lynxdb dashboards`), Go client library, persistent store, and Web UI views/components.

@@ -1,61 +1,48 @@
-# SPL2 LLM Cookbook
+# LynxFlow LLM Cookbook
 
-Prompt patterns and examples for translating natural language to LynxDB SPL2 queries.
+Prompt patterns and examples for translating natural language to LynxDB LynxFlow queries.
+
+LynxFlow is the v2 query language defined by [RFC-002](RFC-002.md). It replaces
+the SPL2 surface with a single expression grammar, typed values, and a
+registry-driven operator/function catalog. The 18 spec examples in RFC-002 S13
+are canonical; this cookbook adds NL-to-query patterns for LLM integrations.
 
 ---
 
 ## 1. System Prompt Template
 
-Use this system prompt for NL→SPL2 translation tasks:
+Use this system prompt for NL-to-LynxFlow translation tasks:
 
 ```
-You are an expert at translating natural language questions into LynxDB SPL2 queries.
+You are an expert at translating natural language questions into LynxDB LynxFlow queries.
 
 ## Rules
-- Output ONLY the SPL2 query. No explanation unless asked.
-- Use implicit FROM when querying the main index.
-- Prefer search for keyword matching, WHERE for expression filtering.
-- Use pipe (|) to chain commands. First pipe is optional.
-- Strings use double quotes. Numbers are bare.
-- Field names are unquoted identifiers.
-- Aggregations: count, sum, sumsq, avg, mean, min, max, dc, distinct_count,
-  values, list, mode, stdev, stdevp, var, varp, range, perc25, perc50,
-  perc75, perc90, perc95, perc99, p50..p99, percentile(field, n),
-  percentile25/50/75/90/95/99, exactperc25/50/75/90/95/99,
-  upperperc25/50/75/90/95/99, earliest, latest,
-  first, last, rate
-- Eval functions: if, case, validate, coalesce, null, nullif, in, searchmatch,
-  isnull, isnotnull, isnum, isnumeric, isint, isstr, isbool, isarray, isobject,
-  typeof, tonumber, toint, todouble, tostring, tobool, printf, ipmask, round,
-  ceil, ceiling, floor, abs, sqrt, ln, log, exp, pow, pi, random, len, lower,
-  upper, substr, match, like, ilike, cidrmatch, startswith, endswith, contains,
-  replace, split, trim, ltrim, rtrim, urldecode, strftime, strptime, mvappend,
-  mvjoin, mvdedup, mvcount, md5, sha1, sha256, sha512, json_extract, json_valid
-
-## Commands
-Filter:    search, where
-Aggregate: stats, chart, timechart, top, rare, eventstats, streamstats
-Transform: eval, rex, regex, replace, fieldformat, rename, table, fields, keep, omit, fillnull, bin, mvexpand, untable, makemv, mvcombine, nomv
-Generate:  makeresults
-Order:     sort, head, tail, reverse, take, dedup
-Join:      join, append, appendcols, appendpipe, union
-Session:   transaction, sessionize
-Explore:   glimpse, describe
-Advanced:  materialize, from (views), correlate, topology, tee
-Structured: unpack_json, unpack_logfmt, json, unroll, pack_json, parse, explode, pack
-Capability: addinfo, convert, fieldsummary, flatten, iplocation, tags, typer, thru, timewrap, tstats, mstats parse, then require deployment enablement at execution
-
-## Key syntax
-- Implicit search:  field=value field2=value2
-- Explicit search:  search "keyword"
-- WHERE:            | where expr
-- STATS:            | stats func(field) by group_field
-- EVAL:             | eval new_field = expr
-- TIMECHART:        | timechart func(field) span=5m
-- REX:              | rex field=_raw "(?P<name>pattern)"
-- JOIN:             | join type=inner field [$variable]
-- CTE:              $name = query; | from $name
-- Materialized view: query | materialize "name" retention=90d
+- Output ONLY the LynxFlow query. No explanation unless asked.
+- Pipelines start with `from <source>` (implicit `from main` when omitted).
+- Use `where <expr>` for filtering; `has(_raw, "term")` for full-text search.
+- Use pipe (|) to chain stages. Stages: from, where, parse, extend, keep, drop,
+  rename, stats, eventstats, streamstats, sort, head, tail, dedup, join, union,
+  explode, describe, top, rare, every, rate, latency, percentiles, proportion,
+  facets, impact, baseline, changes, exemplars, patterns, compare, outliers,
+  sessionize, transaction, trace, topology, correlate, rollup, xyseries,
+  materialize, tee, use.
+- `==` for comparison, `=` for assignment/options only.
+- Strings use double quotes. Raw-string regex: r"...".
+- count() requires parentheses. Conditional: count(where status >= 500).
+- Aggregation functions: count, sum, avg, min, max, dc, estdc, perc, p50, p75,
+  p90, p95, p99, stdev, var, mode, first, last, earliest, latest, values, list,
+  rate, per_second.
+- Scalar functions: if, case, coalesce, nullif, exists, is_null, is_missing,
+  typeof, int, float, string, bool, timestamp, duration, len, lower, upper,
+  trim, substr, replace, split, join, starts_with, ends_with, printf, has,
+  contains, glob, matches, extract, abs, round, floor, ceil, sqrt, ln, log,
+  pow, bin, now, strftime, strptime, md5, sha256, cidr_match, from_json,
+  to_json, keys, values, merge, slice, filter, map, any, all.
+- `eval` is now `extend`; `table`/`fields` is now `keep`/`drop`.
+- `rex` is now `parse regex r"..."`.
+- `timechart` is now `every <dur> stats ...` or `stats ... by bin(_time, dur)`.
+- `fillnull` is now `extend f = f ?? default_value`.
+- CTEs use `let`: `let $x = <pipeline>;`.
 ```
 
 ---
@@ -66,23 +53,21 @@ Inject your field catalog into the prompt so the LLM generates valid field names
 
 ```
 ## Available Fields
-| Field         | Type     | Coverage | Example Values              |
-|---------------|----------|----------|-----------------------------|
-| _timestamp    | datetime | 100%     | 2026-03-23T14:30:00Z       |
-| _raw          | string   | 100%     | Full log line text          |
-| _source       | string   | 100%     | nginx, api-gw, redis        |
-| level         | string   | 100%     | INFO, WARN, ERROR, DEBUG    |
-| status        | integer  | 50%      | 200, 404, 500              |
-| duration_ms   | float    | 50%      | 0.1 to 30001.0             |
-| source        | string   | 100%     | nginx, api-gw, redis        |
-| host          | string   | 80%      | web-01, web-02, api-01     |
-| endpoint      | string   | 60%      | /api/users, /health         |
-| method        | string   | 40%      | GET, POST, PUT, DELETE      |
-| client_ip     | string   | 70%      | 192.168.1.1                |
-| user_id       | integer  | 30%      | 1 to 99999                 |
-| message       | string   | 95%      | Human-readable log message  |
-| error_type    | string   | 20%      | timeout, oom, panic         |
-| service       | string   | 85%      | auth, billing, gateway      |
+| Field         | Type      | Coverage | Example Values              |
+|---------------|-----------|----------|-----------------------------|
+| _time         | timestamp | 100%     | 2026-03-23T14:30:00Z       |
+| _raw          | string    | 100%     | Full log line text          |
+| _source       | string    | 100%     | nginx, api-gw, redis        |
+| level         | string    | 100%     | INFO, WARN, ERROR, DEBUG    |
+| status        | int       | 50%      | 200, 404, 500              |
+| duration_ms   | float     | 50%      | 0.1 to 30001.0             |
+| host          | string    | 80%      | web-01, web-02, api-01     |
+| endpoint      | string    | 60%      | /api/users, /health         |
+| method        | string    | 40%      | GET, POST, PUT, DELETE      |
+| client_ip     | string    | 70%      | 192.168.1.1                |
+| user_id       | int       | 30%      | 1 to 99999                 |
+| message       | string    | 95%      | Human-readable log message  |
+| service       | string    | 85%      | auth, billing, gateway      |
 ```
 
 ### Dynamic injection example
@@ -98,45 +83,69 @@ Inject your field catalog into the prompt so the LLM generates valid field names
 
 ## 3. Few-Shot Examples
 
-Include 5-10 examples covering common patterns:
+Include 5-10 examples covering common LynxFlow patterns:
 
 ```
 Q: Count errors by source
-A: level=error | stats count by source
+A: from main | where level == "error" | stats count() by _source
 
 Q: Average latency per endpoint over the last hour
-A: | stats avg(duration_ms) by endpoint
+A: from main[-1h] | stats avg(duration_ms) by endpoint
 
 Q: Show error rate over time in 5-minute buckets
-A: level=error | timechart count span=5m
+A: from main | where level == "error" | every 5m stats count()
 
 Q: Top 10 slowest endpoints
-A: | stats avg(duration_ms) as avg_dur by endpoint | sort -avg_dur | head 10
+A: from main | stats avg(duration_ms) as avg_dur by endpoint | sort -avg_dur | head 10
 
 Q: Find all 500 errors from nginx
-A: source=nginx status=500
+A: from nginx | where status == 500
 
 Q: Extract user agent and count requests
-A: | rex field=_raw "user_agent\":\"(?P<ua>[^\"]+)\"" | stats count by ua | sort -count
+A: from main | parse regex r"user_agent\":\"(?<ua>[^\"]+)\"" | stats count() by ua | sort -count
 
 Q: Compare error counts across services
-A: level=error | stats count by source | sort -count
+A: from main | where level == "error" | stats count() by _source | sort -count
 
 Q: Create a 5-minute error summary view
-A: level=error | stats count by source, time_bucket(timestamp, "5m") as bucket | materialize "mv_errors_5m" retention=90d
+A: from main | where level == "error" | stats count() by _source, bin(_time, 5m) | materialize "mv_errors_5m" retention=90d
 
 Q: Find IP addresses hitting the server most
-A: | stats count by client_ip | sort -count | head 20
+A: from main | stats count() by client_ip | sort -count | head 20
 
-Q: Show percentile latencies
-A: | stats perc50(duration_ms), perc90(duration_ms), perc95(duration_ms), perc99(duration_ms)
+Q: Show percentile latencies by endpoint
+A: from main | latency duration_ms every 5m by endpoint
+
+Q: What proportion of requests are errors per service?
+A: from main | proportion status >= 500 as error_rate by service
+
+Q: Show rolling baseline and anomalies for error rate
+A: from main | every 1h stats count() as errors | baseline errors window=24
+
+Q: Parse JSON logs and filter on nested fields
+A: from app | parse json | where user.role == "admin" and any(tags, t -> t.name == "vip")
+
+Q: Handle null fields with defaults
+A: from main | where exists(amount) | extend amount = amount ?? 0
+
+Q: Compare current hour to previous hour
+A: from nginx[-1h] | stats count() by host | compare previous 1h
+
+Q: Show field coverage and types
+A: from main | parse json | describe
+
+Q: Find session patterns
+A: from main | sessionize maxpause=30m by user_id
+
+Q: Auto-detect log format and parse
+A: from main | parse first_of(json, logfmt) | keep _time, service, status, duration_ms | sort -duration_ms | head 50
 ```
 
 ---
 
 ## 4. Error Correction Loop
 
-When the LLM generates invalid SPL2, use this correction pattern:
+When the LLM generates invalid LynxFlow, use this correction pattern:
 
 ### Step 1: Parse and validate
 
@@ -149,17 +158,14 @@ lynxdb query --explain '<generated_query>'
 ```
 The previous query had an error:
 
-  Error: unknown function "percent" at position 42
-  Hint: did you mean "percentile"?
+  Error: unknown command "eval" at position 12
+  Hint: did you mean "extend"?
 
-Available aggregation functions: count, sum, sumsq, avg, mean, min, max, dc, distinct_count, estdc, estdc_error,
-values, list, mode, stdev, stdevp, var, varp, range, first, last, earliest, latest,
-earliest_time, latest_time, per_second, per_minute, per_hour, per_day, rate,
-perc, percentile, exactperc, upperperc, perc25, perc50, perc75, perc90, perc95, perc99,
-percentile25, percentile50, percentile75, percentile90, percentile95, percentile99,
-exactperc25, exactperc50, exactperc75, exactperc90, exactperc95, exactperc99,
-upperperc25, upperperc50, upperperc75, upperperc90, upperperc95, upperperc99,
-p50, p75, p90, p95, p99
+Available stages: from, where, parse, extend, keep, drop, rename, stats,
+eventstats, streamstats, sort, head, tail, dedup, join, union, explode,
+describe, top, rare, every, rate, latency, percentiles, proportion, facets,
+impact, baseline, changes, exemplars, patterns, compare, outliers, sessionize,
+transaction, trace, topology, correlate, rollup, xyseries, materialize, tee, use.
 
 Please correct the query.
 ```
@@ -167,21 +173,28 @@ Please correct the query.
 ### Step 3: Retry prompt template
 
 ```
-Your previous SPL2 query was invalid:
+Your previous LynxFlow query was invalid:
 
   Query: {original_query}
   Error: {error_message}
   Suggestion: {hint_if_available}
 
-Common mistakes:
-- Use perc95(field), p95(field), or percentile(field, 95), not percentile(95)
-- Use dc() not distinct_count()
-- Use | not || for pipe
-- Field names are unquoted: source not "source"
-- String values are quoted: level="error" not level=error (for strings)
-- Numbers are unquoted: status=500 not status="500" (for numbers)
-- Use "as" not "AS" for aliases (though both work, lowercase is conventional)
-- Time spans: span=5m not span="5m"
+Common mistakes (SPL2 -> LynxFlow):
+- eval -> extend:          `| extend is_err = status >= 500`
+- table/fields -> keep/drop: `| keep host, status` or `| drop _raw`
+- rex -> parse regex:      `| parse regex r"user=(?<user>\w+)"`
+- timechart -> every:      `| every 5m stats count()`
+- fillnull -> extend+??: `| extend f = f ?? 0`
+- count without parens:    `count()` not `count`
+- = vs ==:                 `== ` for comparison, `=` for assignment/options
+- index=x:                 `from x` (not `index=x`)
+- search "term":           `where has(_raw, "term")`
+- isnotnull(f):            `exists(f)`
+- perc95(f):               `p95(f)` or `perc(f, 95)`
+- percentile95/exactperc95: killed; use `p95(f)` or `perc(f, 95)`
+- mean(f):                  killed; use `avg(f)`
+- dc/distinct_count:        use `dc(f)`
+- $x = query;:             `let $x = query;`
 
 Generate a corrected query:
 ```
@@ -190,7 +203,7 @@ Generate a corrected query:
 
 ```python
 def generate_and_correct(nl_query, max_retries=3):
-    system_prompt = SPL2_SYSTEM_PROMPT
+    system_prompt = LYNXFLOW_SYSTEM_PROMPT
     schema = load_field_catalog()
 
     for attempt in range(max_retries):
@@ -220,69 +233,78 @@ Please fix the query."""
 
 ### 5.1 Filter patterns
 
-| Natural language | SPL2 |
+| Natural language | LynxFlow |
 |---|---|
-| "show errors" | `level=error` |
-| "from nginx" | `source=nginx` |
-| "status 500" | `status=500` |
-| "slow requests" | `duration_ms>1000` |
-| "search for X" | `search "X"` |
-| "not debug" | `level!=debug` |
-| "errors from nginx" | `level=error source=nginx` |
-| "500 or 502 errors" | `status in (500, 502)` |
+| "show errors" | `from main \| where level == "error"` |
+| "from nginx" | `from nginx` |
+| "status 500" | `from main \| where status == 500` |
+| "slow requests" | `from main \| where duration_ms > 1000` |
+| "search for X" | `from main \| where has(_raw, "X")` |
+| "not debug" | `from main \| where level != "debug"` |
+| "errors from nginx" | `from nginx \| where level == "error"` |
+| "500 or 502 errors" | `from main \| where status in [500, 502]` |
 
 ### 5.2 Aggregation patterns
 
-| Natural language | SPL2 |
+| Natural language | LynxFlow |
 |---|---|
-| "count events" | `\| stats count` |
-| "count by source" | `\| stats count by source` |
+| "count events" | `\| stats count()` |
+| "count by source" | `\| stats count() by _source` |
 | "average latency" | `\| stats avg(duration_ms)` |
 | "max duration" | `\| stats max(duration_ms)` |
 | "unique users" | `\| stats dc(user_id)` |
-| "95th percentile" | `\| stats perc95(duration_ms)` |
+| "95th percentile" | `\| stats p95(duration_ms)` |
 | "top 10 URIs" | `\| top 10 uri` |
+| "error count only" | `\| stats count(where level == "error") as errors` |
 
 ### 5.3 Time series patterns
 
-| Natural language | SPL2 |
+| Natural language | LynxFlow |
 |---|---|
-| "errors per minute" | `level=error \| timechart count span=1m` |
-| "hourly rate" | `\| timechart count span=1h` |
-| "by service over time" | `\| timechart count by source span=5m` |
-| "daily aggregation" | `\| bin _time span=1d \| stats count by _time` |
+| "errors per minute" | `\| where level == "error" \| every 1m stats count()` |
+| "hourly rate" | `\| every 1h stats count()` |
+| "by service over time" | `\| every 5m by service stats count()` |
+| "daily aggregation" | `\| stats count() by bin(_time, 1d)` |
 
 ### 5.4 Transform patterns
 
-| Natural language | SPL2 |
+| Natural language | LynxFlow |
 |---|---|
-| "extract IP" | `\| rex field=_raw "(?P<ip>\\d+\\.\\d+\\.\\d+\\.\\d+)"` |
-| "add flag field" | `\| eval is_error=if(status>=500, true, false)` |
-| "rename column" | `\| rename status as http_status` |
-| "select columns" | `\| table _time, source, level, message` |
-| "fill missing values" | `\| fillnull value=0 duration_ms` |
+| "extract IP" | `\| parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"` |
+| "add flag field" | `\| extend is_error = status >= 500` |
+| "rename column" | `\| rename duration_ms as latency` |
+| "select columns" | `\| keep _time, _source, level, message` |
+| "fill missing values" | `\| extend duration_ms = duration_ms ?? 0` |
+| "parse JSON logs" | `\| parse json` |
+| "parse mixed formats" | `\| parse first_of(json, logfmt)` |
 
 ### 5.5 Advanced patterns
 
-| Natural language | SPL2 |
+| Natural language | LynxFlow |
 |---|---|
-| "join with user data" | `\| join type=left user_id [$users]` |
-| "group into sessions" | `\| transaction session_id maxspan=30m` |
+| "join with user data" | `\| join type=left on user_id with [from users]` |
+| "group into sessions" | `\| sessionize maxpause=30m by user_id` |
 | "create a view" | `\| materialize "name" retention=90d` |
-| "query a view" | `\| from view_name` |
 | "rolling average" | `\| streamstats window=10 avg(duration_ms)` |
-| "cumulative sum" | `\| streamstats sum(count) as total` |
+| "cumulative sum" | `\| streamstats running_sum(count) as total` |
+| "latency summary" | `\| latency duration_ms every 5m by endpoint` |
+| "error proportion" | `\| proportion status >= 500 as error_rate by service` |
+| "field distribution" | `\| facets service, host limit=5` |
+| "detect anomalies" | `\| baseline error_rate window=12 by service` |
+| "track changes" | `\| changes version by service` |
 
 ### 5.6 Edge cases to handle
 
-1. **Numeric vs string comparison**: `status=500` (numeric) vs `level="error"` (string)
-2. **Implicit AND in search**: `level=error source=nginx` (both must match)
-3. **Search precedence**: OR binds tighter than AND in search expressions
-4. **CTE references**: `$name` in FROM vs `$name` in JOIN subsearch
-5. **Span units**: `5m`, `1h`, `30s`, `1d`, `1w` — no quotes around span values
-6. **Function names**: `dc` not `distinct_count`, `perc95` not `percentile(95)`
-7. **AS keyword**: lowercase `as` preferred: `stats count as total`
-8. **Pipe optional**: First pipe is implicit: `level=error | stats count` == `| level=error | stats count`
+1. **`==` for comparison**: `status == 500` (never `status = 500` outside search sugar)
+2. **`=` for assignment/options**: `extend x = 1`, `type=inner`, `maxpause=30m`
+3. **count() requires parens**: `stats count()` not `stats count`
+4. **Conditional aggregates**: `count(where status >= 500)` not `count(eval(...))`
+5. **CTE syntax**: `let $name = pipeline;` then `from $name`
+6. **Duration units**: `5m`, `1h`, `30s`, `1d`, `1w` — no month/year
+7. **Standard boolean precedence**: `and` binds tighter than `or` (unlike SPL2 search)
+8. **Raw-string regex**: `r"pattern"` not `"pattern"` in parse regex
+9. **Null handling**: `exists(f)` for non-null check, `f ?? default` for coalesce
+10. **Array literals**: `[1, 2, 3]` not `(1, 2, 3)` for `in` expressions
 
 ---
 
@@ -290,20 +312,24 @@ Please fix the query."""
 
 For long prompts, prioritize:
 
-1. **System prompt** (~200 tokens): Always include
+1. **System prompt** (~250 tokens): Always include
 2. **Schema fields** (~50-200 tokens): Include top 15-20 fields by coverage
-3. **Few-shot examples** (~300-500 tokens): 5-8 examples covering key patterns
+3. **Few-shot examples** (~400-600 tokens): 5-10 examples covering key patterns
 4. **Error context** (~100 tokens): Only on retry
 
-Total budget: ~650-1000 tokens for the prompt, leaving room for query generation.
+Total budget: ~800-1150 tokens for the prompt, leaving room for query generation.
 
 ### Minimal prompt (for token-constrained models)
 
 ```
-Translate to SPL2. Rules: field=value for filter, | stats func(field) by group,
-| timechart func span=5m, | eval x=expr, | sort -field, | head N.
-Aggregations: count, sum, avg, min, max, dc, perc50-99.
-Eval: if, coalesce, match, lower, upper, round, substr.
+Translate to LynxFlow. Rules: from <src> starts pipeline, | where <expr> filters,
+| stats func() by group, | every 5m stats count(), | extend x = expr, | sort -f,
+| head N, | keep f1, f2, | drop f1, | parse json, | parse regex r"...",
+| join type=left on k with [...], let $cte = ...; from $cte.
+Aggregations: count(), sum, avg, min, max, dc, p50-p99, perc(x,p).
+Comparison: ==, !=, <, >, <=, >=, in [...], between x and y.
+Functions: if, case, coalesce, exists, has, contains, glob, matches, int, float,
+string, bin, now, len, lower, upper.
 No explanation. Query only.
 ```
 
@@ -311,13 +337,14 @@ No explanation. Query only.
 
 ## 7. Validation Checklist
 
-Before deploying an NL→SPL2 system:
+Before deploying an NL-to-LynxFlow system:
 
-- [ ] System prompt covers all commands your users need
+- [ ] System prompt covers all stages your users need
 - [ ] Schema includes fields with >10% coverage
 - [ ] Few-shot examples match your data domain
 - [ ] Error correction loop is wired up
-- [ ] Edge cases (numeric vs string, span units) are documented
+- [ ] Edge cases (`==` vs `=`, `count()` parens, duration units) are documented
 - [ ] Token budget fits your model's context window
 - [ ] Generated queries are validated with `lynxdb query --explain`
 - [ ] Output format is constrained (query only, no explanation)
+- [ ] SPL2 migration terms are in the correction prompt (eval->extend, etc.)

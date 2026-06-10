@@ -784,6 +784,20 @@ func (p *parser) parseStage() ast.Stage {
 
 	p.advance() // consume stage keyword
 
+	// Generic guard for the whole missing-argument class: if the registry
+	// declares required arguments and the stage body is already over, one
+	// diagnostic with the declared shape beats per-parser silence.
+	if op, ok := registry.LookupOperator(name); ok && stageRequiresArgs(op) && p.atStageBoundary() {
+		s := ast.Stage{Name: name, NamePos: nameSpan, Pos: ast.Span{Start: start, End: p.prev.End}, HasError: true}
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    fmt.Sprintf("%s requires arguments", name),
+			Span:       nameSpan,
+			Suggestion: stageSignature(op),
+		})
+		return s
+	}
+
 	// Dispatch to typed parsers.
 	stage := ast.Stage{Name: name, NamePos: nameSpan, Pos: ast.Span{Start: start}}
 
@@ -2309,4 +2323,49 @@ func (p *parser) checkParseFormat(name string, span ast.Span) {
 		Span:       span,
 		Suggestion: suggestion,
 	})
+}
+
+// stageRequiresArgs reports whether the operator declares any required
+// positional or option.
+func stageRequiresArgs(op registry.Operator) bool {
+	for _, pos := range op.Positionals {
+		if pos.Required {
+			return true
+		}
+	}
+	for _, o := range op.Options {
+		if o.Required {
+			return true
+		}
+	}
+	return false
+}
+
+// atStageBoundary reports whether the current token ends a stage body.
+func (p *parser) atStageBoundary() bool {
+	switch p.cur.Kind {
+	case lexer.Pipe, lexer.EOF, lexer.Semicolon, lexer.RBracket:
+		return true
+	}
+	return false
+}
+
+// stageSignature renders a one-line usage string from the registry shape.
+func stageSignature(op registry.Operator) string {
+	var sb strings.Builder
+	sb.WriteString(op.Name)
+	for _, pos := range op.Positionals {
+		sb.WriteByte(' ')
+		if !pos.Required {
+			sb.WriteString("[" + pos.Name + "]")
+		} else {
+			sb.WriteString("<" + pos.Name + ">")
+		}
+	}
+	for _, o := range op.Options {
+		if o.Required {
+			sb.WriteString(" " + o.Name + "=<" + string(o.Type) + ">")
+		}
+	}
+	return sb.String()
 }

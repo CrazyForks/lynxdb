@@ -489,15 +489,19 @@ func formatSourceAtom(b *strings.Builder, s *ast.SourceAtom) {
 	}
 }
 
-// needsQuoting reports whether a source name needs backtick quoting to survive
-// a round-trip through format-parse. Names with spaces, empty names, or names
-// that start with special characters need quoting.
+// needsQuoting reports whether a source name needs backtick quoting to
+// survive a round-trip through format-parse. Allowlist, not blocklist: only
+// names the parser reassembles as bare tokens (ident start, then ident chars
+// or dashes) may render unquoted; everything else gets backticks.
 func needsQuoting(name string) bool {
 	if name == "" {
-		return false // empty names don't benefit from quoting
+		return true
 	}
-	for _, c := range name {
-		if c == ' ' || c == '\t' || c == '\n' || c == '|' || c == ';' || c == '[' || c == ']' {
+	for i, c := range name {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c == '_':
+		case i > 0 && (c >= '0' && c <= '9' || c == '-'):
+		default:
 			return true
 		}
 	}

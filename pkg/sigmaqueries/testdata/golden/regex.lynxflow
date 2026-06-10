@@ -1,0 +1,1 @@
+from main | where matches(CommandLine, r".*whoami.*")

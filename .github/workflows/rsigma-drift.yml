@@ -36,6 +36,9 @@ jobs:
       - name: Generate rsigma corpus
         run: scripts/sync_rsigma_golden.sh --output-dir "$DRIFT_OUTPUT_DIR"
 
+      - name: Run LynxFlow conformance
+        run: go test -count=1 -run 'TestParseLynxFlowGoldens|TestLynxFlowConformance' -timeout 120s ./pkg/sigmaqueries/...
+
       - name: Diff generated corpus
         id: diff
         shell: bash

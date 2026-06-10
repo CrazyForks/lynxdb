@@ -1,0 +1,1 @@
+from main | where cidr_match("10.0.0.0/8", SourceIP)

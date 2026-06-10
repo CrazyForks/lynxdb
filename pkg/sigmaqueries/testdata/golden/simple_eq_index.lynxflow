@@ -1,0 +1,1 @@
+from security_logs | where CommandLine == "whoami"

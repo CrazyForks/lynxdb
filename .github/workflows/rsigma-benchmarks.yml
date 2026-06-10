@@ -24,6 +24,9 @@ jobs:
           install: true
           cache: true
 
+      - name: Run LynxFlow conformance
+        run: go test -count=1 -run 'TestParseLynxFlowGoldens|TestLynxFlowConformance' -timeout 120s ./pkg/sigmaqueries/...
+
       - name: Run benchmarks
         run: go test -run '^$' -bench='Benchmark(ParseGoldenCorpus|PlanGoldenCorpus|ExecuteRegexShape)$' -benchmem -count=5 ./pkg/sigmaqueries/... | tee rsigma-benchmarks.txt
 

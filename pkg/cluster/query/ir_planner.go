@@ -28,6 +28,8 @@ type IRDistributedPlan struct {
 	TopKSortFields []pipeline.SortField
 	// SplitIndex is the position in the linearized node list where the split occurs.
 	SplitIndex int
+	// JoinStrategy describes how a distributed join is executed (nil if no join).
+	JoinStrategy *JoinStrategy
 }
 
 // PlanDistributedQueryIR splits a logical plan into shard-level and
@@ -93,6 +95,15 @@ func PlanDistributedQueryIR(plan *logical.Plan) (*IRDistributedPlan, error) {
 	}
 
 	result.ShardQuery = renderShardQueryIR(plan, result.ShardNodes)
+
+	// Detect join strategy for observability and execution planning.
+	// Join nodes are always coordinator-side (isPushableIR returns false).
+	for _, cn := range result.CoordNodes {
+		if join, ok := cn.(*logical.Join); ok {
+			result.JoinStrategy = PlanDistributedJoin(join)
+			break // only one join per pipeline
+		}
+	}
 
 	return result, nil
 }

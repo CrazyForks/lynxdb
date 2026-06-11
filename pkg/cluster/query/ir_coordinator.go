@@ -14,41 +14,14 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/model"
 )
 
-// ExecuteQueryDual routes a query to the correct execution path based on
-// detected language. SPL2 queries use the existing ExecuteQuery path
-// (byte-identical behavior). LynxFlow queries use the new IR-based
-// split+render path.
-//
-// This method exists during the migration window where both languages coexist.
-// Once SPL2 is deleted, this collapses to ExecuteQueryIR only.
-func (c *Coordinator) ExecuteQueryDual(
-	ctx context.Context,
-	lang string,
-	spl2Prog *logical.Plan,
-	spl2Hints *model.QueryHints,
-	irPlan *logical.Plan,
-	irPushdown *logical.Pushdown,
-) (*DistributedQueryResult, error) {
-	switch lang {
-	case "spl2":
-		return c.ExecuteQuery(ctx, spl2Prog, spl2Hints)
-	case "lynxflow":
-		return c.ExecuteQueryIR(ctx, irPlan, irPushdown)
-	default:
-		// Default to SPL2 if both are available, LynxFlow otherwise.
-		if spl2Prog != nil {
-			return c.ExecuteQuery(ctx, spl2Prog, spl2Hints)
-		}
-		return c.ExecuteQueryIR(ctx, irPlan, irPushdown)
-	}
-}
-
 // ExecuteQueryIR plans, fans out, and merges a distributed query using the
-// logical IR. It mirrors ExecuteQuery but operates on logical.Plan.
+// logical IR. It accepts pre-resolved QueryHints (from the server-side
+// planner via hintsFromPlan) so that time bounds and source scope are
+// accurate for shard pruning — no lossy conversion needed.
 func (c *Coordinator) ExecuteQueryIR(
 	ctx context.Context,
 	plan *logical.Plan,
-	pushdown *logical.Pushdown,
+	hints *model.QueryHints,
 ) (*DistributedQueryResult, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "lynxdb.query.distributed.ir")
 	defer span.End()
@@ -63,8 +36,10 @@ func (c *Coordinator) ExecuteQueryIR(
 		return nil, fmt.Errorf("Coordinator.ExecuteQueryIR: plan: %w", err)
 	}
 
-	// 2. Find relevant shards using pushdown hints.
-	hints := pushdownToQueryHints(pushdown)
+	// 2. Find relevant shards using the pre-resolved hints.
+	if hints == nil {
+		hints = &model.QueryHints{}
+	}
 	targets, err := c.pruner.FindRelevantShards(ctx, hints)
 	if err != nil {
 		span.RecordError(err)
@@ -87,8 +62,6 @@ func (c *Coordinator) ExecuteQueryIR(
 	}
 
 	// 3. Build a DistributedPlan compatible with the existing fan-out methods.
-	// This reuses executePartialAgg/executeConcat which only need ShardQuery,
-	// Strategy, PartialAggSpec, TopK, and TopKSortFields.
 	compatPlan := &DistributedPlan{
 		ShardQuery:     irPlan.ShardQuery,
 		Strategy:       irPlan.Strategy,
@@ -117,25 +90,32 @@ func (c *Coordinator) ExecuteQueryIR(
 
 	scanMS := float64(time.Since(scanStart).Milliseconds())
 
-	// 4. Apply coordinator commands via the IR coord nodes.
-	// For now, if there are coord nodes, render them as LynxFlow text and
-	// execute via the SPL2 pipeline (the coord pipeline is small).
-	// TODO: When the physical builder is fully wired, build directly from
-	// IR nodes. For now, fall back to the SPL2 coord pipeline via text.
+	// 4. Apply coordinator commands via physical.Build on the IR coord nodes.
 	var mergeMS float64
 	if len(irPlan.CoordNodes) > 0 && len(rows) > 0 {
+		_, mergeSpan := tracing.Tracer().Start(ctx, "lynxdb.query.merge")
 		mergeStart := time.Now()
-		coordText := logical.RenderPipeline(irPlan.CoordNodes...)
-		if coordText != "" {
-			rows, err = applyCoordPipelineText(ctx, rows, coordText)
-			if err != nil {
-				return nil, fmt.Errorf("Coordinator.ExecuteQueryIR: coord pipeline: %w", err)
-			}
+
+		rows, err = applyCoordCommands(ctx, rows, irPlan.CoordNodes)
+		if err != nil {
+			mergeSpan.RecordError(err)
+			mergeSpan.SetStatus(codes.Error, "coord pipeline failed")
+			mergeSpan.End()
+			return nil, fmt.Errorf("Coordinator.ExecuteQueryIR: coord pipeline: %w", err)
 		}
+
 		mergeMS = float64(time.Since(mergeStart).Milliseconds())
+		mergeSpan.End()
 	}
 
 	meta.Partial = meta.ShardsFailed > 0 && meta.ShardsSuccess > 0
+
+	// Record join strategy for tracing when a join node is present.
+	if strategy := irPlan.JoinStrategy; strategy != nil {
+		span.SetAttributes(
+			attribute.String("lynxdb.query.join_strategy", strategy.Type),
+		)
+	}
 
 	span.SetAttributes(
 		attribute.Int(tracing.AttrShardsSuccess, meta.ShardsSuccess),
@@ -149,50 +129,4 @@ func (c *Coordinator) ExecuteQueryIR(
 		ScanMS:  scanMS,
 		MergeMS: mergeMS,
 	}, nil
-}
-
-// pushdownToQueryHints converts a logical.Pushdown to model.QueryHints for
-// the shard pruner. This bridges the IR and the existing pruner which still
-// reads model.QueryHints. When the pruner is ported to read logical.Pushdown
-// directly, this function is deleted.
-func pushdownToQueryHints(pd *logical.Pushdown) *model.QueryHints {
-	if pd == nil {
-		return &model.QueryHints{}
-	}
-
-	hints := &model.QueryHints{}
-
-	if pd.TimeBounds != nil {
-		hints.TimeBounds = &model.TimeBounds{}
-		// Time bounds in the logical IR store AST expressions (relative or
-		// absolute). The shard pruner needs resolved times. For now, leave
-		// them zero (unbounded) — the shard will re-resolve from the query
-		// text. This is correct but not optimal (extra shards scanned).
-		// TODO: Resolve time expressions here when the time resolver is
-		// available in the logical package.
-	}
-
-	hints.SearchTerms = pd.BloomTerms
-
-	return hints
-}
-
-// applyCoordPipelineText runs coordinator pipeline stages rendered as LynxFlow
-// text against the merged row set. It parses the text as SPL2 (since the coord
-// commands are simple stages like sort/head/dedup) and executes via the
-// existing pipeline builder.
-//
-// This is a temporary bridge. When pkg/logical/physical is wired into the
-// coordinator, this function is replaced by direct physical.Build from IR nodes.
-func applyCoordPipelineText(ctx context.Context, rows []map[string]event.Value, pipelineText string) ([]map[string]event.Value, error) {
-	// Try to parse as SPL2 first (coord commands like sort, head, dedup
-	// parse identically in both languages).
-	prog, err := func(s string) (*logical.Plan, error) { return nil, fmt.Errorf("not implemented") }(pipelineText)
-	if err != nil {
-		return rows, nil // If parse fails, return rows as-is.
-	}
-	if prog == nil || len([]logical.Node{prog.Root} /* RFC-002: Plan has no Commands */) == 0 {
-		return rows, nil
-	}
-	return applyCoordCommands(ctx, rows, []logical.Node{prog.Root} /* RFC-002: Plan has no Commands */)
 }

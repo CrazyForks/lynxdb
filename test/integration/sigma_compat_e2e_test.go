@@ -25,15 +25,15 @@ func TestSigmaCompatE2E(t *testing.T) {
 		query   string
 		index   string
 	}{
-		{"01_simple_eq", "simple_eq", "simple_eq.spl2", "main"},
-		{"02_and_or_not", "and_or_not", "and_or_not.spl2", "main"},
-		{"03_wildcards", "wildcards", "wildcards.spl2", "main"},
-		{"04_regex", "regex", "regex.spl2", "main"},
-		{"05_cidr", "cidr", "cidr.spl2", "main"},
-		{"06_keywords", "keywords", "keywords.spl2", "main"},
-		{"07_exists_null_bool", "exists_null_bool", "exists_null_bool.spl2", "main"},
-		{"08_numeric_compare", "numeric_compare", "numeric_compare.spl2", "main"},
-		{"09_brute_force", "brute_force", "brute_force.spl2", "main"},
+		{"01_simple_eq", "simple_eq", "simple_eq.lynxflow", "main"},
+		{"02_and_or_not", "and_or_not", "and_or_not.lynxflow", "main"},
+		{"03_wildcards", "wildcards", "wildcards.lynxflow", "main"},
+		{"04_regex", "regex", "regex.lynxflow", "main"},
+		{"05_cidr", "cidr", "cidr.lynxflow", "main"},
+		{"06_keywords", "keywords", "keywords.lynxflow", "main"},
+		{"07_exists_null_bool", "exists_null_bool", "exists_null_bool.lynxflow", "main"},
+		{"08_numeric_compare", "numeric_compare", "numeric_compare.lynxflow", "main"},
+		{"09_brute_force", "brute_force", "brute_force.lynxflow", "main"},
 	}
 
 	for _, tt := range tests {
@@ -53,14 +53,14 @@ func TestSigmaCompatE2E(t *testing.T) {
 			fixture := fixture
 			t.Run(fixture, func(t *testing.T) {
 				t.Parallel()
-				runFixtureQuery(t, fixture, fixture+"_minimal.spl2", "main")
+				runFixtureQuery(t, fixture, fixture+"_minimal.lynxflow", "main")
 			})
 		}
 	})
 
 	t.Run("12_custom_index", func(t *testing.T) {
 		t.Parallel()
-		runFixtureQuery(t, "simple_eq", "simple_eq_index.spl2", "security_logs")
+		runFixtureQuery(t, "simple_eq", "simple_eq_index.lynxflow", "security_logs")
 	})
 }
 
@@ -91,7 +91,7 @@ func runMultiQueryBatch(t *testing.T) {
 
 	for _, fixture := range sigmacompat.FixtureNames {
 		ref := readReference(t, fixture)
-		query := strings.Replace(readGolden(t, fixture+".spl2"), "FROM main", "FROM "+fixture, 1)
+		query := strings.Replace(readGolden(t, fixture+".lynxflow"), "from main", "from "+fixture, 1)
 		got := queryIndices(t, eng, query)
 		assertMatchIndices(t, fixture, query, got, ref.MatchIndices)
 	}
@@ -122,7 +122,7 @@ func queryIndices(t *testing.T, eng *storage.Engine, query string) []int {
 	t.Helper()
 	result, _, err := eng.Query(context.Background(), query, storage.QueryOpts{})
 	if err != nil {
-		t.Fatalf("query failed: %v\nSPL2: %s", err, query)
+		t.Fatalf("query failed: %v\nLynxFlow: %s", err, query)
 	}
 	indices := make([]int, 0, len(result.Rows))
 	for rowNum, row := range result.Rows {
@@ -159,7 +159,7 @@ func numericIndex(raw any) (int, bool) {
 func assertMatchIndices(t *testing.T, fixture, query string, got, want []int) {
 	t.Helper()
 	if !reflect.DeepEqual(got, want) {
-		t.Fatalf("%s match indices mismatch\nSPL2: %s\ngot:  %v\nwant: %v", fixture, query, got, want)
+		t.Fatalf("%s match indices mismatch\nLynxFlow: %s\ngot:  %v\nwant: %v", fixture, query, got, want)
 	}
 }
 

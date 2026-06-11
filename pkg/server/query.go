@@ -632,7 +632,9 @@ type queryPipelineResult struct {
 	govBudget            *memgov.BudgetAdapter // non-nil when governor v2 path was used
 }
 
-// runQueryPipeline executes either the partial-agg or standard pipeline path.
+// runQueryPipeline executes either the distributed or standard pipeline path.
+// When a cluster coordinator is configured, queries are dispatched via
+// scatter-gather across shards. Otherwise, local execution is used.
 func (e *Engine) runQueryPipeline(
 	ctx context.Context,
 	prog *logical.Plan,
@@ -644,7 +646,9 @@ func (e *Engine) runQueryPipeline(
 	onPreview func(totalRows int, rows []map[string]event.Value),
 	scanStart time.Time,
 ) (*queryPipelineResult, error) {
-	// RFC-002: annotation check removed.
+	if e.clusterCoordinator != nil {
+		return e.runDistributedPipeline(ctx, prog, hints, onProgress, scanStart)
+	}
 
 	return e.runStandardPipeline(ctx, prog, hints, params, onProgress, onPreview, scanStart)
 }
@@ -660,9 +664,25 @@ func (e *Engine) runDistributedPipeline(
 ) (*queryPipelineResult, error) {
 	onProgress(&SearchProgress{Phase: PhaseScanningSegments})
 
-	result, _ := e.clusterCoordinator.ExecuteQuery(ctx, prog, hints)
-	_ = result // RFC-002: distributed pipeline result handling removed
-	return nil, fmt.Errorf("RFC-002: distributed pipeline not yet ported")
+	result, err := e.clusterCoordinator.ExecuteQuery(ctx, prog, hints)
+	if err != nil {
+		return nil, fmt.Errorf("runDistributedPipeline: %w", err)
+	}
+
+	qr := &queryPipelineResult{
+		scanMS:     result.ScanMS,
+		pipelineMS: result.MergeMS,
+	}
+	qr.rows = pipelineRowsToResultRows(result.Rows)
+
+	if result.Meta.Partial {
+		qr.warnings = append(qr.warnings, result.Meta.Warnings...)
+		qr.warnings = append(qr.warnings, fmt.Sprintf(
+			"partial results: %d/%d shards succeeded",
+			result.Meta.ShardsSuccess, result.Meta.ShardsTotal))
+	}
+
+	return qr, nil
 }
 
 func (e *Engine) runStandardPipeline(

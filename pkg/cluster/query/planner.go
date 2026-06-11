@@ -5,9 +5,9 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/logical"
-	"github.com/lynxbase/lynxdb/pkg/model"
 )
 
+// MergeStrategy describes how shard results are combined.
 type MergeStrategy int
 
 const (
@@ -29,6 +29,9 @@ func (s MergeStrategy) String() string {
 	}
 }
 
+// DistributedPlan describes how a query is split between shards and
+// coordinator. It is used as the fan-out bridge by both the IR planner
+// and the executePartialAgg/executeConcat methods.
 type DistributedPlan struct {
 	ShardQuery     string
 	Strategy       MergeStrategy
@@ -39,8 +42,4 @@ type DistributedPlan struct {
 	TopK           int
 	TopKSortFields []pipeline.SortField
 	SplitIndex     int
-}
-
-func PlanDistributedQuery(_ *logical.Plan, _ *model.QueryHints) (*DistributedPlan, error) {
-	return &DistributedPlan{Strategy: MergeConcat}, nil
 }

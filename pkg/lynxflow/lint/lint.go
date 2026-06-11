@@ -10,6 +10,7 @@
 package lint
 
 import (
+	"fmt"
 	"strings"
 	"unicode"
 
@@ -42,6 +43,34 @@ var rules = []Rule{
 	{Code: "LF06", Doc: "head before sort (arbitrary rows then sorted)", Check: checkHeadBeforeSort},
 	// LF07: dedup after sort by other keys — placeholder, not implemented.
 	{Code: "LF08", Doc: "has() with uppercase term (has is always case-insensitive)", Check: checkHasUppercase},
+}
+
+// preDesugarRules are lint rules that must run on the pre-desugar AST.
+// Running them on the desugared AST would produce false positives (e.g., LF09
+// would fire on the expansion of `top` itself, flagging a user who correctly
+// used the shorthand).
+var preDesugarRules = []Rule{
+	{Code: "LF09", Doc: "Shortcut available: long-form pipeline can be replaced with a sugar stage", Check: checkShortcutAvailable},
+}
+
+// PreDesugarRules returns a copy of the pre-desugar lint rule registry.
+func PreDesugarRules() []Rule {
+	out := make([]Rule, len(preDesugarRules))
+	copy(out, preDesugarRules)
+	return out
+}
+
+// RunPreDesugar executes pre-desugar lint rules on a parsed (not desugared)
+// query. Returns lints for long-form patterns that have sugar equivalents.
+func RunPreDesugar(q *ast.Query) []Lint {
+	if q == nil {
+		return nil
+	}
+	var all []Lint
+	for _, r := range preDesugarRules {
+		all = append(all, r.Check(q)...)
+	}
+	return all
 }
 
 // Rules returns a copy of the lint rule registry.
@@ -663,4 +692,161 @@ func stringLitValue(e ast.Expr) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// ---------------------------------------------------------------------------
+// LF09: shortcut available (pre-desugar rule)
+// ---------------------------------------------------------------------------
+
+// checkShortcutAvailable detects long-form pipeline shapes that have a shorter
+// sugar equivalent. It runs on the PRE-desugar AST to avoid flagging users who
+// already wrote the shorthand (which the desugarer expands into the long form).
+//
+// Detected patterns:
+//
+//	(a) stats count() by X | sort -count | head N  →  top N X
+//	(b) stats count() by bin(_time, <span>)         →  every <span>
+func checkShortcutAvailable(q *ast.Query) []Lint {
+	var lints []Lint
+	lints = append(lints, checkTopShortcut(q.Pipeline.Stages)...)
+	lints = append(lints, checkEveryShortcut(q.Pipeline.Stages)...)
+	for _, let := range q.Lets {
+		lints = append(lints, checkTopShortcut(let.Pipeline.Stages)...)
+		lints = append(lints, checkEveryShortcut(let.Pipeline.Stages)...)
+	}
+	return lints
+}
+
+// checkTopShortcut looks for: stats count() by <field> | sort -count | head N
+func checkTopShortcut(stages []ast.Stage) []Lint {
+	var lints []Lint
+	for i := 0; i+2 < len(stages); i++ {
+		s := stages[i]
+		if s.Name != "stats" || s.Stats == nil {
+			continue
+		}
+		sp := s.Stats
+
+		// Must be exactly: stats count() as <alias> by <single-field>
+		if len(sp.Aggs) != 1 || len(sp.By) != 1 {
+			continue
+		}
+		agg := sp.Aggs[0]
+		if !isCountCall(agg.Func) {
+			continue
+		}
+
+		// Next must be sort with single key: -<count-alias>, descending.
+		sortStage := stages[i+1]
+		if sortStage.Name != "sort" || sortStage.Sort == nil {
+			continue
+		}
+		if len(sortStage.Sort.Keys) != 1 {
+			continue
+		}
+		sk := sortStage.Sort.Keys[0]
+		if !sk.Desc {
+			continue
+		}
+		countAlias := agg.Alias
+		if countAlias == "" {
+			countAlias = "count" // default alias for count()
+		}
+		sortFieldName := identNameExpr(sk.Field)
+		if sortFieldName != countAlias {
+			continue
+		}
+
+		// Next must be head N.
+		headStage := stages[i+2]
+		if headStage.Name != "head" || headStage.Head == nil {
+			continue
+		}
+		n := headStage.Head.N
+
+		byField := sp.By[0].String()
+		shortcut := fmt.Sprintf("top %d %s", n, byField)
+		lints = append(lints, Lint{
+			Code:       "LF09",
+			Message:    fmt.Sprintf("Long-form top pattern detected; Equivalent: `%s` (shorter by %d tokens)", shortcut, 3+countTokens(stages[i:i+3])-countShortcutTokens(shortcut)),
+			Reason:     "canon",
+			Span:       s.Pos,
+			Suggestion: shortcut,
+		})
+	}
+	return lints
+}
+
+// checkEveryShortcut looks for: stats count() by bin(_time, <span>)
+// with no additional aggregates (count-only → every).
+func checkEveryShortcut(stages []ast.Stage) []Lint {
+	var lints []Lint
+	for _, s := range stages {
+		if s.Name != "stats" || s.Stats == nil {
+			continue
+		}
+		sp := s.Stats
+
+		// Must be: stats count() by [...,] bin(_time, <span>)
+		if len(sp.Aggs) != 1 || len(sp.By) == 0 {
+			continue
+		}
+		agg := sp.Aggs[0]
+		if !isCountCall(agg.Func) {
+			continue
+		}
+
+		// Last by-key must be bin(_time, <span>)
+		lastBy := sp.By[len(sp.By)-1]
+		call, ok := lastBy.(*ast.Call)
+		if !ok || call.Callee != "bin" || len(call.Args) != 2 {
+			continue
+		}
+		timeIdent, ok := call.Args[0].(*ast.Ident)
+		if !ok || timeIdent.Name != "_time" {
+			continue
+		}
+
+		span := call.Args[1].String()
+		shortcut := "every " + span
+		lints = append(lints, Lint{
+			Code:       "LF09",
+			Message:    fmt.Sprintf("Timechart pattern detected; Equivalent: `%s`", shortcut),
+			Reason:     "canon",
+			Span:       s.Pos,
+			Suggestion: shortcut,
+		})
+	}
+	return lints
+}
+
+// isCountCall returns true if e is a count() call with no arguments.
+func isCountCall(e ast.Expr) bool {
+	call, ok := e.(*ast.Call)
+	if !ok {
+		return false
+	}
+	return call.Callee == "count" && len(call.Args) == 0
+}
+
+// identNameExpr extracts the name from an Ident expression.
+func identNameExpr(e ast.Expr) string {
+	if id, ok := e.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+// countTokens approximates the number of tokens in stages (for message).
+func countTokens(stages []ast.Stage) int {
+	n := 0
+	for _, s := range stages {
+		n += len(strings.Fields(s.String())) + 1 // +1 for the pipe
+	}
+	return n
+}
+
+// countShortcutTokens approximates the number of tokens in a shortcut.
+func countShortcutTokens(s string) int {
+	return len(strings.Fields(s))
 }

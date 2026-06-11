@@ -129,6 +129,7 @@ func (e *Engine) buildStreamingPipelineReal(ctx context.Context, prog *logical.P
 		Iterator: iter,
 		epoch:    ep,
 		store:    store,
+		metrics:  e.metrics,
 	}
 
 	return wrapped, streamStats, nil
@@ -140,9 +141,10 @@ func (e *Engine) buildStreamingPipelineReal(ctx context.Context, prog *logical.P
 // call), and segments remain mmapped until all reads complete.
 type epochClosingIterator struct {
 	enginepipeline.Iterator
-	epoch  *segmentEpoch
-	store  *StreamingServerStore
-	closed bool
+	epoch   *segmentEpoch
+	store   *StreamingServerStore
+	metrics *storage.Metrics
+	closed  bool
 }
 
 // ScanStats returns the aggregated scan statistics from ALL streaming
@@ -158,6 +160,11 @@ func (e *epochClosingIterator) ScanStats() *enginepipeline.SegmentStreamStats {
 func (e *epochClosingIterator) Close() error {
 	err := e.Iterator.Close()
 	if !e.closed {
+		if e.metrics != nil && e.store != nil {
+			if st := e.store.AggregatedStats(); st != nil {
+				e.metrics.SegmentReads.Add(int64(st.SegmentsScanned))
+			}
+		}
 		if e.epoch != nil {
 			e.epoch.unpin()
 		}

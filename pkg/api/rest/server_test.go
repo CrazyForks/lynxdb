@@ -1540,7 +1540,6 @@ func TestQuery_FieldAliases(t *testing.T) {
 }
 
 func TestQuery_AsyncPollEndpoint(t *testing.T) {
-	t.Skip("Post-RFC-002: LynxFlow queries execute synchronously; async poll API not used")
 	srv, cleanup := startTestServer(t)
 	defer cleanup()
 
@@ -1734,16 +1733,15 @@ func TestQuery_LintOutputControls(t *testing.T) {
 }
 
 func TestQuery_SuggestionsMetadata(t *testing.T) {
-	// RFC-002: suggestions generation was removed with the SPL2 path.
-	// Skip until suggestions are implemented for the LynxFlow path.
-	t.Skip("query suggestions not yet implemented for LynxFlow (RFC-002)")
 	srv, cleanup := startTestServer(t)
 	defer cleanup()
 
 	post := func(body map[string]interface{}) map[string]interface{} {
 		t.Helper()
 		if _, ok := body["q"]; !ok {
-			body["q"] = `from main | where level == "error" OR level == "fatal" | stats count() by service`
+			// LynxFlow shape (a): stats count() by service | sort -count | head 5
+			// This is the long form of `top 5 service`.
+			body["q"] = `from main | where level == "error" | stats count() by service | sort -count | head 5`
 		}
 		raw, _ := json.Marshal(body)
 		resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(raw))
@@ -1772,10 +1770,10 @@ func TestQuery_SuggestionsMetadata(t *testing.T) {
 		t.Fatalf("meta.suggestions: got %#v, want one suggestion", meta["suggestions"])
 	}
 	first, _ := suggestions[0].(map[string]interface{})
-	if first["text"] != "errors by service" {
-		t.Fatalf("suggestion text: got %v, want errors by service", first["text"])
+	if first["text"] != "top 5 service" {
+		t.Fatalf("suggestion text: got %v, want top 5 service", first["text"])
 	}
-	if first["reason"] != "shortcut" || first["source_code"] != "SHORTCUT_AVAILABLE" {
+	if first["reason"] != "shortcut" || first["source_code"] != "LF09" {
 		t.Fatalf("suggestion metadata: got %#v", first)
 	}
 
@@ -1797,10 +1795,6 @@ func TestQuery_SuggestionsMetadata(t *testing.T) {
 }
 
 func TestQuery_ExplainMetadata(t *testing.T) {
-	// RFC-002: The LynxFlow direct execution path (executeLynxFlowQuery) does not
-	// yet populate meta.explain with segment/scope statistics. Skip until the
-	// explain metadata is ported to the LynxFlow path.
-	t.Skip("meta.explain not yet populated in LynxFlow execution path (RFC-002)")
 	srv, cleanup := startTestServer(t)
 	defer cleanup()
 
@@ -2104,7 +2098,6 @@ func TestIngestBulk_Route(t *testing.T) {
 }
 
 func TestJobStream_Basic(t *testing.T) {
-	t.Skip("Post-RFC-002: LynxFlow queries execute synchronously; job stream API not used")
 	srv, cleanup := startTestServer(t)
 	defer cleanup()
 

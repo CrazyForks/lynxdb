@@ -13,6 +13,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/auth"
 	"github.com/lynxbase/lynxdb/pkg/config"
 	"github.com/lynxbase/lynxdb/pkg/model"
+	"github.com/lynxbase/lynxdb/pkg/planner"
 	"github.com/lynxbase/lynxdb/pkg/server"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
@@ -171,9 +172,14 @@ func (s *Server) checkQueryLength(w http.ResponseWriter, q string) bool {
 
 // handlePlanError maps domain errors to HTTP responses.
 func handlePlanError(w http.ResponseWriter, err error) {
-	// RFC-002: planner package removed; parse errors now surface as plain errors.
-	if strings.Contains(err.Error(), "parse error") {
-		respondError(w, ErrCodeInvalidQuery, http.StatusBadRequest, err.Error())
+	var pe *planner.ParseError
+	if errors.As(err, &pe) {
+		if pe.Diag != nil {
+			respondLynxFlowParseError(w, *pe.Diag)
+		} else {
+			respondError(w, ErrCodeInvalidQuery, http.StatusBadRequest, "parse error: "+pe.Message,
+				WithSuggestion(pe.Suggestion))
+		}
 		return
 	}
 	if errors.Is(err, usecases.ErrTooManyQueries) {
@@ -379,7 +385,9 @@ func queryUsesRegex(query string) bool {
 	return strings.Contains(lower, "| regex ") ||
 		strings.Contains(lower, " regex ") ||
 		strings.Contains(query, "=~") ||
-		strings.Contains(query, "!~")
+		strings.Contains(query, "!~") ||
+		strings.Contains(lower, "matches(") ||
+		strings.Contains(lower, "extract(")
 }
 
 // searchStatsToMeta converts a server.SearchStats to the REST meta stats struct.

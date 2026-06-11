@@ -313,7 +313,7 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 	}
 	var suggestions []model.QuerySuggestion
 	if !req.NoSuggestions {
-		// RFC-002: spl2 suggestions removed.
+		suggestions = model.SuggestionsFromLints(analysisLints)
 	}
 	// Merge planner rewrites (desugar) with request rewrites (user-facing normalizer).
 	allRewrites := append([]model.QueryRewrite(nil), plan.Rewrites...)

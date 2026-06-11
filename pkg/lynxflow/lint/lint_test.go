@@ -104,6 +104,24 @@ func TestRegistryInvariants(t *testing.T) {
 			}
 		}
 	}
+
+	// Also check pre-desugar rules.
+	preRules := PreDesugarRules()
+	for _, r := range preRules {
+		if r.Code == "" {
+			t.Error("pre-desugar rule with empty Code")
+		}
+		if r.Doc == "" {
+			t.Errorf("pre-desugar rule %s has empty Doc", r.Code)
+		}
+		if r.Check == nil {
+			t.Errorf("pre-desugar rule %s has nil Check", r.Code)
+		}
+		if seen[r.Code] {
+			t.Errorf("duplicate rule code across registries: %s", r.Code)
+		}
+		seen[r.Code] = true
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -381,6 +399,120 @@ func TestLF08_HasUppercase(t *testing.T) {
 		q := mustParseDesugar(t, `from app[-1h] ERROR`)
 		lints := Run(q)
 		assertHasCode(t, lints, "LF08")
+	})
+}
+
+// ---------------------------------------------------------------------------
+// Pre-desugar lint helpers
+// ---------------------------------------------------------------------------
+
+func mustParseNoDesugar(t *testing.T, input string) *ast.Query {
+	t.Helper()
+	q, diags := parser.Parse(input)
+	if len(diags) > 0 {
+		t.Fatalf("Parse(%q): %d diag(s): %v", input, len(diags), diags)
+	}
+	if q == nil {
+		t.Fatalf("Parse(%q): returned nil", input)
+	}
+	return q
+}
+
+func assertPreDesugarHasCode(t *testing.T, lints []Lint, code string) {
+	t.Helper()
+	if !hasCode(lints, code) {
+		t.Errorf("expected pre-desugar lint %s, got codes: %v", code, lintCodes(lints))
+	}
+}
+
+func assertPreDesugarNoCode(t *testing.T, lints []Lint, code string) {
+	t.Helper()
+	if hasCode(lints, code) {
+		t.Errorf("unexpected pre-desugar lint %s in codes: %v", code, lintCodes(lints))
+	}
+}
+
+func TestLF09_ShortcutAvailable(t *testing.T) {
+	t.Run("positive_top_pattern", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | stats count() by service | sort -count | head 5`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarHasCode(t, lints, "LF09")
+		for _, l := range lints {
+			if l.Code == "LF09" {
+				if l.Reason != "canon" {
+					t.Errorf("LF09 reason = %q, want canon", l.Reason)
+				}
+				if l.Suggestion != "top 5 service" {
+					t.Errorf("LF09 suggestion = %q, want top 5 service", l.Suggestion)
+				}
+				if !strings.Contains(l.Message, "Equivalent: `top 5 service`") {
+					t.Errorf("LF09 message missing equivalent: %s", l.Message)
+				}
+			}
+		}
+	})
+
+	t.Run("positive_every_pattern", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | stats count() by bin(_time, 5m)`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarHasCode(t, lints, "LF09")
+		for _, l := range lints {
+			if l.Code == "LF09" {
+				if !strings.Contains(l.Message, "Equivalent: `every 5m`") {
+					t.Errorf("LF09 message missing equivalent: %s", l.Message)
+				}
+			}
+		}
+	})
+
+	t.Run("negative_already_uses_top", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | top 5 service`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
+	})
+
+	t.Run("negative_already_uses_every", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | every 5m stats count()`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
+	})
+
+	t.Run("negative_sort_ascending", func(t *testing.T) {
+		// sort +count is rare pattern, not top
+		q := mustParseNoDesugar(t, `from app[-1h] | stats count() by service | sort count | head 5`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
+	})
+
+	t.Run("negative_multiple_aggs", func(t *testing.T) {
+		// Multiple aggregations don't map to top
+		q := mustParseNoDesugar(t, `from app[-1h] | stats count(), avg(duration) by service | sort -count | head 5`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
+	})
+
+	t.Run("negative_no_head", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | stats count() by service | sort -count`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
+	})
+
+	t.Run("negative_non_count_agg", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | stats sum(bytes) by service | sort -sum | head 5`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
+	})
+
+	t.Run("negative_every_with_non_count", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | stats avg(duration) by bin(_time, 5m)`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
+	})
+
+	t.Run("negative_every_no_bin", func(t *testing.T) {
+		q := mustParseNoDesugar(t, `from app[-1h] | stats count() by service`)
+		lints := RunPreDesugar(q)
+		assertPreDesugarNoCode(t, lints, "LF09")
 	})
 }
 

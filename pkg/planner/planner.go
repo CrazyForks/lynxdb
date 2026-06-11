@@ -171,6 +171,12 @@ func (p *lynxFlowPlanner) Plan(req PlanRequest) (*PlanResult, error) {
 		}
 	}
 
+	// Run pre-desugar lint rules (e.g. LF09 shortcut detection) on the
+	// parsed AST before desugaring expands sugar stages. This prevents
+	// false positives: users who write `top 5 service` would otherwise
+	// be flagged because the desugarer expands it to the long form.
+	preDesugarLints := lint.RunPreDesugar(q)
+
 	desugared, dsRewrites := desugar.Desugar(q, desugar.Options{DefaultSource: "main"})
 	parseDuration := time.Since(parseStart)
 
@@ -235,6 +241,15 @@ func (p *lynxFlowPlanner) Plan(req PlanRequest) (*PlanResult, error) {
 		}
 	}
 	for _, l := range lint.Run(desugared) {
+		lints = append(lints, model.QueryLint{
+			Code:     l.Code,
+			Message:  l.Message,
+			Reason:   l.Reason,
+			Position: l.Span.Start,
+		})
+	}
+	// Merge pre-desugar lints (e.g. LF09 shortcut detection).
+	for _, l := range preDesugarLints {
 		lints = append(lints, model.QueryLint{
 			Code:     l.Code,
 			Message:  l.Message,

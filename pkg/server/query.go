@@ -920,6 +920,7 @@ func (e *Engine) runStreamingPipeline(
 		ss.PrewhereBytesRead = aggSt.PrewhereBytesRead
 		ss.PrewhereBytesAvoided = aggSt.PrewhereBytesAvoided
 		qr.rowsScanned = aggSt.EventsScanned + int64(len(memEvents))
+		e.metrics.SegmentReads.Add(int64(aggSt.SegmentsScanned))
 	}
 
 	// Populate indexes used.

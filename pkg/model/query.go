@@ -94,10 +94,59 @@ type QuerySuggestion struct {
 	Message    string `json:"message,omitempty"`
 }
 
+// SuggestionsFromLints extracts advisory suggestions from lints.
+// Lints carrying a "shortcut available" pattern (code LintShortcutAvailable)
+// are converted to QuerySuggestion entries with reason "shortcut".
+// The message format expected: "...; Equivalent: `<text>`" — the suggestion
+// text is the content between backticks.
+func SuggestionsFromLints(lints []QueryLint) []QuerySuggestion {
+	var out []QuerySuggestion
+	for _, l := range lints {
+		if l.Code != LintShortcutAvailable {
+			continue
+		}
+		// Extract text between "Equivalent: `" and "`".
+		const prefix = "Equivalent: `"
+		idx := 0
+		msg := l.Message
+		for {
+			i := indexOf(msg[idx:], prefix)
+			if i < 0 {
+				break
+			}
+			start := idx + i + len(prefix)
+			end := indexOf(msg[start:], "`")
+			if end < 0 {
+				break
+			}
+			text := msg[start : start+end]
+			out = append(out, QuerySuggestion{
+				Text:       text,
+				Reason:     "shortcut",
+				SourceCode: l.Code,
+				Message:    l.Message,
+			})
+			idx = start + end + 1
+		}
+	}
+	return out
+}
+
+// indexOf returns the index of sub in s, or -1.
+func indexOf(s, sub string) int {
+	for i := 0; i+len(sub) <= len(s); i++ {
+		if s[i:i+len(sub)] == sub {
+			return i
+		}
+	}
+	return -1
+}
+
 // Lint code constants used by multiple packages.
 const (
-	LintBroadSearch    = "BROAD_SEARCH"
-	LintAllSourcesHigh = "ALL_SOURCES_HIGH_VOLUME"
+	LintBroadSearch       = "BROAD_SEARCH"
+	LintAllSourcesHigh    = "ALL_SOURCES_HIGH_VOLUME"
+	LintShortcutAvailable = "LF09"
 )
 
 // SourceScope constants describe how a query addresses sources.

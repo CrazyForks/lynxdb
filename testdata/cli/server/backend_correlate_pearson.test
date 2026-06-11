@@ -1,3 +1,0 @@
-# language: spl2
-# format: json
-FROM backend | correlate duration_ms cpu_pct method=pearson

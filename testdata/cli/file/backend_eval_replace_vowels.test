@@ -1,3 +1,6 @@
 # file: backend_server.log
 # format: json
-| eval clean=replace(message, "[aeiou]", "*") | eval has_star=if(contains(clean, "*"), "yes", "no") | stats count by has_star
+from main
+| extend clean = replace(message, "[aeiou]", "*")
+| extend has_star = if(contains(clean, "*"), "yes", "no")
+| stats count() by has_star

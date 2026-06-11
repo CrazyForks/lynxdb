@@ -1,5 +1,0 @@
-# file: audit_transactions.log
-# format: json
-# language: lynxflow
-from main
-| stats count()

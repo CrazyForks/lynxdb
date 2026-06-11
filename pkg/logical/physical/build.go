@@ -635,6 +635,11 @@ func (b *builder) buildParse(nd *logical.Parse) (pipeline.Iterator, error) {
 		from = "_raw"
 	}
 
+	// Handle regex extraction: use RexIterator instead of the structured parser.
+	if nd.Format == "regex" && nd.Pattern != "" {
+		return pipeline.NewRexIterator(child, from, nd.Pattern)
+	}
+
 	onError := pipeline.ParseOnErrorFromString(nd.OnError)
 
 	// Build the parser list: either a first_of chain or a single format.

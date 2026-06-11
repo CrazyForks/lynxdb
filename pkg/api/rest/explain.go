@@ -3,7 +3,7 @@ package rest
 import (
 	"net/http"
 
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
 
@@ -78,7 +78,8 @@ func (s *Server) handleExplainAnalyze(w http.ResponseWriter, r *http.Request, q 
 	}
 
 	// Execute with full profiling.
-	normalizedQuery, rewrites := spl2.NormalizeQueryWithRewrites(q)
+	normalizedQuery := q
+	var rewrites []model.QueryRewrite
 	submitResult, err := s.queryService.Submit(r.Context(), usecases.SubmitRequest{
 		Query:    normalizedQuery,
 		From:     from,
@@ -107,7 +108,7 @@ func (s *Server) handleExplainAnalyze(w http.ResponseWriter, r *http.Request, q 
 	respondData(w, http.StatusOK, resp)
 }
 
-func applyAnalyzedRangePredicates(result *usecases.ExplainResult, preds []spl2.RangePredicate) {
+func applyAnalyzedRangePredicates(result *usecases.ExplainResult, preds []model.RangePredicate) {
 	if result == nil || result.Parsed == nil || len(preds) == 0 {
 		return
 	}

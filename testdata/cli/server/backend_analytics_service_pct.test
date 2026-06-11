@@ -1,2 +1,6 @@
 # format: json
-FROM backend | group by service compute count() as n | enrich sum(n) as total | let pct = round(n * 100 / total, 1) | order by -pct, service
+from backend
+| stats count() as n by service
+| eventstats sum(n) as total
+| extend pct = round((float((n * 100)) / total), 1)
+| sort -pct, service

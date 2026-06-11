@@ -1,6 +1,0 @@
-# format: json
-# language: lynxflow
-from idx_backend
-| extend err = coalesce(error, "none")
-| stats count() by err
-| sort err

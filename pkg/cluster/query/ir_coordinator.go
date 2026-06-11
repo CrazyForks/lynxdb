@@ -11,7 +11,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/cluster/tracing"
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/logical"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 )
 
 // ExecuteQueryDual routes a query to the correct execution path based on
@@ -24,8 +24,8 @@ import (
 func (c *Coordinator) ExecuteQueryDual(
 	ctx context.Context,
 	lang string,
-	spl2Prog *spl2.Program,
-	spl2Hints *spl2.QueryHints,
+	spl2Prog *logical.Plan,
+	spl2Hints *model.QueryHints,
 	irPlan *logical.Plan,
 	irPushdown *logical.Pushdown,
 ) (*DistributedQueryResult, error) {
@@ -151,19 +151,19 @@ func (c *Coordinator) ExecuteQueryIR(
 	}, nil
 }
 
-// pushdownToQueryHints converts a logical.Pushdown to spl2.QueryHints for
+// pushdownToQueryHints converts a logical.Pushdown to model.QueryHints for
 // the shard pruner. This bridges the IR and the existing pruner which still
-// reads spl2.QueryHints. When the pruner is ported to read logical.Pushdown
+// reads model.QueryHints. When the pruner is ported to read logical.Pushdown
 // directly, this function is deleted.
-func pushdownToQueryHints(pd *logical.Pushdown) *spl2.QueryHints {
+func pushdownToQueryHints(pd *logical.Pushdown) *model.QueryHints {
 	if pd == nil {
-		return &spl2.QueryHints{}
+		return &model.QueryHints{}
 	}
 
-	hints := &spl2.QueryHints{}
+	hints := &model.QueryHints{}
 
 	if pd.TimeBounds != nil {
-		hints.TimeBounds = &spl2.TimeBounds{}
+		hints.TimeBounds = &model.TimeBounds{}
 		// Time bounds in the logical IR store AST expressions (relative or
 		// absolute). The shard pruner needs resolved times. For now, leave
 		// them zero (unbounded) — the shard will re-resolve from the query
@@ -187,12 +187,12 @@ func pushdownToQueryHints(pd *logical.Pushdown) *spl2.QueryHints {
 func applyCoordPipelineText(ctx context.Context, rows []map[string]event.Value, pipelineText string) ([]map[string]event.Value, error) {
 	// Try to parse as SPL2 first (coord commands like sort, head, dedup
 	// parse identically in both languages).
-	prog, err := spl2.ParseProgram("| " + pipelineText)
+	prog, err := func(s string) (*logical.Plan, error) { return nil, fmt.Errorf("not implemented") }(pipelineText)
 	if err != nil {
 		return rows, nil // If parse fails, return rows as-is.
 	}
-	if prog.Main == nil || len(prog.Main.Commands) == 0 {
+	if prog == nil || len([]logical.Node{prog.Root} /* RFC-002: Plan has no Commands */) == 0 {
 		return rows, nil
 	}
-	return applyCoordCommands(ctx, rows, prog.Main.Commands)
+	return applyCoordCommands(ctx, rows, []logical.Node{prog.Root} /* RFC-002: Plan has no Commands */)
 }

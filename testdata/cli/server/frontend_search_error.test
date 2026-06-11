@@ -1,2 +1,4 @@
 # format: json
-FROM frontend | search "ERROR" | stats count
+from frontend
+| where has(_raw, "ERROR")
+| stats count()

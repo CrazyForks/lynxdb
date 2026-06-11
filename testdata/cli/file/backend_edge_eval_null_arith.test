@@ -1,3 +1,6 @@
 # file: backend_server.log
 # format: json
-| let x = amount_cents * 2 | where x > 0 | stats count
+from main
+| extend x = (amount_cents * 2)
+| where x > 0
+| stats count()

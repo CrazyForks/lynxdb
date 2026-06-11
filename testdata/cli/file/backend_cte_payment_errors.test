@@ -1,3 +1,7 @@
 # file: backend_server.log
 # format: json
-$base = | where service="payment-service"; $pay_errs = FROM $base | where status=500; FROM $pay_errs | stats count, sum(amount_cents) as total
+let $base = where service == "payment-service";
+let $pay_errs = from $base
+| where status == 500;
+from $pay_errs
+| stats count(), sum(amount_cents) as total

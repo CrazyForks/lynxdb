@@ -1,7 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| where threat_type != ""
-| stats count() by client_ip, threat_type
-| sort client_ip, threat_type

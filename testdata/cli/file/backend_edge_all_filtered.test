@@ -1,3 +1,5 @@
 # file: backend_server.log
 # format: json
-| where level = "FATAL" AND service = "nonexistent" | stats count by level
+from main
+| where (level == "FATAL" and service == "nonexistent")
+| stats count() by level

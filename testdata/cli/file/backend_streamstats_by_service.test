@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| sort timestamp | streamstats count as svc_row by service | where service="payment-service" | fields timestamp, service, svc_row

@@ -14,13 +14,12 @@ func TestDetect_ExplicitLynxFlow(t *testing.T) {
 	}
 }
 
-func TestDetect_ExplicitSPL2(t *testing.T) {
+func TestDetect_ExplicitSPL2_ReturnsLynxFlow(t *testing.T) {
+	// Post-RFC-002: explicit spl2 is rejected at the API layer.
+	// Detect itself maps everything to lynxflow.
 	r := Detect("index=main | stats count", "spl2")
-	if r.Language != LangSPL2 {
-		t.Fatalf("language: got %s, want spl2", r.Language)
-	}
-	if !r.Explicit {
-		t.Fatal("expected explicit=true")
+	if r.Language != LangLynxFlow {
+		t.Fatalf("language: got %s, want lynxflow", r.Language)
 	}
 }
 
@@ -32,19 +31,19 @@ func TestDetect_LynxFlowOnlyQuery(t *testing.T) {
 	}
 }
 
-func TestDetect_SPL2OnlyQuery(t *testing.T) {
+func TestDetect_DefaultsToLynxFlow(t *testing.T) {
+	// Post-RFC-002: all queries default to lynxflow.
 	r := Detect("index=main | stats count", "")
-	if r.Language != LangSPL2 {
-		t.Fatalf("language: got %s, want spl2", r.Language)
+	if r.Language != LangLynxFlow {
+		t.Fatalf("language: got %s, want lynxflow", r.Language)
 	}
 }
 
-func TestDetectStrict_AmbiguousDefaultsSPL2(t *testing.T) {
-	// "from main | stats count()" is valid in both languages.
-	// DetectStrict should default to spl2 for backward compatibility.
+func TestDetectStrict_DefaultsToLynxFlow(t *testing.T) {
+	// Post-RFC-002: DetectStrict also defaults to lynxflow.
 	r := DetectStrict("from main | stats count()", "")
-	if r.Language != LangSPL2 {
-		t.Fatalf("language: got %s, want spl2 (strict mode)", r.Language)
+	if r.Language != LangLynxFlow {
+		t.Fatalf("language: got %s, want lynxflow (strict mode)", r.Language)
 	}
 }
 
@@ -72,10 +71,10 @@ func TestValidateExplicitLanguage(t *testing.T) {
 	}{
 		{"", ""},
 		{"lynxflow", ""},
-		{"spl2", ""},
 		{"LynxFlow", ""},
-		{"SPL2", ""},
-		{"invalid", `invalid language: must be "lynxflow" or "spl2"`},
+		{"spl2", `language "spl2" is no longer supported; migrate queries to LynxFlow — see CHANGELOG for migration guide`},
+		{"SPL2", `language "spl2" is no longer supported; migrate queries to LynxFlow — see CHANGELOG for migration guide`},
+		{"invalid", `invalid language: must be "lynxflow"`},
 	}
 	for _, tt := range tests {
 		got := ValidateExplicitLanguage(tt.input)

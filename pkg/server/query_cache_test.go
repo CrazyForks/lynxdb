@@ -8,8 +8,8 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/config"
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/optimizer"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
+	"github.com/lynxbase/lynxdb/pkg/planner"
 )
 
 func TestQueryCacheUsesGenerationAfterPreQueryFlush(t *testing.T) {
@@ -48,7 +48,7 @@ func TestQueryCacheUsesGenerationAfterPreQueryFlush(t *testing.T) {
 		t.Fatalf("ingest: %v", err)
 	}
 
-	query := "from main | stats count"
+	query := "from main | stats count() as count"
 	first := submitAndWait(t, e, query)
 	if first.Stats.CacheHit {
 		t.Fatalf("first query unexpectedly hit cache")
@@ -103,7 +103,7 @@ func TestQueryCacheSkippedWhenRequested(t *testing.T) {
 	}
 
 	for i := 0; i < 2; i++ {
-		got := submitAndWaitWithSkipResultCache(t, e, "from main | stats count", true)
+		got := submitAndWaitWithSkipResultCache(t, e, "from main | stats count() as count", true)
 		if got.Status != JobStatusDone {
 			t.Fatalf("query[%d] status = %s, error=%s", i, got.Status, got.Error)
 		}
@@ -160,7 +160,7 @@ func TestQueryReadsBufferedEventsWithoutCreatingParts(t *testing.T) {
 	}
 
 	for i := 0; i < 3; i++ {
-		result := submitAndWait(t, e, "from main | stats count")
+		result := submitAndWait(t, e, "from main | stats count() as count")
 		if result.Status != JobStatusDone {
 			t.Fatalf("query[%d] status = %s, error=%s", i, result.Status, result.Error)
 		}
@@ -177,22 +177,17 @@ func submitAndWait(t *testing.T, e *Engine, query string) JobSnapshot {
 func submitAndWaitWithSkipResultCache(t *testing.T, e *Engine, query string, skipResultCache bool) JobSnapshot {
 	t.Helper()
 
-	normalized := spl2.NormalizeQuery(query)
-	prog, err := spl2.ParseProgram(normalized)
+	p := planner.New()
+	result, err := p.Plan(planner.PlanRequest{Query: query})
 	if err != nil {
-		t.Fatalf("parse query: %v", err)
+		t.Fatalf("plan query: %v", err)
 	}
-	opt := optimizer.New()
-	prog.Main = opt.Optimize(prog.Main)
-	for i := range prog.Datasets {
-		prog.Datasets[i].Query = opt.Optimize(prog.Datasets[i].Query)
-	}
-	hints := spl2.ExtractQueryHints(prog)
+	prog := result.Program
 
 	job, err := e.SubmitQuery(context.Background(), QueryParams{
-		Query:           normalized,
+		Query:           query,
 		Program:         prog,
-		Hints:           hints,
+		Hints:           &model.QueryHints{},
 		SkipResultCache: skipResultCache,
 		ResultType:      DetectResultType(prog),
 	})

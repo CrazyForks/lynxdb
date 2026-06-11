@@ -1,2 +1,4 @@
 # format: csv
-FROM backend | stats count, avg(duration_ms) as avg_dur by level | sort level
+from backend
+| stats count(), avg(duration_ms) as avg_dur by level
+| sort level

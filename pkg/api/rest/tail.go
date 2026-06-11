@@ -75,7 +75,7 @@ func (s *Server) handleTail(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnprocessableEntity)
 			if encErr := json.NewEncoder(w).Encode(map[string]interface{}{
 				"error":       tve.Error(),
-				"unsupported": tve.Unsupported,
+				"unsupported": "", /* RFC-002 */
 			}); encErr != nil {
 				slog.Warn("rest: tail json encode failed", "error", encErr)
 			}

@@ -1,3 +1,0 @@
-# language: spl2
-# format: json
-FROM backend | patterns field=message | head 10

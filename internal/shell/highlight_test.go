@@ -71,28 +71,8 @@ func TestHighlightSPL2_PreservesInput(t *testing.T) {
 	}
 }
 
-func TestStringRawEnd(t *testing.T) {
-	tests := []struct {
-		input string
-		pos   int
-		want  int
-	}{
-		{`"hello"`, 0, 7},
-		{`x="postgres" |`, 2, 12},
-		{`"a\"b"`, 0, 6},
-		{`""`, 0, 2},
-		{`"unterminated`, 0, 13},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := stringRawEnd(tt.input, tt.pos)
-			if got != tt.want {
-				t.Errorf("stringRawEnd(%q, %d) = %d, want %d", tt.input, tt.pos, got, tt.want)
-			}
-		})
-	}
-}
+// TestStringRawEnd was deleted in RFC-002 P10: stringRawEnd was an spl2
+// highlighter helper that was removed with the spl2 lexer-based highlighting.
 
 func TestHighlightSPL2_NoDoubledCharacters(t *testing.T) {
 	theme := plainTheme()

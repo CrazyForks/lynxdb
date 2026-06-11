@@ -16,17 +16,15 @@ func init() {
 
 func newGrammarCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "grammar [ebnf|examples|cookbook]",
-		Short: "Print SPL2 grammar documentation for LLM integration",
-		Long: `Prints machine-readable SPL2 grammar documentation designed for LLM-based
-natural-language-to-SPL2 translation systems.
+		Use:   "grammar [ebnf|cookbook]",
+		Short: "Print LynxFlow grammar documentation for LLM integration",
+		Long: `Prints machine-readable LynxFlow grammar documentation designed for LLM-based
+natural-language-to-LynxFlow translation systems.
 
 Subcommands:
   ebnf       Complete EBNF grammar specification
-  examples   200+ annotated NL→SPL2 examples (JSONL)
   cookbook    Prompt cookbook with system prompt, few-shot, and error correction patterns`,
 		Example: `  lynxdb grammar ebnf                          Print EBNF grammar
-  lynxdb grammar examples | head 5             Preview examples
   lynxdb grammar cookbook > prompts.md         Export cookbook`,
 		Args: cobra.ExactArgs(1),
 		RunE: runGrammar,
@@ -38,13 +36,11 @@ func runGrammar(_ *cobra.Command, args []string) error {
 
 	switch args[0] {
 	case "ebnf":
-		filename = "grammar_data/spl2.ebnf"
-	case "examples":
-		filename = "grammar_data/examples.jsonl"
+		filename = "grammar_data/lynxflow.ebnf"
 	case "cookbook":
 		filename = "grammar_data/llm-cookbook.md"
 	default:
-		return fmt.Errorf("unknown grammar subcommand %q. Use: ebnf, examples, cookbook", args[0])
+		return fmt.Errorf("unknown grammar subcommand %q. Use: ebnf, cookbook", args[0])
 	}
 
 	data, err := grammarFS.ReadFile(filename)

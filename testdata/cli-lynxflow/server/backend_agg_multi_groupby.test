@@ -1,5 +1,0 @@
-# format: json
-# language: lynxflow
-from backend
-| stats count() by level, method
-| sort level, method

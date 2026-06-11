@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| sort timestamp | running window=3 avg(duration_ms) as rolling_avg | fields service, duration_ms, rolling_avg | head 6

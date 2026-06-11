@@ -1,5 +1,0 @@
-# unordered: true
-# format: json
-# language: lynxflow
-from backend
-| every 1h stats count()

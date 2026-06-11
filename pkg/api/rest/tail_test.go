@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -97,7 +98,7 @@ func TestTail_SSE_Catchup(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=search+index%%3Dmain&count=3&from=-1h", srv.Addr()), http.NoBody)
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=from+main&count=3&from=-1h", srv.Addr()), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -142,7 +143,7 @@ func TestTail_SSE_Live(t *testing.T) {
 	defer cancel()
 
 	// Connect to tail first (no historical data).
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=0&from=-1s", srv.Addr()), http.NoBody)
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=0&from=-1s", srv.Addr()), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -207,7 +208,7 @@ func TestTail_SSE_SPL2Filter(t *testing.T) {
 	defer cancel()
 
 	// Connect with a filter query.
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=search+ERROR&count=0&from=-1s", srv.Addr()), http.NoBody)
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=%s&count=0&from=-1s", srv.Addr(), url.QueryEscape(`from * | where has(_raw, "ERROR")`)), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -247,8 +248,8 @@ func TestTail_SSE_EvalFields(t *testing.T) {
 	defer cancel()
 
 	// Query with eval + fields projection.
-	q := "search * | eval msg=upper(_raw) | fields _time, msg"
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=%s&count=0&from=-1s", srv.Addr(), q), http.NoBody)
+	q := "from * | extend msg=upper(_raw) | keep _time, msg"
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=%s&count=0&from=-1s", srv.Addr(), url.QueryEscape(q)), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -287,7 +288,7 @@ func TestTail_SSE_UnsupportedCommand(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=search+*+|+stats+count", srv.Addr()), http.NoBody)
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=%s", srv.Addr(), url.QueryEscape("from * | stats count() as count")), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -312,7 +313,7 @@ func TestTail_SSE_ParseError(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=search+|+|+|+broken", srv.Addr()), http.NoBody)
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=%s", srv.Addr(), url.QueryEscape("| | | broken")), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -332,7 +333,7 @@ func TestTail_SSE_EmptyCatchup(t *testing.T) {
 	defer cancel()
 
 	// No events ingested — catchup should be empty.
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=10&from=-1s", srv.Addr()), http.NoBody)
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=10&from=-1s", srv.Addr()), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
@@ -410,7 +411,7 @@ func TestTail_SSE_NoGapBetweenCatchupAndLive(t *testing.T) {
 	// Connect to the tail endpoint with a catchup window that covers
 	// the historical events. count=3 means only the last 3 historicals appear.
 	req, _ := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=3&from=-1h", srv.Addr()),
+		fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=3&from=-1h", srv.Addr()),
 		http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -521,7 +522,7 @@ func TestTail_SSE_NoDuplicatesAfterCatchup(t *testing.T) {
 	defer cancel()
 
 	req, _ := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=10&from=-1h", srv.Addr()),
+		fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=10&from=-1h", srv.Addr()),
 		http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -592,7 +593,7 @@ func TestTail_SSE_SessionLimit(t *testing.T) {
 	reqCtx, reqCancel := context.WithTimeout(ctx, 5*time.Second)
 	defer reqCancel()
 	req1, _ := http.NewRequestWithContext(reqCtx, "GET",
-		fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=0&from=-1s", srv.Addr()),
+		fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=0&from=-1s", srv.Addr()),
 		http.NoBody)
 	resp1, err := http.DefaultClient.Do(req1)
 	if err != nil {
@@ -612,7 +613,7 @@ func TestTail_SSE_SessionLimit(t *testing.T) {
 	req2Ctx, req2Cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer req2Cancel()
 	req2, _ := http.NewRequestWithContext(req2Ctx, "GET",
-		fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=0&from=-1s", srv.Addr()),
+		fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=0&from=-1s", srv.Addr()),
 		http.NoBody)
 	resp2, err := http.DefaultClient.Do(req2)
 	if err != nil {
@@ -654,7 +655,7 @@ func TestTail_SSE_MaxDuration(t *testing.T) {
 	reqCtx, reqCancel := context.WithTimeout(ctx, 10*time.Second)
 	defer reqCancel()
 	req, _ := http.NewRequestWithContext(reqCtx, "GET",
-		fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=0&from=-1s", srv.Addr()),
+		fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=0&from=-1s", srv.Addr()),
 		http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
@@ -694,7 +695,7 @@ func TestTail_SSE_ClientDisconnect(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 
-	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=search+*&count=0&from=-1s", srv.Addr()), http.NoBody)
+	req, _ := http.NewRequestWithContext(ctx, "GET", fmt.Sprintf("http://%s/api/v1/tail?q=from+%%2A&count=0&from=-1s", srv.Addr()), http.NoBody)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		t.Fatal(err)

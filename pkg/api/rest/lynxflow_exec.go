@@ -17,8 +17,8 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/run"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/sema"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/server"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 // executeLynxFlowQuery runs a LynxFlow query against the server engine and
@@ -61,16 +61,37 @@ func (s *Server) executeLynxFlowQuery(w http.ResponseWriter, r *http.Request, re
 	// 7. Build event store from engine (reuse the SPL2 path's storage access).
 	// Extract the source index from the desugared AST so that queries like
 	// "FROM logs" correctly read from the "logs" index, not the hardcoded "main".
+	// For CTEs, we also scan CTE bindings for their sources to ensure all
+	// referenced indexes are loaded.
 	defaultSrc := "main"
 	indexName, scopeType := extractLynxFlowSourceScope(desugared)
 	if indexName != "" {
 		defaultSrc = indexName
 	}
-	hints := &spl2.QueryHints{IndexName: indexName}
+	hints := &model.QueryHints{IndexName: indexName}
 	if scopeType != "" {
 		hints.SourceScopeType = scopeType
 		if scopeType == "single" && indexName != "" {
 			hints.SourceScopeSources = []string{indexName}
+		}
+	}
+	// When the main pipeline references a CTE, defaultSrc may be "main"
+	// but the actual data lives in a different index. Override defaultSrc
+	// to the CTE's source if the main pipeline is a CTE reference.
+	if desugared != nil && len(desugared.Lets) > 0 && desugared.Pipeline.Source != nil {
+		if len(desugared.Pipeline.Source.Sources) == 1 && desugared.Pipeline.Source.Sources[0].Kind == ast.SourceCTE {
+			// The main pipeline references a CTE; set defaultSrc to first CTE's source.
+			for _, let := range desugared.Lets {
+				if let.Pipeline.Source != nil {
+					for _, s := range let.Pipeline.Source.Sources {
+						if s.Kind == ast.SourceName && s.Name != "" {
+							defaultSrc = s.Name
+							break
+						}
+					}
+					break
+				}
+			}
 		}
 	}
 	applyTimeRangeToHints(hints, req.effectiveFrom(), req.effectiveTo())
@@ -109,11 +130,11 @@ func (s *Server) executeLynxFlowQuery(w http.ResponseWriter, r *http.Request, re
 		WithLanguage(string(lang.Language)),
 	}
 
-	// Convert desugar rewrites to spl2.QueryRewrite for the existing envelope.
+	// Convert desugar rewrites to model.QueryRewrite for the existing envelope.
 	if len(rewrites) > 0 {
-		spl2Rewrites := make([]spl2.QueryRewrite, len(rewrites))
+		spl2Rewrites := make([]model.QueryRewrite, len(rewrites))
 		for i, rw := range rewrites {
-			spl2Rewrites[i] = spl2.QueryRewrite{
+			spl2Rewrites[i] = model.QueryRewrite{
 				Before: rw.Before,
 				After:  rw.After,
 				Reason: rw.Reason,
@@ -122,10 +143,13 @@ func (s *Server) executeLynxFlowQuery(w http.ResponseWriter, r *http.Request, re
 		metaOpts = append(metaOpts, WithRewrites(spl2Rewrites))
 	}
 
-	// Convert LF lints to spl2.QueryLint for the existing envelope.
-	allLints := convertLynxFlowLints(lints, semaResult, lang)
-	if len(allLints) > 0 {
-		metaOpts = append(metaOpts, WithLints(allLints))
+	// Convert LF lints to model.QueryLint for the existing envelope, unless suppressed.
+	lintEnabled := req.Lint == nil || *req.Lint
+	if lintEnabled {
+		allLints := model.PrepareQueryLints(convertLynxFlowLints(lints, semaResult, lang))
+		if len(allLints) > 0 {
+			metaOpts = append(metaOpts, WithLints(allLints))
+		}
 	}
 
 	respondData(w, http.StatusOK, data, metaOpts...)
@@ -166,7 +190,7 @@ func (s *Server) executeLynxFlowStream(w http.ResponseWriter, r *http.Request, q
 	if indexName != "" {
 		defaultSrc = indexName
 	}
-	hints := &spl2.QueryHints{IndexName: indexName}
+	hints := &model.QueryHints{IndexName: indexName}
 	if scopeType != "" {
 		hints.SourceScopeType = scopeType
 		if scopeType == "single" && indexName != "" {
@@ -250,7 +274,7 @@ func respondLynxFlowParseError(w http.ResponseWriter, d parser.Diag) {
 
 // applyTimeRangeToHints translates request from/to params into QueryHints
 // time bounds, mirroring the SPL2 path's behavior.
-func applyTimeRangeToHints(hints *spl2.QueryHints, from, to string) {
+func applyTimeRangeToHints(hints *model.QueryHints, from, to string) {
 	if from == "" && to == "" {
 		return
 	}
@@ -272,51 +296,103 @@ func extractLynxFlowSourceScope(q *ast.Query) (indexName, scopeType string) {
 	if q == nil {
 		return "main", "single"
 	}
-	src := q.Pipeline.Source
-	if src == nil {
-		return "main", "single"
+
+	// Collect sources from the main pipeline AND all CTE bindings so that
+	// server-mode queries like:
+	//   let $errs = from idx_backend | where level == "ERROR"; from $errs | ...
+	// correctly load events from idx_backend (not just "main").
+	allNames := collectPipelineSources(&q.Pipeline)
+	for i := range q.Lets {
+		allNames = append(allNames, collectPipelineSources(&q.Lets[i].Pipeline)...)
 	}
-	if len(src.Sources) == 0 {
-		return "main", "single"
-	}
-	// Single named source.
-	if len(src.Sources) == 1 {
-		s := src.Sources[0]
-		switch s.Kind {
-		case ast.SourceStar:
+
+	// Also scan union/join sub-pipelines in each stage.
+	allNames = append(allNames, collectSubPipelineSources(q)...)
+
+	// Deduplicate and resolve.
+	unique := deduplicateStrings(allNames)
+
+	// Check for star/glob.
+	for _, n := range unique {
+		if n == "*" {
 			return "*", "all"
-		case ast.SourceName:
-			name := s.Name
-			if name == "" {
-				name = "main"
-			}
-			return name, "single"
-		case ast.SourceGlob:
-			return s.Pattern, "glob"
-		case ast.SourceCTE:
-			// CTE: scan the default index.
-			return "main", "single"
 		}
 	}
-	// Multiple sources: list scope.
-	names := make([]string, 0, len(src.Sources))
-	for _, s := range src.Sources {
+
+	switch len(unique) {
+	case 0:
+		return "main", "single"
+	case 1:
+		return unique[0], "single"
+	default:
+		// Multiple indexes referenced: load all.
+		return "", "all"
+	}
+}
+
+// collectPipelineSources extracts named index sources from a pipeline's FROM clause.
+func collectPipelineSources(p *ast.Pipeline) []string {
+	if p == nil || p.Source == nil {
+		return nil
+	}
+	var names []string
+	for _, s := range p.Source.Sources {
 		switch s.Kind {
 		case ast.SourceStar:
-			return "*", "all"
+			names = append(names, "*")
 		case ast.SourceName:
 			if s.Name != "" {
 				names = append(names, s.Name)
 			}
+		case ast.SourceGlob:
+			names = append(names, s.Pattern)
+			// SourceCTE: skip; the CTE itself is scanned for sources.
 		}
 	}
-	if len(names) == 1 {
-		return names[0], "single"
+	return names
+}
+
+// collectSubPipelineSources scans all stages (including CTE stages) for
+// sub-pipelines in union and join stages that may reference additional indexes.
+func collectSubPipelineSources(q *ast.Query) []string {
+	var names []string
+
+	scanStages := func(stages []ast.Stage) {
+		for _, st := range stages {
+			if st.Union != nil {
+				for i := range st.Union.Sources {
+					sp := &st.Union.Sources[i]
+					if sp.Pipeline != nil {
+						names = append(names, collectPipelineSources(sp.Pipeline)...)
+					}
+				}
+			}
+			if st.Join != nil && st.Join.Right != nil {
+				if st.Join.Right.Pipeline != nil {
+					names = append(names, collectPipelineSources(st.Join.Right.Pipeline)...)
+				}
+			}
+		}
 	}
-	// For multi-source, use the first name as indexName (the hints will use
-	// SourceScopeSources for multi-source). We set IndexName="" so all indexes
-	// are scanned and the physical layer resolves per-source.
-	return "", "all"
+
+	scanStages(q.Pipeline.Stages)
+	for _, let := range q.Lets {
+		scanStages(let.Pipeline.Stages)
+	}
+	return names
+}
+
+// deduplicateStrings returns unique strings preserving first-occurrence order.
+func deduplicateStrings(ss []string) []string {
+	seen := make(map[string]struct{}, len(ss))
+	out := make([]string, 0, len(ss))
+	for _, s := range ss {
+		if _, ok := seen[s]; !ok {
+			seen[s] = struct{}{}
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // buildLynxFlowResponse converts LynxFlow result rows to the correct response
@@ -434,14 +510,14 @@ func buildLynxFlowEventsResponse(rows []map[string]event.Value, limit, offset in
 	}
 }
 
-// convertLynxFlowLints converts LF lints and sema warnings to the spl2.QueryLint
+// convertLynxFlowLints converts LF lints and sema warnings to the model.QueryLint
 // type for the shared response envelope.
-func convertLynxFlowLints(lfLints []lint.Lint, semaResult sema.Result, lang langDetectResult) []spl2.QueryLint {
-	var out []spl2.QueryLint
+func convertLynxFlowLints(lfLints []lint.Lint, semaResult sema.Result, lang langDetectResult) []model.QueryLint {
+	var out []model.QueryLint
 
 	// Detection notice as a lint.
 	if !lang.Explicit && lang.DetectNotice != "" {
-		out = append(out, spl2.QueryLint{
+		out = append(out, model.QueryLint{
 			Code:    "LF_DETECT",
 			Message: lang.DetectNotice,
 		})
@@ -449,9 +525,10 @@ func convertLynxFlowLints(lfLints []lint.Lint, semaResult sema.Result, lang lang
 
 	// LynxFlow lint rules.
 	for _, l := range lfLints {
-		out = append(out, spl2.QueryLint{
+		out = append(out, model.QueryLint{
 			Code:     l.Code,
 			Message:  l.Message,
+			Reason:   l.Reason,
 			Position: l.Span.Start,
 		})
 	}
@@ -459,7 +536,7 @@ func convertLynxFlowLints(lfLints []lint.Lint, semaResult sema.Result, lang lang
 	// Sema warnings.
 	for _, d := range semaResult.Diags {
 		if d.Severity == parser.SeverityWarning {
-			out = append(out, spl2.QueryLint{
+			out = append(out, model.QueryLint{
 				Code:     string(d.Code),
 				Message:  d.Message,
 				Position: d.Span.Start,

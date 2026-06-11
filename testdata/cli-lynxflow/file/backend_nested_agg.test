@@ -1,8 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| stats count() as events, avg(duration_ms) as avg_dur by service
-| extend is_slow = if(avg_dur > 500, "slow", "fast")
-| stats count() as svc_count by is_slow
-| sort is_slow

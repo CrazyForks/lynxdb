@@ -4,7 +4,6 @@ import (
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 func TestVM_JsonExtract(t *testing.T) {
@@ -98,31 +97,9 @@ func TestVM_JsonExtract_MissingPath(t *testing.T) {
 	}
 }
 
-func TestCompileSpathAlias(t *testing.T) {
-	expr := &spl2.FuncCallExpr{
-		Name: "spath",
-		Args: []spl2.Expr{
-			&spl2.FieldExpr{Name: "payload"},
-			&spl2.LiteralExpr{Value: "user.name"},
-		},
-	}
-	prog, err := CompileExpr(expr)
-	if err != nil {
-		t.Fatalf("CompileExpr: %v", err)
-	}
-
-	fields := map[string]event.Value{
-		"payload": event.StringValue(`{"user":{"id":42,"name":"alice"}}`),
-	}
-	v := &VM{}
-	result, err := v.Execute(prog, fields)
-	if err != nil {
-		t.Fatalf("Execute: %v", err)
-	}
-	if result.String() != "alice" {
-		t.Errorf("spath: got %q, want alice", result.String())
-	}
-}
+// TestCompileSpathAlias was deleted in RFC-002 P10: it used spl2 AST types
+// (FuncCallExpr, FieldExpr, LiteralExpr) and CompileExpr which no longer exist.
+// The spath function is covered by lynxflow_conformance_test.go.
 
 func TestVM_JsonValid_True(t *testing.T) {
 	prog := &Program{}

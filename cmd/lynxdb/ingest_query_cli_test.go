@@ -19,7 +19,7 @@ func TestIngestAndQuery_StatsCount_JSON(t *testing.T) {
 	baseURL := setupServerWithData(t)
 
 	stdout, _, err := runCmd(t, "--server", baseURL, "query", "--format", "json",
-		"FROM main | stats count")
+		"FROM main | stats count()")
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
@@ -34,7 +34,7 @@ func TestIngestAndQuery_FilteredCount_JSON(t *testing.T) {
 	baseURL := setupServerWithData(t)
 
 	stdout, _, err := runCmd(t, "--server", baseURL, "query", "--format", "json",
-		"FROM main | where level=\""+testLevelError+"\" | stats count")
+		"FROM main | where level==\""+testLevelError+"\" | stats count()")
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
@@ -49,7 +49,7 @@ func TestIngestAndQuery_StatsCountByLevel_JSON(t *testing.T) {
 	baseURL := setupServerWithData(t)
 
 	stdout, _, err := runCmd(t, "--server", baseURL, "query", "--format", "json",
-		"FROM main | stats count by level")
+		"FROM main | stats count() by level")
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestIngestAndQuery_StatsCountByLevel_JSON(t *testing.T) {
 	levelCounts := make(map[string]int)
 	for _, row := range rows {
 		level, _ := row["level"].(string)
-		count := int(row["count"].(float64))
+		count := int(row["count()"].(float64))
 		levelCounts[level] = count
 	}
 
@@ -84,7 +84,7 @@ func TestIngestAndQuery_FieldsProjection_JSON(t *testing.T) {
 	baseURL := setupServerWithData(t)
 
 	stdout, _, err := runCmd(t, "--server", baseURL, "query", "--format", "json",
-		"FROM main | fields level | head 5")
+		"FROM main | keep level | head 5")
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestIngestAndQuery_NDJSON(t *testing.T) {
 
 	// Server-mode query always returns NDJSON regardless of --format flag.
 	stdout, _, err := runCmd(t, "--server", baseURL, "query",
-		"FROM main | stats count by level")
+		"FROM main | stats count() by level")
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
@@ -121,8 +121,8 @@ func TestIngestAndQuery_NDJSON(t *testing.T) {
 			t.Errorf("NDJSON row missing 'level' key: %v", row)
 		}
 
-		if _, ok := row["count"]; !ok {
-			t.Errorf("NDJSON row missing 'count' key: %v", row)
+		if _, ok := row["count()"]; !ok {
+			t.Errorf("NDJSON row missing 'count()' key: %v", row)
 		}
 	}
 }
@@ -131,13 +131,13 @@ func TestIngestAndQuery_Table(t *testing.T) {
 	baseURL := setupServerWithData(t)
 
 	stdout, _, err := runCmd(t, "--server", baseURL, "query", "--format", "table",
-		"FROM main | stats count by level")
+		"FROM main | stats count() by level")
 	if err != nil {
 		t.Fatalf("query failed: %v", err)
 	}
 
-	if !strings.Contains(stdout, "count") {
-		t.Errorf("expected 'count' column in table output")
+	if !strings.Contains(stdout, "count()") {
+		t.Errorf("expected 'count()' column in table output")
 	}
 
 	if !strings.Contains(stdout, "level") {

@@ -1,3 +1,7 @@
 # file: backend_server.log
 # format: json
-$base = | where level!="INFO" ; FROM $base | stats count as n by level, service | sort level, -n | head 5
+let $base = where level != "INFO";
+from $base
+| stats count() as n by level, service
+| sort level, -n
+| head 5

@@ -46,18 +46,16 @@ func TestQueryFile_LynxFlow_StatsCount(t *testing.T) {
 	}
 }
 
-// Test that --language spl2 routes to the SPL2 engine.
+// Test that --language spl2 returns an error (post-RFC-002).
 func TestQueryFile_SPL2_Explicit(t *testing.T) {
-	stdout, _, err := runCmd(t, "query", "--file", testdataPath("logs/access.log"),
+	_, _, err := runCmd(t, "query", "--file", testdataPath("logs/access.log"),
 		"--language", "spl2", "--format", "json",
 		"| stats count")
-	if err != nil {
-		t.Fatalf("spl2 query failed: %v", err)
+	if err == nil {
+		t.Fatal("expected error for language=spl2")
 	}
-
-	got := jsonCount(t, stdout)
-	if got != 1000 {
-		t.Errorf("expected count=1000, got %d", got)
+	if !strings.Contains(err.Error(), "no longer supported") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
@@ -128,13 +126,11 @@ func TestQueryFile_LynxFlow_ShowRewritten(t *testing.T) {
 	}
 }
 
-// Test that auto-detection defaults to spl2 for ambiguous queries in file mode
-// (preserving golden transcript compatibility).
-func TestQueryFile_AutoDetect_DefaultsSPL2(t *testing.T) {
-	// "| stats count" is valid in both languages. File mode should default to spl2.
+// Test that auto-detection defaults to lynxflow (post-RFC-002).
+func TestQueryFile_AutoDetect_DefaultsLynxFlow(t *testing.T) {
 	stdout, _, err := runCmd(t, "query", "--file", testdataPath("logs/access.log"),
 		"--format", "json",
-		"| stats count")
+		"| stats count()")
 	if err != nil {
 		t.Fatalf("auto-detect query failed: %v", err)
 	}
@@ -159,5 +155,3 @@ func TestExplain_LynxFlow(t *testing.T) {
 		t.Errorf("expected plan output, got:\n%s", stdout)
 	}
 }
-
-// jsonCount and mustParseJSON are defined in cli_test.go; reused here.

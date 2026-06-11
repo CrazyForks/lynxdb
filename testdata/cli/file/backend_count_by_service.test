@@ -1,3 +1,5 @@
 # file: backend_server.log
 # format: json
-| stats count by service | sort service
+from main
+| stats count() by service
+| sort service

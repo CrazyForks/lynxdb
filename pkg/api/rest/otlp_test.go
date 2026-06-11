@@ -350,7 +350,7 @@ func TestServer_OTLPIngestAndQuery(t *testing.T) {
 
 	// Query for the OTLP events.
 	searchBody, _ := json.Marshal(map[string]interface{}{
-		"q": `FROM main | search "OTLP" | head 10`,
+		"q": `FROM main | where has(_raw, "OTLP") | head 10`,
 	})
 	qResp, err := http.Post(
 		fmt.Sprintf("http://%s/api/v1/query", srv.Addr()),

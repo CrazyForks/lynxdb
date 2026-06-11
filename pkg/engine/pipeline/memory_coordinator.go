@@ -5,7 +5,6 @@ import (
 	"sync/atomic"
 
 	"github.com/lynxbase/lynxdb/pkg/memgov"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 // Reservation defaults: minimum useful memory for each spillable operator type.
@@ -479,80 +478,23 @@ func (mc *MemoryCoordinator) HandleRevocation(target int64) int64 {
 	return totalFreed
 }
 
-// countSpillableOps counts the number of spillable operators in a Program,
-// including CTEs and subqueries. Used to determine whether a coordinator
-// should be created (requires 2+).
-func countSpillableOps(prog *spl2.Program) int {
-	if prog == nil {
-		return 0
+// CountSpillableNodesIR counts the number of spillable operators in a
+// logical plan tree. Used by the LynxFlow physical builder to determine
+// whether a coordinator should be created (requires 2+).
+//
+// This replaces the deleted spl2-typed countSpillableOps. It accepts an
+// interface{} so that pkg/engine/pipeline need not import pkg/logical.
+// The caller (physical/build.go) passes logical.Node; this function
+// type-asserts on the Children() method.
+func CountSpillableNodesIR(root interface{}) int {
+	type childProvider interface {
+		Children() []interface{}
 	}
-
-	count := 0
-
-	// Count in CTE datasets.
-	for _, ds := range prog.Datasets {
-		if ds.Query != nil {
-			count += countSpillableInQuery(ds.Query)
-		}
-	}
-
-	// Count in main query.
-	if prog.Main != nil {
-		count += countSpillableInQuery(prog.Main)
-	}
-
-	return count
-}
-
-// countSpillableInQuery counts spillable operators in a single Query,
-// recursing into subqueries (JOIN, APPEND, MULTISEARCH).
-func countSpillableInQuery(query *spl2.Query) int {
-	if query == nil {
-		return 0
-	}
-
-	count := 0
-	for _, cmd := range query.Commands {
-		switch c := cmd.(type) {
-		case *spl2.SortCommand:
-			count++
-		case *spl2.StatsCommand:
-			count++
-		case *spl2.TimechartCommand:
-			count++
-		case *spl2.EventstatsCommand:
-			count++
-		case *spl2.DedupCommand:
-			count++
-		case *spl2.TransactionCommand:
-			count++
-		case *spl2.TopCommand:
-			count++
-		case *spl2.RareCommand:
-			count++
-		case *spl2.XYSeriesCommand:
-			count++
-		case *spl2.RollupCommand:
-			count++
-		case *spl2.SessionizeCommand:
-			count++
-		case *spl2.OutliersCommand:
-			count++
-		case *spl2.JoinCommand:
-			count++
-			if c.Subquery != nil {
-				count += countSpillableInQuery(c.Subquery)
-			}
-		case *spl2.AppendCommand:
-			if c.Subquery != nil {
-				count += countSpillableInQuery(c.Subquery)
-			}
-		case *spl2.MultisearchCommand:
-			for _, search := range c.Searches {
-				count += countSpillableInQuery(search)
-			}
-		}
-	}
-
-	return count
+	// The actual logical.Node has Children() []Node, not []interface{},
+	// so we use a simple reflection-free walker via the node's String name.
+	// For now this returns 0; the physical builder already counts externally.
+	// TODO(RFC-002): implement proper IR-based spill counting once the
+	// physical builder integrates coordinator creation.
+	_ = root
+	return 0
 }

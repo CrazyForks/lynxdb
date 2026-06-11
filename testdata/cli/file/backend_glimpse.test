@@ -1,4 +1,0 @@
-# file: backend_server.log
-# format: json
-# skip: glimpse output is non-deterministic due to sampling
-| glimpse

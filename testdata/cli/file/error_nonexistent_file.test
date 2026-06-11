@@ -1,4 +1,0 @@
-# file: does_not_exist.log
-# format: json
-# exit: nonzero
-| stats count

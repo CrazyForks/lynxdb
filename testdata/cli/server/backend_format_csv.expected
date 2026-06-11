@@ -1,4 +1,4 @@
-count,level
+count(),level
 5,ERROR
 15,INFO
 6,WARN

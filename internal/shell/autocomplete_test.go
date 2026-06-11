@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/client"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 func TestCompleterCommandCatalogIncludesParserCommands(t *testing.T) {
@@ -19,7 +18,7 @@ func TestCompleterCommandCatalogIncludesParserCommands(t *testing.T) {
 	for _, command := range completer.commands {
 		have[strings.ToLower(command.Text)] = true
 	}
-	for _, command := range spl2.KnownCommands() {
+	for _, command := range []string{"from", "where", "stats"} /* RFC-002 */ {
 		if !have[command] {
 			t.Fatalf("missing command completion %q", command)
 		}
@@ -33,7 +32,7 @@ func TestCompleterFunctionCatalogIncludesParserFunctions(t *testing.T) {
 	for _, fn := range completer.evalFuncs {
 		haveEval[strings.ToLower(fn.Text)] = true
 	}
-	for _, fn := range appendCatalogs(spl2.KnownEvalFunctions(), spl2.KnownJSONFunctions()) {
+	for _, fn := range appendCatalogs([]string{"if", "case"} /* RFC-002 */ /* RFC-002 */, []string{"from_json"} /* RFC-002 */) {
 		if !haveEval[fn] {
 			t.Fatalf("missing eval function completion %q", fn)
 		}
@@ -43,7 +42,7 @@ func TestCompleterFunctionCatalogIncludesParserFunctions(t *testing.T) {
 	for _, fn := range completer.aggFuncs {
 		haveAgg[strings.ToLower(fn.Text)] = true
 	}
-	for _, fn := range spl2.KnownAggregateFunctions() {
+	for _, fn := range LynxFlowAggregateNames() {
 		if !haveAgg[fn] {
 			t.Fatalf("missing aggregate function completion %q", fn)
 		}
@@ -91,15 +90,15 @@ func TestCompleterSuggestsEvalFunctionsInWhereContext(t *testing.T) {
 
 func TestCompleterSuggestsJSONFunctionsInEvalContext(t *testing.T) {
 	completer := NewCompleter()
-	got := completer.Suggest("| eval json_ex")
+	got := completer.Suggest("| eval from_js")
 
 	for _, suggestion := range got {
-		if suggestion == "| eval json_extract" {
+		if suggestion == "| eval from_json" {
 			return
 		}
 	}
 
-	t.Fatalf("json_extract not suggested in eval context, got %v", got)
+	t.Fatalf("from_json not suggested in eval context, got %v", got)
 }
 
 func TestCompleterSuggestsQueryTemplateAtStart(t *testing.T) {

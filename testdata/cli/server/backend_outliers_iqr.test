@@ -1,3 +1,0 @@
-# language: spl2
-# format: json
-FROM backend | outliers field=duration_ms method=iqr | head 10

@@ -1,6 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| where level == "ERROR"
-| stats count()

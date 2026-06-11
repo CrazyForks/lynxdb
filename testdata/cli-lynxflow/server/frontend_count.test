@@ -1,4 +1,0 @@
-# format: json
-# language: lynxflow
-from frontend
-| stats count()

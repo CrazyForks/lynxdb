@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| group by service compute count() as total, avg(duration_ms) as avg_dur | order by -total | take 5

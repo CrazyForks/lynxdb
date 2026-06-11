@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| sessionize maxpause="30m" by user_id | fields user_id, duration, eventcount | sort -duration | head 5

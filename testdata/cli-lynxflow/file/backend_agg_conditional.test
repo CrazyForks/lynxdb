@@ -1,5 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| stats count(where status >= 500) as errors, count(where status < 400) as success, count() as total

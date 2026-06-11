@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| enrich avg(duration_ms) as avg_dur, stdev(duration_ms) as std_dur | let z_score = round((duration_ms - avg_dur) / std_dur, 2) | where z_score > 1 | select service, duration_ms, z_score | order by -z_score

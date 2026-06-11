@@ -1,2 +1,5 @@
 # format: json
-FROM backend | where level IN ("ERROR", "WARN") | stats count by level | sort level
+from backend
+| where level in ["ERROR", "WARN"]
+| stats count() by level
+| sort level

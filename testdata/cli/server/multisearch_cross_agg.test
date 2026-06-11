@@ -1,2 +1,0 @@
-# format: json
-| multisearch [FROM backend | stats count as events, dc(service) as services] [FROM nginx | stats count as events] | sort -services

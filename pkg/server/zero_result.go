@@ -3,7 +3,7 @@ package server
 import (
 	"fmt"
 
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 )
 
 // zeroResultSuggestions generates actionable suggestions when a query returns
@@ -12,7 +12,7 @@ import (
 //
 // The function examines the query's field predicates and segment metadata to
 // determine why zero results were returned and suggests alternatives.
-func zeroResultSuggestions(hints *spl2.QueryHints, ss storeStats) []string {
+func zeroResultSuggestions(hints *model.QueryHints, ss storeStats) []string {
 	if hints == nil {
 		return nil
 	}

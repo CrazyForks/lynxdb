@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/lynxbase/lynxdb/internal/ui"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 // formatValueTTY formats a value for human-friendly TTY display.
@@ -143,10 +142,18 @@ func formatElapsed(d time.Duration) string {
 }
 
 // ensureFromClause normalizes a query so it always has a FROM clause.
-// Delegates to spl2.NormalizeQuery which handles all cases (pipe-prefixed,
+// Delegates to func(s string) string { return s } which handles all cases (pipe-prefixed,
 // known commands, implicit search) and prepends "FROM main" as needed.
 func ensureFromClause(query string) string {
-	return spl2.NormalizeQuery(query)
+	trimmed := strings.TrimSpace(query)
+	upper := strings.ToUpper(trimmed)
+	if strings.HasPrefix(upper, "FROM ") || strings.HasPrefix(upper, "LET ") {
+		return query
+	}
+	if strings.HasPrefix(trimmed, "|") {
+		return "FROM main " + trimmed
+	}
+	return query
 }
 
 // truncateStr truncates s to maxLen runes, appending "..." if truncated.

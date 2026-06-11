@@ -15,7 +15,7 @@ func TestViews_PatchRetention(t *testing.T) {
 
 	createBody, _ := json.Marshal(map[string]interface{}{
 		"name":  "test_view",
-		"query": "FROM main | stats count by host",
+		"query": "from main | stats count() as count by host",
 	})
 	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/views", srv.Addr()), "application/json", bytes.NewReader(createBody))
 	if err != nil {

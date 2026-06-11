@@ -1,3 +1,5 @@
 # file: backend_server.log
 # format: json
-| search "payment" AND "failed" | stats count
+from main
+| where has(_raw, "payment") and has(_raw, "failed")
+| stats count()

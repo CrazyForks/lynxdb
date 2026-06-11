@@ -8,7 +8,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/cluster"
 	"github.com/lynxbase/lynxdb/pkg/cluster/sharding"
 	"github.com/lynxbase/lynxdb/pkg/config"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/storage/sources"
 )
 
@@ -50,7 +50,7 @@ func NewShardPruner(
 // the query hints. It generates candidate shards from the cross product of
 // (indexes × timeBuckets × partitions) and filters by shard map assignment.
 func (p *ShardPruner) FindRelevantShards(
-	_ context.Context, hints *spl2.QueryHints,
+	_ context.Context, hints *model.QueryHints,
 ) ([]ShardTarget, error) {
 	// 1. Resolve index list.
 	indexes := p.resolveIndexes(hints)
@@ -134,15 +134,15 @@ func (p *ShardPruner) FindRelevantShards(
 }
 
 // resolveIndexes returns the list of concrete index names to query.
-func (p *ShardPruner) resolveIndexes(hints *spl2.QueryHints) []string {
+func (p *ShardPruner) resolveIndexes(hints *model.QueryHints) []string {
 	switch hints.SourceScopeType {
-	case spl2.SourceScopeAll:
+	case model.SourceScopeAll:
 		return p.sourceReg.List()
-	case spl2.SourceScopeSingle:
+	case model.SourceScopeSingle:
 		return hints.SourceScopeSources
-	case spl2.SourceScopeList:
+	case model.SourceScopeList:
 		return hints.SourceScopeSources
-	case spl2.SourceScopeGlob:
+	case model.SourceScopeGlob:
 		if hints.SourceScopePattern != "" {
 			return p.sourceReg.Match(hints.SourceScopePattern)
 		}
@@ -170,7 +170,7 @@ const maxUnboundedBuckets = 365
 // with the given time bounds. If bounds is nil, returns all buckets from
 // maxUnboundedBuckets back to now so that unbounded queries include
 // historical data.
-func computeTimeBuckets(bounds *spl2.TimeBounds, bucketSize time.Duration) []time.Time {
+func computeTimeBuckets(bounds *model.TimeBounds, bucketSize time.Duration) []time.Time {
 	now := time.Now().UTC()
 
 	if bounds == nil {

@@ -3,8 +3,8 @@ package usecases
 import (
 	"time"
 
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/server"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/storage/views"
 )
 
@@ -25,21 +25,21 @@ type SubmitRequest struct {
 	Limit           int
 	Offset          int
 	Mode            QueryMode
-	Wait            time.Duration       // used in hybrid mode
-	Profile         string              // "basic", "full", "trace" — passed to engine for profiling
-	NoLint          bool                // disables advisory query lints
-	NoSuggestions   bool                // disables advisory query suggestions
-	LintLimit       int                 // max lints to return; default 5
-	LintFull        bool                // true returns all advisory lints
-	Rewrites        []spl2.QueryRewrite // visible query normalizer rewrites
-	SkipResultCache bool                // true when request syntax depends on now
+	Wait            time.Duration        // used in hybrid mode
+	Profile         string               // "basic", "full", "trace" — passed to engine for profiling
+	NoLint          bool                 // disables advisory query lints
+	NoSuggestions   bool                 // disables advisory query suggestions
+	LintLimit       int                  // max lints to return; default 5
+	LintFull        bool                 // true returns all advisory lints
+	Rewrites        []model.QueryRewrite // visible query normalizer rewrites
+	SkipResultCache bool                 // true when request syntax depends on now
 }
 
 // SubmitResult is the domain output for query submission.
 type SubmitResult struct {
 	Done       bool
 	ResultType server.ResultType
-	Results    []spl2.ResultRow
+	Results    []model.ResultRow
 	Stats      server.SearchStats
 	QueryID    string
 
@@ -57,13 +57,13 @@ type SubmitResult struct {
 	Warnings []string
 
 	// Lints holds post-parse query warnings with stable RFC lint codes.
-	Lints []spl2.QueryLint
+	Lints []model.QueryLint
 
 	// Suggestions holds advisory query edit/template suggestions.
-	Suggestions []spl2.QuerySuggestion
+	Suggestions []model.QuerySuggestion
 
 	// Rewrites holds visible query normalizer rewrites.
-	Rewrites []spl2.QueryRewrite
+	Rewrites []model.QueryRewrite
 }
 
 // StreamRequest is the domain input for streaming queries.
@@ -86,7 +86,7 @@ type ExplainResult struct {
 	Errors     []ExplainError
 	Parsed     *ExplainParsed
 	HasMVAccel bool
-	Rewrites   []spl2.QueryRewrite
+	Rewrites   []model.QueryRewrite
 }
 
 // ExplainError represents a parse/validation error in an explain response.

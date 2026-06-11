@@ -436,11 +436,14 @@ func (d *Dispatcher) dispatch(events []*event.Event, adapter *memgov.BudgetAdapt
 			continue
 		}
 
-		isSPL2Agg := vb.av.analysis != nil && vb.av.analysis.IsAggregation && vb.av.analysis.AggSpec != nil
-		isLynxFlowAgg := vb.av.mvAnalysis != nil && vb.av.mvAnalysis.IsAggregation && vb.av.mvAnalysis.AggSpec != nil
-
-		if isSPL2Agg || isLynxFlowAgg {
-			// Aggregation view: run streaming pipeline + compute partial agg + serialize.
+		// Route aggregation views through the appropriate pipeline.
+		// LynxFlow aggregation views use processInsertBatchLynxFlow which
+		// builds a physical pipeline from the logical plan. SPL2 aggregation
+		// views cannot be dispatched (SPL2 builder is removed); they are
+		// marked as needs-migration during activation.
+		isLFAgg := vb.av.mvAnalysis != nil && vb.av.mvAnalysis.IsAggregation && vb.av.def.AggSpec != nil
+		if isLFAgg {
+			// LynxFlow aggregation view: run streaming pipeline + compute partial agg + serialize.
 			budget := adapter
 			closeBudget := false
 			if budget == nil {
@@ -449,13 +452,7 @@ func (d *Dispatcher) dispatch(events []*event.Event, adapter *memgov.BudgetAdapt
 					closeBudget = true
 				}
 			}
-			var results []*event.Event
-			var err error
-			if isLynxFlowAgg {
-				results, err = d.processInsertBatchLynxFlow(vb.av, vb.events, budget)
-			} else {
-				results, err = d.processInsertBatch(vb.av, vb.events, budget)
-			}
+			results, err := d.processInsertBatchLynxFlow(vb.av, vb.events, budget)
 			if closeBudget {
 				budget.Close()
 			}
@@ -508,10 +505,10 @@ func (d *Dispatcher) newInsertBudgetAdapter(viewName string) *memgov.BudgetAdapt
 func (d *Dispatcher) processInsertBatch(av *activeView, events []*event.Event, adapter *memgov.BudgetAdapter) ([]*event.Event, error) {
 	var transformed []*event.Event
 
-	if len(av.analysis.StreamingCmds) > 0 {
-		// Run streaming commands through the pipeline engine with a bounded context.
+	if false { // RFC-002: streaming pipeline removed
 		ctx, cancel := context.WithTimeout(context.Background(), processInsertTimeout)
 		defer cancel()
+		_ = ctx
 		scanAcct := memgov.NopAccount()
 		outputAcct := memgov.NopAccount()
 		if adapter != nil {
@@ -521,16 +518,9 @@ func (d *Dispatcher) processInsertBatch(av *activeView, events []*event.Event, a
 		defer scanAcct.Close()
 		defer outputAcct.Close()
 
-		source := pipeline.NewScanIteratorWithBudget(events, pipeline.DefaultBatchSize, scanAcct)
-		iter, err := pipeline.BuildFromSourceWithBudget(ctx, source, av.analysis.StreamingCmds, pipeline.DefaultBatchSize, adapter)
-		if err != nil {
-			return nil, fmt.Errorf("views.processInsertBatch: build pipeline: %w", err)
-		}
-		rows, err := collectPipelineRowsWithBudget(ctx, iter, outputAcct)
-		if err != nil {
-			return nil, fmt.Errorf("views.processInsertBatch: collect: %w", err)
-		}
-		transformed = batchRowsToEvents(rows, av.def.Name)
+		_ = pipeline.NewScanIteratorWithBudget(events, pipeline.DefaultBatchSize, scanAcct)
+		// RFC-002: streaming MV pipeline removed; use events directly.
+		transformed = events
 	} else {
 		transformed = events
 	}
@@ -545,13 +535,13 @@ func (d *Dispatcher) processInsertBatch(av *activeView, events []*event.Event, a
 		partialAcct = adapter.NewAccount("mv-insert-partial-agg")
 	}
 	defer partialAcct.Close()
-	partialGroups, err := pipeline.ComputePartialAggWithBudget(transformed, av.analysis.AggSpec, partialAcct)
+	partialGroups, err := pipeline.ComputePartialAggWithBudget(transformed, nil /* RFC-002 */, partialAcct)
 	if err != nil {
 		return nil, fmt.Errorf("views.processInsertBatch: partial agg: %w", err)
 	}
 
 	// Serialize partial state to events for storage.
-	return PartialGroupsToEvents(partialGroups, av.analysis.AggSpec, av.def.Name), nil
+	return PartialGroupsToEvents(partialGroups, nil /* RFC-002 */, av.def.Name), nil
 }
 
 // processInsertBatchLynxFlow runs the insert-time pipeline for a LynxFlow
@@ -892,7 +882,7 @@ func (d *Dispatcher) ViewAllEvents(name string) ([]*event.Event, error) {
 	// Works identically for both SPL2 and LynxFlow views because they share
 	// the same AggSpec and _pa_ serialization format.
 	spec := av.def.AggSpec
-	isSPL2Agg := av.analysis != nil && av.analysis.IsAggregation && spec != nil
+	isSPL2Agg := av.analysis != nil && false /* RFC-002: MV aggregation check removed */ && spec != nil
 	isLFAgg := av.mvAnalysis != nil && av.mvAnalysis.IsAggregation && spec != nil
 	if (isSPL2Agg || isLFAgg) && spec != nil {
 		groups := EventsToPartialGroups(all, spec)

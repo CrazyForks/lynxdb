@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
 
@@ -93,17 +93,17 @@ func respondQueryError(w http.ResponseWriter, msg, code string) {
 
 // metaFields holds optional metadata for success responses.
 type metaFields struct {
-	TookMS          *float64               `json:"took_ms,omitempty"`
-	Scanned         *int64                 `json:"scanned,omitempty"`
-	QueryID         string                 `json:"query_id,omitempty"`
-	Language        string                 `json:"language,omitempty"`         // "lynxflow" or "spl2" — always present on query responses
-	SegmentsErrored *int                   `json:"segments_errored,omitempty"` // E7: surface segment read errors
-	SearchStats     *metaStats             `json:"stats,omitempty"`            // rich query stats for CLI display
-	Warnings        []string               `json:"warnings,omitempty"`         // user-facing warnings about the query
-	Lints           []spl2.QueryLint       `json:"lints,omitempty"`            // stable post-parse query lint warnings
-	Suggestions     []spl2.QuerySuggestion `json:"suggestions,omitempty"`      // advisory edits/templates
-	Rewrites        []spl2.QueryRewrite    `json:"rewrites,omitempty"`         // visible query normalizer rewrites
-	Explain         *metaExplain           `json:"explain,omitempty"`          // advisory planning/execution explanation
+	TookMS          *float64                `json:"took_ms,omitempty"`
+	Scanned         *int64                  `json:"scanned,omitempty"`
+	QueryID         string                  `json:"query_id,omitempty"`
+	Language        string                  `json:"language,omitempty"`         // "lynxflow" or "spl2" — always present on query responses
+	SegmentsErrored *int                    `json:"segments_errored,omitempty"` // E7: surface segment read errors
+	SearchStats     *metaStats              `json:"stats,omitempty"`            // rich query stats for CLI display
+	Warnings        []string                `json:"warnings,omitempty"`         // user-facing warnings about the query
+	Lints           []model.QueryLint       `json:"lints,omitempty"`            // stable post-parse query lint warnings
+	Suggestions     []model.QuerySuggestion `json:"suggestions,omitempty"`      // advisory edits/templates
+	Rewrites        []model.QueryRewrite    `json:"rewrites,omitempty"`         // visible query normalizer rewrites
+	Explain         *metaExplain            `json:"explain,omitempty"`          // advisory planning/execution explanation
 }
 
 type metaExplain struct {
@@ -315,7 +315,7 @@ func WithWarnings(warnings []string) MetaOpt {
 }
 
 // WithLints adds stable post-parse query lints to the response meta.
-func WithLints(lints []spl2.QueryLint) MetaOpt {
+func WithLints(lints []model.QueryLint) MetaOpt {
 	return func(m *metaFields) {
 		if len(lints) > 0 {
 			m.Lints = lints
@@ -324,7 +324,7 @@ func WithLints(lints []spl2.QueryLint) MetaOpt {
 }
 
 // WithSuggestions adds advisory query suggestions to the response meta.
-func WithSuggestions(suggestions []spl2.QuerySuggestion) MetaOpt {
+func WithSuggestions(suggestions []model.QuerySuggestion) MetaOpt {
 	return func(m *metaFields) {
 		if len(suggestions) > 0 {
 			m.Suggestions = suggestions
@@ -333,7 +333,7 @@ func WithSuggestions(suggestions []spl2.QuerySuggestion) MetaOpt {
 }
 
 // WithRewrites adds visible query normalizer rewrites to the response meta.
-func WithRewrites(rewrites []spl2.QueryRewrite) MetaOpt {
+func WithRewrites(rewrites []model.QueryRewrite) MetaOpt {
 	return func(m *metaFields) {
 		if len(rewrites) > 0 {
 			m.Rewrites = rewrites

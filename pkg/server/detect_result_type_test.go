@@ -3,146 +3,88 @@ package server
 import (
 	"testing"
 
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/logical"
 )
 
 func TestDetectResultType(t *testing.T) {
+	scan := &logical.Scan{}
+
 	tests := []struct {
-		name     string
-		commands []spl2.Command
-		want     ResultType
+		name string
+		root logical.Node
+		want ResultType
 	}{
 		{
-			name:     "empty_pipeline_returns_events",
-			commands: nil,
-			want:     ResultTypeEvents,
-		},
-		{
-			name:     "stats_returns_aggregate",
-			commands: []spl2.Command{&spl2.StatsCommand{}},
-			want:     ResultTypeAggregate,
-		},
-		{
-			name:     "chart_returns_aggregate",
-			commands: []spl2.Command{&spl2.ChartCommand{}},
-			want:     ResultTypeAggregate,
-		},
-		{
-			name:     "top_returns_aggregate",
-			commands: []spl2.Command{&spl2.TopCommand{Field: "level"}},
-			want:     ResultTypeAggregate,
-		},
-		{
-			name:     "rare_returns_aggregate",
-			commands: []spl2.Command{&spl2.RareCommand{Field: "level"}},
-			want:     ResultTypeAggregate,
-		},
-		{
-			name:     "timechart_returns_timechart",
-			commands: []spl2.Command{&spl2.TimechartCommand{}},
-			want:     ResultTypeTimechart,
-		},
-		{
-			name:     "xyseries_returns_aggregate",
-			commands: []spl2.Command{&spl2.XYSeriesCommand{}},
-			want:     ResultTypeAggregate,
-		},
-		{
-			name: "eventstats_returns_events",
-			commands: []spl2.Command{
-				&spl2.EventstatsCommand{
-					Aggregations: []spl2.AggExpr{{Func: "count", Alias: "total"}},
-					GroupBy:      []string{"group"},
-				},
-			},
+			name: "nil_plan_returns_events",
+			root: nil,
 			want: ResultTypeEvents,
 		},
 		{
-			name: "eventstats_with_trailing_head_returns_events",
-			commands: []spl2.Command{
-				&spl2.EventstatsCommand{
-					Aggregations: []spl2.AggExpr{{Func: "count", Alias: "total"}},
-				},
-				&spl2.HeadCommand{Count: 10},
-			},
-			want: ResultTypeEvents,
-		},
-		{
-			name: "stats_with_trailing_sort_returns_aggregate",
-			commands: []spl2.Command{
-				&spl2.StatsCommand{
-					Aggregations: []spl2.AggExpr{{Func: "count", Alias: "count"}},
-					GroupBy:      []string{"level"},
-				},
-				&spl2.SortCommand{Fields: []spl2.SortField{{Name: "count"}}},
-			},
+			name: "aggregate_returns_aggregate",
+			root: &logical.Aggregate{},
 			want: ResultTypeAggregate,
 		},
 		{
-			name: "stats_with_trailing_eval_returns_aggregate",
-			commands: []spl2.Command{
-				&spl2.StatsCommand{
-					Aggregations: []spl2.AggExpr{{Func: "count", Alias: "count"}},
-				},
-				&spl2.EvalCommand{Field: "rate"},
-			},
+			name: "topk_returns_aggregate",
+			root: &logical.TopK{},
 			want: ResultTypeAggregate,
 		},
 		{
-			name:     "rollup_returns_aggregate",
-			commands: []spl2.Command{&spl2.RollupCommand{}},
-			want:     ResultTypeAggregate,
+			name: "describe_returns_aggregate",
+			root: &logical.Describe{},
+			want: ResultTypeAggregate,
 		},
 		{
-			name:     "sessionize_returns_aggregate",
-			commands: []spl2.Command{&spl2.SessionizeCommand{}},
-			want:     ResultTypeAggregate,
-		},
-		{
-			name:     "compare_returns_events",
-			commands: []spl2.Command{&spl2.CompareCommand{}},
-			want:     ResultTypeEvents,
-		},
-		{
-			name: "where_returns_events",
-			commands: []spl2.Command{
-				&spl2.WhereCommand{},
+			name: "window_aggregate_returns_events",
+			root: &logical.Aggregate{
+				Window: &logical.WindowSpec{Variant: logical.WindowEventstats},
 			},
 			want: ResultTypeEvents,
 		},
 		{
-			name: "head_only_returns_events",
-			commands: []spl2.Command{
-				&spl2.HeadCommand{Count: 5},
-			},
+			name: "limit_over_aggregate_returns_aggregate",
+			root: &logical.Limit{N: 10},
+			want: ResultTypeAggregate,
+		},
+		{
+			name: "sort_over_aggregate_returns_aggregate",
+			root: &logical.Sort{},
+			want: ResultTypeAggregate,
+		},
+		{
+			name: "project_over_aggregate_returns_aggregate",
+			root: &logical.Project{},
+			want: ResultTypeAggregate,
+		},
+		{
+			name: "scan_returns_events",
+			root: scan,
 			want: ResultTypeEvents,
 		},
 		{
-			name: "streamstats_returns_events",
-			commands: []spl2.Command{
-				&spl2.StreamstatsCommand{},
-			},
+			name: "limit_over_scan_returns_events",
+			root: &logical.Limit{N: 5},
 			want: ResultTypeEvents,
 		},
 		{
-			name:     "glimpse_returns_schema",
-			commands: []spl2.Command{&spl2.GlimpseCommand{}},
-			want:     ResultTypeGlimpse,
-		},
-		{
-			name: "glimpse_with_trailing_head_returns_schema",
-			commands: []spl2.Command{
-				&spl2.GlimpseCommand{SampleSize: 100},
-				&spl2.HeadCommand{Count: 5},
-			},
-			want: ResultTypeGlimpse,
+			name: "sort_over_topk_returns_aggregate",
+			root: &logical.Sort{},
+			want: ResultTypeAggregate,
 		},
 	}
 
+	// Wire up inputs for composite cases.
+	tests[5].root.(*logical.Limit).Input = &logical.Aggregate{}   // limit_over_aggregate
+	tests[6].root.(*logical.Sort).Input = &logical.Aggregate{}    // sort_over_aggregate
+	tests[7].root.(*logical.Project).Input = &logical.Aggregate{} // project_over_aggregate
+	tests[9].root.(*logical.Limit).Input = scan                   // limit_over_scan
+	tests[10].root.(*logical.Sort).Input = &logical.TopK{}        // sort_over_topk
+
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			prog := &spl2.Program{
-				Main: &spl2.Query{Commands: tt.commands},
+			var prog *logical.Plan
+			if tt.root != nil {
+				prog = &logical.Plan{Root: tt.root}
 			}
 			got := DetectResultType(prog)
 			if got != tt.want {

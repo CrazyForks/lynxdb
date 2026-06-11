@@ -1,4 +1,0 @@
-# format: json
-# language: lynxflow
-from idx_backend
-| stats p50(duration_ms) as p50, p90(duration_ms) as p90, p99(duration_ms) as p99

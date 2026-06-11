@@ -12,9 +12,8 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/api/apicontracts"
 	"github.com/lynxbase/lynxdb/pkg/auth"
 	"github.com/lynxbase/lynxdb/pkg/config"
-	"github.com/lynxbase/lynxdb/pkg/planner"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/server"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
 
@@ -117,82 +116,21 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 	// Language routing: detect or use explicit language.
 	lang := detectQueryLanguage(query, req.Language)
 
-	// Async/hybrid mode: route through SPL2 path when language was auto-detected
-	// (not explicit). The LynxFlow execution path does not yet integrate with the
-	// engine's job infrastructure, so async polling (/query/jobs/{id}) only works
-	// with the SPL2 pipeline. Ambiguous queries are valid SPL2 by definition, so
-	// this is always safe. Explicit language=lynxflow with wait=0 is not supported
-	// and returns a sync result instead (the caller asked for lynxflow explicitly).
-	if lang.Language == LangLynxFlow && !lang.Explicit && req.Wait != nil {
-		lang.Language = LangSPL2
-		lang.DetectNotice = "async query routed to spl2 (lynxflow async not yet supported); " +
-			"set language=spl2 to suppress this notice"
-	}
-
-	if lang.Language == LangLynxFlow {
-		s.executeLynxFlowQuery(w, r, req, lang)
+	// RFC-002 Phase 10: SPL2 path removed. All queries execute via LynxFlow.
+	if lang.Language == LangSPL2 && lang.Explicit {
+		respondError(w, ErrCodeValidationError, http.StatusBadRequest,
+			"SPL2 query language has been removed; please migrate to LynxFlow",
+			WithSuggestion("remove language=spl2 or set language=lynxflow; see https://lynxdb.dev/docs/migration"))
 		return
 	}
+	lang.Language = LangLynxFlow
 
-	// SPL2 path (existing behavior, byte-identical).
-	s.executeSPL2Query(w, r, req, lang)
+	s.executeLynxFlowQuery(w, r, req, lang)
 }
 
-// executeSPL2Query runs the SPL2 path — factored out of executeQuery for
-// language routing. Behavior is byte-identical to the pre-routing code.
-func (s *Server) executeSPL2Query(w http.ResponseWriter, r *http.Request, req QueryRequest, lang langDetectResult) {
-	query := req.effectiveQuery()
-	query = substituteVariables(query, req.Variables)
-
-	if ucErr := spl2.CheckUnsupportedCommands(query); ucErr != nil {
-		respondError(w, ErrCodeUnsupportedCommand, http.StatusBadRequest,
-			ucErr.Error(), WithSuggestion(ucErr.Hint))
-
-		return
-	}
-	normalizedQuery, rewrites := spl2.NormalizeQueryWithRewrites(query)
-	skipResultCache := planner.DynamicTimeBounds(req.effectiveFrom(), req.effectiveTo()) ||
-		planner.QueryUsesDynamicTimeSyntax(query)
-
-	mode, wait := mapQueryMode(req.Wait)
-	queryCfg := s.currentQueryConfig()
-	limit := clampLimit(req.Limit, queryCfg)
-
-	result, err := s.queryService.Submit(r.Context(), usecases.SubmitRequest{
-		Query:           normalizedQuery,
-		From:            req.effectiveFrom(),
-		To:              req.effectiveTo(),
-		Limit:           limit,
-		Offset:          req.Offset,
-		Mode:            mode,
-		Wait:            wait,
-		Profile:         req.Profile,
-		NoLint:          req.Lint != nil && !*req.Lint,
-		NoSuggestions:   req.Suggestions != nil && !*req.Suggestions,
-		LintLimit:       req.LintLimit,
-		LintFull:        req.LintFull,
-		Rewrites:        rewrites,
-		SkipResultCache: skipResultCache,
-	})
-	if err != nil {
-		handlePlanError(w, err)
-
-		return
-	}
-
-	if result.Done {
-		if result.Error != "" {
-			respondQueryError(w, result.Error, result.ErrorCode)
-
-			return
-		}
-		writeSyncResultFromUsecase(w, result, limit, req.Offset, normalizedQuery, queryCfg,
-			req.Lint == nil || *req.Lint, req.LintLimit, req.LintFull,
-			WithLanguage(string(lang.Language)))
-	} else {
-		writeJobHandleFromUsecase(w, result, WithLanguage(string(lang.Language)))
-	}
-}
+// executeSPL2Query is removed (RFC-002 Phase 10). All queries now execute
+// through the LynxFlow path. Callers requesting language=spl2 receive a 400
+// error with migration guidance.
 
 // mapQueryMode converts the HTTP Wait parameter to a QueryMode + duration.
 func mapQueryMode(wait *float64) (usecases.QueryMode, time.Duration) {
@@ -233,18 +171,9 @@ func (s *Server) checkQueryLength(w http.ResponseWriter, q string) bool {
 
 // handlePlanError maps domain errors to HTTP responses.
 func handlePlanError(w http.ResponseWriter, err error) {
-	if planner.IsParseError(err) {
-		pe := func() *planner.ParseError {
-			target := &planner.ParseError{}
-			if errors.As(err, &target) {
-				return target
-			}
-
-			return &planner.ParseError{Message: err.Error()}
-		}()
-		respondError(w, ErrCodeInvalidQuery, http.StatusBadRequest, "parse error: "+pe.Message,
-			WithSuggestion(pe.Suggestion))
-
+	// RFC-002: planner package removed; parse errors now surface as plain errors.
+	if strings.Contains(err.Error(), "parse error") {
+		respondError(w, ErrCodeInvalidQuery, http.StatusBadRequest, err.Error())
 		return
 	}
 	if errors.Is(err, usecases.ErrTooManyQueries) {
@@ -294,7 +223,7 @@ func writeSyncResultFromUsecase(w http.ResponseWriter, result *usecases.SubmitRe
 
 const restDefaultLintLimit = 5
 
-func lintsWithBroadScope(lints []spl2.QueryLint, query string, stats *server.SearchStats, queryCfg config.QueryConfig, enabled bool, limit int, full bool) []spl2.QueryLint {
+func lintsWithBroadScope(lints []model.QueryLint, query string, stats *server.SearchStats, queryCfg config.QueryConfig, enabled bool, limit int, full bool) []model.QueryLint {
 	if !enabled || stats == nil {
 		return lints
 	}
@@ -303,13 +232,13 @@ func lintsWithBroadScope(lints []spl2.QueryLint, query string, stats *server.Sea
 		return lints
 	}
 
-	combined := append([]spl2.QueryLint(nil), lints...)
+	combined := append([]model.QueryLint(nil), lints...)
 	for _, lint := range extra {
 		if !hasLintCode(combined, lint.Code) {
 			combined = append(combined, lint)
 		}
 	}
-	combined = spl2.PrepareQueryLints(combined)
+	combined = model.PrepareQueryLints(combined)
 	if full {
 		return combined
 	}
@@ -320,10 +249,10 @@ func lintsWithBroadScope(lints []spl2.QueryLint, query string, stats *server.Sea
 		return combined
 	}
 
-	return append([]spl2.QueryLint(nil), combined[:limit]...)
+	return append([]model.QueryLint(nil), combined[:limit]...)
 }
 
-func broadScopeLints(query string, stats *server.SearchStats, queryCfg config.QueryConfig) []spl2.QueryLint {
+func broadScopeLints(query string, stats *server.SearchStats, queryCfg config.QueryConfig) []model.QueryLint {
 	allSources, hasSearch := broadScopeQueryShape(query)
 	if !allSources {
 		return nil
@@ -332,15 +261,15 @@ func broadScopeLints(query string, stats *server.SearchStats, queryCfg config.Qu
 	segmentCount := stats.SegmentsTotal
 	sourceThreshold, segmentThreshold := broadLintThresholds(queryCfg)
 	if hasSearch && ((sourceThreshold > 0 && sourceCount >= sourceThreshold) || (segmentThreshold > 0 && segmentCount >= segmentThreshold)) {
-		return []spl2.QueryLint{{
-			Code:     spl2.LintBroadSearch,
+		return []model.QueryLint{{
+			Code:     model.LintBroadSearch,
 			Message:  fmt.Sprintf("Broad search over %d sources; narrow with `FROM`, `source=`, or a time range", sourceCount),
 			Position: 0,
 		}}
 	}
 	if sourceThreshold > 0 && sourceCount >= sourceThreshold {
-		return []spl2.QueryLint{{
-			Code:     spl2.LintAllSourcesHigh,
+		return []model.QueryLint{{
+			Code:     model.LintAllSourcesHigh,
 			Message:  "Narrow the source with `FROM <source>` or `source=<name>`",
 			Position: 0,
 		}}
@@ -364,39 +293,13 @@ func broadLintThresholds(queryCfg config.QueryConfig) (sourceThreshold, segmentT
 }
 
 func broadScopeQueryShape(query string) (allSources bool, hasSearch bool) {
-	prog, err := spl2.ParseProgram(query)
-	if err != nil || prog == nil {
-		return strings.Contains(strings.ToUpper(query), "FROM *"), queryUsesRegex(query) || strings.Contains(strings.ToLower(query), "| search")
-	}
-
-	var checkQuery func(q *spl2.Query)
-	checkQuery = func(q *spl2.Query) {
-		if q == nil {
-			return
-		}
-		if q.Source != nil && q.Source.IsAllSources() {
-			allSources = true
-		}
-		for _, cmd := range q.Commands {
-			switch c := cmd.(type) {
-			case *spl2.SearchCommand, *spl2.RegexCommand:
-				hasSearch = true
-			case *spl2.JoinCommand:
-				checkQuery(c.Subquery)
-			case *spl2.AppendCommand:
-				checkQuery(c.Subquery)
-			case *spl2.MultisearchCommand:
-				for _, sub := range c.Searches {
-					checkQuery(sub)
-				}
-			}
-		}
-	}
-	checkQuery(prog.Main)
-	for _, ds := range prog.Datasets {
-		checkQuery(ds.Query)
-	}
-
+	// Heuristic string-based detection after spl2 removal (RFC-002 Phase 10).
+	// The lynxflow path produces lints via lint.Run; this function only provides
+	// a fallback for the broad-scope warning on the response envelope.
+	upper := strings.ToUpper(query)
+	lower := strings.ToLower(query)
+	allSources = strings.Contains(upper, "FROM *")
+	hasSearch = queryUsesRegex(query) || strings.Contains(lower, "| search")
 	return allSources, hasSearch
 }
 
@@ -408,7 +311,7 @@ func sourceScopeCount(stats *server.SearchStats) int {
 	return len(stats.IndexesUsed)
 }
 
-func hasLintCode(lints []spl2.QueryLint, code string) bool {
+func hasLintCode(lints []model.QueryLint, code string) bool {
 	for _, lint := range lints {
 		if lint.Code == code {
 			return true
@@ -619,7 +522,7 @@ func writeJobHandleFromUsecase(w http.ResponseWriter, result *usecases.SubmitRes
 	respondData(w, http.StatusAccepted, data, opts...)
 }
 
-func buildEventsResponse(rows []spl2.ResultRow, limit, offset int) map[string]interface{} {
+func buildEventsResponse(rows []model.ResultRow, limit, offset int) map[string]interface{} {
 	total := len(rows)
 	if offset > 0 && offset < len(rows) {
 		rows = rows[offset:]
@@ -642,7 +545,7 @@ func buildEventsResponse(rows []spl2.ResultRow, limit, offset int) map[string]in
 }
 
 // buildGlimpseResponse extracts the structured glimpse result from __glimpse_result column.
-func buildGlimpseResponse(rows []spl2.ResultRow) map[string]interface{} {
+func buildGlimpseResponse(rows []model.ResultRow) map[string]interface{} {
 	if len(rows) == 0 {
 		return map[string]interface{}{
 			"type": "schema", "fields": []interface{}{}, "sampled": 0,
@@ -666,7 +569,7 @@ func buildGlimpseResponse(rows []spl2.ResultRow) map[string]interface{} {
 	return result
 }
 
-func buildAggregateResponse(rt server.ResultType, rows []spl2.ResultRow, limit, offset int) map[string]interface{} {
+func buildAggregateResponse(rt server.ResultType, rows []model.ResultRow, limit, offset int) map[string]interface{} {
 	if len(rows) == 0 {
 		return map[string]interface{}{
 			"type": string(rt), "columns": []string{}, "rows": [][]interface{}{}, "total_rows": 0, "has_more": false,

@@ -1,12 +1,10 @@
 package pipeline
 
 import (
-	"context"
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 func TestCoordinatorEqualSplit(t *testing.T) {
@@ -63,26 +61,10 @@ func TestCoordinatorEqualSplit(t *testing.T) {
 	}
 }
 
-func TestQueryContextNewCoordinatedAccountUsesSpillableClass(t *testing.T) {
-	gov := memgov.NewGovernor(memgov.GovernorConfig{TotalLimit: 1 << 20})
-	budget := memgov.NewQueryBudget(gov, "query")
-	adapter := memgov.NewBudgetAdapterWithLimit(budget, gov, 1<<20)
-	defer adapter.Close()
-
-	qc := &queryContext{govBudget: adapter}
-	acct := qc.newCoordinatedAccount("sort", reservationSort)
-	if err := acct.Grow(4096); err != nil {
-		t.Fatalf("Grow failed: %v", err)
-	}
-	defer acct.Close()
-
-	if got := gov.ClassUsage(memgov.ClassSpillable).Allocated; got != 4096 {
-		t.Fatalf("ClassSpillable allocated = %d, want 4096", got)
-	}
-	if got := gov.ClassUsage(memgov.ClassNonRevocable).Allocated; got != 0 {
-		t.Fatalf("ClassNonRevocable allocated = %d, want 0", got)
-	}
-}
+// TestQueryContextNewCoordinatedAccountUsesSpillableClass was deleted in
+// RFC-002 P10: queryContext.govBudget and newCoordinatedAccount were removed
+// with the spl2 pipeline builder. The LynxFlow physical builder manages
+// memory coordination through its own queryContext.
 
 func TestCoordinatorRedistributeAfterSpill(t *testing.T) {
 	// 2 operators, 100MB budget, 10% headroom.
@@ -552,240 +534,13 @@ func TestCoordinatorGrowDelegatesInnerError(t *testing.T) {
 	}
 }
 
-func TestCoordinatorSingleOperator(t *testing.T) {
-	// When coordinator is nil, newCoordinatedAccount should return plain account.
-	qc := &queryContext{}
+// TestCoordinatorSingleOperator and TestCoordinatorNilSafe were deleted in
+// RFC-002 P10: they tested queryContext.newCoordinatedAccount and
+// queryContext.coordinator which were removed with the spl2 pipeline builder.
 
-	acct := qc.newCoordinatedAccount("sort", reservationSort)
-	if acct == nil {
-		t.Fatal("expected non-nil account")
-	}
-
-	// Should be a plain NopAccount, not a CoordinatedAccount.
-	if _, ok := acct.(*CoordinatedAccount); ok {
-		t.Error("expected plain account when coordinator is nil, got CoordinatedAccount")
-	}
-
-	// Should still work normally.
-	if err := acct.Grow(1024); err != nil {
-		t.Errorf("grow: unexpected error: %v", err)
-	}
-	acct.Close()
-}
-
-func TestCoordinatorNilSafe(t *testing.T) {
-	// Nil coordinator on queryContext should not create coordinator.
-	qc := &queryContext{}
-
-	if qc.coordinator != nil {
-		t.Error("expected nil coordinator")
-	}
-
-	acct := qc.newCoordinatedAccount("sort", reservationSort)
-	if acct == nil {
-		t.Fatal("expected non-nil account even with nil coordinator")
-	}
-}
-
-func TestCountSpillableOps(t *testing.T) {
-	tests := []struct {
-		name     string
-		prog     *spl2.Program
-		expected int
-	}{
-		{
-			name:     "nil program",
-			prog:     nil,
-			expected: 0,
-		},
-		{
-			name: "no spillable ops",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.WhereCommand{},
-						&spl2.HeadCommand{Count: 10},
-					},
-				},
-			},
-			expected: 0,
-		},
-		{
-			name: "sort only",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.SortCommand{},
-					},
-				},
-			},
-			expected: 1,
-		},
-		{
-			name: "sort + stats",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.StatsCommand{},
-						&spl2.SortCommand{},
-					},
-				},
-			},
-			expected: 2,
-		},
-		{
-			name: "timechart + sort",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.TimechartCommand{},
-						&spl2.SortCommand{},
-					},
-				},
-			},
-			expected: 2,
-		},
-		{
-			name: "join with subquery containing stats",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.JoinCommand{
-							Subquery: &spl2.Query{
-								Commands: []spl2.Command{
-									&spl2.StatsCommand{},
-								},
-							},
-						},
-						&spl2.SortCommand{},
-					},
-				},
-			},
-			expected: 3, // join + subquery stats + sort
-		},
-		{
-			name: "dedup + eventstats",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.DedupCommand{Fields: []string{"host"}},
-						&spl2.EventstatsCommand{},
-					},
-				},
-			},
-			expected: 2,
-		},
-		{
-			name: "transaction",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.TransactionCommand{Field: "session"},
-					},
-				},
-			},
-			expected: 1,
-		},
-		{
-			name: "top and rare",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.TopCommand{Field: "status"},
-						&spl2.RareCommand{Field: "uri"},
-					},
-				},
-			},
-			expected: 2,
-		},
-		{
-			name: "xyseries",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.XYSeriesCommand{XField: "x", YField: "y", ValueField: "v"},
-					},
-				},
-			},
-			expected: 1,
-		},
-		{
-			name: "rollup",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.RollupCommand{Spans: []string{"1m"}, GroupBy: []string{"host"}},
-					},
-				},
-			},
-			expected: 1,
-		},
-		{
-			name: "CTE with stats + main with sort",
-			prog: &spl2.Program{
-				Datasets: []spl2.DatasetDef{
-					{
-						Name: "cte1",
-						Query: &spl2.Query{
-							Commands: []spl2.Command{
-								&spl2.StatsCommand{},
-							},
-						},
-					},
-				},
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.SortCommand{},
-					},
-				},
-			},
-			expected: 2,
-		},
-		{
-			name: "multisearch with spillable branches",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.MultisearchCommand{
-							Searches: []*spl2.Query{
-								{Commands: []spl2.Command{&spl2.StatsCommand{}}},
-								{Commands: []spl2.Command{&spl2.SortCommand{}}},
-							},
-						},
-					},
-				},
-			},
-			expected: 2,
-		},
-		{
-			name: "append with spillable subquery",
-			prog: &spl2.Program{
-				Main: &spl2.Query{
-					Commands: []spl2.Command{
-						&spl2.StatsCommand{},
-						&spl2.AppendCommand{
-							Subquery: &spl2.Query{
-								Commands: []spl2.Command{
-									&spl2.SortCommand{},
-								},
-							},
-						},
-					},
-				},
-			},
-			expected: 2, // stats + sort in subquery
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := countSpillableOps(tt.prog)
-			if got != tt.expected {
-				t.Errorf("countSpillableOps() = %d, want %d", got, tt.expected)
-			}
-		})
-	}
-}
+// TestCountSpillableOps was removed in RFC-002 Phase 10 along with the
+// spl2-typed countSpillableOps function. The LynxFlow physical builder
+// counts spillable nodes via the logical IR.
 
 func TestCoordinatorShrinkAfterSpill(t *testing.T) {
 	budget := int64(100 << 20)
@@ -844,140 +599,10 @@ func TestCoordinatorSmallBudget(t *testing.T) {
 	}
 }
 
-func TestSortAndAggregateCoordinated(t *testing.T) {
-	// Integration test: pipeline "| stats count by host | sort -count" with small budget.
-	// Verify correct results and that redistribution happened.
-	budget := int64(256 * 1024) // 256KB — enough for scan but forces spill on sort/aggregate
-	gov := memgov.NewGovernor(memgov.GovernorConfig{TotalLimit: budget})
-
-	tmpDir := t.TempDir()
-	spillMgr, err := NewSpillManager(tmpDir, nil)
-	if err != nil {
-		t.Fatalf("create spill manager: %v", err)
-	}
-	defer spillMgr.CleanupAll()
-
-	events := make([]*event.Event, 100)
-	for i := range events {
-		host := "host-" + string(rune('A'+i%10))
-		events[i] = &event.Event{
-			Fields: map[string]event.Value{
-				"host":  event.StringValue(host),
-				"level": event.StringValue("info"),
-			},
-		}
-	}
-
-	store := &ServerIndexStore{
-		Events: map[string][]*event.Event{"main": events},
-	}
-
-	prog := &spl2.Program{
-		Main: &spl2.Query{
-			Source: &spl2.SourceClause{Index: "main"},
-			Commands: []spl2.Command{
-				&spl2.StatsCommand{
-					Aggregations: []spl2.AggExpr{
-						{Func: "count", Alias: "count"},
-					},
-					GroupBy: []string{"host"},
-				},
-				&spl2.SortCommand{
-					Fields: []spl2.SortField{
-						{Name: "count", Desc: true},
-					},
-				},
-			},
-		},
-	}
-
-	ctx := context.Background()
-	result, err := BuildProgramWithGovernor(ctx, prog, store, nil, nil, 64, "", gov, budget, spillMgr, false, nil)
-	if err != nil {
-		t.Fatalf("build program: %v", err)
-	}
-	if result.GovBudget != nil {
-		defer result.GovBudget.Close()
-	}
-
-	rows, err := CollectAll(ctx, result.Iterator)
-	if err != nil {
-		t.Fatalf("collect: %v", err)
-	}
-
-	// Should have 10 groups (one per host), each with count=10.
-	if len(rows) != 10 {
-		t.Errorf("expected 10 result rows, got %d", len(rows))
-	}
-
-	for _, row := range rows {
-		countVal, ok := row["count"]
-		if !ok {
-			t.Error("missing count field")
-
-			continue
-		}
-		if countVal.AsInt() != 10 {
-			t.Errorf("expected count=10, got %d for host=%s", countVal.AsInt(), row["host"])
-		}
-	}
-
-	// Verify sort order: results should be sorted by count descending.
-	// Since all counts are equal, any order is valid — just verify they all have count=10.
-	for i := 1; i < len(rows); i++ {
-		prev := rows[i-1]["count"].AsInt()
-		curr := rows[i]["count"].AsInt()
-		if prev < curr {
-			t.Errorf("results not sorted: row %d count=%d < row %d count=%d", i-1, prev, i, curr)
-		}
-	}
-}
-
-func TestSingleSpillableQueryGetsCoordinator(t *testing.T) {
-	budget := int64(1 << 20)
-	gov := memgov.NewGovernor(memgov.GovernorConfig{TotalLimit: budget})
-
-	spillMgr, err := NewSpillManager(t.TempDir(), nil)
-	if err != nil {
-		t.Fatalf("create spill manager: %v", err)
-	}
-	defer spillMgr.CleanupAll()
-
-	store := &ServerIndexStore{
-		Events: map[string][]*event.Event{
-			"main": {
-				{Fields: map[string]event.Value{"host": event.StringValue("host-b")}},
-				{Fields: map[string]event.Value{"host": event.StringValue("host-a")}},
-			},
-		},
-	}
-	prog := &spl2.Program{
-		Main: &spl2.Query{
-			Source: &spl2.SourceClause{Index: "main"},
-			Commands: []spl2.Command{
-				&spl2.SortCommand{Fields: []spl2.SortField{{Name: "host"}}},
-			},
-		},
-	}
-
-	result, err := BuildProgramWithGovernor(context.Background(), prog, store, nil, nil, 64, "", gov, budget, spillMgr, false, nil)
-	if err != nil {
-		t.Fatalf("build program: %v", err)
-	}
-	defer result.GovBudget.Close()
-	defer result.Iterator.Close()
-
-	if result.Coordinator == nil {
-		t.Fatal("expected coordinator for single spillable query")
-	}
-	stats := result.Coordinator.Stats()
-	if len(stats) != 1 {
-		t.Fatalf("coordinator slots = %d, want 1", len(stats))
-	}
-	if stats[0].Label != "sort" {
-		t.Fatalf("coordinator slot label = %q, want sort", stats[0].Label)
-	}
-}
+// TestSortAndAggregateCoordinated and TestSingleSpillableQueryGetsCoordinator
+// were removed in RFC-002 Phase 10. They tested BuildProgramWithGovernor which
+// used the spl2 AST path. The LynxFlow physical builder has its own coordinator
+// integration tests in pkg/logical/physical/.
 
 func TestCoordinatorPhaseReclaim(t *testing.T) {
 	// 2 operators: first completes, second should get freed capacity.

@@ -13,7 +13,7 @@ func TestRegression_SSH(t *testing.T) {
 	// Ingestion
 	t.Run("Ingestion", func(t *testing.T) {
 		t.Run("TotalCount_2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | STATS count() as count`)
 			requireAggValue(t, rows, "count", 2000)
 		})
 		t.Run("HEAD_10", func(t *testing.T) {
@@ -26,38 +26,38 @@ func TestRegression_SSH(t *testing.T) {
 		})
 	})
 
-	// Search Keywords
+	// Search Keywords (search -> where has/contains)
 	t.Run("Search", func(t *testing.T) {
 		t.Run("FailedPassword_520", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Failed password" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "Failed password") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 520)
 		})
 		t.Run("CaseInsensitive_520", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "failed password" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "failed password") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 520)
 		})
 		t.Run("BREAKIN_85", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "BREAK-IN ATTEMPT" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "BREAK-IN ATTEMPT") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 85)
 		})
 		t.Run("ImplicitAND_Root_370", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Failed password" root | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "Failed password") and has(_raw, "root") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 370)
 		})
 		t.Run("OR_SessionOpenedClosed_2", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "session opened" OR "session closed" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "session opened") or contains(_raw, "session closed") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 2)
 		})
 		t.Run("NOT_FailedPassword_NotRoot_150", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Failed password" NOT root | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "Failed password") and not has(_raw, "root") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 150)
 		})
 		t.Run("Wildcard_InvalidUserFrom_252", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Invalid user*from" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)Invalid user.*from") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 252)
 		})
 		t.Run("Nonexistent_Returns0", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "NONEXISTENT_STRING_12345" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "NONEXISTENT_STRING_12345") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 0)
 		})
 	})
@@ -65,38 +65,38 @@ func TestRegression_SSH(t *testing.T) {
 	// WHERE
 	t.Run("WHERE", func(t *testing.T) {
 		t.Run("IsNotNull_TargetUser_520", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "Failed password for (?<target_user>\w+)" | WHERE isnotnull(target_user) | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"Failed password for (?<target_user>\w+)" | WHERE exists(target_user) | STATS count() as count`)
 			requireAggValue(t, rows, "count", 520)
 		})
 		t.Run("IsNull_TargetUser_1480", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "Failed password for (?<target_user>\w+)" | WHERE isnull(target_user) | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"Failed password for (?<target_user>\w+)" | WHERE is_null(target_user) | STATS count() as count`)
 			requireAggValue(t, rows, "count", 1480)
 		})
 		t.Run("Match_IP_Positive", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | WHERE match(_raw, "173\.234\.31\.186") | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | WHERE matches(_raw, r"173\.234\.31\.186") | STATS count() as count`)
 			total := getInt(rows, "count")
 			if total <= 0 {
 				t.Errorf("expected > 0 events matching IP, got %d", total)
 			}
 		})
 		t.Run("RegexStartsWith_Dec10_09_676", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | WHERE match(_raw, "^Dec 10 09:") | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | WHERE matches(_raw, r"^Dec 10 09:") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 676)
 		})
 		t.Run("WhereTrue_1Eq1_2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | WHERE 1=1 | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | WHERE 1 == 1 | STATS count() as count`)
 			requireAggValue(t, rows, "count", 2000)
 		})
 	})
 
-	// REX
+	// REX -> parse regex
 	t.Run("REX", func(t *testing.T) {
 		t.Run("UniqueIPs_30", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "(?<ip_addr>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip_addr) | STATS dc(ip_addr) AS unique_ips`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip_addr>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip_addr) | STATS dc(ip_addr) AS unique_ips`)
 			requireAggValue(t, rows, "unique_ips", 30)
 		})
 		t.Run("TopUsername_Admin_21", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "Invalid user (?<username>\w+) from" | WHERE isnotnull(username) | STATS count BY username | SORT - count | HEAD 3`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"Invalid user (?<username>\w+) from" | WHERE exists(username) | STATS count() as count BY username | SORT - count | HEAD 3`)
 			if len(rows) < 3 {
 				t.Fatalf("expected at least 3 rows, got %d", len(rows))
 			}
@@ -110,11 +110,11 @@ func TestRegression_SSH(t *testing.T) {
 			}
 		})
 		t.Run("ExtractPort_525", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "port (?<port>\d+)" | WHERE isnotnull(port) | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"port (?<port>\d+)" | WHERE exists(port) | STATS count() as count`)
 			requireAggValue(t, rows, "count", 525)
 		})
 		t.Run("ChainedREX_PositiveTargetsAndIPs", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "Failed password for (?:invalid user )?(?<target>\w+) from (?<src_ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(target) AND isnotnull(src_ip) | STATS dc(target) AS unique_targets, dc(src_ip) AS unique_ips`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"Failed password for (?:invalid user )?(?<target>\w+) from (?<src_ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(target) AND exists(src_ip) | STATS dc(target) AS unique_targets, dc(src_ip) AS unique_ips`)
 			targets := getInt(rows, "unique_targets")
 			ips := getInt(rows, "unique_ips")
 			if targets <= 0 || ips <= 0 {
@@ -122,15 +122,15 @@ func TestRegression_SSH(t *testing.T) {
 			}
 		})
 		t.Run("NoMatch_Returns0", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "NONEXISTENT_PATTERN_(?<captured>\w+)" | STATS count(captured) AS matched`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"NONEXISTENT_PATTERN_(?<captured>\w+)" | STATS count(captured) AS matched`)
 			requireAggValue(t, rows, "matched", 0)
 		})
 	})
 
-	// EVAL
+	// EVAL -> extend
 	t.Run("EVAL", func(t *testing.T) {
 		t.Run("StringAssignment", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | EVAL source_type = "ssh_log" | HEAD 1 | TABLE source_type`)
+			rows := mustQuery(t, eng, `FROM main | extend source_type = "ssh_log" | HEAD 1 | keep source_type`)
 			requireRowCount(t, rows, 1)
 			st := fmt.Sprint(rows[0]["source_type"])
 			if st != "ssh_log" {
@@ -138,7 +138,7 @@ func TestRegression_SSH(t *testing.T) {
 			}
 		})
 		t.Run("IF_AllPublicIPs", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "(?<ip_addr>\d+\.\d+\.\d+\.\d+)" | EVAL ip_class = IF(match(ip_addr, "^10\."), "private", "public") | WHERE isnotnull(ip_addr) | STATS count BY ip_class`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip_addr>\d+\.\d+\.\d+\.\d+)" | extend ip_class = IF(matches(ip_addr, r"^10\."), "private", "public") | WHERE exists(ip_addr) | STATS count() as count BY ip_class`)
 			for _, row := range rows {
 				cls := fmt.Sprint(row["ip_class"])
 				if cls == "private" {
@@ -148,16 +148,16 @@ func TestRegression_SSH(t *testing.T) {
 		})
 		t.Run("CASE_FailedAuth_520", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | EVAL event_type = CASE(
-          match(_raw, "Failed password"), "failed_auth",
-          match(_raw, "Invalid user"), "invalid_user",
-          match(_raw, "Accepted"), "success",
-          match(_raw, "Connection closed"), "conn_closed",
-          match(_raw, "Received disconnect"), "disconnect",
-          match(_raw, "BREAK-IN"), "breakin_attempt",
-          1=1, "other"
+    | extend event_type = CASE(
+          matches(_raw, r"Failed password"), "failed_auth",
+          matches(_raw, r"Invalid user"), "invalid_user",
+          matches(_raw, r"Accepted"), "success",
+          matches(_raw, r"Connection closed"), "conn_closed",
+          matches(_raw, r"Received disconnect"), "disconnect",
+          matches(_raw, r"BREAK-IN"), "breakin_attempt",
+          "other"
       )
-    | STATS count BY event_type
+    | STATS count() as count BY event_type
     | SORT - count`)
 			types := rowsToMap(rows, "event_type", "count")
 			if types["failed_auth"] != 520 {
@@ -166,26 +166,26 @@ func TestRegression_SSH(t *testing.T) {
 		})
 		t.Run("Coalesce_NA_1480", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "Failed password for (?<target>\w+)"
-    | EVAL user_or_unknown = coalesce(target, "N/A")
-    | STATS count BY user_or_unknown
-    | WHERE user_or_unknown = "N/A"`)
+    | parse regex r"Failed password for (?<target>\w+)"
+    | extend user_or_unknown = coalesce(target, "N/A")
+    | STATS count() as count BY user_or_unknown
+    | WHERE user_or_unknown == "N/A"`)
 			requireAggValue(t, rows, "count", 1480)
 		})
 		t.Run("NullPropagation_1475", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "port (?<port>\d+)"
-    | EVAL port_plus_one = tonumber(port) + 1
-    | WHERE isnull(port_plus_one)
-    | STATS count`)
+    | parse regex r"port (?<port>\d+)"
+    | extend port_plus_one = float(port) + 1
+    | WHERE is_null(port_plus_one)
+    | STATS count() as count`)
 			requireAggValue(t, rows, "count", 1475)
 		})
 		t.Run("MultipleAssignments_WithPort_525", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | REX "port (?<port>\d+)"
-    | EVAL has_ip = IF(isnotnull(ip), 1, 0),
-           has_port = IF(isnotnull(port), 1, 0),
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | parse regex r"port (?<port>\d+)"
+    | extend has_ip = IF(exists(ip), 1, 0),
+           has_port = IF(exists(port), 1, 0),
            connection_info = has_ip + has_port
     | STATS sum(has_ip) AS with_ip, sum(has_port) AS with_port`)
 			withPort := getInt(rows, "with_port")
@@ -194,7 +194,7 @@ func TestRegression_SSH(t *testing.T) {
 			}
 		})
 		t.Run("Len_PositiveAvgMaxMin", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | EVAL raw_len = len(_raw) | STATS avg(raw_len) AS avg_length, max(raw_len) AS max_length, min(raw_len) AS min_length`)
+			rows := mustQuery(t, eng, `FROM main | extend raw_len = len(_raw) | STATS avg(raw_len) AS avg_length, max(raw_len) AS max_length, min(raw_len) AS min_length`)
 			avg := getFloat(rows, "avg_length")
 			maxLen := getFloat(rows, "max_length")
 			minLen := getFloat(rows, "min_length")
@@ -210,23 +210,23 @@ func TestRegression_SSH(t *testing.T) {
 	// STATS
 	t.Run("STATS", func(t *testing.T) {
 		t.Run("Count_2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | STATS count() as count`)
 			requireAggValue(t, rows, "count", 2000)
 		})
 		t.Run("DC_UniqueIPs_30", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | STATS dc(ip) AS unique_ips`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | STATS dc(ip) AS unique_ips`)
 			requireAggValue(t, rows, "unique_ips", 30)
 		})
 		t.Run("MaxFromSingleIP_867", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
-    | STATS count BY ip
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
+    | STATS count() as count BY ip
     | STATS max(count) AS max_from_single_ip`)
 			requireAggValue(t, rows, "max_from_single_ip", 867)
 		})
 		t.Run("TopUsernames_Admin21", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "Invalid user (?<username>\w+)" | WHERE isnotnull(username) | STATS count BY username | SORT - count | HEAD 5`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"Invalid user (?<username>\w+)" | WHERE exists(username) | STATS count() as count BY username | SORT - count | HEAD 5`)
 			if len(rows) != 5 {
 				t.Errorf("expected 5 rows, got %d", len(rows))
 			}
@@ -248,10 +248,10 @@ func TestRegression_SSH(t *testing.T) {
 		})
 		t.Run("NestedEval_RequestsPerIP", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
-    | STATS count AS requests, dc(ip) AS unique_ips
-    | EVAL requests_per_ip = round(requests / unique_ips, 2)`)
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
+    | STATS count() AS requests, dc(ip) AS unique_ips
+    | extend requests_per_ip = round(requests / unique_ips, 2)`)
 			rpi := getFloat(rows, "requests_per_ip")
 			if rpi <= 0 {
 				t.Errorf("expected requests_per_ip > 0, got %f", rpi)
@@ -259,10 +259,10 @@ func TestRegression_SSH(t *testing.T) {
 		})
 	})
 
-	// BIN
+	// BIN -> extend ... = bin(...)
 	t.Run("BIN", func(t *testing.T) {
 		t.Run("Span1h_SumsTo2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | BIN _time span=1h AS hour_bucket | STATS count BY hour_bucket | SORT hour_bucket`)
+			rows := mustQuery(t, eng, `FROM main | extend hour_bucket = bin(_time, 1h) | STATS count() as count BY hour_bucket | SORT hour_bucket`)
 			if len(rows) < 5 {
 				t.Errorf("expected at least 5 hour buckets, got %d", len(rows))
 			}
@@ -275,7 +275,7 @@ func TestRegression_SSH(t *testing.T) {
 			}
 		})
 		t.Run("Span1m_Top5", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | BIN _time span=1m AS minute_bucket | STATS count BY minute_bucket | SORT - count | HEAD 5`)
+			rows := mustQuery(t, eng, `FROM main | extend minute_bucket = bin(_time, 1m) | STATS count() as count BY minute_bucket | SORT - count | HEAD 5`)
 			requireRowCount(t, rows, 5)
 		})
 	})
@@ -283,7 +283,7 @@ func TestRegression_SSH(t *testing.T) {
 	// SORT
 	t.Run("SORT", func(t *testing.T) {
 		t.Run("Ascending_Order", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | STATS count BY ip | SORT count | HEAD 3`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip) | STATS count() as count BY ip | SORT count | HEAD 3`)
 			if len(rows) != 3 {
 				t.Fatalf("expected 3 rows, got %d", len(rows))
 			}
@@ -296,7 +296,7 @@ func TestRegression_SSH(t *testing.T) {
 			}
 		})
 		t.Run("Descending_TopIP_867", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | STATS count BY ip | SORT - count | HEAD 1`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip) | STATS count() as count BY ip | SORT - count | HEAD 1`)
 			if len(rows) == 0 {
 				t.Fatal("expected at least 1 row")
 			}
@@ -310,11 +310,11 @@ func TestRegression_SSH(t *testing.T) {
 			}
 		})
 		t.Run("PreservesAllRows_30IPs", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | STATS count BY ip | SORT count | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip) | STATS count() as count BY ip | SORT count | STATS count() as count`)
 			requireAggValue(t, rows, "count", 30)
 		})
 		t.Run("StringField_Alphabetical", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "Invalid user (?<username>\w+)" | WHERE isnotnull(username) | STATS count BY username | SORT username | HEAD 3`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"Invalid user (?<username>\w+)" | WHERE exists(username) | STATS count() as count BY username | SORT username | HEAD 3`)
 			if len(rows) != 3 {
 				t.Fatalf("expected 3 rows, got %d", len(rows))
 			}
@@ -328,18 +328,18 @@ func TestRegression_SSH(t *testing.T) {
 		})
 	})
 
-	// RENAME/TABLE
+	// RENAME/TABLE -> rename/keep
 	t.Run("RenameTable", func(t *testing.T) {
 		t.Run("Rename_DC_30", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
     | RENAME ip AS source_ip
-    | WHERE isnotnull(source_ip)
+    | WHERE exists(source_ip)
     | STATS dc(source_ip) AS unique_sources`)
 			requireAggValue(t, rows, "unique_sources", 30)
 		})
 		t.Run("Table_Raw_3Rows", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | HEAD 3 | TABLE _raw`)
+			rows := mustQuery(t, eng, `FROM main | HEAD 3 | keep _raw`)
 			requireRowCount(t, rows, 3)
 			for i, row := range rows {
 				if _, ok := row["_raw"]; !ok {
@@ -353,20 +353,20 @@ func TestRegression_SSH(t *testing.T) {
 	t.Run("DEDUP", func(t *testing.T) {
 		t.Run("UniqueIPs_30", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
     | DEDUP ip
-    | STATS count`)
+    | STATS count() as count`)
 			requireAggValue(t, rows, "count", 30)
 		})
 		t.Run("WithLimit_NoneOver3", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
     | DEDUP 3 ip
-    | STATS count BY ip
+    | STATS count() as count BY ip
     | WHERE count > 3
-    | STATS count`)
+    | STATS count() as count`)
 			requireAggValue(t, rows, "count", 0)
 		})
 	})
@@ -375,19 +375,19 @@ func TestRegression_SSH(t *testing.T) {
 	t.Run("EVENTSTATS", func(t *testing.T) {
 		t.Run("WithBY_TopIP_867", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
-    | EVENTSTATS count AS ip_count BY ip
-    | WHERE ip = "183.62.140.253"
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
+    | EVENTSTATS count() AS ip_count BY ip
+    | WHERE ip == "183.62.140.253"
     | HEAD 1
-    | TABLE ip, ip_count`)
+    | keep ip, ip_count`)
 			ipCount := getInt(rows, "ip_count")
 			if ipCount != 867 {
 				t.Errorf("expected ip_count=867, got %d", ipCount)
 			}
 		})
 		t.Run("DoesNotReduce_2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | EVENTSTATS count AS total | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | EVENTSTATS count() AS total | STATS count() as count`)
 			requireAggValue(t, rows, "count", 2000)
 		})
 	})
@@ -395,23 +395,23 @@ func TestRegression_SSH(t *testing.T) {
 	// STREAMSTATS
 	t.Run("STREAMSTATS", func(t *testing.T) {
 		t.Run("RunningCount_10Rows", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | STREAMSTATS count AS row_num | WHERE row_num <= 10 | TABLE row_num`)
+			rows := mustQuery(t, eng, `FROM main | STREAMSTATS count() AS row_num | WHERE row_num <= 10 | keep row_num`)
 			requireRowCount(t, rows, 10)
 		})
 		t.Run("CurrentTrue_LastRow2000", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | STREAMSTATS count AS running_total current=true
-    | WHERE running_total = 2000
-    | STATS count`)
+    | STREAMSTATS current=true count() AS running_total
+    | WHERE running_total == 2000
+    | STATS count() as count`)
 			requireAggValue(t, rows, "count", 1)
 		})
 		t.Run("WithBY_FirstOccurrence", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
-    | STREAMSTATS count AS ip_running_count BY ip
-    | WHERE ip = "183.62.140.253" AND ip_running_count = 1
-    | STATS count`)
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
+    | STREAMSTATS count() AS ip_running_count BY ip
+    | WHERE ip == "183.62.140.253" AND ip_running_count == 1
+    | STATS count() as count`)
 			requireAggValue(t, rows, "count", 1)
 		})
 	})
@@ -420,18 +420,18 @@ func TestRegression_SSH(t *testing.T) {
 	t.Run("TRANSACTION", func(t *testing.T) {
 		t.Run("ByIP_30Transactions", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
     | TRANSACTION ip
-    | STATS count`)
+    | STATS count() as count`)
 			requireAggValue(t, rows, "count", 30)
 		})
 		t.Run("Duration_PositiveMax", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
     | TRANSACTION ip
-    | EVAL duration_sec = duration
+    | extend duration_sec = duration
     | STATS max(duration_sec) AS max_duration`)
 			maxD := getFloat(rows, "max_duration")
 			if maxD <= 0 {
@@ -444,9 +444,9 @@ func TestRegression_SSH(t *testing.T) {
 	t.Run("ComplexPipelines", func(t *testing.T) {
 		t.Run("BruteForceDetection_Has183", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "Failed password for (?:invalid user )?(?<target>\w+) from (?<src_ip>\d+\.\d+\.\d+\.\d+) port (?<port>\d+)"
-    | WHERE isnotnull(src_ip)
-    | STATS count AS attempts, dc(target) AS unique_targets BY src_ip
+    | parse regex r"Failed password for (?:invalid user )?(?<target>\w+) from (?<src_ip>\d+\.\d+\.\d+\.\d+) port (?<port>\d+)"
+    | WHERE exists(src_ip)
+    | STATS count() AS attempts, dc(target) AS unique_targets BY src_ip
     | WHERE attempts > 50
     | SORT - attempts`)
 			if len(rows) < 1 {
@@ -464,23 +464,23 @@ func TestRegression_SSH(t *testing.T) {
 		})
 		t.Run("EventClassification_PercentagesSumTo100", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | EVAL category = CASE(
-          match(_raw, "Failed password"), "auth_failure",
-          match(_raw, "Accepted"), "auth_success",
-          match(_raw, "Invalid user"), "invalid_user",
-          match(_raw, "BREAK-IN"), "breakin",
-          match(_raw, "Connection closed"), "conn_closed",
-          match(_raw, "Received disconnect"), "disconnect",
-          match(_raw, "pam_unix"), "pam",
-          1=1, "other"
+    | extend category = CASE(
+          matches(_raw, r"Failed password"), "auth_failure",
+          matches(_raw, r"Accepted"), "auth_success",
+          matches(_raw, r"Invalid user"), "invalid_user",
+          matches(_raw, r"BREAK-IN"), "breakin",
+          matches(_raw, r"Connection closed"), "conn_closed",
+          matches(_raw, r"Received disconnect"), "disconnect",
+          matches(_raw, r"pam_unix"), "pam",
+          "other"
       )
-    | STATS count BY category
+    | STATS count() as count BY category
     | EVENTSTATS sum(count) AS total
-    | EVAL percentage = round(count * 100 / total, 1)
+    | extend pct = round(count * 100.0 / total, 1)
     | SORT - count`)
 			totalPct := 0.0
 			for _, row := range rows {
-				totalPct += toFloat(row["percentage"])
+				totalPct += toFloat(row["pct"])
 			}
 			if totalPct < 99 || totalPct > 101 {
 				t.Errorf("expected percentages to sum to ~100, got %f", totalPct)
@@ -488,16 +488,16 @@ func TestRegression_SSH(t *testing.T) {
 		})
 		t.Run("TwoLevelAggregation_AtLeast2ThreatLevels", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "(?<ip>\d+\.\d+\.\d+\.\d+)"
-    | WHERE isnotnull(ip)
-    | STATS count BY ip
-    | EVAL threat_level = CASE(
+    | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)"
+    | WHERE exists(ip)
+    | STATS count() as count BY ip
+    | extend threat_level = CASE(
           count > 500, "critical",
           count > 100, "high",
           count > 50, "medium",
-          1=1, "low"
+          "low"
       )
-    | STATS count BY threat_level
+    | STATS count() as count BY threat_level
     | SORT - count`)
 			if len(rows) < 2 {
 				t.Errorf("expected at least 2 threat levels, got %d", len(rows))
@@ -505,53 +505,53 @@ func TestRegression_SSH(t *testing.T) {
 		})
 	})
 
-	// Wildcard Search
+	// Wildcard Search -> where matches/contains/has
 	t.Run("WildcardSearch", func(t *testing.T) {
 		// Prefix
 		t.Run("Prefix_Failed_610", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search Failed* | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)\bFailed") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 610)
 		})
 		// Suffix
 		t.Run("Suffix_Preauth_618", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search *preauth | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)preauth\b") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 618)
 		})
 		// Contains
 		t.Run("Contains_Password_521", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "*password*" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "password") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 521)
 		})
 		// Multi-wildcard
 		t.Run("Multi_FailedFromPort_524", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Failed*from*port" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)Failed.*from.*port") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 524)
 		})
 		// All
 		t.Run("WildcardOnly_All_2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search * | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | STATS count() as count`)
 			requireAggValue(t, rows, "count", 2000)
 		})
 		// Boolean combos
 		t.Run("WildcardAND_Root_370", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Failed*" root | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)\bFailed") and has(_raw, "root") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 370)
 		})
 		t.Run("WildcardOR_FailedOrInvalid_836", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Failed*" OR "Invalid*" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)\bFailed") or matches(_raw, r"(?i)\bInvalid") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 836)
 		})
 		t.Run("WildcardNOT_NotRoot_1257", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search NOT "*root*" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where not contains(_raw, "root") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 1257)
 		})
 		// Field comparison
 		t.Run("FieldPrefix_IP173_10", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | search ip=173.234.* | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip) | where starts_with(ip, "173.234.") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 10)
 		})
 		t.Run("FieldExistence_Port_525", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "port (?<port>\d+)" | search port=* | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"port (?<port>\d+)" | where exists(port) | STATS count() as count`)
 			total := getInt(rows, "count")
 			if total != 525 {
 				t.Errorf("expected 525 events with port field, got %d", total)
@@ -562,56 +562,56 @@ func TestRegression_SSH(t *testing.T) {
 
 // Sort Elimination Correctness: verify that optimizer sort elimination does not
 // change query results. These tests execute queries through the full engine
-// (parser → optimizer → pipeline) and check result correctness.
+// (parser -> optimizer -> pipeline) and check result correctness.
 
 func TestRegression_SortElimination(t *testing.T) {
 	eng := sshEngine(t)
 
 	t.Run("SortTime_StatsCount", func(t *testing.T) {
-		// sort _time | stats count → sort eliminated (dead sort before stats), correct count
-		rows := mustQuery(t, eng, `FROM main | SORT _time | STATS count`)
+		// sort _time | stats count -> sort eliminated (dead sort before stats), correct count
+		rows := mustQuery(t, eng, `FROM main | SORT _time | STATS count() as count`)
 		requireAggValue(t, rows, "count", 2000)
 	})
 
 	t.Run("SortTime_StatsAvgByHost", func(t *testing.T) {
-		// sort _time | stats count by ip → sort eliminated, correct aggregation
-		rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | SORT _time | STATS dc(ip) AS unique_ips`)
+		// sort _time | stats count by ip -> sort eliminated, correct aggregation
+		rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | SORT _time | STATS dc(ip) AS unique_ips`)
 		requireAggValue(t, rows, "unique_ips", 30)
 	})
 
 	t.Run("SortTime_DedupField", func(t *testing.T) {
-		// sort _time | dedup ip → sort eliminated (dedup is order-destroying), correct count
-		rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | SORT _time | DEDUP ip | STATS count`)
+		// sort _time | dedup ip -> sort eliminated (dedup is order-destroying), correct count
+		rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip) | SORT _time | DEDUP ip | STATS count() as count`)
 		requireAggValue(t, rows, "count", 30)
 	})
 
 	t.Run("SortTime_EvalStatsCount", func(t *testing.T) {
-		// sort _time | eval x=1 | stats count → sort eliminated (eval preserves, stats destroys)
-		rows := mustQuery(t, eng, `FROM main | SORT _time | EVAL x=1 | STATS count`)
+		// sort _time | extend x=1 | stats count -> sort eliminated (extend preserves, stats destroys)
+		rows := mustQuery(t, eng, `FROM main | SORT _time | extend x = 1 | STATS count() as count`)
 		requireAggValue(t, rows, "count", 2000)
 	})
 
 	t.Run("SortTime_Head5", func(t *testing.T) {
-		// sort _time | head 5 → sort kept (or fused to TopN), correct 5 rows
+		// sort _time | head 5 -> sort kept (or fused to TopN), correct 5 rows
 		rows := mustQuery(t, eng, `FROM main | SORT _time | HEAD 5`)
 		requireRowCount(t, rows, 5)
 	})
 
 	t.Run("SortTime_StreamstatsCount", func(t *testing.T) {
-		// sort _time | streamstats count → sort kept (streamstats depends on order)
-		rows := mustQuery(t, eng, `FROM main | SORT _time | STREAMSTATS count AS row_num | WHERE row_num <= 10 | STATS count`)
+		// sort _time | streamstats count -> sort kept (streamstats depends on order)
+		rows := mustQuery(t, eng, `FROM main | SORT _time | STREAMSTATS count() AS row_num | WHERE row_num <= 10 | STATS count() as count`)
 		requireAggValue(t, rows, "count", 10)
 	})
 
 	t.Run("DoubleSortEliminated_StatsCount", func(t *testing.T) {
-		// sort a | sort -b | stats count → both sorts eliminated, correct count
-		rows := mustQuery(t, eng, `FROM main | SORT _time | SORT -_time | STATS count`)
+		// sort a | sort -b | stats count -> both sorts eliminated, correct count
+		rows := mustQuery(t, eng, `FROM main | SORT _time | SORT -_time | STATS count() as count`)
 		requireAggValue(t, rows, "count", 2000)
 	})
 
 	t.Run("FirstSortEliminated_SecondKept", func(t *testing.T) {
-		// sort _time | stats count | sort -count → first sort eliminated, second kept
-		rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | SORT _time | STATS count BY ip | SORT -count | HEAD 1`)
+		// sort _time | stats count | sort -count -> first sort eliminated, second kept
+		rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip) | SORT _time | STATS count() as count BY ip | SORT -count | HEAD 1`)
 		requireRowCount(t, rows, 1)
 		// Top IP by count should be 183.62.140.253 with 867 events.
 		topCount := toInt(rows[0]["count"])
@@ -621,8 +621,8 @@ func TestRegression_SortElimination(t *testing.T) {
 	})
 
 	t.Run("TerminalSort_CorrectOrder", func(t *testing.T) {
-		// Terminal sort count | head 5 → correct ascending order verified
-		rows := mustQuery(t, eng, `FROM main | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | STATS count BY ip | SORT count | HEAD 5`)
+		// Terminal sort count | head 5 -> correct ascending order verified
+		rows := mustQuery(t, eng, `FROM main | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE exists(ip) | STATS count() as count BY ip | SORT count | HEAD 5`)
 		requireRowCount(t, rows, 5)
 		for i := 1; i < len(rows); i++ {
 			prev := toInt(rows[i-1]["count"])
@@ -634,7 +634,7 @@ func TestRegression_SortElimination(t *testing.T) {
 	})
 }
 
-// OpenStack Dataset: OpenStack_2k.log (1999 non-blank lines → 2000 events)
+// OpenStack Dataset: OpenStack_2k.log (1999 non-blank lines -> 2000 events)
 
 func TestRegression_OpenStack(t *testing.T) {
 	eng := openstackEngine(t)
@@ -642,23 +642,23 @@ func TestRegression_OpenStack(t *testing.T) {
 	// Ingestion
 	t.Run("Ingestion", func(t *testing.T) {
 		t.Run("TotalCount_2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | STATS count() as count`)
 			requireAggValue(t, rows, "count", 2000)
 		})
 	})
 
-	// Search
+	// Search -> where contains/has
 	t.Run("Search", func(t *testing.T) {
 		t.Run("VMStarted_22", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "VM Started" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "VM Started") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 22)
 		})
 		t.Run("WARNING_31", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search WARNING | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where has(_raw, "WARNING") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 31)
 		})
 		t.Run("LifecycleEvent_109", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "Lifecycle Event" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "Lifecycle Event") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 109)
 		})
 	})
@@ -666,19 +666,19 @@ func TestRegression_OpenStack(t *testing.T) {
 	// WHERE
 	t.Run("WHERE", func(t *testing.T) {
 		t.Run("OR_VMStartedOrStopped_43", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | WHERE match(_raw, "VM Started") OR match(_raw, "VM Stopped") | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | WHERE matches(_raw, r"VM Started") OR matches(_raw, r"VM Stopped") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 43)
 		})
 		t.Run("NumericGTE_Status400_41", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "status: (?<status>\d+)" | WHERE isnotnull(status) | WHERE tonumber(status) >= 400 | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"status: (?<status>\d+)" | WHERE exists(status) | WHERE float(status) >= 400 | STATS count() as count`)
 			requireAggValue(t, rows, "count", 41)
 		})
 	})
 
-	// REX
+	// REX -> parse regex
 	t.Run("REX", func(t *testing.T) {
 		t.Run("LogLevel_INFO1969_WARNING31", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ \d+ (?<log_level>\w+)" | STATS count BY log_level | SORT log_level`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d+ \d+ (?<log_level>\w+)" | STATS count() as count BY log_level | SORT log_level`)
 			found := rowsToMap(rows, "log_level", "count")
 			if found["INFO"] != 1969 {
 				t.Errorf("expected INFO=1969, got %d", found["INFO"])
@@ -688,7 +688,7 @@ func TestRegression_OpenStack(t *testing.T) {
 			}
 		})
 		t.Run("HTTPStatus_200_933_404_41", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "status: (?<http_status>\d+)" | WHERE isnotnull(http_status) | STATS count BY http_status | SORT - count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"status: (?<http_status>\d+)" | WHERE exists(http_status) | STATS count() as count BY http_status | SORT - count`)
 			statusCounts := rowsToMap(rows, "http_status", "count")
 			expected := map[string]int{"200": 933, "404": 41, "204": 22, "202": 21}
 			for status, count := range expected {
@@ -698,7 +698,7 @@ func TestRegression_OpenStack(t *testing.T) {
 			}
 		})
 		t.Run("HTTPMethod_GET931_POST64_DELETE22", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "\"(?<http_method>GET|POST|PUT|DELETE|PATCH)" | WHERE isnotnull(http_method) | STATS count BY http_method | SORT - count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"(?<http_method>GET|POST|PUT|DELETE|PATCH) /" | WHERE exists(http_method) | STATS count() as count BY http_method | SORT - count`)
 			methods := rowsToMap(rows, "http_method", "count")
 			if methods["GET"] != 931 {
 				t.Errorf("GET: expected 931, got %d", methods["GET"])
@@ -711,24 +711,24 @@ func TestRegression_OpenStack(t *testing.T) {
 			}
 		})
 		t.Run("InstanceUUID_DC22", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "\[instance: (?<instance_id>[a-f0-9-]+)\]" | WHERE isnotnull(instance_id) | STATS dc(instance_id) AS unique_instances`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"\[instance: (?<instance_id>[a-f0-9-]+)\]" | WHERE exists(instance_id) | STATS dc(instance_id) AS unique_instances`)
 			requireAggValue(t, rows, "unique_instances", 22)
 		})
 	})
 
-	// EVAL
+	// EVAL -> extend
 	t.Run("EVAL", func(t *testing.T) {
 		t.Run("Arithmetic_SlowRequests_81", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "time: (?<resp_time>[0-9.]+)"
-    | WHERE isnotnull(resp_time)
-    | EVAL resp_ms = round(tonumber(resp_time) * 1000, 2)
+    | parse regex r"time: (?<resp_time>[0-9.]+)"
+    | WHERE exists(resp_time)
+    | extend resp_ms = round(float(resp_time) * 1000, 2)
     | WHERE resp_ms > 300
-    | STATS count`)
+    | STATS count() as count`)
 			requireAggValue(t, rows, "count", 81)
 		})
 		t.Run("Lower_INFO1969_WARNING31", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "\d+ (?<level>[A-Z]+) " | EVAL level_lower = lower(level) | STATS count BY level_lower`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"\d+ (?<level>[A-Z]+) " | extend level_lower = lower(level) | STATS count() as count BY level_lower`)
 			levels := rowsToMap(rows, "level_lower", "count")
 			if levels["info"] != 1969 {
 				t.Errorf("expected info=1969, got %d", levels["info"])
@@ -738,7 +738,7 @@ func TestRegression_OpenStack(t *testing.T) {
 			}
 		})
 		t.Run("Substr_Positive", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | EVAL log_source = substr(_raw, 1, 10) | STATS dc(log_source) AS unique_prefixes`)
+			rows := mustQuery(t, eng, `FROM main | extend log_source = substr(_raw, 0, 10) | STATS dc(log_source) AS unique_prefixes`)
 			prefixes := getInt(rows, "unique_prefixes")
 			if prefixes < 3 {
 				t.Errorf("expected at least 3 unique prefixes, got %d", prefixes)
@@ -749,7 +749,7 @@ func TestRegression_OpenStack(t *testing.T) {
 	// STATS
 	t.Run("STATS", func(t *testing.T) {
 		t.Run("CountBY_Status200_933", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "status: (?<status>\d+)" | WHERE isnotnull(status) | STATS count BY status | SORT - count`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"status: (?<status>\d+)" | WHERE exists(status) | STATS count() as count BY status | SORT - count`)
 			if len(rows) < 4 {
 				t.Errorf("expected at least 4 status codes, got %d", len(rows))
 			}
@@ -762,7 +762,7 @@ func TestRegression_OpenStack(t *testing.T) {
 			}
 		})
 		t.Run("MinMax_ResponseTime", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "time: (?<resp_time>[0-9.]+)" | WHERE isnotnull(resp_time) | EVAL rt = tonumber(resp_time) | STATS min(rt) AS min_time, max(rt) AS max_time`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"time: (?<resp_time>[0-9.]+)" | WHERE exists(resp_time) | extend rt = float(resp_time) | STATS min(rt) AS min_time, max(rt) AS max_time`)
 			minT := getFloat(rows, "min_time")
 			maxT := getFloat(rows, "max_time")
 			if minT >= maxT {
@@ -774,10 +774,10 @@ func TestRegression_OpenStack(t *testing.T) {
 		})
 		t.Run("Percentile_P95GEMedian", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "time: (?<resp_time>[0-9.]+)"
-    | WHERE isnotnull(resp_time)
-    | EVAL rt = tonumber(resp_time)
-    | STATS perc95(rt) AS p95, perc50(rt) AS median`)
+    | parse regex r"time: (?<resp_time>[0-9.]+)"
+    | WHERE exists(resp_time)
+    | extend rt = float(resp_time)
+    | STATS p95(rt) AS p95, p50(rt) AS median`)
 			p95 := getFloat(rows, "p95")
 			median := getFloat(rows, "median")
 			if p95 < median {
@@ -788,7 +788,7 @@ func TestRegression_OpenStack(t *testing.T) {
 			}
 		})
 		t.Run("Sum_PositiveTotalBytes", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | REX "len: (?<resp_len>\d+)" | WHERE isnotnull(resp_len) | EVAL resp_len_num = tonumber(resp_len) | STATS sum(resp_len_num) AS total_bytes, avg(resp_len_num) AS avg_bytes`)
+			rows := mustQuery(t, eng, `FROM main | parse regex r"len: (?<resp_len>\d+)" | WHERE exists(resp_len) | extend resp_len_num = float(resp_len) | STATS sum(resp_len_num) AS total_bytes, avg(resp_len_num) AS avg_bytes`)
 			total := getFloat(rows, "total_bytes")
 			avg := getFloat(rows, "avg_bytes")
 			if total <= 0 || avg <= 0 {
@@ -797,10 +797,10 @@ func TestRegression_OpenStack(t *testing.T) {
 		})
 	})
 
-	// BIN
+	// BIN -> extend ... = bin(...)
 	t.Run("BIN", func(t *testing.T) {
 		t.Run("Span5m_SumsTo2000", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | BIN _time span=5m AS time_bucket | STATS count BY time_bucket | SORT time_bucket`)
+			rows := mustQuery(t, eng, `FROM main | extend time_bucket = bin(_time, 5m) | STATS count() as count BY time_bucket | SORT time_bucket`)
 			total := 0
 			for _, row := range rows {
 				total += toInt(row["count"])
@@ -810,7 +810,7 @@ func TestRegression_OpenStack(t *testing.T) {
 			}
 		})
 		t.Run("BucketCount_About15", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | BIN _time span=1m AS bucket | STATS dc(bucket) AS num_buckets`)
+			rows := mustQuery(t, eng, `FROM main | extend bucket = bin(_time, 1m) | STATS dc(bucket) AS num_buckets`)
 			buckets := getInt(rows, "num_buckets")
 			if buckets < 10 || buckets > 20 {
 				t.Errorf("expected ~15 buckets, got %d", buckets)
@@ -822,11 +822,11 @@ func TestRegression_OpenStack(t *testing.T) {
 	t.Run("EVENTSTATS", func(t *testing.T) {
 		t.Run("GlobalAggregation_1017", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "status: (?<status>\d+)"
-    | WHERE isnotnull(status)
-    | EVENTSTATS count AS total_requests
+    | parse regex r"status: (?<status>\d+)"
+    | WHERE exists(status)
+    | EVENTSTATS count() AS total_requests
     | HEAD 1
-    | TABLE status, total_requests`)
+    | keep status, total_requests`)
 			totalReq := getInt(rows, "total_requests")
 			if totalReq != 1017 {
 				t.Errorf("expected total_requests=1017, got %d", totalReq)
@@ -834,11 +834,11 @@ func TestRegression_OpenStack(t *testing.T) {
 		})
 		t.Run("Percentage_Status200_About92", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "status: (?<status>\d+)"
-    | WHERE isnotnull(status)
-    | STATS count BY status
+    | parse regex r"status: (?<status>\d+)"
+    | WHERE exists(status)
+    | STATS count() as count BY status
     | EVENTSTATS sum(count) AS total
-    | EVAL pct = round(count * 100 / total, 2)
+    | extend pct = round(count * 100.0 / total, 2)
     | SORT - pct`)
 			if len(rows) == 0 {
 				t.Fatal("expected at least 1 row")
@@ -858,19 +858,19 @@ func TestRegression_OpenStack(t *testing.T) {
 	t.Run("ComplexPipelines", func(t *testing.T) {
 		t.Run("InstanceLifecycle_AtLeast3Types", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "\[instance: (?<instance_id>[a-f0-9-]+)\]"
-    | WHERE isnotnull(instance_id)
-    | EVAL lifecycle_event = CASE(
-          match(_raw, "VM Started"), "started",
-          match(_raw, "VM Stopped"), "stopped",
-          match(_raw, "VM Paused"), "paused",
-          match(_raw, "VM Resumed"), "resumed",
-          match(_raw, "spawned successfully"), "spawned",
-          match(_raw, "Deleting instance"), "deleting",
-          match(_raw, "Terminating"), "terminating",
-          1=1, "other"
+    | parse regex r"\[instance: (?<instance_id>[a-f0-9-]+)\]"
+    | WHERE exists(instance_id)
+    | extend lifecycle_event = CASE(
+          matches(_raw, r"VM Started"), "started",
+          matches(_raw, r"VM Stopped"), "stopped",
+          matches(_raw, r"VM Paused"), "paused",
+          matches(_raw, r"VM Resumed"), "resumed",
+          matches(_raw, r"spawned successfully"), "spawned",
+          matches(_raw, r"Deleting instance"), "deleting",
+          matches(_raw, r"Terminating"), "terminating",
+          "other"
       )
-    | STATS count BY lifecycle_event
+    | STATS count() as count BY lifecycle_event
     | SORT - count`)
 			if len(rows) < 3 {
 				t.Errorf("expected at least 3 lifecycle event types, got %d", len(rows))
@@ -878,11 +878,11 @@ func TestRegression_OpenStack(t *testing.T) {
 		})
 		t.Run("APILatencyAnalysis_AtLeast2Methods", func(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main
-    | REX "\"(?<method>GET|POST|DELETE) (?<url_path>/[^\s]+) HTTP"
-    | REX "status: (?<status>\d+) len: (?<resp_len>\d+) time: (?<resp_time>[0-9.]+)"
-    | WHERE isnotnull(method)
-    | EVAL resp_ms = round(tonumber(resp_time) * 1000, 2)
-    | STATS count AS requests, avg(resp_ms) AS avg_latency, max(resp_ms) AS max_latency BY method
+    | parse regex r"(?<method>GET|POST|DELETE) (?<url_path>/\S+) HTTP"
+    | parse regex r"status: (?<status>\d+) len: (?<resp_len>\d+) time: (?<resp_time>[0-9.]+)"
+    | WHERE exists(method)
+    | extend resp_ms = round(float(resp_time) * 1000, 2)
+    | STATS count() AS requests, avg(resp_ms) AS avg_latency, max(resp_ms) AS max_latency BY method
     | SORT method`)
 			if len(rows) < 2 {
 				t.Errorf("expected at least 2 methods, got %d", len(rows))
@@ -890,21 +890,19 @@ func TestRegression_OpenStack(t *testing.T) {
 		})
 	})
 
-	// Wildcard Search
+	// Wildcard Search -> where contains/matches
 	t.Run("WildcardSearch", func(t *testing.T) {
 		t.Run("LifecycleEvent_109", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "*Lifecycle Event*" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where contains(_raw, "Lifecycle Event") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 109)
 		})
 		t.Run("VMEvent_109", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | search "VM*Event" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)VM.*Event") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 109)
 		})
 		t.Run("NovaInstance_923", func(t *testing.T) {
 			// Raw data has 923 lines matching nova.*instance (case-insensitive).
-			// The E2E test expected 646 through HTTP — that is a bug in the E2E
-			// expected value or in the HTTP search path. The engine is correct.
-			rows := mustQuery(t, eng, `FROM main | search "nova*instance*" | STATS count`)
+			rows := mustQuery(t, eng, `FROM main | where matches(_raw, r"(?i)nova.*instance") | STATS count() as count`)
 			requireAggValue(t, rows, "count", 923)
 		})
 	})

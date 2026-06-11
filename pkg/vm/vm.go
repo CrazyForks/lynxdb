@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 const StackSize = 256
@@ -2989,17 +2988,16 @@ func ipMaskValue(mask, ip event.Value) event.Value {
 	return event.StringValue(masked.String())
 }
 
-func searchMatchValue(search event.Value, fields map[string]event.Value) event.Value {
-	if search.IsNull() {
-		return event.BoolValue(false)
-	}
-	expr, err := spl2.ParseSearchExpression(valueToString(search))
-	if err != nil {
-		return event.BoolValue(false)
-	}
-	evaluator := spl2.NewSearchEvaluator(expr)
-
-	return event.BoolValue(evaluator.Evaluate(fields))
+// searchMatchValue is a legacy opcode handler for the SPL2 search-match
+// predicate. The SPL2 search expression parser has been removed (RFC-002
+// Phase 10). LynxFlow queries compile search predicates through the LF
+// compiler path and never emit OpSearchMatch. This stub returns false for
+// any residual bytecode that references the opcode.
+//
+// TODO(RFC-002): remove OpSearchMatch from the opcode table once all
+// persisted bytecode referencing it has been flushed (materialized views).
+func searchMatchValue(_ event.Value, _ map[string]event.Value) event.Value {
+	return event.BoolValue(false)
 }
 
 // splTimeReplacer converts SPL2 strftime format tokens to Go time layout tokens.

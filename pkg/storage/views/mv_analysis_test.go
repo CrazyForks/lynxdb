@@ -90,44 +90,6 @@ func TestAnalyzeLynxFlow_RejectsJoin(t *testing.T) {
 	}
 }
 
-func TestAnalyzeLynxFlow_AggSpecCompatibleWithSPL2(t *testing.T) {
-	// The critical compatibility property: LynxFlow and SPL2 produce
-	// the same func Name and Field for each agg. The Alias may differ
-	// in syntax (count() vs count) but for migrated views the AggSpec
-	// is PRESERVED from the original SPL2 definition, so aliases stay
-	// identical. Here we verify the semantic compatibility.
-	lfAn, err := AnalyzeLynxFlow(`from main | stats count(), sum(bytes), avg(duration) by host`)
-	if err != nil {
-		t.Fatalf("AnalyzeLynxFlow: %v", err)
-	}
-
-	spl2An, err := AnalyzeQuery(`FROM main | stats count, sum(bytes), avg(duration) by host`)
-	if err != nil {
-		t.Fatalf("AnalyzeQuery: %v", err)
-	}
-
-	// Compare func Name and Field (storage-critical). Alias differs but
-	// is preserved on migration.
-	if len(lfAn.AggSpec.Funcs) != len(spl2An.AggSpec.Funcs) {
-		t.Fatalf("Funcs length mismatch: lynxflow=%d, spl2=%d",
-			len(lfAn.AggSpec.Funcs), len(spl2An.AggSpec.Funcs))
-	}
-	for i, lf := range lfAn.AggSpec.Funcs {
-		sp := spl2An.AggSpec.Funcs[i]
-		if lf.Name != sp.Name {
-			t.Errorf("func[%d] name: lynxflow=%q, spl2=%q", i, lf.Name, sp.Name)
-		}
-		if lf.Field != sp.Field {
-			t.Errorf("func[%d] field: lynxflow=%q, spl2=%q", i, lf.Field, sp.Field)
-		}
-	}
-
-	if len(lfAn.GroupBy) != len(spl2An.GroupBy) {
-		t.Fatalf("GroupBy length mismatch: lynxflow=%v, spl2=%v", lfAn.GroupBy, spl2An.GroupBy)
-	}
-	for i := range lfAn.GroupBy {
-		if lfAn.GroupBy[i] != spl2An.GroupBy[i] {
-			t.Errorf("GroupBy[%d]: lynxflow=%q, spl2=%q", i, lfAn.GroupBy[i], spl2An.GroupBy[i])
-		}
-	}
-}
+// TestAnalyzeLynxFlow_AggSpecCompatibleWithSPL2 was deleted in RFC-002 P10:
+// AnalyzeQuery (spl2 path) is a stub returning nil. Cross-language
+// compatibility is no longer relevant — LynxFlow is the only language.

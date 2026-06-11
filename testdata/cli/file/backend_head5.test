@@ -1,3 +1,6 @@
 # file: backend_server.log
 # format: json
-| head 5 | fields level, service, status | sort level, service
+from main
+| head 5
+| keep level, service, status
+| sort level, service

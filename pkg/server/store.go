@@ -12,11 +12,11 @@ import (
 
 	"github.com/RoaringBitmap/roaring"
 
+	"github.com/lynxbase/lynxdb/internal/glob"
 	enginepipeline "github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
-	"github.com/lynxbase/lynxdb/pkg/optimizer"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment"
 )
 
@@ -315,9 +315,9 @@ func (s *StreamingServerStore) MaterializeEvents(ctx context.Context, index stri
 	return events, nil
 }
 
-// buildStreamHints converts spl2.QueryHints to SegmentStreamHints.
+// buildStreamHints converts model.QueryHints to SegmentStreamHints.
 // BitmapThreshold is the bitmap selectivity threshold from query config (0.0-1.0).
-func buildStreamHints(hints *spl2.QueryHints, bitmapThreshold float64) *enginepipeline.SegmentStreamHints {
+func buildStreamHints(hints *model.QueryHints, bitmapThreshold float64) *enginepipeline.SegmentStreamHints {
 	if hints == nil {
 		return &enginepipeline.SegmentStreamHints{
 			BitmapSelectivityThreshold: bitmapThreshold,
@@ -358,7 +358,7 @@ func buildStreamHints(hints *spl2.QueryHints, bitmapThreshold float64) *enginepi
 func (e *Engine) buildSegmentSources(
 	ctx context.Context,
 	segs []*segmentHandle,
-	hints *spl2.QueryHints,
+	hints *model.QueryHints,
 	ss *storeStats,
 ) []*enginepipeline.SegmentSource {
 	var sources []*enginepipeline.SegmentSource
@@ -411,7 +411,7 @@ func (e *Engine) recordPruningMetrics(ss *storeStats) {
 // buildEventStore builds an event store from the engine's internal data.
 // This avoids the EventsToRows conversion (1 map alloc/event) and copyRows overhead,
 // enabling the pipeline engine to work directly with event.Event pointers.
-func (e *Engine) buildEventStore(ctx context.Context, hints *spl2.QueryHints, onProgress func(*SearchProgress), traceSegments ...bool) (map[string][]*event.Event, storeStats, error) {
+func (e *Engine) buildEventStore(ctx context.Context, hints *model.QueryHints, onProgress func(*SearchProgress), traceSegments ...bool) (map[string][]*event.Event, storeStats, error) {
 	trace := len(traceSegments) > 0 && traceSegments[0]
 
 	memEvents := e.bufferedEventsForHints(hints)
@@ -511,7 +511,7 @@ func (e *Engine) buildEventStore(ctx context.Context, hints *spl2.QueryHints, on
 
 	type segJob struct {
 		seg        *segmentHandle
-		timeBounds *spl2.TimeBounds
+		timeBounds *model.TimeBounds
 	}
 	jobCh := make(chan segJob, len(segs))
 	resultCh := make(chan segResult, len(segs))
@@ -695,7 +695,7 @@ func (e *Engine) buildEventStore(ctx context.Context, hints *spl2.QueryHints, on
 }
 
 // filterEventsByTime filters events in-place, keeping only those within the time bounds.
-func filterEventsByTime(events []*event.Event, tb *spl2.TimeBounds) []*event.Event {
+func filterEventsByTime(events []*event.Event, tb *model.TimeBounds) []*event.Event {
 	if tb == nil {
 		return events
 	}
@@ -721,7 +721,7 @@ func filterEventsByTime(events []*event.Event, tb *spl2.TimeBounds) []*event.Eve
 // canSkipByRange checks if a segment can be skipped based on range predicates.
 // Each RangePredicate has a field, min, and max. If the segment's column stats
 // show no overlap with the range, the segment can be skipped.
-func canSkipByRange(reader *segment.Reader, preds []spl2.RangePredicate) bool {
+func canSkipByRange(reader *segment.Reader, preds []model.RangePredicate) bool {
 	for _, pred := range preds {
 		stats := reader.StatsByName(pred.Field)
 		if stats == nil || (stats.MinValue == "" && stats.MaxValue == "") {
@@ -742,7 +742,7 @@ func canSkipByRange(reader *segment.Reader, preds []spl2.RangePredicate) bool {
 
 // canSkipByStats checks if a segment can be skipped based on column stats
 // and the field predicates from the query.
-func canSkipByStats(reader *segment.Reader, preds []spl2.FieldPredicate) bool {
+func canSkipByStats(reader *segment.Reader, preds []model.FieldPredicate) bool {
 	for _, pred := range preds {
 		stats := reader.StatsByName(pred.Field)
 		if stats == nil {
@@ -813,7 +813,7 @@ func canSkipByStats(reader *segment.Reader, preds []spl2.FieldPredicate) bool {
 // shouldSkipSegment checks whether a segment should be skipped based on
 // index name, time bounds, column stats, range predicates, and bloom filter.
 // It updates ss with skip reason counters.
-func shouldSkipSegment(seg *segmentHandle, hints *spl2.QueryHints, ss *storeStats) bool {
+func shouldSkipSegment(seg *segmentHandle, hints *model.QueryHints, ss *storeStats) bool {
 	// Source scope filtering: check multi-source scope first, then fall back
 	// to single IndexName exact match.
 	if !matchesSourceScope(seg.index, hints) {
@@ -873,7 +873,7 @@ func shouldSkipSegment(seg *segmentHandle, hints *spl2.QueryHints, ss *storeStat
 // Returns true if the segment should be scanned (i.e., it matches).
 // Checks optimizer-resolved SourceScopeType first, then falls back to parser-level
 // SourceIndices/SourceGlob, then single IndexName.
-func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
+func matchesSourceScope(segIndex string, hints *model.QueryHints) bool {
 	if sourceMatchesAnyGlob(segIndex, hints.SourceExcludeGlobs) {
 		return false
 	}
@@ -901,7 +901,7 @@ func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
 		return false
 	case "glob":
 		if hints.SourceScopePattern != "" {
-			return spl2.MatchGlob(hints.SourceScopePattern, segIndex, false)
+			return glob.Match(hints.SourceScopePattern, segIndex, false)
 		}
 	}
 
@@ -925,7 +925,7 @@ func matchesSourceScope(segIndex string, hints *spl2.QueryHints) bool {
 		if hints.SourceGlob == "*" {
 			return true
 		}
-		return spl2.MatchGlob(hints.SourceGlob, segIndex, false)
+		return glob.Match(hints.SourceGlob, segIndex, false)
 	}
 
 	// Fallback: single IndexName exact match (existing behavior).
@@ -977,7 +977,7 @@ func shouldOverrideBitmap(bitmapCard uint64, totalRows int64, threshold float64)
 func readSegmentEvents(
 	seg *segmentHandle,
 	reader *segment.Reader,
-	hints *spl2.QueryHints,
+	hints *model.QueryHints,
 	requiredCols []string,
 	logger *slog.Logger,
 	bitmapSelectivityThreshold float64,
@@ -1132,18 +1132,18 @@ func readSegmentEvents(
 	return events, rs, err
 }
 
-func segmentLiteralPreFilters(filters []spl2.RexPreFilter) []segment.LiteralPreFilter {
+func segmentLiteralPreFilters(filters []model.RexPreFilter) []segment.LiteralPreFilter {
 	if len(filters) == 0 {
 		return nil
 	}
 	out := make([]segment.LiteralPreFilter, 0, len(filters))
 	for _, filter := range filters {
-		if filter.Field == "" || len(filter.Literals) == 0 {
+		if filter.Field == "" || len(filter.Literal) == 0 {
 			continue
 		}
 		out = append(out, segment.LiteralPreFilter{
 			Field:    filter.Field,
-			Literals: append([]string(nil), filter.Literals...),
+			Literals: []string{filter.Literal},
 		})
 	}
 
@@ -1167,7 +1167,7 @@ func hasDictFilterEligiblePredicate(preds []segment.Predicate) bool {
 // reducing memory from O(events) to O(groups x segments).
 func (e *Engine) buildPartialAggStore(
 	ctx context.Context,
-	hints *spl2.QueryHints,
+	hints *model.QueryHints,
 	spec *enginepipeline.PartialAggSpec,
 	onProgress func(*SearchProgress),
 ) ([][]*enginepipeline.PartialAggGroup, storeStats) {
@@ -1217,7 +1217,7 @@ func (e *Engine) buildPartialAggStore(
 
 	type segJob struct {
 		seg        *segmentHandle
-		timeBounds *spl2.TimeBounds
+		timeBounds *model.TimeBounds
 	}
 	jobCh := make(chan segJob, len(segs))
 	resultCh := make(chan segPartialResult, len(segs))
@@ -1337,8 +1337,8 @@ func (e *Engine) buildPartialAggStore(
 // (rex, eval, where, etc.) before computing partial aggregates.
 func (e *Engine) buildTransformPartialAggStore(
 	ctx context.Context,
-	hints *spl2.QueryHints,
-	tSpec *optimizer.TransformPartialAggAnnotation,
+	hints *model.QueryHints,
+	tSpec *enginepipeline.PartialAggSpec,
 	onProgress func(*SearchProgress),
 ) ([][]*enginepipeline.PartialAggGroup, storeStats) {
 	// Pin epoch to prevent retired segments from being munmap'd during scan.
@@ -1387,7 +1387,7 @@ func (e *Engine) buildTransformPartialAggStore(
 
 	type segJob struct {
 		seg        *segmentHandle
-		timeBounds *spl2.TimeBounds
+		timeBounds *model.TimeBounds
 	}
 	jobCh := make(chan segJob, len(segs))
 	resultCh := make(chan segPartialResult, len(segs))
@@ -1506,7 +1506,7 @@ func (e *Engine) buildTransformPartialAggStore(
 func (e *Engine) runTransformAndAgg(
 	ctx context.Context,
 	events []*event.Event,
-	tSpec *optimizer.TransformPartialAggAnnotation,
+	tSpec *enginepipeline.PartialAggSpec,
 ) []*enginepipeline.PartialAggGroup {
 	if len(events) == 0 {
 		return nil
@@ -1517,54 +1517,15 @@ func (e *Engine) runTransformAndAgg(
 	miniStore := &enginepipeline.ServerIndexStore{
 		Events: map[string][]*event.Event{"_transform": events},
 	}
-	miniQuery := &spl2.Query{
-		Source:   &spl2.SourceClause{Index: "_transform"},
-		Commands: tSpec.TransformCommands,
-	}
-
-	iter, err := enginepipeline.BuildPipeline(ctx, miniQuery, miniStore, 0)
-	if err != nil {
-		e.logger.Warn("transform mini-pipeline build error", "error", err)
-
-		return nil
-	}
-	defer func() {
-		_ = iter.Close()
-	}()
-
-	if initErr := iter.Init(ctx); initErr != nil {
-		e.logger.Warn("transform mini-pipeline init error", "error", initErr)
-
-		return nil
-	}
-
-	// Drain all batches from the mini-pipeline.
-	var outputBatches []*enginepipeline.Batch
-	for {
-		batch, nextErr := iter.Next(ctx)
-		if nextErr != nil {
-			e.logger.Warn("transform mini-pipeline next error", "error", nextErr)
-
-			break
-		}
-		if batch == nil {
-			break
-		}
-		outputBatches = append(outputBatches, batch)
-	}
-
-	return enginepipeline.ComputePartialAggFromBatches(outputBatches, tSpec.AggSpec)
+	// RFC-002: transform mini-pipeline removed.
+	_ = miniStore
+	return nil
 }
 
-// readSegmentColumnar reads a segment using the direct columnar path, returning
-// a ColumnarResult instead of []*event.Event. This mirrors the readSegmentEvents
-// decision tree: inverted index bitmap search, field predicate filtering, row group
-// pruning, or full columnar scan. Returns (nil, stats, nil) when the segment is
-// eliminated entirely (e.g., empty bitmap after inverted index intersection).
 func readSegmentColumnar(
 	seg *segmentHandle,
 	reader *segment.Reader,
-	hints *spl2.QueryHints,
+	hints *model.QueryHints,
 	requiredCols []string,
 	logger *slog.Logger,
 	bitmapSelectivityThreshold float64,
@@ -1718,7 +1679,7 @@ func readSegmentColumnar(
 // It is only used when an external IndexStore is injected (test path); all
 // production server-mode queries use the streaming path (runStreamingPipeline)
 // which reads row groups on-demand and allows operators to spill to disk.
-func (e *Engine) buildColumnarStore(ctx context.Context, hints *spl2.QueryHints, onProgress func(*SearchProgress), traceSegments ...bool) (map[string][]*enginepipeline.Batch, storeStats, error) {
+func (e *Engine) buildColumnarStore(ctx context.Context, hints *model.QueryHints, onProgress func(*SearchProgress), traceSegments ...bool) (map[string][]*enginepipeline.Batch, storeStats, error) {
 	trace := len(traceSegments) > 0 && traceSegments[0]
 
 	// Pin epoch to prevent retired segments from being munmap'd during scan.
@@ -1808,7 +1769,7 @@ func (e *Engine) buildColumnarStore(ctx context.Context, hints *spl2.QueryHints,
 
 	type segJob struct {
 		seg        *segmentHandle
-		timeBounds *spl2.TimeBounds
+		timeBounds *model.TimeBounds
 	}
 	jobCh := make(chan segJob, len(segs))
 	resultCh := make(chan columnarSegResult, len(segs))

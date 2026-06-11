@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| multisearch [where service="payment-service" | stats sum(amount_cents) as total_amount] [where service="gateway-service" | stats count as threat_count]

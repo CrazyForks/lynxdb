@@ -1,6 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| where (contains(_raw, "SQL injection") or contains(_raw, "Path traversal"))
-| stats count()

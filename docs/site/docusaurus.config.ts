@@ -120,8 +120,8 @@ const config: Config = {
               to: '/docs/getting-started/quickstart',
             },
             {
-              label: 'Lynx Flow Reference',
-              to: '/docs/lynx-flow/overview',
+              label: 'LynxFlow Reference',
+              to: '/docs/lynxflow/overview',
             },
             {
               label: 'REST API',

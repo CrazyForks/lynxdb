@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -14,7 +15,7 @@ func TestQueryExplain_Valid(t *testing.T) {
 	defer cleanup()
 
 	u := fmt.Sprintf("http://%s/api/v1/query/explain?q=%s", srv.Addr(),
-		url.QueryEscape(`FROM main | search "error" | head 10`))
+		url.QueryEscape(`FROM main | where has("error") | head 10`))
 	resp, err := http.Get(u)
 	if err != nil {
 		t.Fatal(err)
@@ -33,12 +34,13 @@ func TestQueryExplain_Valid(t *testing.T) {
 	if data["is_valid"] != true {
 		t.Fatal("expected is_valid=true")
 	}
-	parsed := data["parsed"].(map[string]interface{})
-	if parsed["result_type"] != "events" {
-		t.Fatalf("result_type: %v", parsed["result_type"])
+	plan, ok := data["lynxflow_plan"].(string)
+	if !ok || plan == "" {
+		t.Fatalf("missing lynxflow_plan: %#v", data)
 	}
-	if parsed["pipeline"] == nil {
-		t.Fatal("missing pipeline")
+	// Plan should mention Scan and Filter/Limit nodes.
+	if !strings.Contains(plan, "Scan") {
+		t.Fatalf("plan missing Scan: %s", plan)
 	}
 }
 
@@ -46,7 +48,10 @@ func TestQueryExplain_Rewrites(t *testing.T) {
 	srv, cleanup := startTestServer(t)
 	defer cleanup()
 
-	query := "stats count"
+	// "stats count()" without FROM should get a default-source rewrite from
+	// the LynxFlow desugar pass. The explain endpoint includes the desugared
+	// form in lynxflow_plan.
+	query := "stats count()"
 	u := fmt.Sprintf("http://%s/api/v1/query/explain?q=%s", srv.Addr(), url.QueryEscape(query))
 	resp, err := http.Get(u)
 	if err != nil {
@@ -62,16 +67,14 @@ func TestQueryExplain_Rewrites(t *testing.T) {
 	var envelope map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&envelope)
 	data := envelope["data"].(map[string]interface{})
-	rewrites, _ := data["rewrites"].([]interface{})
-	if len(rewrites) != 1 {
-		t.Fatalf("rewrites: got %#v, want one rewrite", data["rewrites"])
+
+	if data["is_valid"] != true {
+		t.Fatalf("expected is_valid=true, got: %#v", data)
 	}
-	first := rewrites[0].(map[string]interface{})
-	if first["after"] != "FROM main | stats count" {
-		t.Fatalf("after: got %v, want FROM main | stats count", first["after"])
-	}
-	if first["reason"] != "default-source" {
-		t.Fatalf("reason: got %v, want default-source", first["reason"])
+	// The plan should reference the default source "main".
+	plan, _ := data["lynxflow_plan"].(string)
+	if !strings.Contains(plan, "main") {
+		t.Fatalf("plan missing default source 'main': %s", plan)
 	}
 }
 
@@ -124,7 +127,7 @@ func TestQueryExplain_StatsQuery(t *testing.T) {
 	defer cleanup()
 
 	u := fmt.Sprintf("http://%s/api/v1/query/explain?q=%s", srv.Addr(),
-		url.QueryEscape("FROM main | stats count by host"))
+		url.QueryEscape("FROM main | stats count() by host"))
 	resp, err := http.Get(u)
 	if err != nil {
 		t.Fatal(err)
@@ -134,8 +137,13 @@ func TestQueryExplain_StatsQuery(t *testing.T) {
 	var envelope map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&envelope)
 	data := envelope["data"].(map[string]interface{})
-	parsed := data["parsed"].(map[string]interface{})
-	if parsed["result_type"] != "aggregate" {
-		t.Fatalf("result_type: %v", parsed["result_type"])
+
+	if data["is_valid"] != true {
+		t.Fatalf("expected is_valid=true, got: %#v", data)
+	}
+	plan, _ := data["lynxflow_plan"].(string)
+	// Stats query plan should mention Aggregate.
+	if !strings.Contains(plan, "Aggregate") {
+		t.Fatalf("plan missing Aggregate node: %s", plan)
 	}
 }

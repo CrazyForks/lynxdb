@@ -1,3 +1,4 @@
 # file: backend_server.log
 # format: json
-| stats count
+from main
+| stats count()

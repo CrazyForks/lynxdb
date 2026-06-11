@@ -1,2 +1,7 @@
 # format: json
-$errs = FROM idx_backend | where level="ERROR" | stats count by service; FROM $errs | sort -count | head 3
+let $errs = from idx_backend
+| where level == "ERROR"
+| stats count() by service;
+from $errs
+| sort -count
+| head 3

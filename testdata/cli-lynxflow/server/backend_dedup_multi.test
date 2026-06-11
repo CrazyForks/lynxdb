@@ -1,6 +1,0 @@
-# format: json
-# language: lynxflow
-from backend
-| dedup 2 level
-| keep level, service
-| sort level, service

@@ -1,6 +1,0 @@
-# unordered: true
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| every 1h stats avg(duration_ms)

@@ -985,7 +985,32 @@ func formatTopRarePayload(b *strings.Builder, p *ast.TopRarePayload) {
 		b.WriteString(strconv.FormatInt(*p.N, 10))
 		b.WriteByte(' ')
 	}
+	// Parenthesize field expressions that would be ambiguous when re-parsed.
+	// Without parens, "top 0 - 0" would re-parse as N=0, field=(-0).
+	needParens := exprStartsWithNumber(p.Field) && p.N == nil
+	if needParens {
+		b.WriteByte('(')
+	}
 	formatExpr(b, p.Field, precTop)
+	if needParens {
+		b.WriteByte(')')
+	}
+}
+
+// exprStartsWithNumber reports whether the formatted expression begins with
+// a digit, which can cause positional ambiguity in stages like top/rare.
+func exprStartsWithNumber(e ast.Expr) bool {
+	switch n := e.(type) {
+	case *ast.Literal:
+		return n.Kind == ast.LitInt || n.Kind == ast.LitFloat
+	case *ast.Binary:
+		return exprStartsWithNumber(n.Left)
+	case *ast.Unary:
+		return n.Op == ast.OpNeg
+	case *ast.Paren:
+		return exprStartsWithNumber(n.Inner)
+	}
+	return false
 }
 
 func formatEveryPayload(b *strings.Builder, p *ast.EveryPayload) {

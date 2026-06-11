@@ -1,0 +1,547 @@
+package pipeline
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"path"
+	"strings"
+	"time"
+
+	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/memgov"
+	"github.com/lynxbase/lynxdb/pkg/model"
+	"github.com/lynxbase/lynxdb/pkg/storage/segment"
+	"github.com/lynxbase/lynxdb/pkg/vm"
+)
+
+// --- Iterator stubs for deleted spl2-AST iterators ---
+
+type FilterIterator struct {
+	child     Iterator
+	predicate *vm.Program
+	vmInst    vm.VM
+	vecRoot   vecNode
+	usedVec   bool
+	evalCount int64
+	passCount int64
+}
+
+func (f *FilterIterator) Init(ctx context.Context) error { return f.child.Init(ctx) }
+func (f *FilterIterator) Next(ctx context.Context) (*Batch, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		batch, err := f.child.Next(ctx)
+		if batch == nil || err != nil {
+			return nil, err
+		}
+		mask := make([]bool, batch.Len)
+		matchCount := 0
+		for i := 0; i < batch.Len; i++ {
+			row := batch.Row(i)
+			f.evalCount++
+			if f.predicate != nil {
+				result, _ := f.vmInst.Execute(f.predicate, row)
+				if result.Type() == event.FieldTypeBool && result.AsBool() {
+					mask[i] = true
+					matchCount++
+					f.passCount++
+				}
+			}
+		}
+		if matchCount == 0 {
+			continue
+		}
+		if matchCount == batch.Len {
+			return batch, nil
+		}
+		return compactBatch(batch, mask, matchCount), nil
+	}
+}
+func (f *FilterIterator) Close() error        { return f.child.Close() }
+func (f *FilterIterator) Schema() []FieldInfo { return f.child.Schema() }
+func (f *FilterIterator) VMStats() (int64, int64) {
+	return f.evalCount, f.passCount
+}
+
+func NewFilterIterator(child Iterator, predicate *vm.Program) *FilterIterator {
+	return &FilterIterator{child: child, predicate: predicate}
+}
+
+type SearchExprIterator struct{ child Iterator }
+
+func (s *SearchExprIterator) Init(ctx context.Context) error         { return s.child.Init(ctx) }
+func (s *SearchExprIterator) Next(_ context.Context) (*Batch, error) { return nil, nil }
+func (s *SearchExprIterator) Close() error                           { return s.child.Close() }
+func (s *SearchExprIterator) Schema() []FieldInfo                    { return s.child.Schema() }
+
+type ProjectIterator struct {
+	child   Iterator
+	fields  []string
+	remove  bool
+	hasGlob bool
+}
+
+func (p *ProjectIterator) Init(ctx context.Context) error { return p.child.Init(ctx) }
+func (p *ProjectIterator) Next(ctx context.Context) (*Batch, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	batch, err := p.child.Next(ctx)
+	if batch == nil || err != nil {
+		return nil, err
+	}
+	if p.remove {
+		return p.applyRemove(batch), nil
+	}
+	return p.applyKeep(batch), nil
+}
+func (p *ProjectIterator) Close() error { return p.child.Close() }
+func (p *ProjectIterator) Schema() []FieldInfo {
+	if p.hasGlob {
+		return nil
+	}
+	if p.remove {
+		return p.child.Schema()
+	}
+	schema := make([]FieldInfo, len(p.fields))
+	for i, f := range p.fields {
+		schema[i] = FieldInfo{Name: f}
+	}
+	return schema
+}
+
+func (p *ProjectIterator) applyKeep(batch *Batch) *Batch {
+	out := &Batch{Columns: make(map[string][]event.Value, len(p.fields)), Len: batch.Len}
+	for _, f := range p.fields {
+		if strings.ContainsAny(f, "*?") {
+			for col, vals := range batch.Columns {
+				if matched, _ := path.Match(f, col); matched {
+					out.Columns[col] = vals
+				}
+			}
+		} else {
+			if vals, ok := batch.Columns[f]; ok {
+				out.Columns[f] = vals
+			} else {
+				nulls := make([]event.Value, batch.Len)
+				for i := range nulls {
+					nulls[i] = event.NullValue()
+				}
+				out.Columns[f] = nulls
+			}
+		}
+	}
+	return out
+}
+
+func (p *ProjectIterator) applyRemove(batch *Batch) *Batch {
+	out := &Batch{Columns: make(map[string][]event.Value, len(batch.Columns)), Len: batch.Len}
+	for col, vals := range batch.Columns {
+		drop := false
+		for _, f := range p.fields {
+			if strings.ContainsAny(f, "*?") {
+				if matched, _ := path.Match(f, col); matched {
+					drop = true
+					break
+				}
+			} else if col == f {
+				drop = true
+				break
+			}
+		}
+		if !drop {
+			out.Columns[col] = vals
+		}
+	}
+	return out
+}
+
+func NewProjectIterator(child Iterator, fields []string, remove bool) *ProjectIterator {
+	hasGlob := false
+	for _, f := range fields {
+		if strings.ContainsAny(f, "*?") {
+			hasGlob = true
+			break
+		}
+	}
+	return &ProjectIterator{child: child, fields: fields, remove: remove, hasGlob: hasGlob}
+}
+
+type TailIterator struct {
+	child    Iterator
+	count    int
+	buffer   []map[string]event.Value
+	consumed bool
+	pos      int
+	acct     memgov.MemoryAccount
+}
+
+func (t *TailIterator) Init(ctx context.Context) error { return t.child.Init(ctx) }
+func (t *TailIterator) Next(ctx context.Context) (*Batch, error) {
+	if !t.consumed {
+		// Consume all rows from child, keeping the last t.count.
+		for {
+			if err := ctx.Err(); err != nil {
+				return nil, err
+			}
+			batch, err := t.child.Next(ctx)
+			if err != nil {
+				return nil, err
+			}
+			if batch == nil {
+				break
+			}
+			for i := 0; i < batch.Len; i++ {
+				row := batch.Row(i)
+				t.buffer = append(t.buffer, row)
+				if t.acct != nil {
+					_ = t.acct.Grow(EstimateRowBytes(row))
+				}
+			}
+		}
+		// Trim to last t.count rows.
+		if len(t.buffer) > t.count {
+			t.buffer = t.buffer[len(t.buffer)-t.count:]
+		}
+		t.consumed = true
+		t.pos = 0
+	}
+	if t.pos >= len(t.buffer) {
+		return nil, nil
+	}
+	// Emit remaining rows as a single batch.
+	rows := t.buffer[t.pos:]
+	t.pos = len(t.buffer)
+	return RowsToBatch(rows), nil
+}
+func (t *TailIterator) Close() error        { return t.child.Close() }
+func (t *TailIterator) Schema() []FieldInfo { return t.child.Schema() }
+
+func NewTailIterator(child Iterator, count, _ int) *TailIterator {
+	return &TailIterator{child: child, count: count}
+}
+
+// NewTailIteratorWithBudget creates a TailIterator that tracks memory usage.
+func NewTailIteratorWithBudget(child Iterator, count, batchSize int, acct memgov.MemoryAccount) *TailIterator {
+	return &TailIterator{child: child, count: count, acct: acct}
+}
+
+// RowsToBatch converts row maps to a columnar batch.
+func RowsToBatch(rows []map[string]event.Value) *Batch {
+	if len(rows) == 0 {
+		return nil
+	}
+	cols := make(map[string][]event.Value)
+	// Collect all column names.
+	colNames := make(map[string]struct{})
+	for _, row := range rows {
+		for k := range row {
+			colNames[k] = struct{}{}
+		}
+	}
+	for name := range colNames {
+		col := make([]event.Value, len(rows))
+		for i, row := range rows {
+			if v, ok := row[name]; ok {
+				col[i] = v
+			} else {
+				col[i] = event.NullValue()
+			}
+		}
+		cols[name] = col
+	}
+	return &Batch{Columns: cols, Len: len(rows)}
+}
+
+// --- Segment stream types ---
+
+type SegmentStreamProgress struct {
+	Phase                string
+	SegmentsTotal        int
+	SegmentsScanned      int
+	SegmentsSkipped      int
+	SegmentsSkippedTime  int
+	SegmentsSkippedBloom int
+	SegmentsSkippedRange int
+	SegmentsSkippedIdx   int
+	SegmentsSkippedStat  int
+	SegmentsDispatched   int
+	RowGroupsScanned     int
+	EventsScanned        int64
+	EventsMatched        int64
+	BytesRead            int64
+	RowsReadSoFar        int64
+	CurrentSegmentID     string
+	CurrentRGIndex       int
+	CurrentRGTotal       int
+}
+
+type SegmentStreamStats struct {
+	SegmentsTotal            int
+	SegmentsScanned          int
+	SegmentsSkipped          int
+	RowGroupsTotal           int
+	RowGroupsScanned         int
+	RowGroupsSkipped         int
+	EventsScanned            int64
+	EventsMatched            int64
+	BytesRead                int64
+	BloomSkips               int
+	TimeSkips                int
+	BitmapHits               int64
+	BitmapTermErrors         int
+	PeakMemoryBytes          int64
+	RGConstSkips             int
+	RGPresenceSkips          int
+	RGZoneMapSkips           int
+	RGBloomSkips             int
+	RGBloomsChecked          int
+	RGRangeBSIChecks         int
+	RGRangeBSISkips          int
+	RGRangeBSIMaskBytes      int64
+	SegmentBloomSkips        int
+	SegmentTimeSkips         int
+	ScopeSkips               int
+	PrewhereUsed             bool
+	PrewhereSteps            int
+	PrewhereColumns          []string
+	PrewhereRowsIn           int64
+	PrewhereRowsOut          int64
+	PrewhereRowGroupsSkipped int
+	PrewhereBytesRead        int64
+	PrewhereBytesAvoided     int64
+	EmptyBitmapSkips         int
+}
+
+type SegmentStreamHints struct {
+	BloomTerms                 []string
+	InvertedTermTree           interface{}
+	BitmapThreshold            float64
+	BitmapSelectivityThreshold float64
+	SourceIndices              []string
+	SourceGlob                 string
+	IndexName                  string
+	SourceScopeType            string
+	SourceScopeSources         []string
+	SourceScopePattern         string
+	TimeBounds                 interface{}
+	SearchTerms                []string
+	FieldPredicates            interface{}
+	RangePredicates            interface{}
+	InPredicates               interface{}
+	InvertedIndexPredicates    interface{}
+	RequiredCols               []string
+	RexPreFilters              interface{}
+	Limit                      int
+	ReverseScan                bool
+	TailLimit                  int
+	SkipRaw                    bool
+	PrewherePlan               interface{}
+	SearchTermTree             interface{}
+	SortAscending              bool
+	FieldPreds                 []model.FieldPredicate
+	RangePreds                 []model.RangePredicate
+	InPreds                    []model.InPredicate
+	InvertedPreds              []model.InvertedIndexPredicate
+	SourceIncludeGlobs         []string
+	SourceExcludeGlobs         []string
+}
+
+type SegmentMeta struct {
+	ID         string
+	MinTime    time.Time
+	MaxTime    time.Time
+	SizeBytes  int64
+	EventCount int64
+}
+
+type SegmentSource struct {
+	Reader      *segment.Reader
+	Index       string
+	ID          string
+	InvertedIdx interface{}
+	Bloom       interface{}
+	Meta        SegmentMeta
+}
+
+type SegmentStreamIterator struct{}
+
+func (s *SegmentStreamIterator) Init(_ context.Context) error           { return nil }
+func (s *SegmentStreamIterator) Next(_ context.Context) (*Batch, error) { return nil, nil }
+func (s *SegmentStreamIterator) Close() error                           { return nil }
+func (s *SegmentStreamIterator) Schema() []FieldInfo                    { return nil }
+func (s *SegmentStreamIterator) SetOnProgress(_ interface{})            {}
+func (s *SegmentStreamIterator) Stats() *SegmentStreamStats             { return &SegmentStreamStats{} }
+func NewSegmentStreamIterator(_ []*SegmentSource, _ []*event.Event, _ *SegmentStreamHints, _ int, _ ...interface{}) *SegmentStreamIterator {
+	return &SegmentStreamIterator{}
+}
+
+func parseDuration(s string) time.Duration {
+	if s == "" {
+		return 0
+	}
+	if d, err := time.ParseDuration(s); err == nil {
+		return d
+	}
+	if len(s) > 1 && s[len(s)-1] == 'd' {
+		n := 0
+		for _, c := range s[:len(s)-1] {
+			if c >= '0' && c <= '9' {
+				n = n*10 + int(c-'0')
+			}
+		}
+		return time.Duration(n) * 24 * time.Hour
+	}
+	return 0
+}
+
+func copyBSIMetadataFilter(dst, src *Batch, mask []bool) {
+	if dst == nil || src == nil || len(mask) == 0 {
+		return
+	}
+	var indices []int
+	for i, keep := range mask {
+		if keep {
+			indices = append(indices, i)
+		}
+	}
+	copyBSIMetadataPermutation(dst, src, indices)
+}
+
+func compactBatch(batch *Batch, mask []bool, matchCount int) *Batch {
+	result := &Batch{Columns: make(map[string][]event.Value, len(batch.Columns)), Len: matchCount}
+	for k, col := range batch.Columns {
+		out := make([]event.Value, 0, matchCount)
+		for i, v := range col {
+			if i < batch.Len && mask[i] {
+				out = append(out, v)
+			}
+		}
+		result.Columns[k] = out
+	}
+	copyBSIMetadataFilter(result, batch, mask)
+	return result
+}
+
+type CollectOptions struct {
+	OnBatch func(int, []map[string]event.Value)
+}
+
+func CollectAll(ctx context.Context, iter Iterator, opts ...CollectOptions) (rows []map[string]event.Value, err error) {
+	if err := iter.Init(ctx); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if e := iter.Close(); e != nil {
+			err = errors.Join(err, e)
+		}
+	}()
+	for {
+		batch, err := iter.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if batch == nil {
+			break
+		}
+		for i := 0; i < batch.Len; i++ {
+			rows = append(rows, batch.Row(i))
+		}
+		if len(opts) > 0 && opts[0].OnBatch != nil {
+			opts[0].OnBatch(len(rows), rows)
+		}
+	}
+	return rows, nil
+}
+
+func CollectAllWithBudget(ctx context.Context, iter Iterator, acct memgov.MemoryAccount) (rows []map[string]event.Value, err error) {
+	acct = memgov.EnsureAccount(acct)
+	if err := iter.Init(ctx); err != nil {
+		return nil, err
+	}
+	defer func() {
+		if e := iter.Close(); e != nil {
+			err = errors.Join(err, e)
+		}
+	}()
+	for {
+		batch, err := iter.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if batch == nil {
+			break
+		}
+		for i := 0; i < batch.Len; i++ {
+			row := batch.Row(i)
+			if e := acct.Grow(EstimateRowBytes(row)); e != nil {
+				return nil, e
+			}
+			rows = append(rows, row)
+		}
+	}
+	return rows, nil
+}
+
+func growRowsEstimate(acct memgov.MemoryAccount, rows []map[string]event.Value) error {
+	for _, row := range rows {
+		if err := acct.Grow(EstimateRowBytes(row)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+type IndexStore interface {
+	MaterializeEvents(ctx context.Context, index string) ([]*event.Event, error)
+}
+type ServerIndexStore struct{ Events map[string][]*event.Event }
+
+func (s *ServerIndexStore) MaterializeEvents(_ context.Context, index string) ([]*event.Event, error) {
+	return s.Events[index], nil
+}
+
+type ColumnarBatchStore struct{ Batches map[string][]*Batch }
+
+func (s *ColumnarBatchStore) MaterializeEvents(_ context.Context, _ string) ([]*event.Event, error) {
+	return nil, nil
+}
+
+type Option func(*queryContext)
+type queryContext struct {
+	defaultSource       string
+	systemTableResolver SystemTableResolver
+}
+
+func WithDefaultSource(index string) Option {
+	return func(qc *queryContext) { qc.defaultSource = index }
+}
+func WithSystemTables(r SystemTableResolver) Option {
+	return func(qc *queryContext) { qc.systemTableResolver = r }
+}
+
+type BuildResult struct {
+	Iterator    Iterator
+	Coordinator *MemoryCoordinator
+	GovBudget   *memgov.BudgetAdapter
+}
+
+func BuildProgramWithGovernor(_ context.Context, _ *logical.Plan, _ IndexStore, _ ViewResolver, _ ViewManager, _ int, _ string, _ memgov.Governor, _ int64, _ *SpillManager, _ bool, _ *ParallelConfig, _ ...Option) (*BuildResult, error) {
+	return nil, fmt.Errorf("spl2 pipeline builder removed (RFC-002)")
+}
+
+func BuildPipelineWithStats(_ context.Context, _ interface{}, _ interface{}, _ int) (Iterator, error) {
+	return nil, fmt.Errorf("spl2 pipeline builder removed (RFC-002)")
+}
+
+func BuildFromSourceWithBudget(_ context.Context, _ interface{}, _ interface{}, _ interface{}, _ int, _ *memgov.BudgetAdapter) (Iterator, error) {
+	return nil, fmt.Errorf("spl2 pipeline builder removed (RFC-002)")
+}
+
+func CheckVectorizedFilter(_ Iterator) bool { return false }
+
+var _ = (*segment.Reader)(nil)

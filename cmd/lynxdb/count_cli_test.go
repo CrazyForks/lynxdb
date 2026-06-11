@@ -23,7 +23,7 @@ func TestCount_WithFilter(t *testing.T) {
 	baseURL := setupServerWithData(t)
 
 	stdout, _, err := runCmd(t, "--server", baseURL, "count",
-		"where level=\""+testLevelError+"\"")
+		"where level==\""+testLevelError+"\"")
 	if err != nil {
 		t.Fatalf("count with filter failed: %v", err)
 	}

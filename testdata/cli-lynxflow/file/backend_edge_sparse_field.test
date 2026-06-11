@@ -1,7 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| where amount_cents > 20000
-| keep service, amount_cents, user_id
-| sort -amount_cents

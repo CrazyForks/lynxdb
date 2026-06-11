@@ -276,11 +276,8 @@ jobs:
       - name: Run sigma query contracts
         run: go test -run . -count=1 -race ./pkg/sigmaqueries/...
 
-      - name: Fuzz emitted SPL2 parser
-        run: go test -run Fuzz -fuzz=FuzzParseEmittedSPL2 -fuzztime=30s ./pkg/sigmaqueries/...
-
-      - name: Fuzz emitted SPL2 planner
-        run: go test -parallel=1 -run Fuzz -fuzz=FuzzPlanEmittedSPL2 -fuzztime=30s ./pkg/sigmaqueries/...
+      - name: Fuzz LynxFlow parser (smoke)
+        run: go test ./pkg/lynxflow/parser/ -run '^$' -fuzz '^FuzzParse$' -fuzztime 10s
 
   test-sigma-compat:
     name: Sigma Compatibility

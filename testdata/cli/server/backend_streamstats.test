@@ -1,2 +1,0 @@
-# format: json
-FROM backend | sort timestamp | streamstats count as row_num | where row_num<=5 | fields row_num, level, service

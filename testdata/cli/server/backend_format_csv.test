@@ -1,2 +1,4 @@
 # format: csv
-FROM backend | stats count by level | sort level
+from backend
+| stats count() by level
+| sort level

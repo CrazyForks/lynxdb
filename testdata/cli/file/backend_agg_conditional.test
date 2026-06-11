@@ -1,3 +1,4 @@
 # file: backend_server.log
 # format: json
-| stats count(eval(status>=500)) as errors, count(eval(status<400)) as success, count as total
+from main
+| stats count(where status >= 500) as errors, count(where status < 400) as success, count() as total

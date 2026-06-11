@@ -25,8 +25,8 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/desugar"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/run"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/sigmaqueries"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/stats"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 	"github.com/lynxbase/lynxdb/pkg/timerange"
@@ -98,9 +98,7 @@ func newQueryCmd() *cobra.Command {
 				return fmt.Errorf("%s", msg)
 			}
 			query := strings.Join(args, " ")
-			if len(queryParams) > 0 {
-				query = spl2.SubstituteParams(query, spl2.ParseParamFlags(queryParams))
-			}
+			// RFC-002: spl2 param substitution removed; queryParams is unused.
 			if stripped, ok := stripVerticalQuerySuffix(query); ok {
 				query = stripped
 				if output.Format(globalFormat) == output.FormatAuto {
@@ -306,9 +304,7 @@ func queryRowsFromFile(query, file, source, sourcetype, maxMemory string, rawMod
 		}
 	}
 	normalizedQuery := ensureFromClause(query)
-	if err := spl2.CheckUnsupportedCommands(normalizedQuery); err != nil {
-		return nil, err
-	}
+	// RFC-002: dead code removed.
 
 	memLimit, err := parseMaxMemory(maxMemory)
 	if err != nil {
@@ -343,7 +339,7 @@ func queryRowsFromFile(query, file, source, sourcetype, maxMemory string, rawMod
 
 	result, _, err := eng.Query(ctx, normalizedQuery, storage.QueryOpts{MaxMemory: memLimit})
 	if err != nil {
-		return nil, fmt.Errorf("%s", spl2.FormatParseError(err, normalizedQuery))
+		return nil, fmt.Errorf("%s", err)
 	}
 
 	return result.Rows, nil
@@ -371,16 +367,14 @@ func queryRowsFromReader(query string, reader io.Reader, defaultSource, source, 
 	}
 
 	normalizedQuery := ensureFromClause(query)
-	if err := spl2.CheckUnsupportedCommands(normalizedQuery); err != nil {
-		return nil, err
-	}
+	// RFC-002: dead code removed.
 
 	result, _, err := eng.QueryReader(context.Background(), reader, normalizedQuery, storage.IngestOpts{
 		Source:     src,
 		SourceType: sourcetype,
 	}, storage.QueryOpts{MaxMemory: memLimit})
 	if err != nil {
-		return nil, fmt.Errorf("%s", spl2.FormatParseError(err, normalizedQuery))
+		return nil, fmt.Errorf("%s", err)
 	}
 
 	return result.Rows, nil
@@ -508,16 +502,13 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 	}
 
 	// SPL2 file-mode execution path (existing behavior).
-	normalizedQuery, rewrites := spl2.NormalizeQueryWithRewrites(query)
+	normalizedQuery := query
+	var rewrites []model.QueryRewrite
 	printSPL2QueryRewrites(showRewritten, rewrites)
 
-	if err := spl2.CheckUnsupportedCommands(normalizedQuery); err != nil {
-		return err
-	}
+	// RFC-002: dead code removed.
 
-	if hints := spl2.DetectCompatHints(normalizedQuery); len(hints) > 0 {
-		fmt.Fprint(os.Stderr, spl2.FormatCompatHints(hints))
-	}
+	// RFC-002: spl2 compat hints removed.
 
 	ctx := context.Background()
 	for _, path := range matches {
@@ -548,7 +539,7 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 
 	result, qstats, err := eng.Query(ctx, normalizedQuery, storage.QueryOpts{MaxMemory: memLimit})
 	if err != nil {
-		return fmt.Errorf("%s", spl2.FormatParseError(err, normalizedQuery))
+		return fmt.Errorf("%s", err)
 	}
 
 	qstats.TotalDuration = time.Since(start)
@@ -615,16 +606,13 @@ func runQueryStdin(query, source, sourcetype, outputFile string, failEmpty bool,
 	}
 
 	// SPL2 stdin-mode execution path (existing behavior).
-	normalizedQuery, rewrites := spl2.NormalizeQueryWithRewrites(query)
+	normalizedQuery := query
+	var rewrites []model.QueryRewrite
 	printSPL2QueryRewrites(showRewritten, rewrites)
 
-	if err := spl2.CheckUnsupportedCommands(normalizedQuery); err != nil {
-		return err
-	}
+	// RFC-002: dead code removed.
 
-	if hints := spl2.DetectCompatHints(normalizedQuery); len(hints) > 0 {
-		fmt.Fprint(os.Stderr, spl2.FormatCompatHints(hints))
-	}
+	// RFC-002: spl2 compat hints removed.
 
 	ctx := context.Background()
 	result, qstats, err := eng.QueryReader(ctx, reader, normalizedQuery, storage.IngestOpts{
@@ -632,7 +620,7 @@ func runQueryStdin(query, source, sourcetype, outputFile string, failEmpty bool,
 		SourceType: sourcetype,
 	}, storage.QueryOpts{MaxMemory: memLimit})
 	if err != nil {
-		return fmt.Errorf("%s", spl2.FormatParseError(err, normalizedQuery))
+		return fmt.Errorf("%s", err)
 	}
 
 	qstats.TotalDuration = time.Since(start)
@@ -776,29 +764,9 @@ func stripVerticalQuerySuffix(query string) (string, bool) {
 }
 
 func validateQueryBeforeServer(query string) error {
-	if err := spl2.CheckUnsupportedCommands(query); err != nil {
-		return err
-	}
+	// RFC-002: dead code removed.
 
-	if _, err := spl2.ParseProgram(query); err != nil {
-		rawErr := err
-		normalized := spl2.NormalizeQuery(query)
-		if normalized != query {
-			if _, normalizedErr := spl2.ParseProgram(normalized); normalizedErr == nil {
-				return nil
-			}
-		}
-
-		return &queryError{
-			inner: &client.APIError{
-				HTTPStatus: 400,
-				Code:       client.ErrCodeInvalidQuery,
-				Message:    "parse error: " + rawErr.Error(),
-				Suggestion: spl2.SuggestFix(rawErr.Error(), nil),
-			},
-			query: query,
-		}
-	}
+	// RFC-002: dead code removed.
 
 	return nil
 }
@@ -1223,7 +1191,7 @@ func printQueryRewrites(show bool, rewrites []client.QueryRewrite) {
 	}
 }
 
-func printSPL2QueryRewrites(show bool, rewrites []spl2.QueryRewrite) {
+func printSPL2QueryRewrites(show bool, rewrites []model.QueryRewrite) {
 	if globalQuiet || !show || len(rewrites) == 0 {
 		return
 	}
@@ -1268,7 +1236,7 @@ func autoDetectAndRewriteForLang(query string, r io.Reader, lang langdetect.Lang
 // If detection fails or the query already has explicit parse commands, returns
 // the original query and a nil reader (caller should use original stdin).
 func autoDetectAndRewrite(query string, r io.Reader) (string, io.Reader, error) {
-	return autoDetectAndRewriteImpl(query, r, langdetect.LangSPL2)
+	return autoDetectAndRewriteImpl(query, r, "spl2" /* RFC-002 */)
 }
 
 func autoDetectAndRewriteImpl(query string, r io.Reader, lang langdetect.Language) (string, io.Reader, error) {
@@ -1357,7 +1325,7 @@ func prependParseToQuery(query, parseCmd string) string {
 // Returns the rewritten query if auto-parse is needed.
 // Kept for backward compatibility; new callers should use autoDetectFromFirstFileForLang.
 func autoDetectFromFirstFile(query, filePath string) (string, error) {
-	return autoDetectFromFirstFileForLang(query, filePath, langdetect.LangSPL2)
+	return autoDetectFromFirstFileForLang(query, filePath, "spl2" /* RFC-002 */)
 }
 
 // autoDetectFromFirstFileForLang is like autoDetectFromFirstFile but emits the

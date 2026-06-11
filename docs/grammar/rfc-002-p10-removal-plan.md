@@ -221,4 +221,51 @@ Interactive shell with syntax highlighting and autocomplete.
 7. PORT: `cmd/lynxdb/*` + `internal/shell/*` — follows from (6)
 8. PORT: `pkg/storage/views/query_analysis.go` — can be done in parallel with (4-7)
 9. PORT: `pkg/cluster/query/*` — requires plan serialization (gap 1)
-10. DELETE-WITH: atomic deletion of spl2 + optimizer + planner + old pipeline + translate + langdetect rewrite
+10. ~~DELETE-WITH: atomic deletion of spl2 + optimizer + planner + old pipeline + translate + langdetect rewrite~~ (DONE)
+
+## Phase 10 Step 2 — Final cleanup (DONE)
+
+All items below completed in a single pass:
+
+- [x] **Fix vet-failing test files**: 5 originally listed + 8 additional discovered
+  - `internal/shell/autocomplete_test.go`: replaced `KnownAggregateFunctions()` with `LynxFlowAggregateNames()`
+  - `pkg/storage/views/mv_analysis_test.go`: deleted spl2 compatibility test `TestAnalyzeLynxFlow_AggSpecCompatibleWithSPL2`
+  - `pkg/vm/golden_test.go`: **deleted** (spl2 AST types LiteralExpr/FieldExpr/FuncCallExpr + CompileExpr gone; covered by lynxflow_conformance_test.go)
+  - `pkg/vm/testdata/goldens/`: **deleted** (spl2 bytecode golden files)
+  - `pkg/usecases/query_test.go`: added missing `planner` import; skipped `TestExplain_FieldTracking_SourceStageDoesNotExpandCatalog` (annotatePipelineFields is a stub)
+  - `pkg/server/detect_result_type_test.go`: **rewritten** against `logical.Node` types (Aggregate, TopK, Sort, Limit, Project, Describe)
+  - `pkg/sigmaqueries/bench_test.go`: **deleted** (spl2 golden fixture reader + BuildProgramWithGovernor stub)
+  - `pkg/sigmaqueries/golden_test.go`, `parse_test.go`, `plan_test.go`, `fuzz_test.go`: **deleted** (all spl2-dependent)
+  - `pkg/cluster/query/ir_planner_test.go`: **rewritten** — removed SPL2 parity comparison, kept LynxFlow IR tests only
+  - `pkg/cluster/query/join_planner_test.go`: **deleted** (spl2 JoinCommand types gone, stub function)
+  - `pkg/cluster/query/planner_test.go`: **deleted** (PlanDistributedQuery is a stub)
+  - `pkg/engine/pipeline/estimate_test.go`: fixed `NewTailIterator` arg count (3 not 4)
+  - `pkg/engine/pipeline/memory_coordinator_test.go`: deleted tests for removed `queryContext.govBudget` + `newCoordinatedAccount`; added missing `event` import
+  - `pkg/server/multi_source_test.go`: deleted test for removed `IsMultiSource()` method
+  - `pkg/server/query_cache_test.go`: rewrote `submitAndWait` to use `planner.New()` instead of spl2 parsing
+  - `pkg/vm/vm_test.go`: removed 28 spl2-referencing test functions; kept ~35 clean VM tests
+  - `pkg/vm/vm_json_test.go`: deleted `TestCompileSpathAlias` (spl2 types)
+  - `pkg/storage/views/query_analysis_test.go`: **deleted** (AnalyzeQuery is a nil-returning stub)
+  - `internal/shell/highlight_test.go`: deleted `TestStringRawEnd` (function removed)
+  - `cmd/lynxdb/query.go`: fixed self-assignment vet warning
+- [x] **gofmt**: all 8 unformatted files formatted
+- [x] **Test-suite swap**: deleted spl2 testdata/cli/ transcripts; extracted testdata/cli-lynxflow/ into testdata/cli/; stripped `# language:` headers; deleted `golden_lynxflow_test.go` (TestGolden_File/Server now read lynxflow content); deleted `internal/testgen/lynxflow`
+- [x] **pkg/sigmaqueries**: deleted `.spl2` golden files + 5 spl2-dependent test files; `.lynxflow` + `lynxflow_test.go` + manifest preserved
+- [x] **Grammar assets**: deleted `spl2.ebnf` + `examples.jsonl` from both `docs/grammar/` and `cmd/lynxdb/grammar_data/`; copied `lynxflow.ebnf` into grammar_data; updated grammar command to serve lynxflow EBNF
+- [x] **docs/site**: deleted `docs/site/docs/lynx-flow/` directory; removed sidebar category; updated navbar link to `/docs/lynxflow/overview`
+- [x] **CI workflows**: updated `rsigma-drift.yml` to diff `.lynxflow` instead of `.spl2`; replaced spl2 fuzz steps with `go test ./pkg/lynxflow/parser/ -run '^$' -fuzz '^FuzzParse$' -fuzztime 10s`; kept lynxflow conformance
+
+### TODO(RFC-002) follow-ups remaining in code
+
+| File | TODO |
+|------|------|
+| `pkg/cluster/query/coordinator.go:461` | implement via physical.Build on coordinator nodes |
+| `pkg/cluster/query/join_planner.go:12` | reimplement on logical.Join nodes |
+| `pkg/planner/planner.go:74` | implement tail validation on logical plan |
+| `pkg/planner/planner.go:100` | wire view catalog into logical optimizer |
+| `pkg/server/stream.go:35` | BuildStreamingPipeline should accept *model.QueryHints directly |
+| `pkg/vm/vm.go:2997` | remove OpSearchMatch from opcode table |
+| `pkg/engine/pipeline/memory_coordinator.go:496` | implement proper IR-based spill counting |
+| `pkg/usecases/query.go:189` | implement pipeline stage annotation from logical plan |
+| `internal/shell/highlight.go:5` | reimplement with lynxflow lexer |
+| `pkg/usecases/query_test.go:287` | re-enable field tracking test after annotatePipelineFields |

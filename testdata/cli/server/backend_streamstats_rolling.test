@@ -1,2 +1,0 @@
-# format: json
-FROM backend | sort timestamp | running window=5 avg(duration_ms) as rolling_avg | where service="payment-service" | fields service, duration_ms, rolling_avg

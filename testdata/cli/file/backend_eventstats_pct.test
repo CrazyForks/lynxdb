@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| group by service compute count() as hits | enrich sum(hits) as total | let pct = round(hits * 100 / total, 1) | select service, hits, pct | order by -pct

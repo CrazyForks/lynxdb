@@ -1,3 +1,4 @@
 # file: frontend_console.log
 # format: json
-| stats count
+from main
+| stats count()

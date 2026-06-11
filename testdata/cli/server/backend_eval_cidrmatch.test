@@ -1,2 +1,4 @@
 # format: json
-FROM backend | eval is_internal=if(cidrmatch("10.0.0.0/8", client_ip), "yes", "no") | stats count by is_internal
+from backend
+| extend is_internal = if(cidr_match("10.0.0.0/8", client_ip), "yes", "no")
+| stats count() by is_internal

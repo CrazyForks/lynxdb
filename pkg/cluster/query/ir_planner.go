@@ -271,3 +271,8 @@ func renderShardQueryIR(plan *logical.Plan, shardNodes []logical.Node) string {
 	}
 	return logical.RenderPipeline(shardNodes...)
 }
+
+func allPushable(_ interface{}) bool {
+	// RFC-002: stub - all nodes pushable by default
+	return true
+}

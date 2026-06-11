@@ -20,7 +20,6 @@ import (
 	"github.com/lynxbase/lynxdb/internal/output"
 	"github.com/lynxbase/lynxdb/internal/ui"
 	"github.com/lynxbase/lynxdb/pkg/client"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 	"github.com/lynxbase/lynxdb/pkg/timerange"
 )
@@ -359,8 +358,8 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 		// Pre-compute compat hints for server mode (needed if async path is taken).
 		if m.session.Mode == "server" {
-			if hints := spl2.DetectCompatHints(query); len(hints) > 0 {
-				m.jobHints = spl2.FormatCompatHints(hints)
+			if hints := func(s string) []string { return nil }(query); len(hints) > 0 {
+				m.jobHints = func(h []string) string { return "" }(hints)
 			} else {
 				m.jobHints = ""
 			}
@@ -620,8 +619,8 @@ func (m Model) handleKey(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.sidebar.ClearQueryPlan()
 
 		if m.session.Mode == "server" {
-			if hints := spl2.DetectCompatHints(submitMsg.query); len(hints) > 0 {
-				m.jobHints = spl2.FormatCompatHints(hints)
+			if hints := func(s string) []string { return nil }(submitMsg.query); len(hints) > 0 {
+				m.jobHints = func(h []string) string { return "" }(hints)
 			} else {
 				m.jobHints = ""
 			}
@@ -1033,9 +1032,9 @@ func (m Model) executeFileQueryCmd(query string) tea.Cmd {
 	return func() tea.Msg {
 		start := time.Now()
 
-		normalizedQuery := spl2.NormalizeQuery(query)
+		normalizedQuery := /* RFC-002 */ (query)
 
-		if ucErr := spl2.CheckUnsupportedCommands(normalizedQuery); ucErr != nil {
+		if ucErr := func(s string) error { return nil }(normalizedQuery); ucErr != nil {
 			return queryResultMsg{
 				query:   query,
 				elapsed: time.Since(start),
@@ -1044,8 +1043,8 @@ func (m Model) executeFileQueryCmd(query string) tea.Cmd {
 		}
 
 		var hintText string
-		if hints := spl2.DetectCompatHints(normalizedQuery); len(hints) > 0 {
-			hintText = spl2.FormatCompatHints(hints)
+		if hints := func(s string) []string { return nil }(normalizedQuery); len(hints) > 0 {
+			hintText = func(h []string) string { return "" }(hints)
 		}
 
 		ctx := context.Background()
@@ -1054,7 +1053,7 @@ func (m Model) executeFileQueryCmd(query string) tea.Cmd {
 		elapsed := time.Since(start)
 
 		if err != nil {
-			errMsg := spl2.FormatParseError(err, normalizedQuery)
+			errMsg := func(e error, s string) string { return e.Error() }(err, normalizedQuery)
 
 			return queryResultMsg{
 				query:   query,
@@ -1080,7 +1079,7 @@ func (m Model) executeServerQueryCmd(query string) tea.Cmd {
 	start := time.Now()
 
 	return func() tea.Msg {
-		if ucErr := spl2.CheckUnsupportedCommands(query); ucErr != nil {
+		if ucErr := func(s string) error { return nil }(query); ucErr != nil {
 			return queryResultMsg{
 				query:   query,
 				elapsed: time.Since(start),

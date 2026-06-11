@@ -1,3 +1,0 @@
-# file: backend_server.log
-# format: json
-| transaction user_id maxspan=30m | fields user_id, duration, eventcount | sort user_id

@@ -1,5 +1,0 @@
-# format: csv
-# language: lynxflow
-from backend
-| stats count(), avg(duration_ms) as avg_dur by level
-| sort level

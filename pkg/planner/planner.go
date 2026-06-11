@@ -1,160 +1,289 @@
+// Package planner provides a thin wrapper around the LynxFlow parser,
+// desugarer, semantic analyzer, and logical optimizer. It presents the
+// same Planner interface that the rest of the server stack expects.
+//
+// RFC-002 Phase 10: this package was previously the SPL2 planner.
+// It now delegates entirely to the LynxFlow pipeline.
 package planner
 
 import (
+	"errors"
+	"fmt"
 	"time"
 
-	"github.com/lynxbase/lynxdb/pkg/optimizer"
-	"github.com/lynxbase/lynxdb/pkg/server"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/opt"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/desugar"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
+	"github.com/lynxbase/lynxdb/pkg/model"
+	"github.com/lynxbase/lynxdb/pkg/storage/views"
+	"github.com/lynxbase/lynxdb/pkg/timerange"
 )
 
-// Planner parses, optimizes, and classifies SPL2 queries.
+// Planner parses and optimizes queries.
 type Planner interface {
-	Plan(req PlanRequest) (*Plan, error)
+	Plan(req PlanRequest) (*PlanResult, error)
 }
 
-// FieldStatsProvider provides per-field statistics for selectivity estimation.
-type FieldStatsProvider interface {
-	GetFieldStats() map[string]optimizer.FieldStatInfo
+// PlanRequest is the input to Plan.
+type PlanRequest struct {
+	Query string
+	From  string
+	To    string
 }
 
-// Option configures the planner.
-type Option func(*plannerImpl)
+// PlanResult is the output of Plan.
+type PlanResult struct {
+	RawQuery           string
+	Program            *logical.Plan
+	Hints              *model.QueryHints
+	ExternalTimeBounds *model.TimeBounds
+	ResultType         string
+	SkipResultCache    bool
+	ParseDuration      time.Duration
+	OptimizeDuration   time.Duration
+	RuleDetails        []opt.Applied
+	TotalRules         int
+	OptimizerStats     map[string]int
+	Count              int // for tail: requested event count
+}
 
-// WithViewCatalog enables MV query rewrite using the given ViewLister.
-func WithViewCatalog(lister ViewLister) Option {
-	return func(p *plannerImpl) {
-		p.viewCatalog = NewViewCatalog(lister)
+// ParseError represents a query parse error.
+type ParseError struct {
+	Message    string
+	Suggestion string
+}
+
+func (e *ParseError) Error() string { return e.Message }
+
+// IsParseError returns true if err wraps a ParseError.
+func IsParseError(err error) bool {
+	var pe *ParseError
+	return errors.As(err, &pe)
+}
+
+// TailValidationError represents a tail query validation error.
+type TailValidationError struct {
+	Message string
+}
+
+func (e *TailValidationError) Error() string { return e.Message }
+
+// ValidateForTail checks whether a plan is valid for live tail.
+// Blocking (accumulator) stages like stats, sort, and top cannot operate on
+// an unbounded live stream, so they are rejected.
+func ValidateForTail(plan *logical.Plan) error {
+	if plan == nil || plan.Root == nil {
+		return nil
+	}
+	if cmd := findBlockingStage(plan.Root); cmd != "" {
+		return &TailValidationError{
+			Message: fmt.Sprintf("command %q is not supported in live tail (it requires all data before producing output)", cmd),
+		}
+	}
+	return nil
+}
+
+// findBlockingStage walks the logical plan tree and returns the name of the
+// first non-streaming (accumulator) stage, or "" if all stages are streaming.
+func findBlockingStage(n logical.Node) string {
+	if n == nil {
+		return ""
+	}
+	switch nd := n.(type) {
+	case *logical.Aggregate:
+		if nd.Window == nil {
+			return "stats"
+		}
+	case *logical.Sort:
+		return "sort"
+	case *logical.TopK:
+		return "top"
+	}
+	for _, child := range n.Children() {
+		if cmd := findBlockingStage(child); cmd != "" {
+			return cmd
+		}
+	}
+	return ""
+}
+
+// DynamicTimeBounds returns true when from/to contain relative time syntax.
+func DynamicTimeBounds(from, to string) bool {
+	return from != "" || to != "" /* RFC-002: simplified */
+}
+
+// QueryUsesDynamicTimeSyntax returns true for queries containing now() or similar.
+func QueryUsesDynamicTimeSyntax(_ string) bool {
+	return false
+}
+
+// ViewCatalog is the interface for materialized view lookup.
+type ViewCatalog interface {
+	GetView(name string) (*views.ViewDefinition, bool)
+	ListViews() []*views.ViewDefinition
+}
+
+// Option configures a planner.
+type Option func(*lynxFlowPlanner)
+
+// WithViewCatalog sets the view catalog for MV rewriting.
+func WithViewCatalog(_ ViewCatalog) Option {
+	return func(_ *lynxFlowPlanner) {
+		// TODO(RFC-002): wire view catalog into logical optimizer.
 	}
 }
 
-// WithFieldStats enables stat-based predicate reordering.
-func WithFieldStats(provider FieldStatsProvider) Option {
-	return func(p *plannerImpl) {
-		p.fieldStatsProvider = provider
-	}
-}
-
-// WithPlanCache enables query plan caching.
-func WithPlanCache(cache *PlanCache) Option {
-	return func(p *plannerImpl) {
-		p.planCache = cache
-	}
-}
-
-// New creates a Planner with the given options.
+// New creates a new Planner backed by the LynxFlow pipeline.
 func New(opts ...Option) Planner {
-	p := &plannerImpl{}
+	p := &lynxFlowPlanner{}
 	for _, o := range opts {
 		o(p)
 	}
-
 	return p
 }
 
-type plannerImpl struct {
-	viewCatalog        optimizer.ViewCatalog
-	fieldStatsProvider FieldStatsProvider
-	planCache          *PlanCache
-}
+type lynxFlowPlanner struct{}
 
-func (p *plannerImpl) Plan(req PlanRequest) (*Plan, error) {
-	skipResultCache := DynamicTimeBounds(req.From, req.To) || QueryUsesDynamicTimeSyntax(req.Query)
-
-	// Normalize implicit search syntax (e.g. "level=error" -> "search level=error")
-	// before parsing so all clients benefit from bare field=value support.
-	query := spl2.NormalizeQuery(req.Query)
-
-	externalTB, err := server.ParseTimeBoundsStrict(req.From, req.To)
-	if err != nil {
-		return nil, err
-	}
-
-	if p.planCache != nil {
-		if cached, ok := p.planCache.Get(query); ok {
-			// Deep clone to prevent mutation of cached plan.
-			plan := cached.Clone()
-			// Always apply fresh external time bounds.
-			plan.ExternalTimeBounds = externalTB
-			plan.SkipResultCache = plan.SkipResultCache || skipResultCache
-
-			return plan, nil
-		}
-	}
-
-	// Collect known field names for error suggestions (best-effort).
-	var knownFields []string
-	if p.fieldStatsProvider != nil {
-		stats := p.fieldStatsProvider.GetFieldStats()
-		knownFields = make([]string, 0, len(stats))
-		for name := range stats {
-			knownFields = append(knownFields, name)
-		}
-	}
-
+func (p *lynxFlowPlanner) Plan(req PlanRequest) (*PlanResult, error) {
 	parseStart := time.Now()
 
-	prog, err := spl2.ParseProgram(query)
-	if err != nil {
-		return nil, &ParseError{
-			Message:    err.Error(),
-			Suggestion: spl2.SuggestFix(err.Error(), knownFields),
-			Wrapped:    err,
+	q, diags := parser.Parse(req.Query)
+	for _, d := range diags {
+		if d.Severity == parser.SeverityError {
+			return nil, &ParseError{
+				Message:    d.Message,
+				Suggestion: d.Suggestion,
+			}
 		}
 	}
 
-	// Expand pipeline fragments (use command) before optimization.
-	if err := spl2.ExpandFragments(prog, spl2.NewFileFragmentResolver("")); err != nil {
-		return nil, &ParseError{
-			Message: err.Error(),
-			Wrapped: err,
-		}
-	}
-
+	desugared, _ := desugar.Desugar(q, desugar.Options{DefaultSource: "main"})
 	parseDuration := time.Since(parseStart)
-	optimizeStart := time.Now()
 
-	var optOpts []optimizer.OptOption
-	if p.viewCatalog != nil {
-		optOpts = append(optOpts, optimizer.WithCatalog(p.viewCatalog))
-	}
-	if p.fieldStatsProvider != nil {
-		stats := p.fieldStatsProvider.GetFieldStats()
-		optOpts = append(optOpts, optimizer.WithFieldStats(stats))
-	}
-	opt := optimizer.New(optOpts...)
-
-	prog.Main = opt.Optimize(prog.Main)
-	for i := range prog.Datasets {
-		prog.Datasets[i].Query = opt.Optimize(prog.Datasets[i].Query)
+	optStart := time.Now()
+	plan, lowerDiags := logical.Lower(desugared, logical.Options{DefaultSource: "main"})
+	for _, d := range lowerDiags {
+		if d.Severity == parser.SeverityError {
+			return nil, &ParseError{Message: d.Message}
+		}
 	}
 
-	optimizeDuration := time.Since(optimizeStart)
+	plan, applied := opt.Optimize(plan)
+	optimizeDuration := time.Since(optStart)
 
-	resultType := server.DetectResultType(prog)
-	hints := spl2.ExtractQueryHints(prog)
-	skipResultCache = skipResultCache || programUsesDynamicTime(prog)
+	// Build hints from the logical plan pushdown.
+	hints := hintsFromPlan(plan)
 
-	plan := &Plan{
-		RawQuery:           query,
-		Program:            prog,
-		ResultType:         resultType,
+	// Apply external time bounds.
+	var externalTB *model.TimeBounds
+	if req.From != "" || req.To != "" {
+		tr, trErr := timerange.ParseOptionalRange(req.From, req.To, time.Now())
+		if trErr == nil && tr != nil {
+			externalTB = &model.TimeBounds{Earliest: tr.Earliest, Latest: tr.Latest}
+		}
+	}
+
+	// Detect result type from plan.
+	rt := detectResultType(plan)
+
+	// Build optimizer stats.
+	stats := make(map[string]int)
+	totalRules := 0
+	for _, a := range applied {
+		stats[a.Rule] += a.Count
+		totalRules += a.Count
+	}
+
+	return &PlanResult{
+		RawQuery:           req.Query,
+		Program:            plan,
 		Hints:              hints,
-		OptimizerStats:     opt.Stats,
 		ExternalTimeBounds: externalTB,
-		SkipResultCache:    skipResultCache,
+		ResultType:         rt,
 		ParseDuration:      parseDuration,
 		OptimizeDuration:   optimizeDuration,
-		RuleDetails:        opt.GetRuleDetails(),
-		TotalRules:         opt.TotalRules(),
-	}
+		RuleDetails:        applied,
+		TotalRules:         totalRules,
+		OptimizerStats:     stats,
+	}, nil
+}
 
-	// Cache the plan (without external time bounds).
-	if p.planCache != nil {
-		cachePlan := plan.Clone()
-		cachePlan.ExternalTimeBounds = nil
-		p.planCache.Put(query, cachePlan)
+// hintsFromPlan extracts QueryHints from the logical plan's Scan pushdown.
+func hintsFromPlan(plan *logical.Plan) *model.QueryHints {
+	hints := &model.QueryHints{}
+	if plan == nil || plan.Root == nil {
+		return hints
 	}
+	walkNodes(plan.Root, func(n logical.Node) {
+		scan, ok := n.(*logical.Scan)
+		if !ok {
+			return
+		}
+		name := scanSourceName(scan)
+		if name != "" && name != "*" {
+			hints.IndexName = name
+			hints.SourceScopeType = model.SourceScopeSingle
+			hints.SourceScopeSources = []string{name}
+		}
+		if name == "*" {
+			hints.SourceScopeType = model.SourceScopeAll
+		}
+		hints.SearchTerms = scan.Pushdown.BloomTerms
+	})
+	return hints
+}
 
-	return plan, nil
+func walkNodes(n logical.Node, f func(logical.Node)) {
+	if n == nil {
+		return
+	}
+	f(n)
+	for _, child := range n.Children() {
+		walkNodes(child, f)
+	}
+}
+
+func detectResultType(plan *logical.Plan) string {
+	if plan == nil || plan.Root == nil {
+		return "events"
+	}
+	return detectNodeResultType(plan.Root)
+}
+
+func detectNodeResultType(n logical.Node) string {
+	switch nd := n.(type) {
+	case *logical.Aggregate:
+		if nd.Window != nil {
+			return "events" // windowed = events
+		}
+		return "aggregate"
+	case *logical.TopK:
+		return "aggregate"
+	case *logical.Describe:
+		return "aggregate"
+	case *logical.Limit:
+		return detectNodeResultType(nd.Input)
+	case *logical.Sort:
+		return detectNodeResultType(nd.Input)
+	case *logical.Project:
+		return detectNodeResultType(nd.Input)
+	default:
+		return "events"
+	}
+}
+
+// Utility for compile-time check.
+var _ Planner = (*lynxFlowPlanner)(nil)
+
+// Error wrapping for parse errors.
+func FormatParseError(err error, _ string) string {
+	return fmt.Sprintf("parse error: %v", err)
+}
+
+func scanSourceName(scan *logical.Scan) string {
+	if len(scan.Sources) == 0 {
+		return ""
+	}
+	return scan.Sources[0].Name
 }

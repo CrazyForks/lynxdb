@@ -1,6 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| where status == 500
-| stats count()

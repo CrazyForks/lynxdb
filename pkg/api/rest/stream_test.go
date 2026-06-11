@@ -115,7 +115,7 @@ func TestQueryStream_StatsQuery(t *testing.T) {
 	resp, err := http.Post(
 		fmt.Sprintf("http://%s/api/v1/query/stream", srv.Addr()),
 		"application/json",
-		strings.NewReader(`{"q":"FROM main | stats count by host"}`),
+		strings.NewReader(`{"q":"from main | stats count() as count by host"}`),
 	)
 	if err != nil {
 		t.Fatal(err)

@@ -205,7 +205,7 @@ func TestServer_BloomFilterSkip(t *testing.T) {
 	}
 
 	// Search for a term that exists.
-	resultCount := searchAndCount(t, srv, `FROM main | search "hello"`)
+	resultCount := searchAndCount(t, srv, `FROM main | where has(_raw, "hello")`)
 	if resultCount != 50 {
 		t.Errorf("search 'hello': got %d results, want 50", resultCount)
 	}
@@ -362,7 +362,7 @@ func TestServer_FlushThenSearch(t *testing.T) {
 	}
 
 	// Search AFTER flush — results should come from segments.
-	postFlushCount := searchAndCount(t, srv, fmt.Sprintf("FROM main | search %q", uniqueTerm))
+	postFlushCount := searchAndCount(t, srv, fmt.Sprintf(`FROM main | where has(_raw, %q)`, uniqueTerm))
 	if postFlushCount != matchCount {
 		t.Fatalf("post-flush: got %d results, want %d", postFlushCount, matchCount)
 	}
@@ -373,8 +373,7 @@ func TestServer_FlushThenSearch(t *testing.T) {
 func searchAndCount(t *testing.T, srv *Server, query string) int {
 	t.Helper()
 
-	wait := float64(0)
-	searchBody, _ := json.Marshal(map[string]interface{}{"q": query, "wait": wait})
+	searchBody, _ := json.Marshal(map[string]interface{}{"q": query})
 	resp, err := http.Post(fmt.Sprintf("http://%s/api/v1/query", srv.Addr()), "application/json", bytes.NewReader(searchBody))
 	if err != nil {
 		t.Fatalf("POST query: %v", err)
@@ -382,6 +381,24 @@ func searchAndCount(t *testing.T, srv *Server, query string) int {
 	var jobResp map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&jobResp)
 	resp.Body.Close()
+
+	// LynxFlow path returns 200 with immediate results.
+	if resp.StatusCode == http.StatusOK {
+		data, ok := jobResp["data"].(map[string]interface{})
+		if !ok {
+			return 0
+		}
+		dtype, _ := data["type"].(string)
+		if dtype == "events" {
+			events, _ := data["events"].([]interface{})
+			return len(events)
+		}
+		if dtype == "aggregate" || dtype == "timechart" {
+			rows, _ := data["rows"].([]interface{})
+			return len(rows)
+		}
+		return 0
+	}
 
 	if resp.StatusCode != http.StatusAccepted {
 		t.Fatalf("query status: %d", resp.StatusCode)
@@ -471,7 +488,7 @@ func TestServer_MetricsPopulated(t *testing.T) {
 
 	// Query to trigger segment read metrics.
 	// Use stats count by host to avoid countStarOnly metadata-only optimization.
-	_ = searchAndCount(t, srv, `FROM main | stats count by host`)
+	_ = searchAndCount(t, srv, `FROM main | stats count() by host`)
 
 	resp, err = http.Get(fmt.Sprintf("http://%s/api/v1/metrics", srv.Addr()))
 	if err != nil {

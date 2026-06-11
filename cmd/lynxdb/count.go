@@ -42,9 +42,9 @@ func newCountCmd() *cobra.Command {
 }
 
 func runCount(filter, since string) error {
-	query := "FROM main | stats count"
+	query := "FROM main | stats count()"
 	if filter != "" {
-		query = "FROM main | " + filter + " | stats count"
+		query = "FROM main | " + filter + " | stats count()"
 	}
 
 	var from, to string
@@ -85,6 +85,9 @@ func extractCount(result *client.QueryResult) interface{} {
 		}
 	case result.Events != nil:
 		if len(result.Events.Events) > 0 {
+			if c, ok := result.Events.Events[0]["count()"]; ok {
+				return c
+			}
 			if c, ok := result.Events.Events[0]["count"]; ok {
 				return c
 			}

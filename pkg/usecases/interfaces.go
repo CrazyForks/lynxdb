@@ -6,8 +6,9 @@ import (
 
 	enginepipeline "github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/server"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 	"github.com/lynxbase/lynxdb/pkg/storage/views"
 )
@@ -17,9 +18,9 @@ type QueryEngine interface {
 	SubmitQuery(ctx context.Context, params server.QueryParams) (*server.SearchJob, error)
 	ActiveJobCount() int64
 	MaxConcurrent() int32
-	BuildStreamingPipeline(ctx context.Context, prog *spl2.Program,
-		externalTB *spl2.TimeBounds) (enginepipeline.Iterator, server.StreamingStats, error)
-	BuildEventStoreFromHints(hints *spl2.QueryHints) map[string][]*event.Event
+	BuildStreamingPipeline(ctx context.Context, prog *logical.Plan,
+		externalTB *model.TimeBounds) (enginepipeline.Iterator, server.StreamingStats, error)
+	BuildEventStoreFromHints(hints *model.QueryHints) map[string][]*event.Event
 
 	// HistogramFromMetadata computes histogram buckets using segment metadata
 	// (zone maps), without loading all events into memory.
@@ -65,6 +66,6 @@ type EventBusProvider interface {
 // TailEngine is the subset of server.Engine needed by the new TailService.
 type TailEngine interface {
 	EventBusProvider
-	BuildStreamingPipeline(ctx context.Context, prog *spl2.Program,
-		externalTB *spl2.TimeBounds) (enginepipeline.Iterator, server.StreamingStats, error)
+	BuildStreamingPipeline(ctx context.Context, prog *logical.Plan,
+		externalTB *model.TimeBounds) (enginepipeline.Iterator, server.StreamingStats, error)
 }

@@ -1,2 +1,0 @@
-# format: json
-FROM backend | sessionize maxpause="30m" by user_id | fields user_id, duration, eventcount | head 5

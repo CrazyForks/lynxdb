@@ -9,7 +9,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/cluster"
 	"github.com/lynxbase/lynxdb/pkg/cluster/sharding"
 	"github.com/lynxbase/lynxdb/pkg/config"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/storage/sources"
 )
 
@@ -42,7 +42,7 @@ func newTestShardPruner(t *testing.T, indexes []string, assignments map[string]*
 
 func TestShardPruner_EmptyIndexes(t *testing.T) {
 	pruner := newTestShardPruner(t, nil, nil, nil, 2)
-	hints := &spl2.QueryHints{SourceScopeType: spl2.SourceScopeAll}
+	hints := &model.QueryHints{SourceScopeType: model.SourceScopeAll}
 
 	targets, err := pruner.FindRelevantShards(context.Background(), hints)
 	if err != nil {
@@ -75,10 +75,10 @@ func TestShardPruner_SingleIndex_TimeBounds(t *testing.T) {
 
 	pruner := newTestShardPruner(t, []string{"main"}, assignments, addrs, 1)
 
-	hints := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeSingle,
+	hints := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeSingle,
 		SourceScopeSources: []string{"main"},
-		TimeBounds: &spl2.TimeBounds{
+		TimeBounds: &model.TimeBounds{
 			Earliest: now.Add(-1 * time.Hour),
 			Latest:   now,
 		},
@@ -119,9 +119,9 @@ func TestShardPruner_MultiIndex(t *testing.T) {
 	addrs := map[sharding.NodeID]string{"node-1": "localhost:9400"}
 	pruner := newTestShardPruner(t, []string{"web", "api"}, assignments, addrs, 1)
 
-	hints := &spl2.QueryHints{
-		SourceScopeType: spl2.SourceScopeAll,
-		TimeBounds: &spl2.TimeBounds{
+	hints := &model.QueryHints{
+		SourceScopeType: model.SourceScopeAll,
+		TimeBounds: &model.TimeBounds{
 			Earliest: now.Add(-1 * time.Hour),
 			Latest:   now,
 		},
@@ -142,10 +142,10 @@ func TestShardPruner_NoAssignment_Skipped(t *testing.T) {
 	// Register an index but don't add any shard assignment.
 	pruner := newTestShardPruner(t, []string{"main"}, nil, nil, 1)
 
-	hints := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeSingle,
+	hints := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeSingle,
 		SourceScopeSources: []string{"main"},
-		TimeBounds: &spl2.TimeBounds{
+		TimeBounds: &model.TimeBounds{
 			Earliest: now.Add(-1 * time.Hour),
 			Latest:   now,
 		},
@@ -184,10 +184,10 @@ func TestShardPruner_FallbackToReplica(t *testing.T) {
 
 	pruner := newTestShardPruner(t, []string{"main"}, assignments, addrs, 1)
 
-	hints := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeSingle,
+	hints := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeSingle,
 		SourceScopeSources: []string{"main"},
-		TimeBounds: &spl2.TimeBounds{
+		TimeBounds: &model.TimeBounds{
 			Earliest: now.Add(-1 * time.Hour),
 			Latest:   now,
 		},
@@ -220,7 +220,7 @@ func TestComputeTimeBuckets_NilBounds(t *testing.T) {
 
 func TestComputeTimeBuckets_ThreeDays(t *testing.T) {
 	now := time.Now().UTC()
-	bounds := &spl2.TimeBounds{
+	bounds := &model.TimeBounds{
 		Earliest: now.Add(-3 * 24 * time.Hour),
 		Latest:   now,
 	}
@@ -233,7 +233,7 @@ func TestComputeTimeBuckets_ThreeDays(t *testing.T) {
 
 func TestComputeTimeBuckets_MaxCap(t *testing.T) {
 	now := time.Now().UTC()
-	bounds := &spl2.TimeBounds{
+	bounds := &model.TimeBounds{
 		Earliest: now.Add(-1000 * 24 * time.Hour),
 		Latest:   now,
 	}

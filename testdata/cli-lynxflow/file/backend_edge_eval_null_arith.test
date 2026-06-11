@@ -1,7 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| extend x = (amount_cents * 2)
-| where x > 0
-| stats count()

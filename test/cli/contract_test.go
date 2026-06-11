@@ -31,7 +31,7 @@ func TestContract_EnvConfig_Empty(t *testing.T) {
 	r := runLynxDBWithEnv(t,
 		map[string]string{"LYNXDB_CONFIG": ""},
 		"query", "--file", testdataLog("access.log"),
-		"--format", "json", "| stats count",
+		"--format", "json", "| stats count() as count",
 	)
 
 	if r.ExitCode != 0 {
@@ -74,7 +74,7 @@ func TestContract_NoColor_Flag(t *testing.T) {
 func TestContract_Quiet_SuppressesStderr(t *testing.T) {
 	// --quiet should suppress non-data output on stderr.
 	r := runLynxDB(t, "--quiet", "query", "--file", testdataLog("access.log"),
-		"--format", "json", "| stats count")
+		"--format", "json", "| stats count() as count")
 
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
@@ -90,7 +90,7 @@ func TestContract_OutputToFile(t *testing.T) {
 
 	r := runLynxDB(t, "query", "--file", testdataLog("access.log"),
 		"--format", "json", "--output", outFile,
-		"| stats count by level")
+		"| stats count() as count by level")
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -121,7 +121,7 @@ func TestContract_Version_ContainsLynxDB(t *testing.T) {
 func TestContract_FailOnEmpty_FileMode(t *testing.T) {
 	r := runLynxDB(t, "query", "--file", testdataLog("access.log"),
 		"--format", "json", "--fail-on-empty",
-		`| where level="NONEXISTENT_LEVEL_XYZ"`)
+		`| where level=="NONEXISTENT_LEVEL_XYZ"`)
 
 	if r.ExitCode != 6 {
 		t.Errorf("expected exit code 6 (no results with --fail-on-empty), got %d\nstderr: %s",

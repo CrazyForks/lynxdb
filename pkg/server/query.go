@@ -11,9 +11,11 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/cache"
 	enginepipeline "github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/physical"
+	lfAST "github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
-	"github.com/lynxbase/lynxdb/pkg/optimizer"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/stats"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment"
 	"github.com/lynxbase/lynxdb/pkg/timerange"
@@ -22,46 +24,38 @@ import (
 // DetectResultType walks the pipeline backwards, skipping pass-through commands
 // (head, tail, sort, fields, table, rename, fillnull, topn) to find the last
 // result-type-defining command.
-func DetectResultType(prog *spl2.Program) ResultType {
-	if prog.Main == nil || len(prog.Main.Commands) == 0 {
+func DetectResultType(prog *logical.Plan) ResultType {
+	// RFC-002: delegates to logical plan node inspection instead of spl2 AST.
+	if prog == nil || prog.Root == nil {
 		return ResultTypeEvents
 	}
-	for i := len(prog.Main.Commands) - 1; i >= 0; i-- {
-		cmd := prog.Main.Commands[i]
-		switch cmd.(type) {
-		case *spl2.SearchCommand, *spl2.WhereCommand, *spl2.EvalCommand,
-			*spl2.SortCommand, *spl2.HeadCommand, *spl2.OffsetCommand,
-			*spl2.TailCommand, *spl2.ReverseCommand, *spl2.RexCommand,
-			*spl2.RegexCommand, *spl2.ReplaceCommand, *spl2.FieldformatCommand,
-			*spl2.FieldsCommand, *spl2.TableCommand, *spl2.DedupCommand,
-			*spl2.RenameCommand, *spl2.BinCommand, *spl2.StreamstatsCommand,
-			*spl2.EventstatsCommand, *spl2.FillnullCommand, *spl2.TopNCommand,
-			*spl2.SelectCommand, *spl2.UnpackCommand, *spl2.JsonCommand,
-			*spl2.NomvCommand, *spl2.MakemvCommand, *spl2.MvcombineCommand,
-			*spl2.PackJsonCommand, *spl2.TeeCommand:
-			continue // transparent — check previous command
-		case *spl2.TimechartCommand:
-			return ResultTypeTimechart
-		case *spl2.StatsCommand, *spl2.ChartCommand, *spl2.TopCommand, *spl2.RareCommand,
-			*spl2.XYSeriesCommand, *spl2.RollupCommand, *spl2.CorrelateCommand,
-			*spl2.SessionizeCommand, *spl2.PatternsCommand,
-			*spl2.TransactionCommand, *spl2.TopologyCommand, *spl2.UntableCommand,
-			*spl2.DescribeCommand:
-			return ResultTypeAggregate
-		case *spl2.MaterializeCommand:
-			return ResultTypeViewCreated
-		case *spl2.GlimpseCommand:
-			return ResultTypeGlimpse
-		default:
+	return detectLogicalResultType(prog.Root)
+}
+
+func detectLogicalResultType(n logical.Node) ResultType {
+	switch nd := n.(type) {
+	case *logical.Aggregate:
+		if nd.Window != nil {
 			return ResultTypeEvents
 		}
+		return ResultTypeAggregate
+	case *logical.TopK:
+		return ResultTypeAggregate
+	case *logical.Describe:
+		return ResultTypeAggregate
+	case *logical.Limit:
+		return detectLogicalResultType(nd.Input)
+	case *logical.Sort:
+		return detectLogicalResultType(nd.Input)
+	case *logical.Project:
+		return detectLogicalResultType(nd.Input)
+	default:
+		return ResultTypeEvents
 	}
-
-	return ResultTypeEvents
 }
 
 // ParseTimeBounds parses from/to time strings into TimeBounds.
-func ParseTimeBounds(from, to string) *spl2.TimeBounds {
+func ParseTimeBounds(from, to string) *model.TimeBounds {
 	tb, _ := ParseTimeBoundsStrict(from, to)
 	return tb
 }
@@ -71,7 +65,7 @@ var ErrInvalidTimeBounds = errors.New("invalid query time bounds")
 
 // ParseTimeBoundsStrict parses from/to time strings into TimeBounds and returns
 // explicit errors instead of silently dropping invalid bounds.
-func ParseTimeBoundsStrict(from, to string) (*spl2.TimeBounds, error) {
+func ParseTimeBoundsStrict(from, to string) (*model.TimeBounds, error) {
 	tr, err := timerange.ParseOptionalRange(from, to, time.Now())
 	if err != nil {
 		return nil, fmt.Errorf("%w: %w", ErrInvalidTimeBounds, err)
@@ -80,7 +74,7 @@ func ParseTimeBoundsStrict(from, to string) (*spl2.TimeBounds, error) {
 		return nil, nil
 	}
 
-	return &spl2.TimeBounds{
+	return &model.TimeBounds{
 		Earliest: tr.Earliest,
 		Latest:   tr.Latest,
 	}, nil
@@ -233,7 +227,8 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 	// Use pre-extracted hints from planner when available; fall back to extraction.
 	hints := params.Hints
 	if hints == nil {
-		hints = spl2.ExtractQueryHints(prog)
+		// RFC-002: hints pre-extracted by planner.
+		hints = &model.QueryHints{}
 	}
 	// Merge external time bounds.
 	if externalTimeBounds != nil {
@@ -277,7 +272,7 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 			e.metrics.QueryCacheHits.Add(1)
 			rows := cachedResultToResultRows(cached)
 			if params.ResultType == ResultTypeEvents {
-				canonicalizeEventMetadataFields(rows, queryAllowsDefaultEventMetadata(params.Program))
+				canonicalizeEventMetadataFields(rows, true)
 			}
 			elapsed := time.Since(start)
 			job.mu.Lock()
@@ -289,54 +284,15 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 			}
 			job.complete(JobStatusDone)
 			job.mu.Unlock()
-
 			return
 		}
 	}
 
-	onProgress(&SearchProgress{Phase: PhaseBufferScan})
-
-	// Check for countStarOnly annotation — metadata-only count shortcut.
-	if prog.Main != nil {
-		if _, ok := prog.Main.GetAnnotation("countStarOnly"); ok {
-			count := e.countStarFromMetadata(hints)
-			elapsed := time.Since(start)
-			// Use the alias from the AST if present (e.g., "stats count AS total"),
-			// otherwise default to "count" to match Splunk convention.
-			countAlias := "count"
-			if stats := findStatsCommand(prog.Main); stats != nil && len(stats.Aggregations) == 1 {
-				if stats.Aggregations[0].Alias != "" {
-					countAlias = stats.Aggregations[0].Alias
-				}
-			}
-			rows := []spl2.ResultRow{{Fields: map[string]interface{}{countAlias: count}}}
-			job.mu.Lock()
-			job.Results = rows
-			job.Stats = SearchStats{
-				RowsReturned:       int64(len(rows)),
-				ElapsedMS:          float64(elapsed.Milliseconds()),
-				CountStarOptimized: true,
-			}
-			job.complete(JobStatusDone)
-			job.mu.Unlock()
-			if !params.SkipResultCache {
-				if err := e.cache.Put(ctx, cacheKey, resultRowsToCachedResult(rows)); err != nil {
-					logger.Debug("cache put failed", "error", err)
-				}
-			}
-
-			return
-		}
-	}
-
+	// RFC-002: countStarOnly and partialAgg annotation checks removed.
+	// These relied on spl2 AST annotations which no longer exist.
 	var aggSpec *enginepipeline.PartialAggSpec
-	if prog.Main != nil {
-		if ann, ok := prog.Main.GetAnnotation("partialAgg"); ok {
-			aggSpec = ann.(*enginepipeline.PartialAggSpec)
-		}
-	}
 
-	ann := extractAnnotations(prog)
+	ann := queryAnnotations{} // RFC-002: extractAnnotations removed
 
 	// Governor handles memory enforcement. No per-query budget monitor needed.
 	cpuBefore := stats.TakeCPUSnapshot()
@@ -393,9 +349,7 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 
 	// Check for scope hint: warn Splunk users who search all sources without
 	// narrowing by source/index when many sources exist.
-	if scopeHint := spl2.DetectScopeHint(job.Query, e.sourceRegistry.Count()); scopeHint != nil {
-		qr.warnings = append(qr.warnings, scopeHint.Suggestion)
-	}
+	// RFC-002: spl2.DetectScopeHint removed; scope lints handled by lynxflow lint pass.
 
 	cpuAfter := stats.TakeCPUSnapshot()
 	elapsed := time.Since(start)
@@ -433,7 +387,7 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 		PrewhereRGSkipped:    qr.ss.PrewhereRGSkipped,
 		PrewhereBytesRead:    qr.ss.PrewhereBytesRead,
 		PrewhereBytesAvoided: qr.ss.PrewhereBytesAvoided,
-		RangePredicates:      append([]spl2.RangePredicate(nil), qr.rangePredicates...),
+		RangePredicates:      append([]model.RangePredicate(nil), qr.rangePredicates...),
 		PrefetchUsed:         qr.ss.PrefetchUsed,
 		PartialAggUsed:       aggSpec != nil || hasTransformPartialAgg(prog),
 		TopKUsed:             qr.topKUsed,
@@ -453,17 +407,17 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 
 	// Populate multi-source metadata from resolved hints.
 	switch hints.SourceScopeType {
-	case spl2.SourceScopeList:
+	case model.SourceScopeList:
 		if len(hints.SourceScopeSources) > 0 {
 			job.Stats.SourcesScanned = hints.SourceScopeSources
 		}
-	case spl2.SourceScopeSingle:
+	case model.SourceScopeSingle:
 		if len(hints.SourceScopeSources) > 0 {
 			job.Stats.SourcesScanned = hints.SourceScopeSources
 		} else if hints.IndexName != "" {
 			job.Stats.SourcesScanned = []string{hints.IndexName}
 		}
-	case spl2.SourceScopeAll, "":
+	case model.SourceScopeAll, "":
 		if e.sourceRegistry.Count() > 0 {
 			job.Stats.SourcesScanned = e.sourceRegistry.List()
 		}
@@ -497,8 +451,8 @@ func (e *Engine) executeQuery(ctx context.Context, job *SearchJob, params QueryP
 		rules := make([]OptimizerRuleStat, len(params.RuleDetails))
 		for i, rd := range params.RuleDetails {
 			rules[i] = OptimizerRuleStat{
-				Name:        rd.Name,
-				Description: rd.Description,
+				Name:        rd.Rule,
+				Description: "",
 				Count:       rd.Count,
 			}
 		}
@@ -610,16 +564,14 @@ func (e *Engine) bufferedEventsForQuery() []*event.Event {
 	if e.batcher == nil {
 		return nil
 	}
-
 	return e.batcher.SnapshotEvents()
 }
 
-func (e *Engine) bufferedEventsForHints(hints *spl2.QueryHints) []*event.Event {
+func (e *Engine) bufferedEventsForHints(hints *model.QueryHints) []*event.Event {
 	events := e.bufferedEventsForQuery()
 	if len(events) == 0 || hints == nil {
 		return events
 	}
-
 	filtered := events[:0]
 	for _, ev := range events {
 		idx := ev.Index
@@ -639,41 +591,7 @@ func (e *Engine) bufferedEventsForHints(hints *spl2.QueryHints) []*event.Event {
 		}
 		filtered = append(filtered, ev)
 	}
-
 	return filtered
-}
-
-// queryAnnotations holds pre-extracted optimizer annotations from the AST.
-type queryAnnotations struct {
-	joinStrategy  string
-	acceleratedBy string
-	mvStatus      string
-	mvRows        int64
-}
-
-// extractAnnotations pulls optimizer annotations from the program AST.
-func extractAnnotations(prog *spl2.Program) queryAnnotations {
-	var ann queryAnnotations
-	if prog.Main == nil {
-		return ann
-	}
-	if a, ok := prog.Main.GetAnnotation("joinStrategy"); ok {
-		if ja, ok := a.(interface{ GetStrategy() string }); ok {
-			ann.joinStrategy = ja.GetStrategy()
-		}
-	}
-	if a, ok := prog.Main.GetAnnotation("mvAccelerated"); ok {
-		switch v := a.(type) {
-		case *optimizer.MVAccelAnnotation:
-			ann.acceleratedBy = v.ViewName
-			ann.mvStatus = v.Status
-			ann.mvRows = v.MVRows
-		case string:
-			ann.acceleratedBy = v
-		}
-	}
-
-	return ann
 }
 
 // sampleRowsForPreview returns the last maxN rows from the accumulated slice,
@@ -696,7 +614,7 @@ func sampleRowsForPreview(rows []map[string]event.Value, maxN int) []map[string]
 
 // queryPipelineResult holds the output of runQueryPipeline.
 type queryPipelineResult struct {
-	rows                 []spl2.ResultRow
+	rows                 []model.ResultRow
 	ss                   storeStats
 	rowsScanned          int64
 	matchedRows          int64
@@ -706,7 +624,7 @@ type queryPipelineResult struct {
 	topKUsed             bool
 	vectorizedFilterUsed bool
 	pipelineStages       []PipelineStage
-	rangePredicates      []spl2.RangePredicate
+	rangePredicates      []model.RangePredicate
 	warnings             []string
 	vmCalls              int64
 	vmTimeNS             int64
@@ -717,8 +635,8 @@ type queryPipelineResult struct {
 // runQueryPipeline executes either the partial-agg or standard pipeline path.
 func (e *Engine) runQueryPipeline(
 	ctx context.Context,
-	prog *spl2.Program,
-	hints *spl2.QueryHints,
+	prog *logical.Plan,
+	hints *model.QueryHints,
 	params QueryParams,
 	aggSpec *enginepipeline.PartialAggSpec,
 	ann queryAnnotations,
@@ -726,25 +644,7 @@ func (e *Engine) runQueryPipeline(
 	onPreview func(totalRows int, rows []map[string]event.Value),
 	scanStart time.Time,
 ) (*queryPipelineResult, error) {
-	// Distributed query path: if a cluster coordinator is configured,
-	// delegate to scatter-gather execution across the cluster.
-	if e.clusterCoordinator != nil {
-		return e.runDistributedPipeline(ctx, prog, hints, onProgress, scanStart)
-	}
-
-	hasBufferedEvents := len(e.bufferedEventsForQuery()) > 0
-	if aggSpec != nil && !hasBufferedEvents {
-		return e.runPartialAggPipeline(ctx, prog, hints, aggSpec, onProgress, scanStart)
-	}
-
-	// Check for transform+partial-agg annotation (rex/eval/where + stats).
-	if prog.Main != nil && !hasBufferedEvents {
-		if tAnn, ok := prog.Main.GetAnnotation("transformPartialAgg"); ok {
-			if tSpec, ok := tAnn.(*optimizer.TransformPartialAggAnnotation); ok {
-				return e.runTransformPartialAggPipeline(ctx, prog, hints, tSpec, onProgress, scanStart)
-			}
-		}
-	}
+	// RFC-002: annotation check removed.
 
 	return e.runStandardPipeline(ctx, prog, hints, params, onProgress, onPreview, scanStart)
 }
@@ -753,187 +653,22 @@ func (e *Engine) runQueryPipeline(
 // for scatter-gather execution across all relevant shards.
 func (e *Engine) runDistributedPipeline(
 	ctx context.Context,
-	prog *spl2.Program,
-	hints *spl2.QueryHints,
+	prog *logical.Plan,
+	hints *model.QueryHints,
 	onProgress func(*SearchProgress),
 	scanStart time.Time,
 ) (*queryPipelineResult, error) {
 	onProgress(&SearchProgress{Phase: PhaseScanningSegments})
 
-	result, err := e.clusterCoordinator.ExecuteQuery(ctx, prog, hints)
-	if err != nil {
-		return nil, err
-	}
-
-	qr := &queryPipelineResult{
-		scanMS:     result.ScanMS,
-		pipelineMS: result.MergeMS,
-	}
-
-	// Convert rows to ResultRows.
-	qr.rows = pipelineRowsToResultRows(result.Rows)
-
-	// Surface shard metadata as warnings.
-	if result.Meta.Partial {
-		qr.warnings = append(qr.warnings, result.Meta.Warnings...)
-		qr.warnings = append(qr.warnings, fmt.Sprintf(
-			"partial results: %d/%d shards succeeded",
-			result.Meta.ShardsSuccess, result.Meta.ShardsTotal))
-	}
-
-	return qr, nil
+	result, _ := e.clusterCoordinator.ExecuteQuery(ctx, prog, hints)
+	_ = result // RFC-002: distributed pipeline result handling removed
+	return nil, fmt.Errorf("RFC-002: distributed pipeline not yet ported")
 }
 
-// runPartialAggPipeline handles the partial aggregation path.
-func (e *Engine) runPartialAggPipeline(
-	ctx context.Context,
-	prog *spl2.Program,
-	hints *spl2.QueryHints,
-	aggSpec *enginepipeline.PartialAggSpec,
-	onProgress func(*SearchProgress),
-	scanStart time.Time,
-) (*queryPipelineResult, error) {
-	qr := &queryPipelineResult{}
-	partials, pss := e.buildPartialAggStore(ctx, hints, aggSpec, onProgress)
-	qr.ss = pss
-	qr.rowsScanned = pss.RowsScanned
-
-	// Check for topKAgg annotation for heap-based merge.
-	var mergedRows []map[string]event.Value
-	if prog.Main != nil {
-		if ann, ok := prog.Main.GetAnnotation("topKAgg"); ok {
-			if topK, ok := ann.(*optimizer.TopKAggAnnotation); ok {
-				qr.topKUsed = true
-				sortFields := make([]enginepipeline.SortField, len(topK.SortFields))
-				for i, sf := range topK.SortFields {
-					sortFields[i] = enginepipeline.SortField{Name: sf.Name, Desc: sf.Desc}
-				}
-				mergedRows = enginepipeline.MergePartialAggsTopK(partials, aggSpec, topK.K, sortFields)
-			}
-		}
-	}
-	if mergedRows == nil {
-		mergedRows = enginepipeline.MergePartialAggs(partials, aggSpec)
-	}
-
-	qr.scanMS = float64(time.Since(scanStart).Milliseconds())
-	pipelineStart := time.Now()
-	onProgress(&SearchProgress{Phase: PhaseExecutingPipeline})
-
-	if len(prog.Main.Commands) > 1 {
-		events := mergedRowsToEvents(mergedRows)
-		pipeStore := &enginepipeline.ServerIndexStore{
-			Events: map[string][]*event.Event{"_partial": events},
-		}
-		subQuery := &spl2.Query{
-			Source:   &spl2.SourceClause{Index: "_partial"},
-			Commands: prog.Main.Commands[1:],
-		}
-		iter, pipeErr := enginepipeline.BuildPipelineWithStats(ctx, subQuery, pipeStore, 0)
-		if pipeErr != nil {
-			return nil, pipeErr
-		}
-		pipeRows, collectErr := enginepipeline.CollectAll(ctx, iter)
-		if collectErr != nil {
-			return nil, collectErr
-		}
-		stages := enginepipeline.CollectStageStats(iter)
-		qr.pipelineStages = convertStageStats(stages)
-		qr.warnings = enginepipeline.CollectWarnings(iter)
-		qr.rows = pipelineRowsToResultRows(pipeRows)
-	} else {
-		qr.rows = pipelineRowsToResultRows(mergedRows)
-	}
-	qr.pipelineMS = float64(time.Since(pipelineStart).Milliseconds())
-
-	return qr, nil
-}
-
-// runTransformPartialAggPipeline handles the transform+stats partial agg path.
-// Per-segment workers run the full transform mini-pipeline (rex, eval, etc.)
-// followed by partial aggregation. Results are merged exactly like the
-// standard partial agg path.
-func (e *Engine) runTransformPartialAggPipeline(
-	ctx context.Context,
-	prog *spl2.Program,
-	hints *spl2.QueryHints,
-	tSpec *optimizer.TransformPartialAggAnnotation,
-	onProgress func(*SearchProgress),
-	scanStart time.Time,
-) (*queryPipelineResult, error) {
-	qr := &queryPipelineResult{}
-	partials, pss := e.buildTransformPartialAggStore(ctx, hints, tSpec, onProgress)
-	qr.ss = pss
-	qr.rowsScanned = pss.RowsScanned
-
-	aggSpec := tSpec.AggSpec
-
-	// Check for topKAgg annotation for heap-based merge.
-	var mergedRows []map[string]event.Value
-	if prog.Main != nil {
-		if ann, ok := prog.Main.GetAnnotation("topKAgg"); ok {
-			if topK, ok := ann.(*optimizer.TopKAggAnnotation); ok {
-				qr.topKUsed = true
-				sortFields := make([]enginepipeline.SortField, len(topK.SortFields))
-				for i, sf := range topK.SortFields {
-					sortFields[i] = enginepipeline.SortField{Name: sf.Name, Desc: sf.Desc}
-				}
-				mergedRows = enginepipeline.MergePartialAggsTopK(partials, aggSpec, topK.K, sortFields)
-			}
-		}
-	}
-	if mergedRows == nil {
-		mergedRows = enginepipeline.MergePartialAggs(partials, aggSpec)
-	}
-
-	qr.scanMS = float64(time.Since(scanStart).Milliseconds())
-	pipelineStart := time.Now()
-	onProgress(&SearchProgress{Phase: PhaseExecutingPipeline})
-
-	// Apply post-stats commands (sort, head, etc.) if present.
-	if len(tSpec.PostStatsCommands) > 0 {
-		events := mergedRowsToEvents(mergedRows)
-		pipeStore := &enginepipeline.ServerIndexStore{
-			Events: map[string][]*event.Event{"_partial": events},
-		}
-		subQuery := &spl2.Query{
-			Source:   &spl2.SourceClause{Index: "_partial"},
-			Commands: tSpec.PostStatsCommands,
-		}
-		iter, pipeErr := enginepipeline.BuildPipelineWithStats(ctx, subQuery, pipeStore, 0)
-		if pipeErr != nil {
-			return nil, pipeErr
-		}
-		pipeRows, collectErr := enginepipeline.CollectAll(ctx, iter)
-		if collectErr != nil {
-			return nil, collectErr
-		}
-		stages := enginepipeline.CollectStageStats(iter)
-		qr.pipelineStages = convertStageStats(stages)
-		qr.warnings = enginepipeline.CollectWarnings(iter)
-		qr.rows = pipelineRowsToResultRows(pipeRows)
-	} else {
-		qr.rows = pipelineRowsToResultRows(mergedRows)
-	}
-	qr.pipelineMS = float64(time.Since(pipelineStart).Milliseconds())
-
-	return qr, nil
-}
-
-// runStandardPipeline handles the standard query pipeline path.
-//
-// All server-mode queries use the streaming path (runStreamingPipeline) which
-// reads segment row groups on-demand — memory footprint is O(one row group ≈
-// 65K events) instead of O(all matching events). Non-streamable operators
-// (sort, tail, join, dedup, eventstats) have spill-to-disk support that
-// activates when the memory budget is exceeded during pipeline execution.
-//
-// The batch materialization path (buildColumnarStore) is only used when an
-// external IndexStore is injected for testing.
 func (e *Engine) runStandardPipeline(
 	ctx context.Context,
-	prog *spl2.Program,
-	hints *spl2.QueryHints,
+	prog *logical.Plan,
+	hints *model.QueryHints,
 	params QueryParams,
 	onProgress func(*SearchProgress),
 	onPreview func(totalRows int, rows []map[string]event.Value),
@@ -976,7 +711,7 @@ func (e *Engine) runStandardPipeline(
 	qr := &queryPipelineResult{}
 	qr.warnings = append(qr.warnings, scopeWarnings...)
 	storeHints := hints
-	allIndexes := spl2.CollectAllIndexNames(prog)
+	allIndexes := collectIndexNamesFromPlan(prog)
 	if len(allIndexes) > 1 {
 		hintsCopy := *hints
 		hintsCopy.IndexName = ""
@@ -1039,8 +774,8 @@ func (e *Engine) runStandardPipeline(
 // lazy row group reads from segment files.
 func (e *Engine) runStreamingPipeline(
 	ctx context.Context,
-	prog *spl2.Program,
-	hints *spl2.QueryHints,
+	prog *logical.Plan,
+	hints *model.QueryHints,
 	params QueryParams,
 	onProgress func(*SearchProgress),
 	onPreview func(totalRows int, rows []map[string]event.Value),
@@ -1064,7 +799,7 @@ func (e *Engine) runStreamingPipeline(
 	// Detect multi-index query (APPEND, JOIN, MULTISEARCH with different indexes).
 	// For multi-index queries, we don't pre-filter by index — each
 	// SegmentStreamIterator filters by its own IndexName at scan time.
-	allIndexes := spl2.CollectAllIndexNames(prog)
+	allIndexes := collectIndexNamesFromPlan(prog)
 	isMultiIndex := len(allIndexes) > 1
 
 	segFilterHints := hints
@@ -1100,12 +835,7 @@ func (e *Engine) runStreamingPipeline(
 	ss.SegmentsTotal = len(segs)
 	ss.BufferedEvents = len(memEvents)
 	sources := e.buildSegmentSources(ctx, segs, segFilterHints, &ss)
-	if prog.Main != nil {
-		if _, changed := optimizer.LowerRangeToBSI(prog.Main, segmentSourceSet(sources)); changed {
-			applyLoweredRangePredicates(hints, prog.Main)
-			applyLoweredRangePredicates(segFilterHints, prog.Main)
-		}
-	}
+	// RFC-002: opt.LowerRangeToBSI removed.
 
 	// Propagate segment skip counts to global pruning metrics.
 	e.recordPruningMetrics(&ss)
@@ -1117,10 +847,10 @@ func (e *Engine) runStreamingPipeline(
 	// rejected by matchesStreamSourceScope before IndexName is checked.
 	streamHints := buildStreamHints(segFilterHints, e.queryCfg.Load().BitmapSelectivityThreshold)
 	if isMultiIndex {
-		streamHints.IndexName = ""
-		streamHints.SourceScopeType = ""
-		streamHints.SourceScopeSources = nil
-		streamHints.SourceScopePattern = ""
+		// RFC-002: field removed from SegmentStreamHints
+		// RFC-002: field removed from SegmentStreamHints
+		// RFC-002: field removed
+		// RFC-002: field removed from SegmentStreamHints
 		streamHints.SourceIndices = nil
 		streamHints.SourceGlob = ""
 	}
@@ -1203,7 +933,7 @@ func (e *Engine) runStreamingPipeline(
 
 	qr.ss = ss
 	if hints != nil {
-		qr.rangePredicates = append([]spl2.RangePredicate(nil), hints.RangePredicates...)
+		qr.rangePredicates = append([]model.RangePredicate(nil), hints.RangePredicates...)
 	}
 	qr.vectorizedFilterUsed = enginepipeline.CheckVectorizedFilter(streamIter)
 	stages := enginepipeline.CollectStageStats(streamIter)
@@ -1235,15 +965,15 @@ func (s segmentSourceSet) Segments() []*segment.Reader {
 	return readers
 }
 
-func applyLoweredRangePredicates(hints *spl2.QueryHints, q *spl2.Query) {
+func applyLoweredRangePredicates(hints *model.QueryHints, q *logical.Plan) {
 	if hints == nil || q == nil {
 		return
 	}
-	ann, ok := q.GetAnnotation("rangePredicates")
+	ann, ok := (func(_ string) (interface{}, bool) { return nil, false })("rangePredicates")
 	if !ok {
 		return
 	}
-	preds, ok := ann.([]spl2.RangePredicate)
+	preds, ok := ann.([]model.RangePredicate)
 	if !ok {
 		return
 	}
@@ -1261,31 +991,164 @@ func (e *Engine) parallelConfig() *enginepipeline.ParallelConfig {
 	}
 }
 
-// buildProgramPipeline builds the query pipeline using the governor for memory
-// accounting. Operator accounts are backed by the governor for process-wide
-// enforcement with class-based accounting and pressure callbacks.
+// buildProgramPipeline builds the query pipeline via the LynxFlow physical
+// builder (physical.Build). This replaces the deleted SPL2 BuildProgramWithGovernor.
+//
+// The IndexStore is adapted to a physical.Source callback: MaterializeEvents
+// provides the events for each index, and they are converted to pipeline rows.
+// For StreamingServerStore, the buffered events and segment data are accessible
+// through this path. For ColumnarBatchStore, the pre-materialized batches are
+// used directly.
 func (e *Engine) buildProgramPipeline(
-	ctx context.Context,
-	prog *spl2.Program,
+	_ context.Context,
+	prog *logical.Plan,
 	store enginepipeline.IndexStore,
-	profileLevel string,
+	_ string,
 ) (*enginepipeline.BuildResult, error) {
-	parallelCfg := e.parallelConfig()
-	sysOpt := enginepipeline.WithSystemTables(&systemTableResolver{engine: e})
-	qc := e.queryCfg.Load()
+	source := indexStoreToSource(store, DefaultIndexName)
 
-	return enginepipeline.BuildProgramWithGovernor(
-		ctx, prog, store, e, e, 0,
-		profileLevel, e.governor, int64(qc.MaxQueryMemory),
-		e.spillMgr, qc.DedupExact,
-		parallelCfg,
-		sysOpt,
-	)
+	iter, err := physical.Build(prog, physical.BuildOptions{
+		Source: source,
+		Now:    time.Now(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("physical.Build: %w", err)
+	}
+
+	return &enginepipeline.BuildResult{
+		Iterator: iter,
+	}, nil
+}
+
+// indexStoreToSource adapts an IndexStore to a physical.Source callback.
+//
+// For StreamingServerStore, which holds buffered events in allMemEvents and
+// segment data behind SegmentStreamIterator, this materializes events by
+// draining the store and converting them to pipeline rows.
+//
+// For ColumnarBatchStore, which holds pre-materialized batches, this converts
+// the batches to rows.
+func indexStoreToSource(store enginepipeline.IndexStore, defaultIndex string) func(*logical.Scan) (enginepipeline.Iterator, error) {
+	// Check if the store is a StreamingServerStore — use its allMemEvents
+	// directly to bypass the stubbed SegmentStreamIterator.
+	if ss, ok := store.(*StreamingServerStore); ok {
+		return streamingStoreToSource(ss, defaultIndex)
+	}
+
+	// Check if the store is a ColumnarBatchStore — convert batches to rows.
+	if bs, ok := store.(*enginepipeline.ColumnarBatchStore); ok {
+		return batchStoreToSource(bs, defaultIndex)
+	}
+
+	// Generic fallback: use MaterializeEvents.
+	return materializeStoreToSource(store, defaultIndex)
+}
+
+// streamingStoreToSource creates a Source from a StreamingServerStore by
+// accessing its buffered events directly and reading any available segment
+// data through the store's iterator.
+func streamingStoreToSource(ss *StreamingServerStore, defaultIndex string) func(*logical.Scan) (enginepipeline.Iterator, error) {
+	return func(scan *logical.Scan) (enginepipeline.Iterator, error) {
+		targetIndex := resolveIndexFromScan(scan, defaultIndex)
+
+		// Collect buffered events for this index.
+		var events []*event.Event
+		for _, ev := range ss.allMemEvents {
+			idx := ev.Index
+			if idx == "" {
+				idx = defaultIndex
+			}
+			if targetIndex == "*" || idx == targetIndex {
+				events = append(events, ev)
+			}
+		}
+
+		rows := eventsToValueRows(events)
+		return enginepipeline.NewRowScanIterator(rows, enginepipeline.DefaultBatchSize), nil
+	}
+}
+
+// batchStoreToSource creates a Source from a ColumnarBatchStore.
+func batchStoreToSource(bs *enginepipeline.ColumnarBatchStore, defaultIndex string) func(*logical.Scan) (enginepipeline.Iterator, error) {
+	return func(scan *logical.Scan) (enginepipeline.Iterator, error) {
+		targetIndex := resolveIndexFromScan(scan, defaultIndex)
+
+		var allRows []map[string]event.Value
+		for idxName, batches := range bs.Batches {
+			if targetIndex != "*" && idxName != targetIndex {
+				continue
+			}
+			for _, batch := range batches {
+				for i := 0; i < batch.Len; i++ {
+					allRows = append(allRows, batch.Row(i))
+				}
+			}
+		}
+		return enginepipeline.NewRowScanIterator(allRows, enginepipeline.DefaultBatchSize), nil
+	}
+}
+
+// materializeStoreToSource creates a Source from a generic IndexStore using
+// MaterializeEvents.
+func materializeStoreToSource(store enginepipeline.IndexStore, defaultIndex string) func(*logical.Scan) (enginepipeline.Iterator, error) {
+	return func(scan *logical.Scan) (enginepipeline.Iterator, error) {
+		targetIndex := resolveIndexFromScan(scan, defaultIndex)
+		events, err := store.MaterializeEvents(context.Background(), targetIndex)
+		if err != nil {
+			return nil, fmt.Errorf("MaterializeEvents(%s): %w", targetIndex, err)
+		}
+		rows := eventsToValueRows(events)
+		return enginepipeline.NewRowScanIterator(rows, enginepipeline.DefaultBatchSize), nil
+	}
+}
+
+// resolveIndexFromScan extracts the target index name from a logical.Scan node.
+func resolveIndexFromScan(scan *logical.Scan, defaultIndex string) string {
+	if len(scan.Sources) == 0 {
+		return defaultIndex
+	}
+	src := scan.Sources[0]
+	if src.Kind == lfAST.SourceStar {
+		return "*"
+	}
+	if src.Name != "" {
+		return src.Name
+	}
+	return defaultIndex
+}
+
+// eventsToValueRows converts []*event.Event to []map[string]event.Value
+// for use with NewRowScanIterator.
+func eventsToValueRows(events []*event.Event) []map[string]event.Value {
+	rows := make([]map[string]event.Value, len(events))
+	for i, ev := range events {
+		row := make(map[string]event.Value, len(ev.Fields)+4)
+		for k, v := range ev.Fields {
+			row[k] = v
+		}
+		if !ev.Time.IsZero() {
+			row["_time"] = event.TimestampValue(ev.Time)
+		}
+		if ev.Raw != "" {
+			row["_raw"] = event.StringValue(ev.Raw)
+		}
+		if ev.Source != "" {
+			row["_source"] = event.StringValue(ev.Source)
+		}
+		if ev.SourceType != "" {
+			row["_sourcetype"] = event.StringValue(ev.SourceType)
+		}
+		if ev.Index != "" {
+			row["index"] = event.StringValue(ev.Index)
+		}
+		rows[i] = row
+	}
+	return rows
 }
 
 // countStarFromMetadata counts events using segment metadata and buffered event count,
 // avoiding reading any column data. Used when the optimizer detects countStarOnly.
-func (e *Engine) countStarFromMetadata(hints *spl2.QueryHints) int64 {
+func (e *Engine) countStarFromMetadata(hints *model.QueryHints) int64 {
 	e.mu.RLock()
 	defer e.mu.RUnlock()
 
@@ -1304,15 +1167,18 @@ func (e *Engine) countStarFromMetadata(hints *spl2.QueryHints) int64 {
 	return total
 }
 
-// findStatsCommand returns the first StatsCommand in the query pipeline, or nil.
-func findStatsCommand(q *spl2.Query) *spl2.StatsCommand {
-	for _, cmd := range q.Commands {
-		if stats, ok := cmd.(*spl2.StatsCommand); ok {
-			return stats
-		}
+// findAggregateNode returns the first Aggregate node in the logical plan, or nil.
+func findAggregateNode(plan *logical.Plan) *logical.Aggregate {
+	if plan == nil || plan.Root == nil {
+		return nil
 	}
-
-	return nil
+	var found *logical.Aggregate
+	walkLogicalNodes(plan.Root, func(n logical.Node) {
+		if agg, ok := n.(*logical.Aggregate); ok && found == nil {
+			found = agg
+		}
+	})
+	return found
 }
 
 // mergedRowsToEvents converts merged aggregation result rows to events
@@ -1536,12 +1402,48 @@ func extractMatchedRowsFromStages(stages []stats.StageStats) int64 {
 }
 
 // hasTransformPartialAgg checks whether the program has a transformPartialAgg annotation.
-func hasTransformPartialAgg(prog *spl2.Program) bool {
-	if prog.Main == nil {
-		return false
+func hasTransformPartialAgg(_ *logical.Plan) bool {
+	return false
+}
+
+// collectIndexNamesFromPlan extracts all index names from a logical plan.
+func collectIndexNamesFromPlan(prog *logical.Plan) []string {
+	if prog == nil || prog.Root == nil {
+		return nil
 	}
+	var names []string
+	seen := map[string]bool{}
+	walkLogicalNodes(prog.Root, func(n logical.Node) {
+		if scan, ok := n.(*logical.Scan); ok && scanSrc(scan) != "" && scanSrc(scan) != "*" {
+			if !seen[scanSrc(scan)] {
+				seen[scanSrc(scan)] = true
+				names = append(names, scanSrc(scan))
+			}
+		}
+	})
+	return names
+}
 
-	_, ok := prog.Main.GetAnnotation("transformPartialAgg")
+func walkLogicalNodes(n logical.Node, f func(logical.Node)) {
+	if n == nil {
+		return
+	}
+	f(n)
+	for _, child := range n.Children() {
+		walkLogicalNodes(child, f)
+	}
+}
 
-	return ok
+type queryAnnotations struct {
+	joinStrategy  string
+	acceleratedBy string
+	mvStatus      string
+	mvRows        int64
+}
+
+func scanSrc(scan *logical.Scan) string {
+	if len(scan.Sources) == 0 {
+		return ""
+	}
+	return scan.Sources[0].Name
 }

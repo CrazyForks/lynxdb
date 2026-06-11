@@ -1,7 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| keep service, level, status, duration_ms
-| head 5
-| sort service, level

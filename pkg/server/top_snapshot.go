@@ -6,7 +6,6 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/bufmgr"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 // TopSnapshot is the engine-owned portion of the live "top" dashboard state.
@@ -244,14 +243,14 @@ func (e *Engine) topQueryRows(indexes map[string]*TopIndexSnapshot) []TopQueryRo
 }
 
 func inferQueryIndexes(query string, indexes map[string]*TopIndexSnapshot) []string {
-	prog, err := spl2.ParseProgram(spl2.NormalizeQuery(query))
+	prog, err := parseCQQuery(query)
 	if err != nil {
 		if _, ok := indexes[DefaultIndexName]; ok {
 			return []string{DefaultIndexName}
 		}
 		return nil
 	}
-	hints := spl2.ExtractQueryHints(prog)
+	hints := extractCQHints(prog)
 	set := hints.SourceIndexSet()
 	out := make([]string, 0, len(set))
 	for name := range set {

@@ -1,2 +1,4 @@
 # format: json
-FROM idx_backend | search "payment" NOT "success" | stats count
+from idx_backend
+| where has(_raw, "payment") and not has(_raw, "success")
+| stats count()

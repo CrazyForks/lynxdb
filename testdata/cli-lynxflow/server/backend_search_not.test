@@ -1,5 +1,0 @@
-# format: json
-# language: lynxflow
-from idx_backend
-| where has(_raw, "payment") and not has(_raw, "success")
-| stats count()

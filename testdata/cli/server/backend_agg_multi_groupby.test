@@ -1,2 +1,4 @@
 # format: json
-FROM backend | stats count by level, method | sort level, method
+from backend
+| stats count() by level, method
+| sort level, method

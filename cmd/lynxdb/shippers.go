@@ -288,7 +288,7 @@ func waitForSyntheticEvent(ctx context.Context, remote, marker string) error {
 		client.WithBaseURL(remote),
 		client.WithAuthToken(resolveToken()),
 	)
-	query := fmt.Sprintf("FROM * | search %q | head 1", marker)
+	query := fmt.Sprintf("FROM * | where contains(_raw, %q) | head 1", marker)
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 

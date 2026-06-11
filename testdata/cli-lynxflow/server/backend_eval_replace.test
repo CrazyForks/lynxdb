@@ -1,6 +1,0 @@
-# format: json
-# language: lynxflow
-from idx_backend
-| extend clean = replace(message, "[aeiou]", "*")
-| stats count() by level
-| sort level

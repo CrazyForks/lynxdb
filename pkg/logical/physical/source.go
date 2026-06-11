@@ -73,6 +73,11 @@ type ScanStats struct {
 // event slice for an index) is required. This avoids importing pkg/storage.
 type EphemeralStore interface {
 	MaterializeEvents(index string) []*event.Event
+
+	// AllEvents returns events from ALL indexes. Implementations that don't
+	// support multi-index enumeration may return nil, causing the caller to
+	// fall back to MaterializeEvents(defaultIndex).
+	AllEvents() []*event.Event
 }
 
 // mapAdapter wraps a raw map[string][]*event.Event so it satisfies EphemeralStore.
@@ -82,6 +87,14 @@ type mapAdapter struct {
 
 func (m *mapAdapter) MaterializeEvents(index string) []*event.Event {
 	return m.events[index]
+}
+
+func (m *mapAdapter) AllEvents() []*event.Event {
+	var all []*event.Event
+	for _, evs := range m.events {
+		all = append(all, evs...)
+	}
+	return all
 }
 
 // NewStorageSource returns a Source callback that resolves Scan nodes against
@@ -340,9 +353,13 @@ func resolveEvents(store EphemeralStore, scan *logical.Scan, defaultIndex string
 		return store.MaterializeEvents(defaultIndex)
 	}
 
-	// Check for star source.
+	// Check for star source: return events from all indexes.
 	for _, s := range scan.Sources {
 		if s.Kind == ast.SourceStar {
+			if all := store.AllEvents(); all != nil {
+				return all
+			}
+			// Fallback for stores that don't implement AllEvents.
 			return store.MaterializeEvents(defaultIndex)
 		}
 	}

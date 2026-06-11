@@ -1,3 +1,0 @@
-# format: json
-# skip: glimpse output is non-deterministic due to sampling
-FROM backend | glimpse

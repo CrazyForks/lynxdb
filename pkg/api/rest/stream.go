@@ -9,7 +9,6 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/api/apicontracts"
 	"github.com/lynxbase/lynxdb/pkg/auth"
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
 
@@ -119,12 +118,7 @@ func (s *Server) handleQueryStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if ucErr := spl2.CheckUnsupportedCommands(query); ucErr != nil {
-		respondError(w, ErrCodeUnsupportedCommand, http.StatusBadRequest,
-			ucErr.Error(), WithSuggestion(ucErr.Hint))
-
-		return
-	}
+	// RFC-002: spl2.CheckUnsupportedCommands removed.
 
 	start := time.Now()
 

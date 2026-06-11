@@ -1,2 +1,0 @@
-# format: json
-| multisearch [FROM backend | where level="ERROR" | stats count as errors] [FROM frontend | search "ERROR" | stats count as errors]

@@ -1,2 +1,5 @@
 # format: json
-FROM backend | slowest 5 duration_ms by service
+from backend
+| stats max(service) as max_service by duration_ms
+| sort -max_service
+| head 5

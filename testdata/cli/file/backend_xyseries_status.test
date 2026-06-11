@@ -1,3 +1,6 @@
 # file: backend_server.log
 # format: json
-| stats count by level, service | xyseries level service count | sort level
+from main
+| stats count() by level, service
+| xyseries level service count
+| sort level

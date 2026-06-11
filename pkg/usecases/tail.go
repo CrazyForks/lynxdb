@@ -7,8 +7,10 @@ import (
 
 	enginepipeline "github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/physical"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/planner"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 )
 
@@ -21,8 +23,8 @@ type TailRequest struct {
 
 // TailPlan is a validated plan for tail streaming.
 type TailPlan struct {
-	Program    *spl2.Program
-	ExternalTB *spl2.TimeBounds
+	Program    *logical.Plan
+	ExternalTB *model.TimeBounds
 	Count      int
 	RawQuery   string
 }
@@ -122,17 +124,19 @@ func (s *TailService) SubscribeAndCatchup(ctx context.Context, plan *TailPlan) (
 	}
 
 	// Build the live pipeline with the dedup cursor.
-	var commands []spl2.Command
-	if plan.Program.Main != nil {
-		commands = plan.Program.Main.Commands
-	}
-
+	// The LiveScanIterator is plugged in as the Source for every Scan node in
+	// the logical plan, replacing the storage-backed scan with live events.
 	source := enginepipeline.NewLiveScanIterator(ch, 64, 100*time.Millisecond)
 	if !latestCatchup.IsZero() {
 		source.SetSkipBefore(latestCatchup)
 	}
 
-	iter, err := enginepipeline.BuildFromSource(ctx, source, commands, enginepipeline.DefaultBatchSize)
+	iter, err := physical.Build(plan.Program, physical.BuildOptions{
+		Source: func(_ *logical.Scan) (enginepipeline.Iterator, error) {
+			return source, nil
+		},
+		Now: time.Now(),
+	})
 	if err != nil {
 		bus.Unsubscribe(subID)
 

@@ -20,7 +20,8 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/cluster/tracing"
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/model"
 )
 
 // DefaultPartialFailureThreshold is the minimum fraction of successful shards
@@ -90,8 +91,8 @@ func NewCoordinator(
 // ExecuteQuery plans, fans out, and merges a distributed query.
 func (c *Coordinator) ExecuteQuery(
 	ctx context.Context,
-	prog *spl2.Program,
-	hints *spl2.QueryHints,
+	prog *logical.Plan,
+	hints *model.QueryHints,
 ) (*DistributedQueryResult, error) {
 	ctx, span := tracing.Tracer().Start(ctx, "lynxdb.query.distributed")
 	defer span.End()
@@ -99,7 +100,7 @@ func (c *Coordinator) ExecuteQuery(
 	scanStart := time.Now()
 
 	// 1. Plan the distributed query.
-	plan, err := PlanDistributedQuery(prog)
+	plan, err := PlanDistributedQuery(prog, hints)
 	if err != nil {
 		span.RecordError(err)
 		span.SetStatus(codes.Error, "plan failed")
@@ -455,58 +456,8 @@ func (c *Coordinator) checkPartialFailure(meta *QueryMeta) error {
 }
 
 // applyCoordCommands runs coordinator-only pipeline commands on merged rows.
-func applyCoordCommands(ctx context.Context, rows []map[string]event.Value, commands []spl2.Command) ([]map[string]event.Value, error) {
-	if len(commands) == 0 || len(rows) == 0 {
-		return rows, nil
-	}
-
-	// Build events from rows for pipeline execution.
-	events := make([]*event.Event, len(rows))
-	for i, row := range rows {
-		ev := &event.Event{
-			Fields: make(map[string]event.Value, len(row)),
-		}
-		for k, v := range row {
-			switch k {
-			case "_time":
-				if t, ok := v.TryAsTimestamp(); ok {
-					ev.Time = t
-				}
-			case "_raw":
-				s, _ := v.TryAsString()
-				ev.Raw = s
-			case "source", "_source":
-				s, _ := v.TryAsString()
-				ev.Source = s
-			case "host":
-				s, _ := v.TryAsString()
-				ev.Host = s
-			default:
-				ev.Fields[k] = v
-			}
-		}
-		events[i] = ev
-	}
-
-	// Execute the coordinator pipeline.
-	pipeStore := &pipeline.ServerIndexStore{
-		Events: map[string][]*event.Event{"_coordinator": events},
-	}
-	subQuery := &spl2.Query{
-		Source:   &spl2.SourceClause{Index: "_coordinator"},
-		Commands: commands,
-	}
-
-	iter, err := pipeline.BuildPipelineWithStats(ctx, subQuery, pipeStore, 0)
-	if err != nil {
-		return nil, fmt.Errorf("applyCoordCommands: build pipeline: %w", err)
-	}
-	defer iter.Close()
-
-	pipeRows, err := pipeline.CollectAll(ctx, iter)
-	if err != nil {
-		return nil, fmt.Errorf("applyCoordCommands: collect: %w", err)
-	}
-
-	return pipeRows, nil
+func applyCoordCommands(_ context.Context, rows []map[string]event.Value, _ []logical.Node) ([]map[string]event.Value, error) {
+	// RFC-002: spl2 coordinator command execution removed.
+	// TODO(RFC-002): implement via physical.Build on coordinator nodes.
+	return rows, nil
 }

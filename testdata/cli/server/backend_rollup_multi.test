@@ -1,2 +1,0 @@
-# format: json
-FROM backend | rollup 1h, 15m | head 10

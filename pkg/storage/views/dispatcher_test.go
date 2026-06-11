@@ -576,9 +576,9 @@ func createAggView(t *testing.T, reg *ViewRegistry, name, query string) ViewDefi
 		Version:     1,
 		Type:        ViewTypeAggregation,
 		Query:       query,
-		SourceIndex: analysis.SourceIndex,
+		SourceIndex: "", /* RFC-002 */
 		AggSpec:     analysis.AggSpec,
-		GroupBy:     analysis.GroupBy,
+		GroupBy:     nil, /* RFC-002 */
 		Columns: []ColumnDef{
 			{Name: "_time", Type: event.FieldTypeTimestamp},
 		},
@@ -595,7 +595,7 @@ func createAggView(t *testing.T, reg *ViewRegistry, name, query string) ViewDefi
 
 func TestDispatcher_AggregationView_CountByHost(t *testing.T) {
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_count", `FROM main | stats count by host`)
+	def := createLynxFlowAggView(t, reg, "mv_count", `from main | stats count() as count by host`)
 	d.ActivateView(def)
 
 	events := []*event.Event{
@@ -645,7 +645,7 @@ func TestDispatcher_AggregationInsertBudgetRejectsLargeGroupKey(t *testing.T) {
 	gov := memgov.NewGovernor(memgov.GovernorConfig{TotalLimit: 64 << 20})
 	d := NewDispatcherWithBudget(reg, layout, logger, 0, 0, gov, 2048)
 
-	def := createAggView(t, reg, "mv_budgeted", `FROM main | stats count by _raw`)
+	def := createLynxFlowAggView(t, reg, "mv_budgeted", `from main | stats count() as count by _raw`)
 	d.ActivateView(def)
 
 	ev := event.NewEvent(time.Now(), strings.Repeat("x", 4096))
@@ -663,7 +663,7 @@ func TestDispatcher_AggregationView_AvgMerge(t *testing.T) {
 	// Critical test: avg merge must use weighted average (sum/count), not
 	// arithmetic mean of means.
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_avg", `FROM main | stats avg(duration) by host`)
+	def := createLynxFlowAggView(t, reg, "mv_avg", `from main | stats avg(duration) by host`)
 	d.ActivateView(def)
 
 	// Batch 1: host=web1, durations [10, 20] → sum=30, count=2.
@@ -705,7 +705,7 @@ func TestDispatcher_AggregationView_AvgMerge(t *testing.T) {
 func TestDispatcher_AggregationView_SourceFilter(t *testing.T) {
 	// Events from wrong index should be filtered out.
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_nginx_count", `FROM nginx | stats count by status`)
+	def := createLynxFlowAggView(t, reg, "mv_nginx_count", `from nginx | stats count() as count by status`)
 	d.ActivateView(def)
 
 	events := []*event.Event{
@@ -732,7 +732,7 @@ func TestDispatcher_AggregationView_SourceFilter(t *testing.T) {
 
 func TestDispatcher_AggregationView_PausedSkipped(t *testing.T) {
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_paused", `FROM main | stats count by host`)
+	def := createLynxFlowAggView(t, reg, "mv_paused", `from main | stats count() as count by host`)
 	def.Status = ViewStatusPaused
 	reg.Update(def)
 	d.ActivateView(def)
@@ -749,8 +749,8 @@ func TestDispatcher_AggregationView_PausedSkipped(t *testing.T) {
 func TestDispatcher_Serialization_Roundtrip(t *testing.T) {
 	// Verify that partial state survives serialize → deserialize.
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_roundtrip",
-		`FROM main | stats count, sum(bytes), avg(duration), min(latency), max(latency) by host`)
+	def := createLynxFlowAggView(t, reg, "mv_roundtrip",
+		`from main | stats count() as count, sum(bytes), avg(duration), min(latency), max(latency) by host`)
 	d.ActivateView(def)
 
 	events := []*event.Event{
@@ -789,7 +789,7 @@ func TestDispatcher_Serialization_Roundtrip(t *testing.T) {
 func TestDispatcher_DeactivationGuard(t *testing.T) {
 	// Verify no panic when view is deactivated mid-dispatch.
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_deact", `FROM main | stats count by host`)
+	def := createLynxFlowAggView(t, reg, "mv_deact", `from main | stats count() as count by host`)
 	d.ActivateView(def)
 
 	// Deactivate immediately.
@@ -805,7 +805,7 @@ func TestDispatcher_DeactivationGuard(t *testing.T) {
 func TestDispatcher_AggregationView_DCMerge(t *testing.T) {
 	// Verify dc (distinct count) survives serialize → deserialize → merge.
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_dc", `FROM main | stats dc(user) by host`)
+	def := createLynxFlowAggView(t, reg, "mv_dc", `from main | stats dc(user) by host`)
 	d.ActivateView(def)
 
 	// Batch 1: host=web1, users [alice, bob].
@@ -890,7 +890,7 @@ func TestDispatcher_AggregationView_DCBackfillFallback(t *testing.T) {
 	// This simulates the backfill path where finalizedResultsToPartialGroups
 	// sets Count but not DistinctSet.
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_dc_fallback", `FROM main | stats dc(user) by host`)
+	def := createLynxFlowAggView(t, reg, "mv_dc_fallback", `from main | stats dc(user) by host`)
 	d.ActivateView(def)
 
 	// Manually inject a partial state event with dc_count but empty dc_set,
@@ -931,7 +931,7 @@ func TestDispatcher_AggregationView_Timechart(t *testing.T) {
 	// End-to-end test: timechart MV should bucket _time and produce
 	// time-bucketed groups, not one group per nanosecond-precision timestamp.
 	d, reg, _ := setupDispatcher(t)
-	def := createAggView(t, reg, "mv_timechart", `FROM main | timechart span=1h count`)
+	def := createLynxFlowAggView(t, reg, "mv_timechart", `from main | every 1h stats count() as count`)
 	d.ActivateView(def)
 
 	base := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)

@@ -216,13 +216,21 @@ func TestDispatcher_LynxFlow_FlushAndRead(t *testing.T) {
 }
 
 func TestDispatcher_MigratedView_Continuity(t *testing.T) {
-	// CRITICAL TEST: A view created with SPL2, then migrated to LynxFlow,
-	// must continue serving its existing materialized parts. New data
-	// written by the LynxFlow path must merge correctly with old data.
+	// CRITICAL TEST: A view created with one alias convention, then migrated
+	// to a different alias, must continue serving its existing materialized
+	// parts. New data written with the new aliases must merge correctly with
+	// old data because the AggSpec (which governs serialization column names)
+	// is preserved across migration.
+	//
+	// Originally this tested SPL2 -> LynxFlow migration, but SPL2 is removed
+	// (RFC-002). Phase 1 now uses LynxFlow with count() as count (aliased
+	// output = "count"). Phase 2 re-queries with count() (natural output =
+	// "count()"). The AggSpec from Phase 1 (Alias="count") is preserved,
+	// so both phases serialize to the same _pa_count_count columns.
 	d, reg, _ := setupDispatcher(t)
 
-	// Phase 1: Create an SPL2 view and ingest data.
-	spl2Def := createAggView(t, reg, "mv_migrate", `FROM main | stats count by host`)
+	// Phase 1: Create a LynxFlow view with explicit alias matching old SPL2 convention.
+	spl2Def := createLynxFlowAggView(t, reg, "mv_migrate", `from main | stats count() as count by host`)
 	d.ActivateView(spl2Def)
 
 	batch1 := []*event.Event{

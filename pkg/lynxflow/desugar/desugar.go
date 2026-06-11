@@ -373,6 +373,65 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 		Pos: s.Pos,
 	}
 
+	// eventstats sum(count) as _total — compute grand total across all rows
+	eventstatsStage := ast.Stage{
+		Name:    "eventstats",
+		NamePos: s.NamePos,
+		Eventstats: &ast.StatsPayload{
+			Aggs: []ast.AggExpr{{
+				Func: &ast.Call{
+					Callee: "sum",
+					Args:   []ast.Expr{&ast.Ident{Name: "count", Pos: s.Pos}},
+					Pos:    s.Pos,
+				},
+				Alias: "_total",
+				Pos:   s.Pos,
+			}},
+		},
+		Pos: s.Pos,
+	}
+
+	// extend percent = round(count * 100.0 / _total, 2)
+	extendStage := ast.Stage{
+		Name:    "extend",
+		NamePos: s.NamePos,
+		Extend: &ast.AssignPayload{
+			Assignments: []ast.Assignment{{
+				Name: "percent",
+				Value: &ast.Call{
+					Callee: "round",
+					Args: []ast.Expr{
+						&ast.Binary{
+							Op: ast.OpDiv,
+							Left: &ast.Binary{
+								Op:    ast.OpMul,
+								Left:  &ast.Ident{Name: "count", Pos: s.Pos},
+								Right: &ast.Literal{Kind: ast.LitFloat, Raw: "100.0", Value: 100.0, Pos: s.Pos},
+								Pos:   s.Pos,
+							},
+							Right: &ast.Ident{Name: "_total", Pos: s.Pos},
+							Pos:   s.Pos,
+						},
+						&ast.Literal{Kind: ast.LitInt, Raw: "2", Value: int64(2), Pos: s.Pos},
+					},
+					Pos: s.Pos,
+				},
+				Pos: s.Pos,
+			}},
+		},
+		Pos: s.Pos,
+	}
+
+	// drop _total — remove internal helper field
+	dropStage := ast.Stage{
+		Name:    "drop",
+		NamePos: s.NamePos,
+		Drop: &ast.FieldPatternsPayload{
+			Patterns: []ast.FieldPattern{{Name: "_total", Pos: s.Pos}},
+		},
+		Pos: s.Pos,
+	}
+
 	// sort -count / sort +count
 	sortKey := ast.SortKey{Field: &ast.Ident{Name: "count", Pos: s.Pos}, Desc: isTop, Pos: s.Pos}
 	sortStage := ast.Stage{
@@ -390,7 +449,7 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 		Pos:     s.Pos,
 	}
 
-	result := []ast.Stage{statsStage, sortStage, headStage}
+	result := []ast.Stage{statsStage, eventstatsStage, extendStage, dropStage, sortStage, headStage}
 	reason := "sugar:top"
 	if !isTop {
 		reason = "sugar:rare"

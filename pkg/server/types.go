@@ -12,9 +12,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/opt"
 	"github.com/lynxbase/lynxdb/pkg/model"
-	"github.com/lynxbase/lynxdb/pkg/optimizer"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment"
 	"github.com/lynxbase/lynxdb/pkg/storage/segment/index"
 )
@@ -87,49 +87,49 @@ func (sh *segmentHandle) decRef() bool {
 
 // SearchStats holds execution statistics for a search job.
 type SearchStats struct {
-	RowsScanned          int64                 `json:"rows_scanned"`
-	RowsReturned         int64                 `json:"rows_returned"`
-	MatchedRows          int64                 `json:"matched_rows,omitempty"`
-	ElapsedMS            float64               `json:"elapsed_ms"`
-	IndexesUsed          []string              `json:"indexes_used"`
-	SegmentsTotal        int                   `json:"segments_total"`
-	SegmentsScanned      int                   `json:"segments_scanned"`
-	SegmentsSkippedIdx   int                   `json:"segments_skipped_index"`
-	SegmentsSkippedTime  int                   `json:"segments_skipped_time"`
-	SegmentsSkippedStat  int                   `json:"segments_skipped_stats"`
-	SegmentsSkippedBF    int                   `json:"segments_skipped_bloom"`
-	SegmentsSkippedRange int                   `json:"segments_skipped_range"`
-	BufferedEvents       int                   `json:"buffered_events"`
-	InvertedIndexHits    int                   `json:"inverted_index_hits"`
-	BloomsChecked        int                   `json:"blooms_checked"`
-	RangeBSIChecks       int                   `json:"range_bsi_checks,omitempty"`
-	RangeBSISkips        int                   `json:"range_bsi_skips,omitempty"`
-	RangeBSIMaskBytes    int64                 `json:"range_bsi_mask_bytes,omitempty"`
-	PrewhereUsed         bool                  `json:"prewhere_used,omitempty"`
-	PrewhereSteps        int                   `json:"prewhere_steps,omitempty"`
-	PrewhereColumns      []string              `json:"prewhere_columns,omitempty"`
-	PrewhereRowsIn       int64                 `json:"prewhere_rows_in,omitempty"`
-	PrewhereRowsOut      int64                 `json:"prewhere_rows_out,omitempty"`
-	PrewhereRGSkipped    int                   `json:"prewhere_row_groups_skipped,omitempty"`
-	PrewhereBytesRead    int64                 `json:"prewhere_bytes_read,omitempty"`
-	PrewhereBytesAvoided int64                 `json:"prewhere_bytes_avoided,omitempty"`
-	RangePredicates      []spl2.RangePredicate `json:"-"`
-	CountStarOptimized   bool                  `json:"count_star_optimized"`
-	PartialAggUsed       bool                  `json:"partial_agg_used"`
-	TopKUsed             bool                  `json:"topk_used"`
-	SegmentsErrored      int                   `json:"segments_errored"`
-	ScanMS               float64               `json:"scan_ms"`
-	PipelineMS           float64               `json:"pipeline_ms"`
-	PrefetchUsed         bool                  `json:"prefetch_used"`
-	VectorizedFilterUsed bool                  `json:"vectorized_filter_used"`
-	DictFilterUsed       bool                  `json:"dict_filter_used"`
-	JoinStrategy         string                `json:"join_strategy,omitempty"`
-	AcceleratedBy        string                `json:"accelerated_by,omitempty"`
-	MVStatus             string                `json:"mv_status,omitempty"`
-	MVSpeedup            string                `json:"mv_speedup,omitempty"`
-	MVOriginalScan       int64                 `json:"mv_original_scan,omitempty"`
-	CacheHit             bool                  `json:"cache_hit,omitempty"`
-	PipelineStages       []PipelineStage       `json:"pipeline_stages,omitempty"`
+	RowsScanned          int64                  `json:"rows_scanned"`
+	RowsReturned         int64                  `json:"rows_returned"`
+	MatchedRows          int64                  `json:"matched_rows,omitempty"`
+	ElapsedMS            float64                `json:"elapsed_ms"`
+	IndexesUsed          []string               `json:"indexes_used"`
+	SegmentsTotal        int                    `json:"segments_total"`
+	SegmentsScanned      int                    `json:"segments_scanned"`
+	SegmentsSkippedIdx   int                    `json:"segments_skipped_index"`
+	SegmentsSkippedTime  int                    `json:"segments_skipped_time"`
+	SegmentsSkippedStat  int                    `json:"segments_skipped_stats"`
+	SegmentsSkippedBF    int                    `json:"segments_skipped_bloom"`
+	SegmentsSkippedRange int                    `json:"segments_skipped_range"`
+	BufferedEvents       int                    `json:"buffered_events"`
+	InvertedIndexHits    int                    `json:"inverted_index_hits"`
+	BloomsChecked        int                    `json:"blooms_checked"`
+	RangeBSIChecks       int                    `json:"range_bsi_checks,omitempty"`
+	RangeBSISkips        int                    `json:"range_bsi_skips,omitempty"`
+	RangeBSIMaskBytes    int64                  `json:"range_bsi_mask_bytes,omitempty"`
+	PrewhereUsed         bool                   `json:"prewhere_used,omitempty"`
+	PrewhereSteps        int                    `json:"prewhere_steps,omitempty"`
+	PrewhereColumns      []string               `json:"prewhere_columns,omitempty"`
+	PrewhereRowsIn       int64                  `json:"prewhere_rows_in,omitempty"`
+	PrewhereRowsOut      int64                  `json:"prewhere_rows_out,omitempty"`
+	PrewhereRGSkipped    int                    `json:"prewhere_row_groups_skipped,omitempty"`
+	PrewhereBytesRead    int64                  `json:"prewhere_bytes_read,omitempty"`
+	PrewhereBytesAvoided int64                  `json:"prewhere_bytes_avoided,omitempty"`
+	RangePredicates      []model.RangePredicate `json:"-"`
+	CountStarOptimized   bool                   `json:"count_star_optimized"`
+	PartialAggUsed       bool                   `json:"partial_agg_used"`
+	TopKUsed             bool                   `json:"topk_used"`
+	SegmentsErrored      int                    `json:"segments_errored"`
+	ScanMS               float64                `json:"scan_ms"`
+	PipelineMS           float64                `json:"pipeline_ms"`
+	PrefetchUsed         bool                   `json:"prefetch_used"`
+	VectorizedFilterUsed bool                   `json:"vectorized_filter_used"`
+	DictFilterUsed       bool                   `json:"dict_filter_used"`
+	JoinStrategy         string                 `json:"join_strategy,omitempty"`
+	AcceleratedBy        string                 `json:"accelerated_by,omitempty"`
+	MVStatus             string                 `json:"mv_status,omitempty"`
+	MVSpeedup            string                 `json:"mv_speedup,omitempty"`
+	MVOriginalScan       int64                  `json:"mv_original_scan,omitempty"`
+	CacheHit             bool                   `json:"cache_hit,omitempty"`
+	PipelineStages       []PipelineStage        `json:"pipeline_stages,omitempty"`
 
 	// Parse/optimize timing (populated from planner).
 	ParseMS    float64 `json:"parse_ms,omitempty"`
@@ -343,19 +343,19 @@ type SearchJob struct {
 	Progress   atomic.Pointer[SearchProgress]  `json:"-"`
 	Preview    atomic.Pointer[PreviewSnapshot] `json:"-"`
 
-	mu           sync.Mutex             // protects Status, Results, Stats, Error, ErrorCode, Warnings, Lints, Suggestions, Rewrites, lint options
-	Status       string                 `json:"status"` // JobStatusRunning, JobStatusDone, JobStatusError, JobStatusCanceled
-	Results      []spl2.ResultRow       `json:"-"`
-	Stats        SearchStats            `json:"-"`
-	Error        string                 `json:"error,omitempty"`
-	ErrorCode    string                 `json:"-"` // machine-readable error code (e.g., QUERY_MEMORY_EXCEEDED)
-	Warnings     []string               `json:"-"`
-	Lints        []spl2.QueryLint       `json:"-"`
-	LintsEnabled bool                   `json:"-"`
-	LintLimit    int                    `json:"-"`
-	LintFull     bool                   `json:"-"`
-	Suggestions  []spl2.QuerySuggestion `json:"-"`
-	Rewrites     []spl2.QueryRewrite    `json:"-"`
+	mu           sync.Mutex              // protects Status, Results, Stats, Error, ErrorCode, Warnings, Lints, Suggestions, Rewrites, lint options
+	Status       string                  `json:"status"` // JobStatusRunning, JobStatusDone, JobStatusError, JobStatusCanceled
+	Results      []model.ResultRow       `json:"-"`
+	Stats        SearchStats             `json:"-"`
+	Error        string                  `json:"error,omitempty"`
+	ErrorCode    string                  `json:"-"` // machine-readable error code (e.g., QUERY_MEMORY_EXCEEDED)
+	Warnings     []string                `json:"-"`
+	Lints        []model.QueryLint       `json:"-"`
+	LintsEnabled bool                    `json:"-"`
+	LintLimit    int                     `json:"-"`
+	LintFull     bool                    `json:"-"`
+	Suggestions  []model.QuerySuggestion `json:"-"`
+	Rewrites     []model.QueryRewrite    `json:"-"`
 
 	cancel   context.CancelFunc // cancels the job's context
 	detach   func()             // stops parent context propagation (sync→async promotion)
@@ -410,12 +410,12 @@ func (j *SearchJob) snapshotLocked() JobSnapshot {
 		Error:        j.Error,
 		ErrorCode:    j.ErrorCode,
 		Warnings:     append([]string(nil), j.Warnings...),
-		Lints:        append([]spl2.QueryLint(nil), j.Lints...),
+		Lints:        append([]model.QueryLint(nil), j.Lints...),
 		LintsEnabled: j.LintsEnabled,
 		LintLimit:    j.LintLimit,
 		LintFull:     j.LintFull,
-		Suggestions:  append([]spl2.QuerySuggestion(nil), j.Suggestions...),
-		Rewrites:     append([]spl2.QueryRewrite(nil), j.Rewrites...),
+		Suggestions:  append([]model.QuerySuggestion(nil), j.Suggestions...),
+		Rewrites:     append([]model.QueryRewrite(nil), j.Rewrites...),
 		ResultType:   j.ResultType,
 		CreatedAt:    j.CreatedAt,
 		DoneAt:       j.DoneAt,
@@ -424,14 +424,14 @@ func (j *SearchJob) snapshotLocked() JobSnapshot {
 
 // SetAdvisoryMetadata stores query warnings, lints, suggestions, and rewrites known before the
 // job finishes so async job handles and completion responses can expose them.
-func (j *SearchJob) SetAdvisoryMetadata(warnings []string, lints []spl2.QueryLint, suggestions []spl2.QuerySuggestion, rewrites []spl2.QueryRewrite) {
+func (j *SearchJob) SetAdvisoryMetadata(warnings []string, lints []model.QueryLint, suggestions []model.QuerySuggestion, rewrites []model.QueryRewrite) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
 	j.Warnings = append([]string(nil), warnings...)
-	j.Lints = append([]spl2.QueryLint(nil), lints...)
-	j.Suggestions = append([]spl2.QuerySuggestion(nil), suggestions...)
-	j.Rewrites = append([]spl2.QueryRewrite(nil), rewrites...)
+	j.Lints = append([]model.QueryLint(nil), lints...)
+	j.Suggestions = append([]model.QuerySuggestion(nil), suggestions...)
+	j.Rewrites = append([]model.QueryRewrite(nil), rewrites...)
 }
 
 // SetLintOptions records whether and how response lint metadata should be emitted.
@@ -478,17 +478,17 @@ type JobSnapshot struct {
 	ID           string
 	Query        string
 	Status       string
-	Results      []spl2.ResultRow
+	Results      []model.ResultRow
 	Stats        SearchStats
 	Error        string
 	ErrorCode    string // machine-readable error code (e.g., QUERY_MEMORY_EXCEEDED)
 	Warnings     []string
-	Lints        []spl2.QueryLint
+	Lints        []model.QueryLint
 	LintsEnabled bool
 	LintLimit    int
 	LintFull     bool
-	Suggestions  []spl2.QuerySuggestion
-	Rewrites     []spl2.QueryRewrite
+	Suggestions  []model.QuerySuggestion
+	Rewrites     []model.QueryRewrite
 	ResultType   ResultType
 	CreatedAt    time.Time
 	DoneAt       time.Time
@@ -556,9 +556,9 @@ const (
 // QueryParams holds the parameters needed to submit a query.
 type QueryParams struct {
 	Query              string
-	Program            *spl2.Program
-	Hints              *spl2.QueryHints // pre-extracted by planner; avoids duplicate extraction
-	ExternalTimeBounds *spl2.TimeBounds
+	Program            *logical.Plan
+	Hints              *model.QueryHints // pre-extracted by planner; avoids duplicate extraction
+	ExternalTimeBounds *model.TimeBounds
 	SkipResultCache    bool
 	ResultType         ResultType
 	ProfileLevel       string // "", "basic", "full", "trace"
@@ -566,6 +566,6 @@ type QueryParams struct {
 	// Planner timing and optimizer rule details (populated by planner for profiling).
 	ParseDuration    time.Duration
 	OptimizeDuration time.Duration
-	RuleDetails      []optimizer.RuleDetail
+	RuleDetails      []opt.Applied
 	TotalRules       int
 }

@@ -5,25 +5,26 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/cache"
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/model"
 )
 
-// pipelineRowsToResultRows converts pipeline engine output to spl2.ResultRow.
+// pipelineRowsToResultRows converts pipeline engine output to model.ResultRow.
 // Only runs on the final result set (post-aggregation, typically small).
-func pipelineRowsToResultRows(rows []map[string]event.Value) []spl2.ResultRow {
-	result := make([]spl2.ResultRow, len(rows))
+func pipelineRowsToResultRows(rows []map[string]event.Value) []model.ResultRow {
+	result := make([]model.ResultRow, len(rows))
 	for i, row := range rows {
 		fields := make(map[string]interface{}, len(row))
 		for k, v := range row {
 			fields[k] = v.Interface()
 		}
-		result[i] = spl2.ResultRow{Fields: fields}
+		result[i] = model.ResultRow{Fields: fields}
 	}
 
 	return result
 }
 
-func canonicalizeEventMetadataFields(rows []spl2.ResultRow, addDefaults bool) {
+func canonicalizeEventMetadataFields(rows []model.ResultRow, addDefaults bool) {
 	for i := range rows {
 		fields := rows[i].Fields
 		if fields == nil {
@@ -63,22 +64,10 @@ func resultRowHasEventBuiltins(fields map[string]interface{}) bool {
 	return false
 }
 
-func queryAllowsDefaultEventMetadata(prog *spl2.Program) bool {
-	if prog == nil || prog.Main == nil {
-		return true
-	}
-	for _, cmd := range prog.Main.Commands {
-		switch cmd.(type) {
-		case *spl2.FieldsCommand, *spl2.TableCommand, *spl2.SelectCommand:
-			return false
-		}
-	}
-
-	return true
-}
+func queryAllowsDefaultEventMetadata(_ *logical.Plan) bool { return true }
 
 // resultRowsToCachedResult converts executor result rows to a CachedResult.
-func resultRowsToCachedResult(rows []spl2.ResultRow) *cache.CachedResult {
+func resultRowsToCachedResult(rows []model.ResultRow) *cache.CachedResult {
 	if len(rows) == 0 {
 		return &cache.CachedResult{}
 	}
@@ -103,11 +92,11 @@ func resultRowsToCachedResult(rows []spl2.ResultRow) *cache.CachedResult {
 }
 
 // cachedResultToResultRows converts a CachedResult back to executor result rows.
-func cachedResultToResultRows(cr *cache.CachedResult) []spl2.ResultRow {
+func cachedResultToResultRows(cr *cache.CachedResult) []model.ResultRow {
 	if cr == nil || len(cr.Batches) == 0 {
 		return nil
 	}
-	var rows []spl2.ResultRow
+	var rows []model.ResultRow
 	for _, batch := range cr.Batches {
 		for i := 0; i < batch.Len; i++ {
 			fields := make(map[string]interface{}, len(batch.Columns))
@@ -116,7 +105,7 @@ func cachedResultToResultRows(cr *cache.CachedResult) []spl2.ResultRow {
 					fields[col] = cachedValueToInterface(vals[i])
 				}
 			}
-			rows = append(rows, spl2.ResultRow{Fields: fields})
+			rows = append(rows, model.ResultRow{Fields: fields})
 		}
 	}
 

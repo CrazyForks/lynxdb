@@ -14,7 +14,6 @@ import (
 	"github.com/lynxbase/lynxdb/internal/ui"
 	"github.com/lynxbase/lynxdb/pkg/client"
 	"github.com/lynxbase/lynxdb/pkg/sigmaqueries"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 func init() {
@@ -370,7 +369,7 @@ func runSavedRun(name, since, from, to string, queryParams []string) error {
 
 	query := sq.Q
 	if len(queryParams) > 0 {
-		query = spl2.SubstituteParams(query, spl2.ParseParamFlags(queryParams))
+		_ = queryParams // RFC-002: param substitution removed
 	}
 	SaveLastQuery(query, since, from, to)
 

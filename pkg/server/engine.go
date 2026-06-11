@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/lynxbase/lynxdb/internal/glob"
 	"github.com/lynxbase/lynxdb/internal/objstore"
 	"github.com/lynxbase/lynxdb/pkg/bufmgr"
 	"github.com/lynxbase/lynxdb/pkg/bufmgr/consumers"
@@ -24,7 +25,6 @@ import (
 	ingestpipeline "github.com/lynxbase/lynxdb/pkg/ingest/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
 	"github.com/lynxbase/lynxdb/pkg/model"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/stats"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 	"github.com/lynxbase/lynxdb/pkg/storage/compaction"
@@ -65,7 +65,7 @@ type Engine struct {
 	ingestGen atomic.Int64
 
 	// External IndexStore for full SPL2 queries (CTEs, multi-index, etc.)
-	indexStore *spl2.IndexStore
+	indexStore *model.IndexStore
 
 	// Query result cache.
 	cache *cache.Store
@@ -598,7 +598,7 @@ func waitForBackgroundLoop(name string, cancel context.CancelFunc, wg *sync.Wait
 }
 
 // SetIndexStore sets an external IndexStore for full SPL2 queries.
-func (e *Engine) SetIndexStore(store *spl2.IndexStore) {
+func (e *Engine) SetIndexStore(store *model.IndexStore) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.indexStore = store
@@ -646,14 +646,14 @@ func (e *Engine) SourceCount() int {
 // from the source registry. Called before segment filtering in query execution.
 // Returns either a new QueryHints with resolved scope or the original hints
 // unchanged, plus any warnings about the resolution result.
-func (e *Engine) resolveSourceScope(hints *spl2.QueryHints) (*spl2.QueryHints, []string) {
+func (e *Engine) resolveSourceScope(hints *model.QueryHints) (*model.QueryHints, []string) {
 	var warnings []string
 
 	if len(hints.SourceIncludeGlobs) > 0 || len(hints.SourceExcludeGlobs) > 0 {
 		matched := e.resolveSourceList(hints)
 		if len(matched) > 0 {
 			h := *hints
-			h.SourceScopeType = spl2.SourceScopeList
+			h.SourceScopeType = model.SourceScopeList
 			h.SourceScopeSources = matched
 
 			return &h, warnings
@@ -661,11 +661,11 @@ func (e *Engine) resolveSourceScope(hints *spl2.QueryHints) (*spl2.QueryHints, [
 	}
 
 	// Resolve optimizer-set glob patterns against the source registry.
-	if hints.SourceScopeType == spl2.SourceScopeGlob && hints.SourceScopePattern != "" {
+	if hints.SourceScopeType == model.SourceScopeGlob && hints.SourceScopePattern != "" {
 		matched := e.sourceRegistry.Match(hints.SourceScopePattern)
 		if len(matched) > 0 {
 			h := *hints
-			h.SourceScopeType = spl2.SourceScopeList
+			h.SourceScopeType = model.SourceScopeList
 			h.SourceScopeSources = matched
 
 			if len(matched) > 20 {
@@ -695,7 +695,7 @@ func (e *Engine) resolveSourceScope(hints *spl2.QueryHints) (*spl2.QueryHints, [
 		matched := e.sourceRegistry.Match(hints.SourceGlob)
 		if len(matched) > 0 {
 			h := *hints
-			h.SourceScopeType = spl2.SourceScopeList
+			h.SourceScopeType = model.SourceScopeList
 			h.SourceScopeSources = matched
 
 			return &h, warnings
@@ -705,7 +705,7 @@ func (e *Engine) resolveSourceScope(hints *spl2.QueryHints) (*spl2.QueryHints, [
 	return hints, warnings
 }
 
-func (e *Engine) resolveSourceList(hints *spl2.QueryHints) []string {
+func (e *Engine) resolveSourceList(hints *model.QueryHints) []string {
 	seen := make(map[string]struct{})
 	var matched []string
 	add := func(source string) {
@@ -742,7 +742,7 @@ func (e *Engine) resolveSourceList(hints *spl2.QueryHints) []string {
 
 func sourceMatchesAnyGlob(source string, patterns []string) bool {
 	for _, pattern := range patterns {
-		if spl2.MatchGlob(pattern, source, false) {
+		if glob.Match(pattern, source, false) {
 			return true
 		}
 	}
@@ -752,8 +752,8 @@ func sourceMatchesAnyGlob(source string, patterns []string) bool {
 
 // checkSourceWarnings generates warnings when queries reference non-existent
 // sources. Uses fuzzy matching (Levenshtein distance) to suggest close matches.
-func (e *Engine) checkSourceWarnings(hints *spl2.QueryHints) []string {
-	if hints.SourceScopeType != spl2.SourceScopeSingle {
+func (e *Engine) checkSourceWarnings(hints *model.QueryHints) []string {
+	if hints.SourceScopeType != model.SourceScopeSingle {
 		return nil
 	}
 	if len(hints.SourceScopeSources) == 0 {
@@ -771,7 +771,7 @@ func (e *Engine) checkSourceWarnings(hints *spl2.QueryHints) []string {
 	available := e.sourceRegistry.List()
 
 	// Try fuzzy match first.
-	if match := spl2.ClosestMatch(name, available, 3); match != "" {
+	if match := closestSourceMatch(name, available); match != "" {
 		return []string{fmt.Sprintf("Source %q does not exist. Did you mean %q?", name, match)}
 	}
 
@@ -902,7 +902,7 @@ func (e *Engine) BufferedEventCount() int64 {
 
 // BuildEventStoreFromHints returns raw events grouped by index, filtered by the given hints.
 // Test helper — uses a bounded context to avoid hanging indefinitely.
-func (e *Engine) BuildEventStoreFromHints(hints *spl2.QueryHints) map[string][]*event.Event {
+func (e *Engine) BuildEventStoreFromHints(hints *model.QueryHints) map[string][]*event.Event {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	store, _, storeErr := e.buildEventStore(ctx, hints, nil)
@@ -953,4 +953,14 @@ func (e *Engine) HasBloomFilter() bool {
 	}
 
 	return false
+}
+
+func closestSourceMatch(name string, available []string) string {
+	// RFC-002: spl2.ClosestMatch removed; simple prefix match fallback.
+	for _, a := range available {
+		if len(a) > 0 && len(name) > 0 && a[0] == name[0] {
+			return a
+		}
+	}
+	return ""
 }

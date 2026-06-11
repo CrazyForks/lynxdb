@@ -459,9 +459,16 @@ func (l *lowerer) lowerParse(input Node, s ast.Stage) Node {
 	if pp.From != nil {
 		from = exprFieldName(pp.From)
 	}
+	// Extract the regex/pattern string from FormatArgs[0] when present.
+	pattern := ""
+	if (pp.Format == "regex" || pp.Format == "pattern") && len(pp.FormatArgs) > 0 {
+		pattern = exprStringValue(pp.FormatArgs[0])
+	}
+
 	return &Parse{
 		unaryNode: unaryNode{Input: input},
 		Format:    pp.Format,
+		Pattern:   pattern,
 		FirstOf:   pp.FirstOf,
 		From:      from,
 		Captures:  captures,
@@ -671,6 +678,17 @@ func helperExtraFields(name string) []sema.Field {
 	default:
 		return nil
 	}
+}
+
+// exprStringValue extracts a string literal value from an expression.
+// For raw string literals (r"..."), it returns the inner string.
+func exprStringValue(e ast.Expr) string {
+	if lit, ok := e.(*ast.Literal); ok {
+		if s, ok := lit.Value.(string); ok {
+			return s
+		}
+	}
+	return e.String()
 }
 
 // exprFieldName extracts a simple field name from an expression.

@@ -26,7 +26,7 @@ func TestServer_IngestAndQuery_Count(t *testing.T) {
 	ingestFile(t, srv, testdataLog("access.log"))
 
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
-		"| stats count")
+		"| stats count() as count")
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -43,7 +43,7 @@ func TestServer_IngestWithIndex(t *testing.T) {
 
 	// Query custom index.
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
-		"FROM custom | stats count")
+		"FROM custom | stats count() as count")
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -55,7 +55,7 @@ func TestServer_IngestWithIndex(t *testing.T) {
 
 	// Main index should be empty.
 	r2 := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
-		"FROM main | stats count")
+		"FROM main | stats count() as count")
 	if r2.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r2.ExitCode, r2.Stderr)
 	}
@@ -71,7 +71,7 @@ func TestServer_Query_CountByLevel(t *testing.T) {
 	ingestFile(t, srv, testdataLog("access.log"))
 
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
-		"| stats count by level")
+		"| stats count() as count by level")
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -101,7 +101,7 @@ func TestServer_Query_WhereFilter(t *testing.T) {
 	ingestFile(t, srv, testdataLog("access.log"))
 
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
-		`| where level="ERROR" | stats count`)
+		`| where level=="ERROR" | stats count() as count`)
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -117,7 +117,7 @@ func TestServer_Query_SortDescHead(t *testing.T) {
 	ingestFile(t, srv, testdataLog("access.log"))
 
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
-		"| stats count by level | sort -count | head 3")
+		"| stats count() as count by level | sort -count | head 3")
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -141,7 +141,7 @@ func TestServer_Query_EvalComputedField(t *testing.T) {
 	ingestFile(t, srv, testdataLog("access.log"))
 
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "json",
-		`| eval is_error=if(level="ERROR","yes","no") | stats count by is_error`)
+		`| extend is_error=if(level=="ERROR","yes","no") | stats count() as count by is_error`)
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -264,7 +264,7 @@ func TestServer_Format_CSV(t *testing.T) {
 	ingestFile(t, srv, testdataLog("access.log"))
 
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "csv",
-		"| stats count by level")
+		"| stats count() as count by level")
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}
@@ -291,7 +291,7 @@ func TestServer_Format_Table(t *testing.T) {
 	ingestFile(t, srv, testdataLog("access.log"))
 
 	r := runLynxDB(t, "--server", srv.BaseURL, "query", "--format", "table",
-		"| stats count by level")
+		"| stats count() as count by level")
 	if r.ExitCode != 0 {
 		t.Fatalf("exit code %d, stderr: %s", r.ExitCode, r.Stderr)
 	}

@@ -1,7 +1,0 @@
-# format: json
-# language: lynxflow
-from backend
-| extend error = error ?? "N/A"
-| where error != "N/A"
-| stats count() by error
-| sort error

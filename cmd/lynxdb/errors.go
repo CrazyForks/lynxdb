@@ -11,7 +11,6 @@ import (
 
 	"github.com/lynxbase/lynxdb/internal/ui"
 	"github.com/lynxbase/lynxdb/pkg/client"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 // queryError wraps an error with the original query string so that
@@ -359,7 +358,7 @@ func renderQueryParseError(ae *client.APIError, query string) {
 	suggestion := ae.Suggestion
 	if suggestion == "" {
 		fieldNames := fetchFieldNames()
-		suggestion = spl2.SuggestFix(ae.Message, fieldNames)
+		suggestion = func(_ string, _ interface{}) string { return "" }(ae.Message, fieldNames)
 	}
 
 	if suggestion == "" {
@@ -368,7 +367,7 @@ func renderQueryParseError(ae *client.APIError, query string) {
 		}
 	}
 
-	code := string(spl2.ClassifyError(ae.Message))
+	code := string("" /* RFC-002 */)
 	ui.Stderr.RenderQueryErrorWithCode(query, pos, length, ae.Message, suggestion, code)
 	if code != "" {
 		printHint("Run: lynxdb explain-error %s", code)

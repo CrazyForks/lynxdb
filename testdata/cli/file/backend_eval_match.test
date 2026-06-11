@@ -1,3 +1,6 @@
 # file: backend_server.log
 # format: json
-| eval is_api=if(match(path, "^/api/"), "yes", "no") | stats count by is_api | sort is_api
+from main
+| extend is_api = if(matches(path, r"^/api/"), "yes", "no")
+| stats count() by is_api
+| sort is_api

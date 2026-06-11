@@ -3,11 +3,14 @@ package server
 import (
 	"context"
 	"sort"
+	"time"
 
 	enginepipeline "github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/physical"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 )
 
@@ -28,9 +31,11 @@ type StreamingStats struct {
 // The returned iterator holds a reference to a per-query memory budget (either
 // BudgetAdapter). The budget is released when the
 // caller closes the iterator; callers that abandon the iterator will leak.
-func (e *Engine) BuildStreamingPipeline(ctx context.Context, prog *spl2.Program,
-	externalTimeBounds *spl2.TimeBounds) (enginepipeline.Iterator, StreamingStats, error) {
-	hints := spl2.ExtractQueryHints(prog)
+func (e *Engine) BuildStreamingPipeline(ctx context.Context, prog *logical.Plan,
+	externalTimeBounds *model.TimeBounds) (enginepipeline.Iterator, StreamingStats, error) {
+	// RFC-002: hints must be pre-extracted by caller.
+	// TODO(RFC-002): BuildStreamingPipeline should accept *model.QueryHints directly.
+	hints := &model.QueryHints{}
 	if externalTimeBounds != nil {
 		if hints.TimeBounds == nil {
 			hints.TimeBounds = externalTimeBounds
@@ -50,8 +55,8 @@ func (e *Engine) BuildStreamingPipeline(ctx context.Context, prog *spl2.Program,
 }
 
 // buildStreamingPipelineWithGovernor uses the governor v2 for memory accounting.
-func (e *Engine) buildStreamingPipelineWithGovernor(ctx context.Context, prog *spl2.Program,
-	hints *spl2.QueryHints) (enginepipeline.Iterator, StreamingStats, error) {
+func (e *Engine) buildStreamingPipelineWithGovernor(ctx context.Context, prog *logical.Plan,
+	hints *model.QueryHints) (enginepipeline.Iterator, StreamingStats, error) {
 
 	eventStore, ss, memErr := e.buildEventStore(ctx, hints, nil)
 	if memErr != nil {
@@ -59,29 +64,23 @@ func (e *Engine) buildStreamingPipelineWithGovernor(ctx context.Context, prog *s
 	}
 	streamStats := buildStreamingStats(eventStore, ss)
 
-	pipeStore := &enginepipeline.ServerIndexStore{Events: eventStore}
-	parallelCfg := e.parallelConfig()
-	qc := e.queryCfg.Load()
-	buildResult, err := enginepipeline.BuildProgramWithGovernor(
-		ctx, prog, pipeStore, e, e, 0,
-		"", e.governor, int64(qc.MaxQueryMemory),
-		e.spillMgr, qc.DedupExact,
-		parallelCfg,
-	)
+	// RFC-002 Phase 10: use physical.Build with an ephemeral source backed by
+	// the materialized event store, replacing the removed BuildProgramWithGovernor.
+	source := physical.NewStorageSourceFromMap(eventStore, DefaultIndexName)
+	iter, err := physical.Build(prog, physical.BuildOptions{
+		Source: source,
+		Now:    time.Now(),
+	})
 	if err != nil {
 		return nil, streamStats, err
 	}
-	iter := buildResult.Iterator
 
 	if err := iter.Init(ctx); err != nil {
 		_ = iter.Close()
-		if buildResult.GovBudget != nil {
-			buildResult.GovBudget.Close()
-		}
 		return nil, streamStats, err
 	}
 
-	return &govClosingIterator{Iterator: iter, budget: buildResult.GovBudget}, streamStats, nil
+	return &govClosingIterator{Iterator: iter, budget: nil}, streamStats, nil
 }
 
 // buildStreamingStats constructs StreamingStats from an event store and scan stats.

@@ -1,6 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| where (duration_ms >= 20 and duration_ms <= 6000)
-| stats count(), avg(duration_ms) as avg_dur, min(duration_ms) as min_dur, max(duration_ms) as max_dur

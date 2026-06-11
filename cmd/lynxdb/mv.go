@@ -12,7 +12,6 @@ import (
 
 	"github.com/lynxbase/lynxdb/internal/ui"
 	"github.com/lynxbase/lynxdb/pkg/client"
-	"github.com/lynxbase/lynxdb/pkg/lynxflow/translate"
 )
 
 func init() {
@@ -393,107 +392,14 @@ func patchMVPaused(name string, paused bool) error {
 	return nil
 }
 
-// runMVMigrate translates materialized view queries from SPL2 to LynxFlow.
+// runMVMigrate is a stub retained for CLI compatibility. The SPL2-to-LynxFlow
+// translator was removed in RFC-002 Phase 10. Any remaining SPL2 views should
+// have been migrated during the transition window.
 func runMVMigrate(name string, all, dryRun bool) error {
-	if name == "" && !all {
-		return fmt.Errorf("specify a view name or use --all to migrate all SPL2 views")
-	}
-
-	ctx := context.Background()
-	c := apiClient()
-
-	views, err := c.ListViews(ctx)
-	if err != nil {
-		return fmt.Errorf("list views: %w", err)
-	}
-
-	// Filter to matching views
-	var targets []client.View
-	for _, v := range views {
-		if !all && v.Name != name {
-			continue
-		}
-		targets = append(targets, v)
-	}
-
-	if name != "" && len(targets) == 0 {
-		return fmt.Errorf("view %q not found", name)
-	}
-
-	if len(targets) == 0 {
-		printHint("No views to migrate.")
-		return nil
-	}
-
-	migrated := 0
-	failed := 0
-
-	for _, v := range targets {
-		// Skip views that are already LynxFlow
-		// The server View type doesn't expose language_version, but the query
-		// field is available. We attempt translation regardless -- if the query
-		// is already LynxFlow the SPL2 parser will fail and we'll skip it.
-		translated, notes, err := translate.SPL2ToLynxFlow(v.Query)
-		if err != nil {
-			if all {
-				// In --all mode, print the error and continue
-				fmt.Printf("  %s: SKIP (%s)\n", v.Name, err)
-				failed++
-				continue
-			}
-			return fmt.Errorf("translate %s: %w", v.Name, err)
-		}
-
-		if dryRun {
-			fmt.Printf("  %s:\n", v.Name)
-			fmt.Printf("    SPL2:     %s\n", v.Query)
-			fmt.Printf("    LynxFlow: %s\n", translated)
-			for _, n := range notes {
-				fmt.Printf("    Note [%s]: %s\n", n.Code, n.Message)
-			}
-			fmt.Println()
-			migrated++
-			continue
-		}
-
-		// Apply the migration via PATCH
-		lang := "lynxflow"
-		originalQuery := v.Query
-		if _, err := c.PatchView(ctx, v.Name, client.ViewPatchInput{
-			Query:           &translated,
-			LanguageVersion: &lang,
-			MigratedFrom:    &originalQuery,
-		}); err != nil {
-			if all {
-				fmt.Printf("  %s: FAILED (%s)\n", v.Name, err)
-				failed++
-				continue
-			}
-			return fmt.Errorf("patch %s: %w", v.Name, err)
-		}
-
-		printSuccess("Migrated %s", v.Name)
-		for _, n := range notes {
-			printHint("  Note [%s]: %s", n.Code, n.Message)
-		}
-		migrated++
-	}
-
-	if dryRun {
-		fmt.Printf("%d view(s) would be migrated", migrated)
-		if failed > 0 {
-			fmt.Printf(", %d skipped", failed)
-		}
-		fmt.Println()
-	} else {
-		fmt.Printf("%d view(s) migrated", migrated)
-		if failed > 0 {
-			fmt.Printf(", %d failed", failed)
-		}
-		fmt.Println()
-	}
-
-	return nil
+	_, _, _ = name, all, dryRun // suppress unused parameter warnings
+	return fmt.Errorf("the 'mv migrate' command is no longer available: the SPL2-to-LynxFlow " +
+		"translator was removed in RFC-002 Phase 10. If you have views that still use SPL2, " +
+		"re-create them with LynxFlow syntax using 'lynxdb mv create'")
 }
 
 // mvStatusColored returns a colored status string for TTY display.

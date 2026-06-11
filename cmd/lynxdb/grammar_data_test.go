@@ -7,7 +7,9 @@ import (
 )
 
 func TestGrammarDataMatchesDocs(t *testing.T) {
-	for _, name := range []string{"spl2.ebnf", "examples.jsonl", "llm-cookbook.md"} {
+	// Post-RFC-002: spl2.ebnf and examples.jsonl were removed.
+	// Only lynxflow.ebnf and llm-cookbook.md remain.
+	for _, name := range []string{"lynxflow.ebnf", "llm-cookbook.md"} {
 		t.Run(name, func(t *testing.T) {
 			docPath := filepath.Join("..", "..", "docs", "grammar", name)
 			doc, err := os.ReadFile(docPath)

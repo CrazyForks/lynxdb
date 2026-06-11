@@ -1,6 +1,0 @@
-# format: json
-# language: lynxflow
-from backend
-| where level in ["ERROR", "WARN"]
-| stats count() by level
-| sort level

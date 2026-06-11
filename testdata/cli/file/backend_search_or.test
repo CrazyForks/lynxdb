@@ -1,3 +1,5 @@
 # file: backend_server.log
 # format: json
-| search "SQL injection" OR "Path traversal" | stats count
+from main
+| where (contains(_raw, "SQL injection") or contains(_raw, "Path traversal"))
+| stats count()

@@ -1,3 +1,6 @@
 # file: backend_server.log
 # format: json
-| slowest 5 duration_ms by service
+from main
+| stats max(service) as max_service by duration_ms
+| sort -max_service
+| head 5

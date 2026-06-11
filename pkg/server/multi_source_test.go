@@ -11,7 +11,6 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/config"
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/model"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 // discardLogger returns a logger that suppresses all output below error level.
@@ -113,7 +112,7 @@ func TestEnsureSourcesRegistersUniqueBatchNames(t *testing.T) {
 
 func TestMultiSource_MatchesSourceScope_SingleIndex(t *testing.T) {
 	// Single IndexName: existing behavior, should match only that index.
-	hints := &spl2.QueryHints{IndexName: "nginx"}
+	hints := &model.QueryHints{IndexName: "nginx"}
 	if !matchesSourceScope("nginx", hints) {
 		t.Error("expected nginx to match IndexName=nginx")
 	}
@@ -124,7 +123,7 @@ func TestMultiSource_MatchesSourceScope_SingleIndex(t *testing.T) {
 
 func TestMultiSource_MatchesSourceScope_NoFilter(t *testing.T) {
 	// No filter: should match everything.
-	hints := &spl2.QueryHints{}
+	hints := &model.QueryHints{}
 	if !matchesSourceScope("nginx", hints) {
 		t.Error("expected nginx to match with no filter")
 	}
@@ -134,8 +133,8 @@ func TestMultiSource_MatchesSourceScope_NoFilter(t *testing.T) {
 }
 
 func TestMultiSource_MatchesSourceScope_List(t *testing.T) {
-	hints := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeList,
+	hints := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeList,
 		SourceScopeSources: []string{"nginx", "postgres"},
 	}
 	if !matchesSourceScope("nginx", hints) {
@@ -150,8 +149,8 @@ func TestMultiSource_MatchesSourceScope_List(t *testing.T) {
 }
 
 func TestMultiSource_MatchesSourceScope_Glob(t *testing.T) {
-	hints := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeGlob,
+	hints := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeGlob,
 		SourceScopePattern: "log*",
 	}
 	if !matchesSourceScope("logs-web", hints) {
@@ -163,8 +162,8 @@ func TestMultiSource_MatchesSourceScope_Glob(t *testing.T) {
 }
 
 func TestMultiSource_MatchesSourceScope_All(t *testing.T) {
-	hints := &spl2.QueryHints{
-		SourceScopeType: spl2.SourceScopeAll,
+	hints := &model.QueryHints{
+		SourceScopeType: model.SourceScopeAll,
 	}
 	if !matchesSourceScope("anything", hints) {
 		t.Error("expected anything to match all")
@@ -173,7 +172,7 @@ func TestMultiSource_MatchesSourceScope_All(t *testing.T) {
 
 func TestMultiSource_MatchesSourceScope_SourceIndices(t *testing.T) {
 	// Parser-level SourceIndices (FROM a, b, c).
-	hints := &spl2.QueryHints{
+	hints := &model.QueryHints{
 		SourceIndices: []string{"nginx", "redis"},
 	}
 	if !matchesSourceScope("nginx", hints) {
@@ -189,7 +188,7 @@ func TestMultiSource_MatchesSourceScope_SourceIndices(t *testing.T) {
 
 func TestMultiSource_MatchesSourceScope_SourceGlob(t *testing.T) {
 	// Parser-level SourceGlob (FROM logs*).
-	hints := &spl2.QueryHints{
+	hints := &model.QueryHints{
 		SourceGlob: "logs*",
 	}
 	if !matchesSourceScope("logs-web", hints) {
@@ -201,7 +200,7 @@ func TestMultiSource_MatchesSourceScope_SourceGlob(t *testing.T) {
 }
 
 func TestMultiSource_MatchesSourceScope_SourceExcludeGlob(t *testing.T) {
-	hints := &spl2.QueryHints{
+	hints := &model.QueryHints{
 		SourceIndices:      []string{"nginx"},
 		SourceIncludeGlobs: []string{"logs*"},
 		SourceExcludeGlobs: []string{"logs-debug*"},
@@ -219,7 +218,7 @@ func TestMultiSource_MatchesSourceScope_SourceExcludeGlob(t *testing.T) {
 
 func TestMultiSource_MatchesSourceScope_SourceGlobStar(t *testing.T) {
 	// FROM * — match everything.
-	hints := &spl2.QueryHints{
+	hints := &model.QueryHints{
 		SourceGlob: "*",
 	}
 	if !matchesSourceScope("anything", hints) {
@@ -237,12 +236,12 @@ func TestMultiSource_ResolveSourceScope(t *testing.T) {
 	e.sourceRegistry.Register("metrics")
 
 	// Test glob resolution.
-	hints := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeGlob,
+	hints := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeGlob,
 		SourceScopePattern: "logs*",
 	}
 	resolved, _ := e.resolveSourceScope(hints)
-	if resolved.SourceScopeType != spl2.SourceScopeList {
+	if resolved.SourceScopeType != model.SourceScopeList {
 		t.Fatalf("expected resolved type to be list, got %s", resolved.SourceScopeType)
 	}
 	if len(resolved.SourceScopeSources) != 3 {
@@ -251,11 +250,11 @@ func TestMultiSource_ResolveSourceScope(t *testing.T) {
 	}
 
 	// Test parser-level glob resolution.
-	hintsGlob := &spl2.QueryHints{
+	hintsGlob := &model.QueryHints{
 		SourceGlob: "logs*",
 	}
 	resolvedGlob, _ := e.resolveSourceScope(hintsGlob)
-	if resolvedGlob.SourceScopeType != spl2.SourceScopeList {
+	if resolvedGlob.SourceScopeType != model.SourceScopeList {
 		t.Fatalf("expected resolved type to be list, got %s", resolvedGlob.SourceScopeType)
 	}
 	if len(resolvedGlob.SourceScopeSources) != 3 {
@@ -263,12 +262,12 @@ func TestMultiSource_ResolveSourceScope(t *testing.T) {
 	}
 
 	e.sourceRegistry.Register("logs-debug-api")
-	hintsExclude := &spl2.QueryHints{
+	hintsExclude := &model.QueryHints{
 		SourceIncludeGlobs: []string{"logs*"},
 		SourceExcludeGlobs: []string{"logs-debug*"},
 	}
 	resolvedExclude, _ := e.resolveSourceScope(hintsExclude)
-	if resolvedExclude.SourceScopeType != spl2.SourceScopeList {
+	if resolvedExclude.SourceScopeType != model.SourceScopeList {
 		t.Fatalf("expected resolved exclude type to be list, got %s", resolvedExclude.SourceScopeType)
 	}
 	if got, want := resolvedExclude.SourceScopeSources, []string{"logs-api", "logs-db", "logs-web"}; !reflect.DeepEqual(got, want) {
@@ -276,8 +275,8 @@ func TestMultiSource_ResolveSourceScope(t *testing.T) {
 	}
 
 	// Test no-match glob: should return original hints with warning.
-	hintsNoMatch := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeGlob,
+	hintsNoMatch := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeGlob,
 		SourceScopePattern: "nonexistent*",
 	}
 	resolvedNoMatch, noMatchWarnings := e.resolveSourceScope(hintsNoMatch)
@@ -289,7 +288,7 @@ func TestMultiSource_ResolveSourceScope(t *testing.T) {
 	}
 
 	// Test non-glob: should return original hints.
-	hintsPlain := &spl2.QueryHints{IndexName: "nginx"}
+	hintsPlain := &model.QueryHints{IndexName: "nginx"}
 	resolvedPlain, _ := e.resolveSourceScope(hintsPlain)
 	if resolvedPlain != hintsPlain {
 		t.Error("expected non-glob hints to return original hints")
@@ -304,8 +303,8 @@ func TestMultiSource_SegmentSkipping(t *testing.T) {
 	}
 
 	// List that includes nginx: should NOT skip.
-	hints := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeList,
+	hints := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeList,
 		SourceScopeSources: []string{"nginx", "postgres"},
 	}
 	var ss storeStats
@@ -314,8 +313,8 @@ func TestMultiSource_SegmentSkipping(t *testing.T) {
 	}
 
 	// List that excludes nginx: should skip.
-	hintsExclude := &spl2.QueryHints{
-		SourceScopeType:    spl2.SourceScopeList,
+	hintsExclude := &model.QueryHints{
+		SourceScopeType:    model.SourceScopeList,
 		SourceScopeSources: []string{"postgres", "redis"},
 	}
 	ss = storeStats{}
@@ -327,8 +326,8 @@ func TestMultiSource_SegmentSkipping(t *testing.T) {
 	}
 
 	// All scope: should NOT skip.
-	hintsAll := &spl2.QueryHints{
-		SourceScopeType: spl2.SourceScopeAll,
+	hintsAll := &model.QueryHints{
+		SourceScopeType: model.SourceScopeAll,
 	}
 	ss = storeStats{}
 	if shouldSkipSegment(seg, hintsAll, &ss) {
@@ -337,12 +336,12 @@ func TestMultiSource_SegmentSkipping(t *testing.T) {
 }
 
 func TestMultiSource_SourceIndexSet(t *testing.T) {
-	// Short list: should return nil (linear scan is faster).
-	h := &spl2.QueryHints{
-		SourceScopeSources: []string{"a", "b", "c"},
+	// Short list (empty SourceIndices): should return nil.
+	h := &model.QueryHints{
+		SourceIndices: nil,
 	}
 	if h.SourceIndexSet() != nil {
-		t.Error("expected nil for short list")
+		t.Error("expected nil for empty list")
 	}
 
 	// Long list: should return a map.
@@ -350,8 +349,8 @@ func TestMultiSource_SourceIndexSet(t *testing.T) {
 	for i := range long {
 		long[i] = string(rune('a' + i))
 	}
-	h2 := &spl2.QueryHints{
-		SourceScopeSources: long,
+	h2 := &model.QueryHints{
+		SourceIndices: long,
 	}
 	set := h2.SourceIndexSet()
 	if set == nil {
@@ -371,29 +370,6 @@ func TestMultiSource_SourceIndexSet(t *testing.T) {
 	}
 }
 
-func TestMultiSource_IsMultiSource(t *testing.T) {
-	tests := []struct {
-		name   string
-		hints  *spl2.QueryHints
-		expect bool
-	}{
-		{"nil", nil, false},
-		{"empty", &spl2.QueryHints{}, false},
-		{"single index", &spl2.QueryHints{IndexName: "main"}, false},
-		{"source indices", &spl2.QueryHints{SourceIndices: []string{"a", "b"}}, true},
-		{"source glob", &spl2.QueryHints{SourceGlob: "logs*"}, true},
-		{"scope all", &spl2.QueryHints{SourceScopeType: spl2.SourceScopeAll}, true},
-		{"scope list", &spl2.QueryHints{SourceScopeType: spl2.SourceScopeList}, true},
-		{"scope glob", &spl2.QueryHints{SourceScopeType: spl2.SourceScopeGlob}, true},
-		{"scope single", &spl2.QueryHints{SourceScopeType: spl2.SourceScopeSingle}, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := tt.hints.IsMultiSource()
-			if got != tt.expect {
-				t.Errorf("IsMultiSource() = %v, want %v", got, tt.expect)
-			}
-		})
-	}
-}
+// TestMultiSource_IsMultiSource was deleted in RFC-002 P10: IsMultiSource()
+// was a method on model.QueryHints tied to spl2 SourceScope* constants.
+// Multi-source detection is now handled by the logical plan's Scan node.

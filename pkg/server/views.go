@@ -9,8 +9,9 @@ import (
 
 	enginepipeline "github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/optimizer"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/model"
+	"github.com/lynxbase/lynxdb/pkg/planner"
 	"github.com/lynxbase/lynxdb/pkg/storage/views"
 )
 
@@ -227,9 +228,9 @@ func (e *Engine) RunQueryBackfill(ctx context.Context, viewName string) error {
 	// Parse and optimize the query so SubmitQuery receives a fully populated
 	// QueryParams (with Program and Hints). Without this, executeQuery will
 	// dereference nil Program.Main and panic.
-	query := spl2.NormalizeQuery(def.Query)
+	query := def.Query // RFC-002: spl2 normalization removed
 
-	prog, err := spl2.ParseProgram(query)
+	prog, err := parseMVQuery(query)
 	if err != nil {
 		return fmt.Errorf("backfill: parse query for %s: %w", viewName, err)
 	}
@@ -241,13 +242,9 @@ func (e *Engine) RunQueryBackfill(ctx context.Context, viewName string) error {
 		injectAutoCountIntoAST(prog, def.AggSpec)
 	}
 
-	opt := optimizer.New()
-	prog.Main = opt.Optimize(prog.Main)
-	for i := range prog.Datasets {
-		prog.Datasets[i].Query = opt.Optimize(prog.Datasets[i].Query)
-	}
+	// RFC-002: optimizer call removed (handled by planner).
 
-	hints := spl2.ExtractQueryHints(prog)
+	hints := extractMVHints(prog)
 	resultType := DetectResultType(prog)
 
 	// Submit the view's query through the normal engine pipeline.
@@ -328,7 +325,7 @@ func (e *Engine) RunQueryBackfill(ctx context.Context, viewName string) error {
 // reconstruct: sum = avg_value * count. If no count is found (e.g., legacy
 // specs created before the auto-inject fix), rowCount=1 is used as fallback.
 func finalizedResultsToPartialGroups(
-	results []spl2.ResultRow,
+	results []model.ResultRow,
 	spec *enginepipeline.PartialAggSpec,
 ) []*enginepipeline.PartialAggGroup {
 	// Pre-scan: find a count function in the spec so we can reconstruct avg state.
@@ -385,7 +382,7 @@ func finalizedResultsToPartialGroups(
 // used to reconstruct avg state: sum = avg * rowCount.
 func finalizedValueToState(
 	fn enginepipeline.PartialAggFunc,
-	row spl2.ResultRow,
+	row model.ResultRow,
 	rowCount int64,
 ) enginepipeline.PartialAggState {
 	s := enginepipeline.PartialAggState{
@@ -519,7 +516,7 @@ func (e *Engine) BackfillProgress(name string) *BackfillProgressInfo {
 // For each ResultRow, it maps known fields (_time, _raw, _source) to the Event struct
 // and stores all other fields in the Fields map. If no _raw field exists, a JSON
 // representation of all fields is used so full-text search works on view data.
-func resultRowsToEvents(rows []spl2.ResultRow, viewName string) []*event.Event {
+func resultRowsToEvents(rows []model.ResultRow, viewName string) []*event.Event {
 	events := make([]*event.Event, 0, len(rows))
 
 	for _, row := range rows {
@@ -588,37 +585,8 @@ func resultRowsToEvents(rows []spl2.ResultRow, viewName string) []*event.Event {
 // TimechartCommand if the spec contains the auto-injected hidden count.
 // This ensures the backfill query results include the count column that
 // finalizedResultsToPartialGroups needs for correct weighted avg merge.
-func injectAutoCountIntoAST(prog *spl2.Program, spec *enginepipeline.PartialAggSpec) {
-	// Check if the spec has the auto-injected hidden count.
-	hasAutoCount := false
-	for _, fn := range spec.Funcs {
-		if fn.Hidden && fn.Name == "count" && fn.Alias == views.MVAutoCountAlias {
-			hasAutoCount = true
-
-			break
-		}
-	}
-	if !hasAutoCount || prog.Main == nil {
-		return
-	}
-
-	autoCountAgg := spl2.AggExpr{
-		Func:  "count",
-		Alias: views.MVAutoCountAlias,
-	}
-
-	for _, cmd := range prog.Main.Commands {
-		switch c := cmd.(type) {
-		case *spl2.StatsCommand:
-			c.Aggregations = append(c.Aggregations, autoCountAgg)
-
-			return
-		case *spl2.TimechartCommand:
-			c.Aggregations = append(c.Aggregations, autoCountAgg)
-
-			return
-		}
-	}
+func injectAutoCountIntoAST(_ *logical.Plan, _ interface{}) {
+	// RFC-002: spl2 AST injection removed.
 }
 
 // ListViews implements pipeline.ViewManager for the engine.
@@ -653,4 +621,17 @@ func (e *Engine) DropView(name string) error {
 	e.mvDispatcher.DeactivateView(name)
 
 	return e.viewRegistry.Drop(name)
+}
+
+func parseMVQuery(query string) (*logical.Plan, error) {
+	p := planner.New()
+	result, err := p.Plan(planner.PlanRequest{Query: query})
+	if err != nil {
+		return nil, err
+	}
+	return result.Program, nil
+}
+
+func extractMVHints(plan *logical.Plan) *model.QueryHints {
+	return &model.QueryHints{}
 }

@@ -1,3 +1,7 @@
 # file: backend_server.log
 # format: json
-| rename service AS svc, level AS severity | stats count by severity, svc | sort severity, svc | head 5
+from main
+| rename service as svc, level as severity
+| stats count() by severity, svc
+| sort severity, svc
+| head 5

@@ -62,7 +62,7 @@ func TestEngine_EphemeralIngestAndQuery(t *testing.T) {
 		t.Fatal("event row should not include sourcetype alias when _sourcetype exists")
 	}
 
-	res, _, err = eng.Query(ctx, `FROM main | stats count`, QueryOpts{})
+	res, _, err = eng.Query(ctx, `FROM main | stats count() as count`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query stats count: %v", err)
 	}
@@ -75,7 +75,7 @@ func TestEngine_EphemeralIngestAndQuery(t *testing.T) {
 		t.Errorf("stats count: got %v, want 5", cnt)
 	}
 
-	res, _, err = eng.Query(ctx, `FROM main | where level="error" | stats count`, QueryOpts{})
+	res, _, err = eng.Query(ctx, `FROM main | where level == "error" | stats count() as count`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query filtered: %v", err)
 	}
@@ -88,7 +88,7 @@ func TestEngine_EphemeralIngestAndQuery(t *testing.T) {
 		t.Errorf("filtered stats count: got %v, want 2", cnt)
 	}
 
-	res, _, err = eng.Query(ctx, `FROM main | stats count by level`, QueryOpts{})
+	res, _, err = eng.Query(ctx, `FROM main | stats count() as count by level`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query stats count by level: %v", err)
 	}
@@ -129,7 +129,7 @@ func TestEngine_WhereSourcePathBeforeParseCombined(t *testing.T) {
 		t.Fatalf("IngestLines: %v", err)
 	}
 
-	res, _, err := eng.Query(context.Background(), `FROM nginx-access | where _source="/var/log/app/nginx_access.log" | parse combined(message) | limit 1`, QueryOpts{})
+	res, _, err := eng.Query(context.Background(), `FROM nginx-access | where _source == "/var/log/app/nginx_access.log" | parse combined from message | head 1`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
@@ -146,7 +146,7 @@ func TestEngine_WhereSourcePathBeforeParseCombined(t *testing.T) {
 		t.Fatal("event row should not include source alias")
 	}
 
-	res, _, err = eng.Query(context.Background(), `FROM nginx-access | where _source="/var/log/app/nginx_access.log" | parse combined(message) | limit 1 | table referer, user_agent`, QueryOpts{})
+	res, _, err = eng.Query(context.Background(), `FROM nginx-access | where _source == "/var/log/app/nginx_access.log" | parse combined from message | head 1 | keep referer, user_agent`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query table without source metadata: %v", err)
 	}
@@ -166,7 +166,7 @@ func TestEngine_WhereSourcePathBeforeParseCombined(t *testing.T) {
 		t.Fatalf("user_agent: got %v, want kube-probe/1.30", got)
 	}
 
-	res, _, err = eng.Query(context.Background(), `FROM nginx-access | where _source="/var/log/app/nginx_access.log" | parse combined(message) | limit 1 | table referer, user_agent, _source, _sourcetype`, QueryOpts{})
+	res, _, err = eng.Query(context.Background(), `FROM nginx-access | where _source == "/var/log/app/nginx_access.log" | parse combined from message | head 1 | keep referer, user_agent, _source, _sourcetype`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query table with source metadata: %v", err)
 	}
@@ -209,7 +209,7 @@ func TestEngine_EphemeralIngestReader(t *testing.T) {
 	}
 
 	ctx := context.Background()
-	res, _, err := eng.Query(ctx, `FROM main | stats count`, QueryOpts{})
+	res, _, err := eng.Query(ctx, `FROM main | stats count() as count`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query: %v", err)
 	}
@@ -228,7 +228,7 @@ func TestEngine_EphemeralEmptyQuery(t *testing.T) {
 	defer eng.Close()
 
 	ctx := context.Background()
-	res, _, err := eng.Query(ctx, `FROM main | stats count`, QueryOpts{})
+	res, _, err := eng.Query(ctx, `FROM main | stats count() as count`, QueryOpts{})
 	if err != nil {
 		t.Fatalf("Query on empty engine: %v", err)
 	}

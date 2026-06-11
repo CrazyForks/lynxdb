@@ -1,8 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| rename service as svc, level as severity
-| stats count() by severity, svc
-| sort severity, svc
-| head 5

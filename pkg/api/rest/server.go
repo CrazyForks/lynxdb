@@ -26,10 +26,10 @@ import (
 	syslogrecv "github.com/lynxbase/lynxdb/pkg/ingest/receiver/syslog"
 	"github.com/lynxbase/lynxdb/pkg/ingest/staging"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
+	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/planner"
 	"github.com/lynxbase/lynxdb/pkg/server"
 	shipperstats "github.com/lynxbase/lynxdb/pkg/server/shippers"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 	"github.com/lynxbase/lynxdb/pkg/storage/savedqueries"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
@@ -111,7 +111,7 @@ func NewServer(cfg Config) (*Server, error) {
 	})
 
 	// Build planner, query service, and view service.
-	p := planner.New(planner.WithViewCatalog(engine))
+	p := planner.New( /* RFC-002: view catalog not yet wired */ )
 	queryService := usecases.NewQueryService(p, engine, cfg.Query)
 	viewService := usecases.NewViewService(engine)
 	tailService := usecases.NewTailService(p, engine)
@@ -912,7 +912,7 @@ func (s *Server) OTLPGRPCAddr() string {
 }
 
 // SetIndexStore sets an external IndexStore for full SPL2 queries.
-func (s *Server) SetIndexStore(store *spl2.IndexStore) {
+func (s *Server) SetIndexStore(store *model.IndexStore) {
 	s.engine.SetIndexStore(store)
 }
 

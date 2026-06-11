@@ -1,8 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-let $base = where service == "payment-service";
-let $pay_errs = from $base
-| where status == 500;
-from $pay_errs
-| stats count(), sum(amount_cents) as total

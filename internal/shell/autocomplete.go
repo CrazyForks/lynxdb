@@ -10,7 +10,6 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/client"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/registry"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
 )
 
 var builtinFields = []string{
@@ -126,7 +125,7 @@ func LynxFlowAggregateNames() []string {
 
 // mergedCommandItems builds the deduped command list from SPL2 + LynxFlow operators.
 func mergedCommandItems() []CompletionItem {
-	spl2Items := commandItems(spl2.KnownCommands())
+	spl2Items := commandItems(nil /* RFC-002: spl2 commands removed */)
 	lfNames := LynxFlowOperatorNames()
 
 	// Build set of existing command names (lowercase).
@@ -160,7 +159,7 @@ func mergedCommandItems() []CompletionItem {
 
 // mergedAggFuncItems builds the deduped aggregate function list.
 func mergedAggFuncItems() []CompletionItem {
-	spl2Items := functionItems(spl2.KnownAggregateFunctions(), "aggregate function")
+	spl2Items := functionItems(nil, "aggregate function")
 	lfNames := LynxFlowAggregateNames()
 
 	seen := make(map[string]struct{}, len(spl2Items))
@@ -187,7 +186,7 @@ func mergedAggFuncItems() []CompletionItem {
 
 // mergedEvalFuncItems builds the deduped eval function list.
 func mergedEvalFuncItems() []CompletionItem {
-	spl2Items := functionItems(appendCatalogs(spl2.KnownEvalFunctions(), spl2.KnownJSONFunctions()), "eval function")
+	spl2Items := functionItems(nil, "eval function")
 	lfNames := LynxFlowFunctionNames()
 
 	seen := make(map[string]struct{}, len(spl2Items))

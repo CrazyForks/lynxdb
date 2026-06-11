@@ -1,5 +1,0 @@
-# format: json
-# language: lynxflow
-from backend
-| where level == "ERROR"
-| stats count()

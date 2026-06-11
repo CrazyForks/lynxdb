@@ -1,3 +1,5 @@
 # file: frontend_console.log
 # format: json
-| search "ERROR" | stats count
+from main
+| where has(_raw, "ERROR")
+| stats count()

@@ -219,6 +219,7 @@ type Capture struct {
 type Parse struct {
 	unaryNode
 	Format   string // json, logfmt, regex, pattern, ...
+	Pattern  string // regex/pattern string (empty for structured formats)
 	FirstOf  []string
 	From     string // field name to parse from (empty = _raw)
 	Captures []Capture

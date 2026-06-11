@@ -189,7 +189,7 @@ func TestSigmaSourceHeaderLoggedForQueryAndSavedQuery(t *testing.T) {
 	defer cleanup()
 
 	queryBody, _ := json.Marshal(map[string]interface{}{
-		"q": "FROM main | stats count",
+		"q": "FROM main | stats count()",
 	})
 	req, _ := http.NewRequest(
 		http.MethodPost,
@@ -209,7 +209,7 @@ func TestSigmaSourceHeaderLoggedForQueryAndSavedQuery(t *testing.T) {
 
 	savedBody, _ := json.Marshal(map[string]interface{}{
 		"name": "sigma-rule",
-		"q":    "FROM main | search whoami",
+		"q":    "FROM main | where has(_raw, \"whoami\")",
 	})
 	req, _ = http.NewRequest(
 		http.MethodPost,

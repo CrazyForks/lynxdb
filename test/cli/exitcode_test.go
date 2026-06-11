@@ -13,7 +13,7 @@ import (
 
 func TestExit0_QueryFile(t *testing.T) {
 	r := runLynxDB(t, "query", "--file", testdataLog("access.log"),
-		"--format", "json", "| stats count")
+		"--format", "json", "| stats count() as count")
 
 	if r.ExitCode != 0 {
 		t.Errorf("expected exit code 0, got %d\nstderr: %s", r.ExitCode, r.Stderr)
@@ -76,7 +76,7 @@ func TestExit4_ParseError_ServerMode(t *testing.T) {
 func TestExit6_FailOnEmpty(t *testing.T) {
 	r := runLynxDB(t, "query", "--file", testdataLog("access.log"),
 		"--format", "json", "--fail-on-empty",
-		`| where level="NONEXISTENT_LEVEL_XYZ"`)
+		`| where level=="NONEXISTENT_LEVEL_XYZ"`)
 
 	if r.ExitCode != 6 {
 		t.Errorf("expected exit code 6 (no results), got %d\nstderr: %s", r.ExitCode, r.Stderr)

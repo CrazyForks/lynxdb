@@ -1,7 +1,0 @@
-# format: json
-# language: lynxflow
-from backend
-| rename service as svc
-| stats count() by svc
-| sort -count
-| head 5

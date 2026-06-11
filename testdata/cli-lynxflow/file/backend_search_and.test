@@ -1,6 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| where has(_raw, "payment") and has(_raw, "failed")
-| stats count()

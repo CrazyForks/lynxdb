@@ -13,7 +13,9 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/cluster/sharding"
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/spl2"
+	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/model"
+	"github.com/lynxbase/lynxdb/pkg/planner"
 	"github.com/lynxbase/lynxdb/pkg/storage"
 )
 
@@ -104,16 +106,16 @@ type engineShardQueryAdapter struct {
 
 // SubmitShardQuery runs a query scoped to local shard data.
 func (a *engineShardQueryAdapter) SubmitShardQuery(ctx context.Context, params querycluster.ShardQueryParams) ([]map[string]event.Value, error) {
-	prog, err := spl2.ParseProgram(params.Query)
+	prog, err := parseCQQuery(params.Query)
 	if err != nil {
 		return nil, fmt.Errorf("engineShardQueryAdapter.SubmitShardQuery: parse: %w", err)
 	}
 
-	hints := spl2.ExtractQueryHints(prog)
+	hints := extractCQHints(prog)
 
 	// Apply time bounds from the shard query params.
 	if params.FromNs > 0 || params.ToNs > 0 {
-		tb := &spl2.TimeBounds{}
+		tb := &model.TimeBounds{}
 		if params.FromNs > 0 {
 			tb.Earliest = time.Unix(0, params.FromNs)
 		}
@@ -146,16 +148,16 @@ func (a *engineShardQueryAdapter) SubmitShardQuery(ctx context.Context, params q
 // SubmitShardPartialAgg runs partial aggregation against local shard data.
 func (a *engineShardQueryAdapter) SubmitShardPartialAgg(ctx context.Context, params querycluster.ShardQueryParams) ([]*pipeline.PartialAggGroup, error) {
 	// Parse the shard query to extract hints for event store building.
-	prog, err := spl2.ParseProgram(params.Query)
+	prog, err := parseCQQuery(params.Query)
 	if err != nil {
 		return nil, fmt.Errorf("engineShardQueryAdapter.SubmitShardPartialAgg: parse: %w", err)
 	}
 
-	hints := spl2.ExtractQueryHints(prog)
+	hints := extractCQHints(prog)
 
 	// Apply time bounds.
 	if params.FromNs > 0 || params.ToNs > 0 {
-		tb := &spl2.TimeBounds{}
+		tb := &model.TimeBounds{}
 		if params.FromNs > 0 {
 			tb.Earliest = time.Unix(0, params.FromNs)
 		}
@@ -194,7 +196,7 @@ func (a *engineShardQueryAdapter) HandlePartCommitted(ctx context.Context, n *cl
 	return a.engine.handleClusterPartCommitted(ctx, n)
 }
 
-// interfaceToValue converts an interface{} (from spl2.ResultRow.Fields) to event.Value.
+// interfaceToValue converts an interface{} (from model.ResultRow.Fields) to event.Value.
 func interfaceToValue(v interface{}) event.Value {
 	if v == nil {
 		return event.NullValue()
@@ -215,4 +217,19 @@ func interfaceToValue(v interface{}) event.Value {
 	default:
 		return event.StringValue(fmt.Sprintf("%v", v))
 	}
+}
+
+func parseCQQuery(query string) (*logical.Plan, error) {
+	// RFC-002: delegate to planner shim.
+	p := planner.New()
+	result, err := p.Plan(planner.PlanRequest{Query: query})
+	if err != nil {
+		return nil, err
+	}
+	return result.Program, nil
+}
+
+func extractCQHints(plan *logical.Plan) *model.QueryHints {
+	// RFC-002: hints should be extracted from logical plan.
+	return &model.QueryHints{}
 }

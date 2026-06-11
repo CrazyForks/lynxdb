@@ -1,7 +1,0 @@
-# file: backend_server.log
-# format: json
-# language: lynxflow
-from main
-| extend bucket = case(duration_ms < 50, "fast", duration_ms < 500, "normal", duration_ms < 2000, "slow", 1 == 1, "critical")
-| stats count(), avg(duration_ms) as avg_ms by bucket
-| sort bucket

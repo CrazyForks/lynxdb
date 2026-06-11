@@ -1,3 +1,5 @@
 # file: backend_server.log
 # format: json
-| errors by service
+from main
+| where level in ["error", "fatal"]
+| stats count() by service

@@ -1,3 +1,5 @@
 # file: backend_server.log
 # format: json
-| search "payment" NOT "success" | stats count
+from main
+| where has(_raw, "payment") and not has(_raw, "success")
+| stats count()

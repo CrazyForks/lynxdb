@@ -1,2 +1,4 @@
+# unordered: true
 # format: json
-FROM backend | timechart count span=1h
+from backend
+| every 1h stats count()

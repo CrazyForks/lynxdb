@@ -1,3 +1,4 @@
-# language: spl2
+# unordered: true
 # format: json
-FROM backend | rare 3 service
+from backend
+| rare 3 service

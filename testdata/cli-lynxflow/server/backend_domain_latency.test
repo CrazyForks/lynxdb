@@ -1,4 +1,0 @@
-# format: json
-# language: lynxflow
-from idx_backend
-| every 1h by service stats p50(duration_ms) as p50, p95(duration_ms) as p95, p99(duration_ms) as p99, count() as count

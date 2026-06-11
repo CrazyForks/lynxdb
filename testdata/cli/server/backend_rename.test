@@ -1,2 +1,6 @@
 # format: json
-FROM backend | rename service AS svc | stats count by svc | sort -count | head 5
+from backend
+| rename service as svc
+| stats count() by svc
+| sort -count
+| head 5

@@ -40,7 +40,7 @@ func TestMVCreateAndList(t *testing.T) {
 
 	_, _, err := runCmd(t, "--server", baseURL, "mv", "create",
 		"mv_test_levels",
-		"level=error | stats count by level")
+		`from main | where level == "error" | stats count() by level`)
 	if err != nil {
 		t.Fatalf("mv create failed: %v", err)
 	}
@@ -81,7 +81,7 @@ func TestMVStatus(t *testing.T) {
 
 	_, _, err := runCmd(t, "--server", baseURL, "mv", "create",
 		"mv_status_test",
-		"level=error | stats count by level")
+		`from main | where level == "error" | stats count() by level`)
 	if err != nil {
 		t.Fatalf("mv create failed: %v", err)
 	}
@@ -111,7 +111,7 @@ func TestMVDrop_Force(t *testing.T) {
 
 	_, _, err := runCmd(t, "--server", baseURL, "mv", "create",
 		"mv_drop_test",
-		"level=error | stats count")
+		`from main | where level == "error" | stats count() as count`)
 	if err != nil {
 		t.Fatalf("mv create failed: %v", err)
 	}

@@ -398,9 +398,12 @@ func jsonCount(t *testing.T, s string) int {
 		t.Fatal("expected at least one JSON row, got none")
 	}
 
-	v, ok := rows[0]["count"]
+	v, ok := rows[0]["count()"]
 	if !ok {
-		t.Fatalf("expected 'count' field in row, got keys: %v", cliMapKeys(rows[0]))
+		v, ok = rows[0]["count"]
+	}
+	if !ok {
+		t.Fatalf("expected 'count' or 'count()' field in row, got keys: %v", cliMapKeys(rows[0]))
 	}
 
 	switch val := v.(type) {

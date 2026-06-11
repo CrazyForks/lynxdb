@@ -19,6 +19,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
@@ -702,6 +703,42 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 				vm.stack[vm.sp-1] = event.StringValue(strings.Join(parts, "|||"))
 			}
 
+		case OpSplitArr:
+			// split(s, sep) -> array of strings (LynxFlow first-class arrays).
+			delim := vm.stack[vm.sp-1]
+			str := vm.stack[vm.sp-2]
+			vm.sp--
+			if str.IsNull() || delim.IsNull() {
+				vm.stack[vm.sp-1] = event.NullValue()
+			} else {
+				parts := strings.Split(valueToString(str), valueToString(delim))
+				elems := make([]event.Value, len(parts))
+				for i, p := range parts {
+					elems[i] = event.StringValue(p)
+				}
+				vm.stack[vm.sp-1] = event.ArrayValue(elems)
+			}
+
+		case OpJoinArr:
+			// join(arr, sep) -> string; concatenates array elements.
+			sep := vm.stack[vm.sp-1]
+			arr := vm.stack[vm.sp-2]
+			vm.sp--
+			if arr.IsNull() || sep.IsNull() {
+				vm.stack[vm.sp-1] = event.NullValue()
+			} else if arr.Type() == event.FieldTypeArray {
+				elems := arr.AsArray()
+				parts := make([]string, len(elems))
+				for i, e := range elems {
+					parts[i] = valueToString(e)
+				}
+				vm.stack[vm.sp-1] = event.StringValue(strings.Join(parts, valueToString(sep)))
+			} else {
+				// Fallback for legacy |||‐delimited multivalue strings.
+				parts := strings.Split(valueToString(arr), "|||")
+				vm.stack[vm.sp-1] = event.StringValue(strings.Join(parts, valueToString(sep)))
+			}
+
 		case OpTrim:
 			chars := vm.stack[vm.sp-1]
 			str := vm.stack[vm.sp-2]
@@ -1074,6 +1111,21 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = binTimestampValue(tsVal, durVal)
 
+		case OpTimeOfDay:
+			// time_of_day(ts) -> duration since midnight UTC.
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = timeOfDayValue(v, vm.Warnings)
+
+		case OpDayOfWeek:
+			// day_of_week(ts) -> int 0-6 (0=Sunday).
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = dayOfWeekValue(v, vm.Warnings)
+
+		case OpXXHash64:
+			// xxhash64(s) -> hex-encoded 64-bit hash string.
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = xxhash64Value(v)
+
 		case OpMD5:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = hashValue(a, "md5")
@@ -1112,8 +1164,11 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.stack[vm.sp-1] = ipMaskValue(mask, ip)
 
 		case OpSearchMatch:
-			search := vm.stack[vm.sp-1]
-			vm.stack[vm.sp-1] = searchMatchValue(search, fields)
+			// RESERVED opcode (0xC9). No emitter produces this opcode since
+			// RFC-002 Phase 10 removed the SPL2 search parser. If encountered
+			// in residual persisted bytecode, return a clear error rather than
+			// silently misbehaving.
+			return event.NullValue(), fmt.Errorf("%w: OpSearchMatch (0xC9) is a retired opcode; re-compile the query", ErrInvalidBytecode)
 
 		case OpJsonExtract:
 			// Stack: [..., field, path] → [..., result]
@@ -2988,16 +3043,73 @@ func ipMaskValue(mask, ip event.Value) event.Value {
 	return event.StringValue(masked.String())
 }
 
-// searchMatchValue is a legacy opcode handler for the SPL2 search-match
-// predicate. The SPL2 search expression parser has been removed (RFC-002
-// Phase 10). LynxFlow queries compile search predicates through the LF
-// compiler path and never emit OpSearchMatch. This stub returns false for
-// any residual bytecode that references the opcode.
-//
-// TODO(RFC-002): remove OpSearchMatch from the opcode table once all
-// persisted bytecode referencing it has been flushed (materialized views).
-func searchMatchValue(_ event.Value, _ map[string]event.Value) event.Value {
-	return event.BoolValue(false)
+// timeOfDayValue returns the duration since midnight UTC for a timestamp.
+// Non-timestamp input returns null and increments the type_error warning.
+func timeOfDayValue(v event.Value, w *WarningCounters) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	var ts time.Time
+	switch v.Type() {
+	case event.FieldTypeTimestamp:
+		ts = v.AsTimestamp()
+	case event.FieldTypeString:
+		parsed, err := time.Parse(time.RFC3339Nano, v.AsString())
+		if err != nil {
+			if w != nil {
+				w.Increment(warnTypeError)
+			}
+			return event.NullValue()
+		}
+		ts = parsed.UTC()
+	default:
+		if w != nil {
+			w.Increment(warnTypeError)
+		}
+		return event.NullValue()
+	}
+	ts = ts.UTC()
+	midnight := time.Date(ts.Year(), ts.Month(), ts.Day(), 0, 0, 0, 0, time.UTC)
+	return event.DurationValue(ts.Sub(midnight))
+}
+
+// dayOfWeekValue returns 0-6 (0=Sunday) for a timestamp.
+// Non-timestamp input returns null and increments the type_error warning.
+func dayOfWeekValue(v event.Value, w *WarningCounters) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	var ts time.Time
+	switch v.Type() {
+	case event.FieldTypeTimestamp:
+		ts = v.AsTimestamp()
+	case event.FieldTypeString:
+		parsed, err := time.Parse(time.RFC3339Nano, v.AsString())
+		if err != nil {
+			if w != nil {
+				w.Increment(warnTypeError)
+			}
+			return event.NullValue()
+		}
+		ts = parsed.UTC()
+	default:
+		if w != nil {
+			w.Increment(warnTypeError)
+		}
+		return event.NullValue()
+	}
+	return event.IntValue(int64(ts.UTC().Weekday()))
+}
+
+// xxhash64Value returns the hex-encoded 64-bit xxhash of a string value.
+// Non-string or null input returns null.
+func xxhash64Value(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	s := valueToString(v)
+	h := xxhash.Sum64String(s)
+	return event.StringValue(strconv.FormatUint(h, 16))
 }
 
 // splTimeReplacer converts SPL2 strftime format tokens to Go time layout tokens.

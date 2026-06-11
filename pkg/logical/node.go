@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/registry"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/sema"
 )
 
@@ -343,7 +344,8 @@ func (n *Extend) Schema() []sema.Field {
 	}
 	base := copySchema(n.inputSchema())
 	for _, a := range n.Assignments {
-		base = addField(base, a.Name, sema.TypeAny) // TODO: infer from expr
+		typ := inferExprType(a.Value, base)
+		base = addField(base, a.Name, typ)
 	}
 	n.cachedSchema = base
 	return n.cachedSchema
@@ -421,15 +423,16 @@ func (n *Aggregate) Schema() []sema.Field {
 	if n.cachedSchema != nil {
 		return n.cachedSchema
 	}
+	inputSch := n.inputSchema()
 	if n.Window != nil {
 		// eventstats/streamstats: input schema + agg fields
-		base := copySchema(n.inputSchema())
+		base := copySchema(inputSch)
 		for _, a := range n.Aggs {
 			name := a.Alias
 			if name == "" {
 				name = aggAutoName(a)
 			}
-			base = addField(base, name, sema.TypeAny)
+			base = addField(base, name, inferAggType(a, inputSch))
 		}
 		n.cachedSchema = base
 		return n.cachedSchema
@@ -440,14 +443,14 @@ func (n *Aggregate) Schema() []sema.Field {
 		fields = append(fields, sema.Field{Name: "_time", Type: sema.TypeTimestamp})
 	}
 	for _, k := range n.Keys {
-		fields = append(fields, sema.Field{Name: k.Name, Type: sema.TypeAny})
+		fields = append(fields, sema.Field{Name: k.Name, Type: inferExprType(k.Expr, inputSch)})
 	}
 	for _, a := range n.Aggs {
 		name := a.Alias
 		if name == "" {
 			name = aggAutoName(a)
 		}
-		fields = append(fields, sema.Field{Name: name, Type: sema.TypeAny})
+		fields = append(fields, sema.Field{Name: name, Type: inferAggType(a, inputSch)})
 	}
 	n.cachedSchema = fields
 	return n.cachedSchema
@@ -1009,4 +1012,217 @@ func matchGlob(pattern, name string) bool {
 		}
 	}
 	return len(name) == 0
+}
+
+// ---------------------------------------------------------------------------
+// Lightweight expression type inference for Schema() computation.
+//
+// This is a best-effort inference that handles the statically-determinable
+// cases (literals, boolean/comparison/arithmetic ops, known functions). It
+// falls back to TypeAny for anything it cannot resolve -- this is safe because
+// TypeAny simply means "type not known at plan time".
+// ---------------------------------------------------------------------------
+
+// inferExprType infers the output type of an expression. schema is the
+// current input schema used to resolve field references.
+func inferExprType(e ast.Expr, schema []sema.Field) sema.FieldType {
+	if e == nil {
+		return sema.TypeAny
+	}
+	switch x := e.(type) {
+	case *ast.Literal:
+		return inferLiteralType(x)
+	case *ast.Ident:
+		for _, f := range schema {
+			if f.Name == x.Name {
+				return f.Type
+			}
+		}
+		return sema.TypeAny
+	case *ast.Binary:
+		return inferBinaryType(x, schema)
+	case *ast.Unary:
+		return inferUnaryType(x, schema)
+	case *ast.Call:
+		return inferCallType(x, schema)
+	case *ast.In, *ast.Between:
+		return sema.TypeBool
+	case *ast.Paren:
+		return inferExprType(x.Inner, schema)
+	case *ast.Array:
+		return sema.TypeArray
+	case *ast.Object:
+		return sema.TypeObject
+	}
+	return sema.TypeAny
+}
+
+func inferLiteralType(lit *ast.Literal) sema.FieldType {
+	switch lit.Kind {
+	case ast.LitString, ast.LitRawString:
+		return sema.TypeString
+	case ast.LitInt:
+		return sema.TypeInt
+	case ast.LitFloat:
+		return sema.TypeFloat
+	case ast.LitBool:
+		return sema.TypeBool
+	case ast.LitDuration:
+		return sema.TypeDuration
+	case ast.LitNull:
+		return sema.TypeAny
+	}
+	return sema.TypeAny
+}
+
+func inferBinaryType(b *ast.Binary, schema []sema.Field) sema.FieldType {
+	switch b.Op {
+	case ast.OpAnd, ast.OpOr:
+		return sema.TypeBool
+	case ast.OpEq, ast.OpNotEq, ast.OpLt, ast.OpLtEq, ast.OpGt, ast.OpGtEq:
+		return sema.TypeBool
+	case ast.OpAdd:
+		lt := inferExprType(b.Left, schema)
+		rt := inferExprType(b.Right, schema)
+		if lt == sema.TypeString && rt == sema.TypeString {
+			return sema.TypeString
+		}
+		if lt == sema.TypeInt && rt == sema.TypeInt {
+			return sema.TypeInt
+		}
+		if isNumericType(lt) && isNumericType(rt) {
+			return sema.TypeFloat
+		}
+		if (lt == sema.TypeTimestamp && rt == sema.TypeDuration) ||
+			(lt == sema.TypeDuration && rt == sema.TypeTimestamp) {
+			return sema.TypeTimestamp
+		}
+		if lt == sema.TypeDuration && rt == sema.TypeDuration {
+			return sema.TypeDuration
+		}
+		return sema.TypeAny
+	case ast.OpSub:
+		lt := inferExprType(b.Left, schema)
+		rt := inferExprType(b.Right, schema)
+		if lt == sema.TypeInt && rt == sema.TypeInt {
+			return sema.TypeInt
+		}
+		if isNumericType(lt) && isNumericType(rt) {
+			return sema.TypeFloat
+		}
+		if lt == sema.TypeTimestamp && rt == sema.TypeTimestamp {
+			return sema.TypeDuration
+		}
+		if lt == sema.TypeTimestamp && rt == sema.TypeDuration {
+			return sema.TypeTimestamp
+		}
+		if lt == sema.TypeDuration && rt == sema.TypeDuration {
+			return sema.TypeDuration
+		}
+		return sema.TypeAny
+	case ast.OpMul:
+		lt := inferExprType(b.Left, schema)
+		rt := inferExprType(b.Right, schema)
+		if lt == sema.TypeInt && rt == sema.TypeInt {
+			return sema.TypeInt
+		}
+		if isNumericType(lt) && isNumericType(rt) {
+			return sema.TypeFloat
+		}
+		return sema.TypeAny
+	case ast.OpDiv:
+		lt := inferExprType(b.Left, schema)
+		rt := inferExprType(b.Right, schema)
+		if lt == sema.TypeInt && rt == sema.TypeInt {
+			return sema.TypeInt
+		}
+		if isNumericType(lt) && isNumericType(rt) {
+			return sema.TypeFloat
+		}
+		return sema.TypeAny
+	case ast.OpMod:
+		lt := inferExprType(b.Left, schema)
+		rt := inferExprType(b.Right, schema)
+		if lt == sema.TypeInt && rt == sema.TypeInt {
+			return sema.TypeInt
+		}
+		return sema.TypeAny
+	case ast.OpCoalesce:
+		lt := inferExprType(b.Left, schema)
+		rt := inferExprType(b.Right, schema)
+		if lt != sema.TypeAny {
+			return lt
+		}
+		return rt
+	}
+	return sema.TypeAny
+}
+
+func inferUnaryType(u *ast.Unary, schema []sema.Field) sema.FieldType {
+	switch u.Op {
+	case ast.OpNot:
+		return sema.TypeBool
+	case ast.OpNeg:
+		ot := inferExprType(u.Operand, schema)
+		if ot == sema.TypeInt || ot == sema.TypeFloat || ot == sema.TypeDuration {
+			return ot
+		}
+		return sema.TypeAny
+	}
+	return sema.TypeAny
+}
+
+func inferCallType(c *ast.Call, schema []sema.Field) sema.FieldType {
+	callee := strings.ToLower(c.Callee)
+	// Check scalar functions first.
+	if fn, ok := registry.LookupFunction(callee); ok {
+		return registryToSemaType(fn.Result)
+	}
+	// Check aggregate functions.
+	if agg, ok := registry.LookupAggregate(callee); ok {
+		return registryToSemaType(agg.Result)
+	}
+	// Strict-cast variants (e.g. int!).
+	if c.Bang {
+		if fn, ok := registry.LookupFunction(callee); ok && fn.StrictVariant {
+			return registryToSemaType(fn.Result)
+		}
+	}
+	return sema.TypeAny
+}
+
+// inferAggType infers the output type of an aggregate expression.
+func inferAggType(a Agg, schema []sema.Field) sema.FieldType {
+	return inferExprType(a.Func, schema)
+}
+
+func isNumericType(t sema.FieldType) bool {
+	return t == sema.TypeInt || t == sema.TypeFloat
+}
+
+func registryToSemaType(vt registry.ValueType) sema.FieldType {
+	switch vt {
+	case registry.TString:
+		return sema.TypeString
+	case registry.TInt:
+		return sema.TypeInt
+	case registry.TFloat:
+		return sema.TypeFloat
+	case registry.TBool:
+		return sema.TypeBool
+	case registry.TTimestamp:
+		return sema.TypeTimestamp
+	case registry.TDuration:
+		return sema.TypeDuration
+	case registry.TArray:
+		return sema.TypeArray
+	case registry.TObject:
+		return sema.TypeObject
+	case registry.TNumber:
+		// Number could be int or float; keep as any for safety.
+		return sema.TypeAny
+	case registry.TAny:
+		return sema.TypeAny
+	}
+	return sema.TypeAny
 }

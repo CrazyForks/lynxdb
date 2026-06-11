@@ -684,6 +684,7 @@ const (
 	warnNotOnNonBool
 	warnModOnNonInt
 	warnStringArithmetic
+	warnTypeError     // function called with wrong argument type (e.g. time_of_day on non-timestamp)
 	warnCategoryCount // sentinel -- keep last
 )
 
@@ -694,6 +695,7 @@ var warningCategoryNames = [warningCategoryCount]string{
 	warnNotOnNonBool:      "not_on_non_bool",
 	warnModOnNonInt:       "mod_on_non_int",
 	warnStringArithmetic:  "string_arithmetic",
+	warnTypeError:         "type_error",
 }
 
 // Increment atomically increments a warning counter.

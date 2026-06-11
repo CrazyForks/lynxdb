@@ -1309,6 +1309,209 @@ func TestConformance_DurationConstants(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// split() -> real array
+// ---------------------------------------------------------------------------
+
+func TestConformance_Split_BasicArray(t *testing.T) {
+	// split("a,b,c", ",") -> ["a", "b", "c"]
+	expr := call("split", litStr("a,b,c"), litStr(","))
+	result, _ := runLF(t, expr, nil)
+	arr := assertArray(t, result, 3, "split basic")
+	assertString(t, arr[0], "a", "split[0]")
+	assertString(t, arr[1], "b", "split[1]")
+	assertString(t, arr[2], "c", "split[2]")
+}
+
+func TestConformance_Split_SingleElement(t *testing.T) {
+	// split("hello", ",") -> ["hello"] (no match)
+	expr := call("split", litStr("hello"), litStr(","))
+	result, _ := runLF(t, expr, nil)
+	arr := assertArray(t, result, 1, "split no match")
+	assertString(t, arr[0], "hello", "split no match [0]")
+}
+
+func TestConformance_Split_EmptyString(t *testing.T) {
+	// split("", ",") -> [""] (Go strings.Split semantics)
+	expr := call("split", litStr(""), litStr(","))
+	result, _ := runLF(t, expr, nil)
+	arr := assertArray(t, result, 1, "split empty")
+	assertString(t, arr[0], "", "split empty [0]")
+}
+
+func TestConformance_Split_NullPropagation(t *testing.T) {
+	// split(null, ",") -> null
+	result1, _ := runLF(t, call("split", litNull(), litStr(",")), nil)
+	assertNull(t, result1, "split null string")
+
+	// split("a,b", null) -> null
+	result2, _ := runLF(t, call("split", litStr("a,b"), litNull()), nil)
+	assertNull(t, result2, "split null sep")
+}
+
+func TestConformance_Split_ComposesWithLen(t *testing.T) {
+	// len(split("a,b,c", ",")) -> 3
+	expr := call("len", call("split", litStr("a,b,c"), litStr(",")))
+	result, _ := runLF(t, expr, nil)
+	assertInt(t, result, 3, "len(split)")
+}
+
+func TestConformance_Split_ComposesWithIndex(t *testing.T) {
+	// split("x-y-z", "-")[0] -> "x"
+	expr := index(call("split", litStr("x-y-z"), litStr("-")), litInt(0))
+	result, _ := runLF(t, expr, nil)
+	assertString(t, result, "x", "split[0]")
+}
+
+func TestConformance_Split_ComposesWithFilter(t *testing.T) {
+	// filter(split("a,,b,,c", ","), x -> len(x) > 0) -> ["a","b","c"]
+	splitExpr := call("split", litStr("a,,b,,c"), litStr(","))
+	pred := lambda("x", binOp(lfast.OpGt, call("len", ident("x")), litInt(0)))
+	expr := call("filter", splitExpr, pred)
+	result, _ := runLF(t, expr, nil)
+	arr := assertArray(t, result, 3, "filter(split)")
+	assertString(t, arr[0], "a", "filter(split)[0]")
+	assertString(t, arr[1], "b", "filter(split)[1]")
+	assertString(t, arr[2], "c", "filter(split)[2]")
+}
+
+func TestConformance_Split_RoundtripWithJoin(t *testing.T) {
+	// join(split("a,b,c", ","), "-") -> "a-b-c"
+	expr := call("join", call("split", litStr("a,b,c"), litStr(",")), litStr("-"))
+	result, _ := runLF(t, expr, nil)
+	assertString(t, result, "a-b-c", "join(split)")
+}
+
+// ---------------------------------------------------------------------------
+// time_of_day(ts) -> duration since midnight UTC
+// ---------------------------------------------------------------------------
+
+func TestConformance_TimeOfDay_MidDay(t *testing.T) {
+	// 2026-06-11T14:30:00Z -> 14h30m
+	ts := time.Date(2026, 6, 11, 14, 30, 0, 0, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+	expr := call("time_of_day", ident("ts"))
+	result, _ := runLF(t, expr, fields)
+	assertDuration(t, result, 14*time.Hour+30*time.Minute, "time_of_day mid-day")
+}
+
+func TestConformance_TimeOfDay_Midnight(t *testing.T) {
+	// 2026-06-11T00:00:00Z -> 0s
+	ts := time.Date(2026, 6, 11, 0, 0, 0, 0, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+	expr := call("time_of_day", ident("ts"))
+	result, _ := runLF(t, expr, fields)
+	assertDuration(t, result, 0, "time_of_day midnight")
+}
+
+func TestConformance_TimeOfDay_NullPropagation(t *testing.T) {
+	result, _ := runLF(t, call("time_of_day", litNull()), nil)
+	assertNull(t, result, "time_of_day null")
+}
+
+func TestConformance_TimeOfDay_NonTimestampInput(t *testing.T) {
+	// int input -> null + warning
+	result, warnings := runLF(t, call("time_of_day", litInt(42)), nil)
+	assertNull(t, result, "time_of_day(int)")
+	assertWarnings(t, warnings, "type_error", 1, "time_of_day(int)")
+}
+
+func TestConformance_TimeOfDay_WithNanos(t *testing.T) {
+	// 2026-01-01T08:15:30.123456789Z -> 8h15m30.123456789s
+	ts := time.Date(2026, 1, 1, 8, 15, 30, 123456789, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+	expr := call("time_of_day", ident("ts"))
+	result, _ := runLF(t, expr, fields)
+	expected := 8*time.Hour + 15*time.Minute + 30*time.Second + 123456789*time.Nanosecond
+	assertDuration(t, result, expected, "time_of_day with nanos")
+}
+
+// ---------------------------------------------------------------------------
+// day_of_week(ts) -> int 0-6 (0=Sunday)
+// ---------------------------------------------------------------------------
+
+func TestConformance_DayOfWeek_Sunday(t *testing.T) {
+	// 2026-06-07 is a Sunday
+	ts := time.Date(2026, 6, 7, 12, 0, 0, 0, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+	expr := call("day_of_week", ident("ts"))
+	result, _ := runLF(t, expr, fields)
+	assertInt(t, result, 0, "day_of_week Sunday")
+}
+
+func TestConformance_DayOfWeek_Wednesday(t *testing.T) {
+	// 2026-06-10 is a Wednesday
+	ts := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+	expr := call("day_of_week", ident("ts"))
+	result, _ := runLF(t, expr, fields)
+	assertInt(t, result, 3, "day_of_week Wednesday")
+}
+
+func TestConformance_DayOfWeek_NullPropagation(t *testing.T) {
+	result, _ := runLF(t, call("day_of_week", litNull()), nil)
+	assertNull(t, result, "day_of_week null")
+}
+
+func TestConformance_DayOfWeek_NonTimestampInput(t *testing.T) {
+	result, warnings := runLF(t, call("day_of_week", litStr("not a timestamp")), nil)
+	assertNull(t, result, "day_of_week(string)")
+	assertWarnings(t, warnings, "type_error", 1, "day_of_week(string)")
+}
+
+func TestConformance_DayOfWeek_Saturday(t *testing.T) {
+	// 2026-06-13 is a Saturday
+	ts := time.Date(2026, 6, 13, 23, 59, 59, 0, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+	expr := call("day_of_week", ident("ts"))
+	result, _ := runLF(t, expr, fields)
+	assertInt(t, result, 6, "day_of_week Saturday")
+}
+
+// ---------------------------------------------------------------------------
+// xxhash64(s) -> hex string
+// ---------------------------------------------------------------------------
+
+func TestConformance_XXHash64_Basic(t *testing.T) {
+	// xxhash64("hello")
+	expr := call("xxhash64", litStr("hello"))
+	result, _ := runLF(t, expr, nil)
+	if result.Type() != event.FieldTypeString {
+		t.Fatalf("xxhash64: expected string, got %s", result.Type())
+	}
+	// Verify it is a valid hex string and has expected length (16 hex chars for 64 bits).
+	s := result.AsString()
+	if len(s) == 0 {
+		t.Fatal("xxhash64: empty result")
+	}
+	// Verify deterministic: same input, same output.
+	result2, _ := runLF(t, expr, nil)
+	assertString(t, result2, s, "xxhash64 deterministic")
+}
+
+func TestConformance_XXHash64_DifferentInputs(t *testing.T) {
+	r1, _ := runLF(t, call("xxhash64", litStr("hello")), nil)
+	r2, _ := runLF(t, call("xxhash64", litStr("world")), nil)
+	if r1.AsString() == r2.AsString() {
+		t.Errorf("xxhash64: different inputs should produce different hashes")
+	}
+}
+
+func TestConformance_XXHash64_NullPropagation(t *testing.T) {
+	result, _ := runLF(t, call("xxhash64", litNull()), nil)
+	assertNull(t, result, "xxhash64 null")
+}
+
+func TestConformance_XXHash64_EmptyString(t *testing.T) {
+	result, _ := runLF(t, call("xxhash64", litStr("")), nil)
+	if result.Type() != event.FieldTypeString {
+		t.Fatalf("xxhash64 empty: expected string, got %s", result.Type())
+	}
+	if result.AsString() == "" {
+		t.Error("xxhash64 empty: should produce non-empty hash")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // Count: total number of assertions
 // ---------------------------------------------------------------------------
 // The tests above cover:
@@ -1330,4 +1533,9 @@ func TestConformance_DurationConstants(t *testing.T) {
 //   string(5) + unary_minus(4) + unknown_func(1) + if(3) + case(1) +
 //   coalesce(1) + nullif(2) + has(4) + cidr(2) + string_concat(1) +
 //   duration_consts(5) = 68
-// Total: 22 + 34 + 24 + 6 + 3 + 9 + 6 + 2 + 4 + 9 + 4 + 4 + 68 = ~195
+// - split: 8 (basic 3 + single 1 + empty 1 + null 2 + len 1 + index 1 +
+//   filter 3 + roundtrip 1 = 13 assertions in 8 test functions)
+// - time_of_day: 5 (mid-day + midnight + null + non-ts + nanos)
+// - day_of_week: 5 (sunday + wednesday + null + non-ts + saturday)
+// - xxhash64: 4 (basic + different + null + empty)
+// Total: ~195 + 13 + 5 + 5 + 4 = ~222

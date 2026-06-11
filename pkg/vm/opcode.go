@@ -134,15 +134,19 @@ const (
 	OpIsObject Opcode = 0xB8
 
 	// Time Functions.
-	OpStrftime    Opcode = 0xC0
-	OpURLDecode   Opcode = 0xC1
-	OpMD5         Opcode = 0xC2
-	OpSHA1        Opcode = 0xC3
-	OpSHA256      Opcode = 0xC4
-	OpSHA512      Opcode = 0xC5
-	OpPrintf      Opcode = 0xC6
-	OpIPMask      Opcode = 0xC7
-	OpStrptime    Opcode = 0xC8
+	OpStrftime  Opcode = 0xC0
+	OpURLDecode Opcode = 0xC1
+	OpMD5       Opcode = 0xC2
+	OpSHA1      Opcode = 0xC3
+	OpSHA256    Opcode = 0xC4
+	OpSHA512    Opcode = 0xC5
+	OpPrintf    Opcode = 0xC6
+	OpIPMask    Opcode = 0xC7
+	OpStrptime  Opcode = 0xC8
+	// OpSearchMatch is RESERVED (0xC9). The handler was removed; the opcode
+	// constant is kept so that append-only numbering is preserved and any
+	// residual persisted bytecode (e.g. in materialized-view caches) gets a
+	// clean error instead of a silent misinterpretation.
 	OpSearchMatch Opcode = 0xC9
 
 	// Network (operand: 2-byte CIDR pool index).
@@ -208,6 +212,11 @@ const (
 	OpArrayDistinct   Opcode = 0x0A // pop array, push order-preserving deduplicated array
 	OpArraySort       Opcode = 0x0B // pop array, push sorted array (CompareValues; nulls last)
 	OpFlatten         Opcode = 0x0C // pop array, push one-level-flattened array
+	OpSplitArr        Opcode = 0x0D // pop 2 (str, sep); push array of strings (real FieldTypeArray); for LynxFlow split()
+	OpJoinArr         Opcode = 0x0E // pop 2 (arr, sep); join array elements with separator; push string
+	OpTimeOfDay       Opcode = 0x16 // pop timestamp; push duration since midnight UTC
+	OpDayOfWeek       Opcode = 0x17 // pop timestamp; push int 0-6 (0=Sunday, per time.Weekday)
+	OpXXHash64        Opcode = 0x18 // pop string; push hex-encoded xxhash64 digest string
 	OpKeys            Opcode = 0x23 // pop object, push sorted array of key strings
 	OpValues          Opcode = 0x24 // pop object, push array of values in key-sorted order
 	OpMerge           Opcode = 0x25 // pop 2 objects (a, b), push merged (b wins)
@@ -437,6 +446,11 @@ var definitions = map[Opcode]*Definition{
 	OpArrayDistinct:   {"OpArrayDistinct", nil},
 	OpArraySort:       {"OpArraySort", nil},
 	OpFlatten:         {"OpFlatten", nil},
+	OpSplitArr:        {"OpSplitArr", nil},
+	OpJoinArr:         {"OpJoinArr", nil},
+	OpTimeOfDay:       {"OpTimeOfDay", nil},
+	OpDayOfWeek:       {"OpDayOfWeek", nil},
+	OpXXHash64:        {"OpXXHash64", nil},
 	OpKeys:            {"OpKeys", nil},
 	OpValues:          {"OpValues", nil},
 	OpMerge:           {"OpMerge", nil},

@@ -331,7 +331,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "substr", minArgs: 2, maxArgs: 3, emit: lfEmitSubstr},
 		{name: "replace", minArgs: 3, maxArgs: 3, emit: lfEmitReplace},
 		{name: "split", minArgs: 2, maxArgs: 2, emit: lfEmitSplit},
-		{name: "join", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpMvJoin)},
+		{name: "join", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpJoinArr)},
 		{name: "starts_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpStartsWith)},
 		{name: "ends_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpEndsWith)},
 		{name: "printf", minArgs: 1, maxArgs: -1, emit: lfEmitPrintf},
@@ -702,19 +702,14 @@ func lfEmitReplace(c *lfCompiler, call *lfast.Call) error {
 }
 
 func lfEmitSplit(c *lfCompiler, call *lfast.Call) error {
-	// split(s, sep) -> array
-	// The old OpSplit produces |||‐delimited strings. We need real arrays.
-	// For now, use OpSplit and wrap in a TODO for real array output.
-	// Actually, let's compile it properly: emit both args, then OpSplit which
-	// produces a |||‐joined string. This isn't ideal for LynxFlow (should be an array).
-	// But for this PR, we'll use it and note the gap.
+	// split(s, sep) -> array of strings (first-class FieldTypeArray).
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
 	if err := c.compile(call.Args[1]); err != nil {
 		return err
 	}
-	c.prog.EmitOp(OpSplit)
+	c.prog.EmitOp(OpSplitArr)
 	return nil
 }
 
@@ -932,32 +927,30 @@ func lfEmitBin(c *lfCompiler, call *lfast.Call) error {
 }
 
 func lfEmitTimeOfDay(c *lfCompiler, call *lfast.Call) error {
-	// time_of_day(ts) → duration since midnight
-	// For now, compile and pass through.
+	// time_of_day(ts) → duration since midnight UTC.
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
-	// TODO: add OpTimeOfDay opcode
+	c.prog.EmitOp(OpTimeOfDay)
 	return nil
 }
 
 func lfEmitDayOfWeek(c *lfCompiler, call *lfast.Call) error {
-	// day_of_week(ts) → int (0=Sunday)
+	// day_of_week(ts) → int 0-6 (0=Sunday).
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
-	// TODO: add OpDayOfWeek opcode
+	c.prog.EmitOp(OpDayOfWeek)
 	return nil
 }
 
 func lfEmitXXHash64(c *lfCompiler, call *lfast.Call) error {
-	// xxhash64(s) → string hex digest
-	// No existing opcode. For this PR, use SHA256 as placeholder.
-	// TODO: add OpXXHash64 opcode
+	// xxhash64(s) → hex-encoded 64-bit xxhash digest string.
+	// Uses github.com/cespare/xxhash/v2 (already a dependency).
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
-	c.prog.EmitOp(OpSHA256) // placeholder
+	c.prog.EmitOp(OpXXHash64)
 	return nil
 }
 

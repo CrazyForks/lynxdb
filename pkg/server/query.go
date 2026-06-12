@@ -702,11 +702,10 @@ func (e *Engine) runStandardPipeline(
 
 	// Always use the streaming scan path for server-mode queries. The streaming
 	// path reads segment row groups on-demand via SegmentStreamIterator, bounding
-	// scan memory to one row group (~65K events). Non-streamable operators (sort,
-	// tail, join, dedup, eventstats) have spill-to-disk support that activates
-	// when the memory budget is exceeded — but only if they receive data through
-	// the streaming path. The batch materialization path (buildColumnarStore) loads
-	// ALL data upfront, which causes OOM before operators get a chance to spill.
+	// scan memory to one row group (~65K events). Blocking operators (sort, tail,
+	// join, aggregate, eventstats, transaction, sessionize) are wired with
+	// governor-backed memory accounts and a SpillManager via physical.Build: when
+	// their coordinated budget is exceeded, they spill to disk automatically.
 	//
 	// Fall back to batch materialization only when an external IndexStore is
 	// injected (test path), since tests provide pre-built event maps.
@@ -764,6 +763,15 @@ func (e *Engine) runStandardPipeline(
 		return nil, pipeErr
 	}
 	iter := buildResult.Iterator
+
+	// Cap event queries at MaxResultLimit in the batch path too.
+	if params.ResultType == ResultTypeEvents && !planHasRootLimit(prog) {
+		maxRL := e.queryCfg.Load().MaxResultLimit
+		if maxRL > 0 {
+			iter = enginepipeline.NewLimitIterator(iter, maxRL)
+		}
+	}
+
 	pipeRows, collectErr := enginepipeline.CollectAll(ctx, iter)
 	if collectErr != nil {
 		return nil, collectErr
@@ -777,6 +785,7 @@ func (e *Engine) runStandardPipeline(
 		qr.vmTimeNS += stage.VMTimeNS
 	}
 	qr.operatorBudgets = enginepipeline.CollectOperatorBudgets(buildResult.Coordinator)
+	qr.govBudget = buildResult.GovBudget
 	qr.rows = pipelineRowsToResultRows(pipeRows)
 	qr.pipelineMS = float64(time.Since(stdPipelineStart).Milliseconds())
 
@@ -907,6 +916,18 @@ func (e *Engine) runStreamingPipeline(
 	}
 	streamIter := streamBuildResult.Iterator
 
+	// For non-aggregate event queries that lack an explicit pipeline-level
+	// limit, cap the collected output at MaxResultLimit to prevent unbounded
+	// memory growth during collection. Aggregate/timechart queries are NOT
+	// capped because their row count is determined by group cardinality, not
+	// by the input size.
+	if params.ResultType == ResultTypeEvents && !planHasRootLimit(prog) {
+		maxRL := e.queryCfg.Load().MaxResultLimit
+		if maxRL > 0 {
+			streamIter = enginepipeline.NewLimitIterator(streamIter, maxRL)
+		}
+	}
+
 	// Wire preview callback into CollectAll if provided.
 	var collectOpts []enginepipeline.CollectOptions
 	if onPreview != nil {
@@ -1007,8 +1028,14 @@ func (e *Engine) parallelConfig() *enginepipeline.ParallelConfig {
 // When the Engine has a view registry, the Source callback first checks whether
 // a scan's source name matches a materialized view. If so, it returns the
 // view's finalized events via ResolveView instead of scanning an index.
+//
+// Memory governance: creates a per-query MemoryCoordinator from the engine's
+// governor and passes the engine's spillMgr so that blocking operators (sort,
+// join, aggregate, tail, eventstats, transaction, sessionize) use their
+// spill-capable constructors. The coordinator and budget are returned in
+// BuildResult so operator budgets surface in query stats.
 func (e *Engine) buildProgramPipeline(
-	_ context.Context,
+	ctx context.Context,
 	prog *logical.Plan,
 	store enginepipeline.IndexStore,
 	_ string,
@@ -1021,16 +1048,54 @@ func (e *Engine) buildProgramPipeline(
 	}
 	source := indexStoreToSource(store, DefaultIndexName, vr)
 
+	// Create per-query memory coordinator and budget from the engine governor.
+	var coordinator *enginepipeline.MemoryCoordinator
+	var govBudget *memgov.BudgetAdapter
+	if e.governor != nil {
+		queryBudget := memgov.NewQueryBudget(e.governor, "query")
+		maxQueryMem := int64(e.queryCfg.Load().MaxQueryMemory)
+		govBudget = memgov.NewBudgetAdapterWithLimit(queryBudget, e.governor, maxQueryMem)
+
+		// Budget for the coordinator: use per-query limit if set, otherwise
+		// 25% of total governor limit as a reasonable default.
+		coordBudget := maxQueryMem
+		if coordBudget <= 0 {
+			total := e.governor.TotalUsage()
+			if total.Limit > 0 {
+				coordBudget = total.Limit / 4
+			} else {
+				coordBudget = 256 << 20 // 256MB fallback
+			}
+		}
+		coordinator = enginepipeline.NewMemoryCoordinator(coordBudget, 0.10)
+	}
+
 	iter, err := physical.Build(prog, physical.BuildOptions{
-		Source: source,
-		Now:    time.Now(),
+		Source:       source,
+		Now:          time.Now(),
+		Context:      ctx,
+		Coordinator:  coordinator,
+		SpillManager: e.spillMgr,
+		GovBudget:    govBudget,
 	})
 	if err != nil {
+		// Close the budget if build fails to avoid leaking the query budget lease.
+		if govBudget != nil {
+			govBudget.Close()
+		}
 		return nil, fmt.Errorf("physical.Build: %w", err)
 	}
 
+	// Finalize the coordinator's initial sub-limit distribution now that all
+	// operators have been registered during Build.
+	if coordinator != nil {
+		coordinator.Finalize()
+	}
+
 	return &enginepipeline.BuildResult{
-		Iterator: iter,
+		Iterator:    iter,
+		Coordinator: coordinator,
+		GovBudget:   govBudget,
 	}, nil
 }
 
@@ -1481,6 +1546,17 @@ func extractMatchedRowsFromStages(stages []stats.StageStats) int64 {
 // hasTransformPartialAgg checks whether the program has a transformPartialAgg annotation.
 func hasTransformPartialAgg(_ *logical.Plan) bool {
 	return false
+}
+
+// planHasRootLimit checks whether the root of the logical plan is an explicit
+// Limit (head/tail). Used to avoid double-capping: if the user already wrote
+// | head N or | tail N, we do not inject an additional limit.
+func planHasRootLimit(plan *logical.Plan) bool {
+	if plan == nil || plan.Root == nil {
+		return false
+	}
+	_, ok := plan.Root.(*logical.Limit)
+	return ok
 }
 
 // collectIndexNamesFromPlan extracts all index names from a logical plan.

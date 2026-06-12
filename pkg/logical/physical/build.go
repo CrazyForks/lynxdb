@@ -43,6 +43,17 @@ type BuildOptions struct {
 	// operators. When nil, all memory accounts are nop.
 	Coordinator *pipeline.MemoryCoordinator
 
+	// SpillManager is the optional disk-spill lifecycle manager. When non-nil
+	// together with Coordinator, blocking operators (sort, join, aggregate,
+	// transaction, sessionize) use spill-capable constructors that fall back
+	// to disk when their coordinated memory budget is exceeded.
+	SpillManager *pipeline.SpillManager
+
+	// GovBudget is the per-query governor budget adapter. When set, CTE
+	// materialization and other unbounded collects use budgeted collection.
+	// Populated by the server query path; nil in CLI ephemeral mode.
+	GovBudget *memgov.BudgetAdapter
+
 	// BatchSize is the number of rows per batch. Zero means DefaultBatchSize.
 	BatchSize int
 
@@ -50,6 +61,11 @@ type BuildOptions struct {
 	// nodes (e.g. -1h, -7d). Injected for testability. Zero means time.Now()
 	// at build time (resolved lazily in the Source callback).
 	Now time.Time
+
+	// Context is the parent context for CTE materialization and other
+	// potentially long-running operations during build. When nil,
+	// context.Background() is used.
+	Context context.Context
 
 	// Collect, when non-nil, enables EXPLAIN ANALYZE instrumentation.
 	// Every built node is wrapped with a StatsIterator that records
@@ -80,6 +96,13 @@ func Build(plan *logical.Plan, opts BuildOptions) (pipeline.Iterator, error) {
 		lets: make(map[string][]map[string]event.Value),
 	}
 
+	// Resolve build context: honour BuildOptions.Context so CTE
+	// materialization respects the parent query's cancellation/deadline.
+	ctx := opts.Context
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	// Materialize CTEs eagerly (simple sequential for now; DAG parallelism
 	// is a future optimization).
 	for name, letPlan := range plan.Lets {
@@ -87,7 +110,15 @@ func Build(plan *logical.Plan, opts BuildOptions) (pipeline.Iterator, error) {
 		if err != nil {
 			return nil, fmt.Errorf("physical.Build: CTE $%s: %w", name, err)
 		}
-		rows, err := pipeline.CollectAll(context.Background(), iter)
+		// Use budgeted collection when a governor budget is available so CTE
+		// materialization cannot grow memory unboundedly.
+		var rows []map[string]event.Value
+		if opts.GovBudget != nil {
+			acct := opts.GovBudget.NewAccount("CTE:$" + name)
+			rows, err = pipeline.CollectAllWithBudget(ctx, iter, acct)
+		} else {
+			rows, err = pipeline.CollectAll(ctx, iter)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("physical.Build: CTE $%s collect: %w", name, err)
 		}
@@ -101,6 +132,26 @@ func Build(plan *logical.Plan, opts BuildOptions) (pipeline.Iterator, error) {
 type builder struct {
 	opts BuildOptions
 	lets map[string][]map[string]event.Value // materialized CTE rows
+}
+
+// operatorAccount returns a CoordinatedAccount for a spillable operator if a
+// coordinator is configured, otherwise returns a NopAccount. The reservation
+// parameter is the minimum useful memory for the operator type.
+//
+// When a GovBudget is available, the inner account is governor-backed
+// (spillable class). When only a Coordinator is set (test path), the inner
+// account is a NopAccount -- the coordinator still enforces sub-limits.
+func (b *builder) operatorAccount(label string, reservation int64) memgov.MemoryAccount {
+	if b.opts.Coordinator == nil {
+		return memgov.NopAccount()
+	}
+	var inner memgov.MemoryAccount
+	if b.opts.GovBudget != nil {
+		inner = b.opts.GovBudget.NewSpillableAccount(label)
+	} else {
+		inner = memgov.NopAccount()
+	}
+	return b.opts.Coordinator.RegisterOperator(label, inner, reservation)
 }
 
 // buildNode dispatches on the concrete logical node type.
@@ -386,7 +437,11 @@ func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, erro
 		groupBy = append(groupBy, k.Name)
 	}
 
-	return pipeline.NewAggregateIterator(child, aggs, groupBy, memgov.NopAccount()), nil
+	acct := b.operatorAccount("Aggregate", pipeline.ReservationAggregate)
+	if b.opts.SpillManager != nil {
+		return pipeline.NewAggregateIteratorWithSpill(child, aggs, groupBy, acct, b.opts.SpillManager), nil
+	}
+	return pipeline.NewAggregateIterator(child, aggs, groupBy, acct), nil
 }
 
 func (b *builder) buildWindowAggregate(child pipeline.Iterator, nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -402,7 +457,8 @@ func (b *builder) buildWindowAggregate(child pipeline.Iterator, nd *logical.Aggr
 
 	switch nd.Window.Variant {
 	case logical.WindowEventstats:
-		return pipeline.NewEventStatsIterator(child, aggs, groupBy, b.opts.batchSize()), nil
+		acct := b.operatorAccount("EventStats", pipeline.ReservationEventStats)
+		return pipeline.NewEventStatsIteratorWithBudget(child, aggs, groupBy, b.opts.batchSize(), acct), nil
 	case logical.WindowStreamstats:
 		window := 0
 		if nd.Window.Window != nil {
@@ -521,7 +577,11 @@ func (b *builder) buildSort(nd *logical.Sort) (pipeline.Iterator, error) {
 			Desc: k.Desc,
 		}
 	}
-	return pipeline.NewSortIterator(child, fields, b.opts.batchSize()), nil
+	acct := b.operatorAccount("Sort", pipeline.ReservationSort)
+	if b.opts.SpillManager != nil {
+		return pipeline.NewSortIteratorWithSpill(child, fields, b.opts.batchSize(), acct, b.opts.SpillManager), nil
+	}
+	return pipeline.NewSortIteratorWithBudget(child, fields, b.opts.batchSize(), acct), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -534,7 +594,8 @@ func (b *builder) buildLimit(nd *logical.Limit) (pipeline.Iterator, error) {
 		return nil, err
 	}
 	if nd.Tail {
-		return pipeline.NewTailIterator(child, int(nd.N), b.opts.batchSize()), nil
+		acct := b.operatorAccount("Tail", pipeline.ReservationSort)
+		return pipeline.NewTailIteratorWithBudget(child, int(nd.N), b.opts.batchSize(), acct), nil
 	}
 	return pipeline.NewLimitIterator(child, int(nd.N)), nil
 }
@@ -579,7 +640,11 @@ func (b *builder) buildJoin(nd *logical.Join) (pipeline.Iterator, error) {
 		field = nd.On[0]
 	}
 
-	return pipeline.NewJoinIterator(left, right, field, joinType), nil
+	acct := b.operatorAccount("Join", pipeline.ReservationJoin)
+	if b.opts.SpillManager != nil {
+		return pipeline.NewJoinIteratorWithSpill(left, right, field, joinType, acct, b.opts.SpillManager), nil
+	}
+	return pipeline.NewJoinIteratorWithBudget(left, right, field, joinType, acct), nil
 }
 
 // ---------------------------------------------------------------------------
@@ -757,7 +822,14 @@ func (b *builder) buildHelperTransaction(child pipeline.Iterator, nd *logical.He
 	}
 
 	// Transaction requires sorted input.
-	sorted := pipeline.NewSortIterator(child, []pipeline.SortField{{Name: "_time"}}, b.opts.batchSize())
+	sortAcct := b.operatorAccount("Transaction:Sort", pipeline.ReservationSort)
+	txAcct := b.operatorAccount("Transaction", pipeline.ReservationSort)
+	var sorted pipeline.Iterator
+	if b.opts.SpillManager != nil {
+		sorted = pipeline.NewSortIteratorWithSpill(child, []pipeline.SortField{{Name: "_time"}}, b.opts.batchSize(), sortAcct, b.opts.SpillManager)
+		return pipeline.NewTransactionIteratorWithSpill(sorted, field, dur, startsWith, endsWith, b.opts.batchSize(), txAcct, b.opts.SpillManager), nil
+	}
+	sorted = pipeline.NewSortIteratorWithBudget(child, []pipeline.SortField{{Name: "_time"}}, b.opts.batchSize(), sortAcct)
 	return pipeline.NewTransactionIterator(sorted, field, dur, startsWith, endsWith, b.opts.batchSize()), nil
 }
 
@@ -878,6 +950,11 @@ func (b *builder) buildHelperSessionize(child pipeline.Iterator, nd *logical.Hel
 	var groupBy []string
 	if gb, ok := nd.Options["by"]; ok {
 		groupBy = append(groupBy, exprFieldName(gb))
+	}
+	if b.opts.SpillManager != nil && b.opts.Coordinator != nil {
+		sessAcct := b.operatorAccount("Sessionize", pipeline.ReservationSort)
+		sessSortAcct := b.operatorAccount("Sessionize:Sort", pipeline.ReservationSort)
+		return pipeline.NewSessionizeIteratorWithBudget(child, maxPause, groupBy, b.opts.batchSize(), sessAcct, sessSortAcct, b.opts.SpillManager), nil
 	}
 	return pipeline.NewSessionizeIterator(child, maxPause, groupBy, b.opts.batchSize()), nil
 }

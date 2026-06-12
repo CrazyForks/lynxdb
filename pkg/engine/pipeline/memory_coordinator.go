@@ -10,12 +10,22 @@ import (
 // Reservation defaults: minimum useful memory for each spillable operator type.
 // An operator's sub-limit never goes below its reservation, ensuring it can
 // always hold at least one working unit (batch, partition, etc.) after a spill.
+// Exported so that physical.Build can reference them when registering operators.
 const (
-	reservationSort       int64 = 256 * 1024 // 256KB — one batch of materialized rows
-	reservationAggregate  int64 = 128 * 1024 // 128KB — one batch of group entries
-	reservationJoin       int64 = 256 * 1024 // 256KB — one partition hash table
-	reservationEventStats int64 = 256 * 1024 // 256KB — row buffer before spill
-	reservationDedup      int64 = 1 << 20    // 1MB   — bloom filter minimum
+	ReservationSort       int64 = 256 * 1024 // 256KB — one batch of materialized rows
+	ReservationAggregate  int64 = 128 * 1024 // 128KB — one batch of group entries
+	ReservationJoin       int64 = 256 * 1024 // 256KB — one partition hash table
+	ReservationEventStats int64 = 256 * 1024 // 256KB — row buffer before spill
+	ReservationDedup      int64 = 1 << 20    // 1MB   — bloom filter minimum
+)
+
+// Unexported aliases for backward compatibility within this package.
+const (
+	reservationSort       = ReservationSort
+	reservationAggregate  = ReservationAggregate
+	reservationJoin       = ReservationJoin
+	reservationEventStats = ReservationEventStats
+	reservationDedup      = ReservationDedup
 )
 
 // OperatorPhase tracks the lifecycle phase of a spillable operator.

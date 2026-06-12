@@ -411,11 +411,14 @@ func applyCoordCommands(ctx context.Context, rows []map[string]event.Value, coor
 	}
 
 	// Build the physical pipeline with a Source hook that returns the merged rows.
+	// Pass the caller's context so CTE materialization and pipeline execution
+	// honour cancellation and deadlines.
 	iter, err := physical.Build(plan, physical.BuildOptions{
 		Source: func(_ *logical.Scan) (pipeline.Iterator, error) {
 			return pipeline.NewRowScanIterator(rows, pipeline.DefaultBatchSize), nil
 		},
-		Now: time.Now(),
+		Now:     time.Now(),
+		Context: ctx,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("applyCoordCommands: physical.Build: %w", err)

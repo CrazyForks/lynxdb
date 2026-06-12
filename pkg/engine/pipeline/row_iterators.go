@@ -160,19 +160,25 @@ func NewProjectIterator(child Iterator, fields []string, remove bool) *ProjectIt
 	return &ProjectIterator{child: child, fields: fields, remove: remove, hasGlob: hasGlob}
 }
 
+// TailIterator keeps the last N rows from a child using a fixed-capacity ring
+// buffer. Memory usage is bounded to O(count) regardless of input size. The
+// ring buffer pattern mirrors pkg/usecases/tail.go catchupRing.
 type TailIterator struct {
 	child    Iterator
 	count    int
-	buffer   []map[string]event.Value
+	ring     []map[string]event.Value // fixed-capacity ring buffer
+	ringPos  int                      // next write position when ring is full
+	ringFull bool                     // true once the ring has wrapped
 	consumed bool
-	pos      int
+	emitted  bool
 	acct     memgov.MemoryAccount
+	tracked  int64 // bytes currently tracked in the account
 }
 
 func (t *TailIterator) Init(ctx context.Context) error { return t.child.Init(ctx) }
 func (t *TailIterator) Next(ctx context.Context) (*Batch, error) {
 	if !t.consumed {
-		// Consume all rows from child, keeping the last t.count.
+		// Consume all rows from child, keeping the last t.count in a ring buffer.
 		for {
 			if err := ctx.Err(); err != nil {
 				return nil, err
@@ -186,37 +192,93 @@ func (t *TailIterator) Next(ctx context.Context) (*Batch, error) {
 			}
 			for i := 0; i < batch.Len; i++ {
 				row := batch.Row(i)
-				t.buffer = append(t.buffer, row)
-				if t.acct != nil {
-					_ = t.acct.Grow(EstimateRowBytes(row))
+				rowBytes := EstimateRowBytes(row)
+
+				if !t.ringFull {
+					// Ring not yet full -- grow into capacity.
+					if t.acct != nil {
+						if err := t.acct.Grow(rowBytes); err != nil {
+							return nil, err
+						}
+						t.tracked += rowBytes
+					}
+					t.ring = append(t.ring, row)
+					if len(t.ring) == t.count {
+						t.ringFull = true
+						t.ringPos = 0
+					}
+				} else {
+					// Ring full -- evict oldest, shrink its estimate, grow new.
+					evicted := t.ring[t.ringPos]
+					evictedBytes := EstimateRowBytes(evicted)
+					if t.acct != nil {
+						t.acct.Shrink(evictedBytes)
+						t.tracked -= evictedBytes
+						if err := t.acct.Grow(rowBytes); err != nil {
+							return nil, err
+						}
+						t.tracked += rowBytes
+					}
+					t.ring[t.ringPos] = row
+					t.ringPos = (t.ringPos + 1) % t.count
 				}
 			}
 		}
-		// Trim to last t.count rows.
-		if len(t.buffer) > t.count {
-			t.buffer = t.buffer[len(t.buffer)-t.count:]
-		}
 		t.consumed = true
-		t.pos = 0
 	}
-	if t.pos >= len(t.buffer) {
+	if t.emitted || len(t.ring) == 0 {
 		return nil, nil
 	}
-	// Emit remaining rows as a single batch.
-	rows := t.buffer[t.pos:]
-	t.pos = len(t.buffer)
+	t.emitted = true
+
+	// Linearize ring to chronological order.
+	var rows []map[string]event.Value
+	if !t.ringFull {
+		rows = t.ring
+	} else {
+		rows = make([]map[string]event.Value, t.count)
+		copy(rows, t.ring[t.ringPos:])
+		copy(rows[t.count-t.ringPos:], t.ring[:t.ringPos])
+	}
 	return RowsToBatch(rows), nil
 }
-func (t *TailIterator) Close() error        { return t.child.Close() }
+
+func (t *TailIterator) Close() error {
+	if t.acct != nil {
+		if t.tracked > 0 {
+			t.acct.Shrink(t.tracked)
+			t.tracked = 0
+		}
+		t.acct.Close()
+	}
+	return t.child.Close()
+}
 func (t *TailIterator) Schema() []FieldInfo { return t.child.Schema() }
 
 func NewTailIterator(child Iterator, count, _ int) *TailIterator {
-	return &TailIterator{child: child, count: count}
+	if count <= 0 {
+		count = 10
+	}
+	return &TailIterator{
+		child: child,
+		count: count,
+		ring:  make([]map[string]event.Value, 0, count),
+		acct:  memgov.NopAccount(),
+	}
 }
 
-// NewTailIteratorWithBudget creates a TailIterator that tracks memory usage.
+// NewTailIteratorWithBudget creates a TailIterator that tracks memory usage
+// via the provided account. The account is Closed when the iterator is closed.
 func NewTailIteratorWithBudget(child Iterator, count, batchSize int, acct memgov.MemoryAccount) *TailIterator {
-	return &TailIterator{child: child, count: count, acct: acct}
+	if count <= 0 {
+		count = 10
+	}
+	return &TailIterator{
+		child: child,
+		count: count,
+		ring:  make([]map[string]event.Value, 0, count),
+		acct:  memgov.EnsureAccount(acct),
+	}
 }
 
 // RowsToBatch converts row maps to a columnar batch.

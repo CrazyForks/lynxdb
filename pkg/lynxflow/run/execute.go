@@ -49,6 +49,17 @@ type Options struct {
 	// queries must leave it false so user-supplied queries cannot write
 	// arbitrary files on the server.
 	TeeEnabled bool
+
+	// Coordinator, when set, provides per-query memory budget coordination
+	// for spillable operators. Nil (the default) means all operators use
+	// NopAccount -- appropriate for CLI ephemeral mode where the operator
+	// controls both data and query. Callers that embed run.Execute in a
+	// budgeted context (e.g., server-side view backfill) may set this.
+	Coordinator *pipeline.MemoryCoordinator
+
+	// SpillManager, when set together with Coordinator, enables disk spill
+	// for blocking operators in CLI mode. Nil by default.
+	SpillManager *pipeline.SpillManager
 }
 
 func (o *Options) defaultSource() string {
@@ -99,10 +110,13 @@ func Execute(ctx context.Context, query string, events map[string][]*event.Event
 	source := physical.NewStorageSourceFromMapWithNow(events, defaultSrc, now, opts.ScanStats)
 
 	iter, err := physical.Build(plan, physical.BuildOptions{
-		Source:     source,
-		BatchSize:  opts.BatchSize,
-		Now:        now,
-		TeeEnabled: opts.TeeEnabled,
+		Source:       source,
+		BatchSize:    opts.BatchSize,
+		Now:          now,
+		TeeEnabled:   opts.TeeEnabled,
+		Coordinator:  opts.Coordinator,
+		SpillManager: opts.SpillManager,
+		Context:      ctx,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("lynxflow.Execute: build: %w", err)
@@ -154,10 +168,13 @@ func ExecuteWithSource(ctx context.Context, query string, source func(*logical.S
 	}
 
 	iter, err := physical.Build(plan, physical.BuildOptions{
-		Source:     source,
-		BatchSize:  opts.BatchSize,
-		Now:        now,
-		TeeEnabled: opts.TeeEnabled,
+		Source:       source,
+		BatchSize:    opts.BatchSize,
+		Now:          now,
+		TeeEnabled:   opts.TeeEnabled,
+		Coordinator:  opts.Coordinator,
+		SpillManager: opts.SpillManager,
+		Context:      ctx,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("lynxflow.ExecuteWithSource: build: %w", err)

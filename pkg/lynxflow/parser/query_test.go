@@ -560,8 +560,7 @@ func diagMsgs(diags []Diag) []string {
 // format-roundtrip (e.g. empty backtick identifiers).
 //
 // The check uses a brute-force approach: format the query with String() and
-// look for sentinels. This is simpler and more robust than trying to
-// enumerate every payload field.
+// look for sentinels. This avoids missing payload fields during AST changes.
 func hasErrorExpr(q *ast.Query) bool {
 	s := q.String()
 	if strings.Contains(s, "<error>") || strings.Contains(s, "<nil>") {

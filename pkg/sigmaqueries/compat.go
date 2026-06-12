@@ -25,10 +25,9 @@ type CompatFixture struct {
 	Title  string   `json:"title,omitempty"`
 	Level  string   `json:"level,omitempty"`
 	Tags   []string `json:"tags,omitempty"`
-	// SPL2 is the legacy rsigma SPL2 output for this fixture, retained only
-	// for expected_match_count bookkeeping. The SPL2 language was removed in
-	// RFC-002 Phase 10; conformance runs against the .lynxflow goldens.
-	SPL2               string   `json:"spl2"`
+	// LynxFlow is the hand-maintained LynxFlow golden for this fixture —
+	// the same text as the .lynxflow file under testdata/golden.
+	LynxFlow           string   `json:"lynxflow"`
 	Format             string   `json:"format"`
 	Shapes             []string `json:"shapes"`
 	ExpectedMatchCount int      `json:"expected_match_count"`

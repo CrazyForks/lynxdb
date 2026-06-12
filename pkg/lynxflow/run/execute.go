@@ -101,6 +101,11 @@ func Execute(ctx context.Context, query string, events map[string][]*event.Event
 	// 4. Optimize
 	plan, _ = opt.Optimize(plan)
 
+	// 4.5. Intercept materialize: ephemeral/CLI mode cannot create MVs.
+	if mat, ok := physical.IsMaterializeRoot(plan.Root); ok {
+		return nil, &physical.ErrMaterializeInEphemeral{ViewName: mat.Name}
+	}
+
 	// 5. Build
 	now := opts.Now
 	if now.IsZero() {

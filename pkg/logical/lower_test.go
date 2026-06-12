@@ -373,3 +373,82 @@ func assertNodeType[T Node](t *testing.T, n Node, msg string) {
 		t.Fatalf("%s: got %T, want %T", msg, n, *new(T))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Compare lowering tests
+// ---------------------------------------------------------------------------
+
+func TestLower_Compare_WithoutAgg_EmitsDiagnostic(t *testing.T) {
+	q, pDiags := parser.Parse(`from main | compare previous 1h`)
+	if len(pDiags) > 0 {
+		t.Fatalf("parse error: %v", formatDiags(pDiags))
+	}
+	desugared, _ := desugar.Desugar(q, desugar.Options{DefaultSource: "main"})
+	_, diags := Lower(desugared, Options{DefaultSource: "main"})
+
+	found := false
+	for _, d := range diags {
+		if d.Code == "L002" && strings.Contains(d.Message, "compare requires an aggregated pipeline") {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected L002 diagnostic for compare without aggregation; diags: %v", formatDiags(diags))
+	}
+}
+
+func TestLower_Compare_WithAgg_ProducesJoinTree(t *testing.T) {
+	plan, diags := parseDesugarLower(t,
+		`from main | stats count() by level | compare previous 1h`)
+	assertNoDiagErrors(t, diags)
+
+	// Root should be an Extend (change_* columns).
+	assertNodeType[*Extend](t, plan.Root, "root should be Extend (change_* columns)")
+
+	// The Extend's input should be a Join.
+	ext := plan.Root.(*Extend)
+	assertNodeType[*Join](t, ext.Input, "Extend input should be Join")
+
+	join := ext.Input.(*Join)
+	if join.Type != "left" {
+		t.Errorf("join type = %q, want %q", join.Type, "left")
+	}
+
+	// Join keys should include "level".
+	hasLevel := false
+	for _, k := range join.On {
+		if k == "level" {
+			hasLevel = true
+		}
+	}
+	if !hasLevel {
+		t.Errorf("join.On should include 'level', got %v", join.On)
+	}
+
+	// The change assignments should include change_count().
+	hasChangeCount := false
+	for _, a := range ext.Assignments {
+		if a.Name == "change_count()" {
+			hasChangeCount = true
+		}
+	}
+	if !hasChangeCount {
+		t.Errorf("expected change_count() assignment, got: %v", ext.Assignments)
+	}
+}
+
+func TestLower_Materialize_ProducesMaterializeNode(t *testing.T) {
+	plan, diags := parseDesugarLower(t,
+		`from main | stats count() | materialize "mv_test" retention=90d`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Materialize](t, plan.Root, "root should be Materialize")
+	mat := plan.Root.(*Materialize)
+	if mat.Name != "mv_test" {
+		t.Errorf("materialize name = %q, want %q", mat.Name, "mv_test")
+	}
+	// Retention is the string representation of the duration expression.
+	// 90d may be rendered as "2160h0m0s" or "2160h" depending on format.
+	if mat.Retention == "" {
+		t.Error("materialize retention is empty, expected non-empty duration")
+	}
+}

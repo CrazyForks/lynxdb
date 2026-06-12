@@ -195,7 +195,12 @@ func (b *builder) buildNode(n logical.Node) (pipeline.Iterator, error) {
 	case *logical.Helper:
 		iter, err = b.buildHelper(nd)
 	case *logical.Materialize:
-		return nil, &NotYetImplementedError{Feature: "Materialize (Phase 8)"}
+		// Backstop: callers should intercept Materialize before physical.Build.
+		// In server mode, QueryService.Submit strips the Materialize root and
+		// delegates to ViewService.Create. In CLI mode, run.Execute detects it
+		// and returns ErrMaterializeInEphemeral. If we reach here, it means a
+		// new caller forgot to handle it.
+		return nil, &NotYetImplementedError{Feature: "Materialize (should be intercepted before physical.Build)"}
 	case *logical.Tee:
 		iter, err = b.buildTee(nd)
 	default:
@@ -207,15 +212,34 @@ func (b *builder) buildNode(n logical.Node) (pipeline.Iterator, error) {
 	return wrapCollect(iter, n, b.opts.Collect), nil
 }
 
-// NotYetImplementedError is returned for nodes whose physical mapping is
-// deferred to a future PR. Callers can type-assert to distinguish "not yet
-// implemented" from genuine errors.
+// NotYetImplementedError is returned for logical nodes whose physical mapping
+// is not yet wired. Callers can type-assert to distinguish "not yet
+// implemented" from genuine errors. The REST layer maps this to 422
+// UNSUPPORTED_COMMAND so future nodes degrade gracefully.
 type NotYetImplementedError struct {
 	Feature string
 }
 
 func (e *NotYetImplementedError) Error() string {
 	return fmt.Sprintf("physical.Build: not yet implemented: %s", e.Feature)
+}
+
+// ErrMaterializeInEphemeral is returned by CLI/ephemeral-mode callers when a
+// query contains a trailing | materialize stage. Materialized views require a
+// persistent server; the CLI file/pipe mode cannot create them.
+type ErrMaterializeInEphemeral struct {
+	ViewName string
+}
+
+func (e *ErrMaterializeInEphemeral) Error() string {
+	return fmt.Sprintf("materialized views require a running server; use: lynxdb mv create %s '<query>'", e.ViewName)
+}
+
+// IsMaterializeRoot reports whether the plan's root node is a Materialize node.
+// Callers use this to intercept materialize before physical.Build.
+func IsMaterializeRoot(root logical.Node) (*logical.Materialize, bool) {
+	m, ok := root.(*logical.Materialize)
+	return m, ok
 }
 
 // ---------------------------------------------------------------------------
@@ -750,11 +774,10 @@ func (b *builder) buildParse(nd *logical.Parse) (pipeline.Iterator, error) {
 // Helper
 // ---------------------------------------------------------------------------
 
-// helperNotYetImplemented lists helper names that need query-replay context
-// or are otherwise not yet wirable.
-var helperNotYetImplemented = map[string]string{
-	"compare": "compare requires query-replay context",
-}
+// helperNotYetImplemented lists helper names that are not yet wirable.
+// Compare was removed: it is now expanded in the lowerer (lower.go) as a
+// logical-IR rewrite (time-shifted prefix replay + key join).
+var helperNotYetImplemented = map[string]string{}
 
 func (b *builder) buildHelper(nd *logical.Helper) (pipeline.Iterator, error) {
 	if reason, ok := helperNotYetImplemented[nd.Name]; ok {

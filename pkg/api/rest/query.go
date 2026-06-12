@@ -12,9 +12,11 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/api/apicontracts"
 	"github.com/lynxbase/lynxdb/pkg/auth"
 	"github.com/lynxbase/lynxdb/pkg/config"
+	"github.com/lynxbase/lynxdb/pkg/logical/physical"
 	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/planner"
 	"github.com/lynxbase/lynxdb/pkg/server"
+	"github.com/lynxbase/lynxdb/pkg/storage/views"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
 
@@ -186,6 +188,28 @@ func handlePlanError(w http.ResponseWriter, err error) {
 
 		return
 	}
+
+	// NotYetImplementedError: a logical node has no physical mapping yet.
+	// Return 422 UNSUPPORTED_COMMAND so clients get a clear, non-500 signal.
+	var nie *physical.NotYetImplementedError
+	if errors.As(err, &nie) {
+		respondError(w, ErrCodeUnsupportedCommand, http.StatusUnprocessableEntity, nie.Error(),
+			WithSuggestion("This feature is not yet available. Check the docs for the current command set."))
+		return
+	}
+
+	// ErrMaterializeNoViewService: server misconfiguration.
+	if errors.Is(err, usecases.ErrMaterializeNoViewService) {
+		respondInternalError(w, err.Error())
+		return
+	}
+
+	// View already exists: from inline | materialize on a duplicate name.
+	if errors.Is(err, views.ErrViewAlreadyExists) {
+		respondError(w, ErrCodeAlreadyExists, http.StatusConflict, err.Error())
+		return
+	}
+
 	respondInternalError(w, err.Error())
 }
 

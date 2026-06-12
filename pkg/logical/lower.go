@@ -212,7 +212,7 @@ func (l *lowerer) lowerStage(input Node, s ast.Stage) Node {
 		return l.lowerTee(input, s)
 	// Helpers
 	case "compare":
-		return l.lowerHelper(input, s, helperExtraFields(s.Name))
+		return l.lowerCompare(input, s)
 	case "patterns":
 		return l.lowerHelperGeneric(input, s, s.Patterns, helperExtraFields(s.Name))
 	case "outliers":
@@ -555,18 +555,356 @@ func (l *lowerer) lowerProjectFused(input Node, stages []ast.Stage) Node {
 	}
 }
 
+// lowerCompare expands `| compare previous <dur>` into a logical IR subtree
+// that replays the pipeline prefix over a time-shifted window and joins the
+// results with the current window. The expansion requires the input to be an
+// Aggregate (plain stats, not eventstats/streamstats).
+//
+// Expansion shape (for `<prefix ending in agg> | compare previous <dur>`):
+//
+//	Join(type=left, on=[group-by-keys])
+//	  LEFT:  <prefix as-is>
+//	  RIGHT: deep-copy of prefix with Scan time bounds shifted back by <dur>
+//	         + if TimeBin present: Extend(_time = _time + <dur>) for alignment
+//	         + Project(rename agg cols: c -> previous_c)
+//	POST-JOIN:
+//	  Extend(change_c = c - previous_c for each numeric agg output)
+func (l *lowerer) lowerCompare(input Node, s ast.Stage) Node {
+	// 1. Validate: input must be an Aggregate (plain stats).
+	agg, ok := input.(*Aggregate)
+	if !ok {
+		l.addDiag("L002", parser.SeverityError, s.Pos,
+			"compare requires an aggregated pipeline (| stats ... | compare); "+
+				"the preceding stage is not a stats aggregation")
+		return input
+	}
+	if agg.Window != nil {
+		l.addDiag("L002", parser.SeverityError, s.Pos,
+			"compare is not supported with eventstats or streamstats; use plain stats")
+		return input
+	}
+
+	// 2. Extract the shift duration.
+	if s.Compare == nil || s.Compare.Shift == nil {
+		l.addDiag("L002", parser.SeverityError, s.Pos,
+			"compare requires a duration (e.g. compare previous 1h)")
+		return input
+	}
+	shiftExpr := s.Compare.Shift
+
+	// 3. Identify aggregate output columns and group-by keys.
+	aggSchema := agg.Schema()
+	var groupByKeys []string
+	if agg.TimeBin != nil {
+		groupByKeys = append(groupByKeys, "_time")
+	}
+	for _, k := range agg.Keys {
+		groupByKeys = append(groupByKeys, k.Name)
+	}
+
+	// Aggregate-output column names (the non-group-by columns).
+	groupKeySet := make(map[string]bool, len(groupByKeys))
+	for _, k := range groupByKeys {
+		groupKeySet[k] = true
+	}
+	var aggOutputCols []string
+	for _, f := range aggSchema {
+		if !groupKeySet[f.Name] {
+			aggOutputCols = append(aggOutputCols, f.Name)
+		}
+	}
+
+	// 4. Deep-copy the entire prefix chain (Scan ... Aggregate).
+	prevRoot := deepCopyChain(input)
+
+	// 5. Shift time bounds on the copy's Scan.
+	prevScan := findScan(prevRoot)
+	if prevScan != nil {
+		shiftScanTimeBounds(prevScan, shiftExpr)
+	}
+
+	// 6. If TimeBin is present, add an Extend to the copy that aligns the
+	// time bucket: _time = _time + <dur> so the shifted window's buckets
+	// match the current window's bucket boundaries.
+	var prevPipeline Node = prevRoot
+	if agg.TimeBin != nil {
+		alignExpr := &ast.Binary{
+			Op:    ast.OpAdd,
+			Left:  &ast.Ident{Name: "_time"},
+			Right: shiftExpr,
+		}
+		prevPipeline = &Extend{
+			unaryNode:   unaryNode{Input: prevPipeline},
+			Assignments: []Assignment{{Name: "_time", Value: alignExpr}},
+		}
+	}
+
+	// 7. Rename aggregate output columns to previous_*.
+	var renameCols []ProjectCol
+	for _, col := range aggOutputCols {
+		renameCols = append(renameCols, ProjectCol{
+			Action: ProjectRename,
+			Name:   "previous_" + col,
+			From:   col,
+		})
+	}
+	prevPipeline = &Project{
+		unaryNode: unaryNode{Input: prevPipeline},
+		Cols:      renameCols,
+	}
+
+	// 8. Join current with previous on group-by keys.
+	joinOn := groupByKeys
+	if len(joinOn) == 0 {
+		// No group-by: cross-join on no keys (single row on each side).
+		joinOn = nil
+	}
+
+	joined := &Join{
+		unaryNode: unaryNode{Input: input},
+		Type:      "left",
+		On:        joinOn,
+		Right:     prevPipeline,
+	}
+
+	// 9. Extend change_* columns: change_c = c - previous_c for each agg output.
+	var changeAssigns []Assignment
+	for _, col := range aggOutputCols {
+		changeAssigns = append(changeAssigns, Assignment{
+			Name: "change_" + col,
+			Value: &ast.Binary{
+				Op:    ast.OpSub,
+				Left:  &ast.Ident{Name: col},
+				Right: &ast.Ident{Name: "previous_" + col},
+			},
+		})
+	}
+
+	if len(changeAssigns) == 0 {
+		return joined
+	}
+
+	return &Extend{
+		unaryNode:   unaryNode{Input: joined},
+		Assignments: changeAssigns,
+	}
+}
+
+// deepCopyChain creates a deep copy of a node chain (linear pipeline).
+// Each node is cloned and re-linked. For Join, the Right sub-plan is also
+// deep-copied. AST expression pointers are SHARED (not deep-copied) because
+// the optimizer never mutates existing AST expressions (it creates new ones).
+func deepCopyChain(root Node) Node {
+	if root == nil {
+		return nil
+	}
+
+	// Linearize: walk from root to leaf.
+	var chain []Node
+	cur := root
+	for cur != nil {
+		chain = append(chain, cur)
+		children := cur.Children()
+		if len(children) == 0 {
+			break
+		}
+		cur = children[0]
+	}
+
+	// Clone from leaf to root, re-linking children.
+	var prev Node
+	for i := len(chain) - 1; i >= 0; i-- {
+		cloned := shallowClone(chain[i])
+		if prev != nil {
+			cloned.SetChildren([]Node{prev})
+		}
+		// For Join, deep-copy the Right sub-plan too.
+		if j, ok := cloned.(*Join); ok {
+			if origJ, ok := chain[i].(*Join); ok && origJ.Right != nil {
+				j.Right = deepCopyChain(origJ.Right)
+			}
+		}
+		prev = cloned
+	}
+	return prev
+}
+
+// shallowClone creates a shallow copy of a logical node.
+func shallowClone(n Node) Node {
+	switch x := n.(type) {
+	case *Scan:
+		c := *x
+		// Deep-copy mutable slices.
+		c.Sources = append([]SourcePattern(nil), x.Sources...)
+		c.OutputSchema = append([]sema.Field(nil), x.OutputSchema...)
+		c.Pushdown = Pushdown{
+			FieldPredicates: append([]ast.Expr(nil), x.Pushdown.FieldPredicates...),
+			BloomTerms:      append([]string(nil), x.Pushdown.BloomTerms...),
+			RawTerms:        append([]string(nil), x.Pushdown.RawTerms...),
+			Columns:         append([]string(nil), x.Pushdown.Columns...),
+		}
+		if x.Pushdown.TimeBounds != nil {
+			tb := *x.Pushdown.TimeBounds
+			c.Pushdown.TimeBounds = &tb
+		}
+		if x.TimeRange != nil {
+			tr := *x.TimeRange
+			c.TimeRange = &tr
+		}
+		return &c
+	case *Filter:
+		c := *x
+		return &c
+	case *Extend:
+		c := *x
+		c.Assignments = append([]Assignment(nil), x.Assignments...)
+		c.cachedSchema = nil
+		return &c
+	case *Project:
+		c := *x
+		c.Cols = append([]ProjectCol(nil), x.Cols...)
+		c.cachedSchema = nil
+		return &c
+	case *Aggregate:
+		c := *x
+		c.Aggs = append([]Agg(nil), x.Aggs...)
+		c.Keys = append([]Key(nil), x.Keys...)
+		c.cachedSchema = nil
+		if x.TimeBin != nil {
+			tb := *x.TimeBin
+			c.TimeBin = &tb
+		}
+		if x.Window != nil {
+			w := *x.Window
+			c.Window = &w
+		}
+		return &c
+	case *Sort:
+		c := *x
+		c.Keys = append([]SortKey(nil), x.Keys...)
+		return &c
+	case *Limit:
+		c := *x
+		return &c
+	case *Dedup:
+		c := *x
+		c.Fields = append([]string(nil), x.Fields...)
+		return &c
+	case *TopK:
+		c := *x
+		c.SortKeys = append([]SortKey(nil), x.SortKeys...)
+		return &c
+	case *Join:
+		c := *x
+		c.On = append([]string(nil), x.On...)
+		c.cachedSchema = nil
+		return &c
+	case *Union:
+		c := *x
+		c.Inputs = append([]Node(nil), x.Inputs...)
+		c.cachedSchema = nil
+		return &c
+	case *Parse:
+		c := *x
+		c.Captures = append([]Capture(nil), x.Captures...)
+		c.FirstOf = append([]string(nil), x.FirstOf...)
+		c.cachedSchema = nil
+		return &c
+	case *Explode:
+		c := *x
+		c.cachedSchema = nil
+		return &c
+	case *Describe:
+		c := *x
+		return &c
+	case *Helper:
+		c := *x
+		opts := make(map[string]ast.Expr, len(x.Options))
+		for k, v := range x.Options {
+			opts[k] = v
+		}
+		c.Options = opts
+		c.Positional = append([]ast.Expr(nil), x.Positional...)
+		c.extraFields = append([]sema.Field(nil), x.extraFields...)
+		c.cachedSchema = nil
+		return &c
+	case *Empty:
+		c := *x
+		return &c
+	case *Materialize:
+		c := *x
+		return &c
+	case *Tee:
+		c := *x
+		return &c
+	}
+	// Fallback: return the original (should not happen for known types).
+	return n
+}
+
+// findScan walks down the chain and returns the first Scan node, or nil.
+func findScan(root Node) *Scan {
+	cur := root
+	for cur != nil {
+		if s, ok := cur.(*Scan); ok {
+			return s
+		}
+		children := cur.Children()
+		if len(children) == 0 {
+			return nil
+		}
+		cur = children[0]
+	}
+	return nil
+}
+
+// shiftScanTimeBounds shifts a Scan's time range back by the given duration
+// expression. If the Scan already has bracket time bounds, the start and end
+// are adjusted by subtracting the shift. If there are no explicit bounds, a
+// pushdown hint is set instead.
+func shiftScanTimeBounds(scan *Scan, shiftExpr ast.Expr) {
+	if scan.TimeRange != nil {
+		// Shift both start and end back by the duration.
+		if scan.TimeRange.Start != nil {
+			scan.TimeRange.Start = &ast.Binary{
+				Op:    ast.OpSub,
+				Left:  scan.TimeRange.Start,
+				Right: shiftExpr,
+			}
+		}
+		if scan.TimeRange.End != nil {
+			scan.TimeRange.End = &ast.Binary{
+				Op:    ast.OpSub,
+				Left:  scan.TimeRange.End,
+				Right: shiftExpr,
+			}
+		}
+	}
+	// Also shift pushdown time bounds if present.
+	if scan.Pushdown.TimeBounds != nil {
+		if scan.Pushdown.TimeBounds.Start != nil {
+			scan.Pushdown.TimeBounds.Start = &ast.Binary{
+				Op:    ast.OpSub,
+				Left:  scan.Pushdown.TimeBounds.Start,
+				Right: shiftExpr,
+			}
+		}
+		if scan.Pushdown.TimeBounds.End != nil {
+			scan.Pushdown.TimeBounds.End = &ast.Binary{
+				Op:    ast.OpSub,
+				Left:  scan.Pushdown.TimeBounds.End,
+				Right: shiftExpr,
+			}
+		}
+	}
+}
+
 func (l *lowerer) lowerHelper(input Node, s ast.Stage, extra []sema.Field) Node {
 	opts := make(map[string]ast.Expr)
 	var positional []ast.Expr
 
 	// Extract what we can from known payloads.
 	switch s.Name {
-	case "compare":
-		if s.Compare != nil {
-			if s.Compare.Shift != nil {
-				opts["shift"] = s.Compare.Shift
-			}
-		}
 	case "transaction":
 		if s.Transaction != nil {
 			positional = s.Transaction.Fields
@@ -627,11 +965,6 @@ func (l *lowerer) lowerHelperGeneric(input Node, s ast.Stage, gp *ast.GenericOpt
 // Matches the sema analyzer's knowledge.
 func helperExtraFields(name string) []sema.Field {
 	switch name {
-	case "compare":
-		// compare adds previous_*/change_* for each field; we can't know
-		// the fields statically here, so return nothing and let Schema()
-		// pass through the input.
-		return nil
 	case "patterns":
 		return []sema.Field{
 			{Name: "_pattern", Type: sema.TypeString},

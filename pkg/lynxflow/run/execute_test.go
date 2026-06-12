@@ -167,16 +167,6 @@ func TestExecute_ParseJSON_MixedValidity_Drop(t *testing.T) {
 
 // ---------------------------------------------------------------------------
 // Test: parse json on_error=null
-//
-// BUG: This test exposes a real bug in the LynxFlow parser.
-// The parser's identLike() function does not accept `null` because it is
-// classified as a hard keyword (lexer.Null), not a soft keyword or ident.
-// This means `parse json on_error null` fails at parse time with
-// "expected stage name, got null" instead of being accepted as the on_error
-// mode per RFC-002 7.2.
-// Expected: on_error=null is a valid on_error mode per RFC-002 7.2.
-// Actual: parser rejects `null` as a stage name because Null is a hard keyword.
-// The application code must be fixed -- do not modify this test to pass.
 // ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_MixedValidity_Null(t *testing.T) {
@@ -355,4 +345,148 @@ func assertStringField(t *testing.T, row map[string]event.Value, field, want str
 	if v.String() != want {
 		t.Errorf("row %d: %s: got %q, want %q", rowIdx, field, v.String(), want)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Test: materialize in ephemeral mode returns a clear error
+// ---------------------------------------------------------------------------
+
+func TestExecute_Materialize_EphemeralError(t *testing.T) {
+	events := makeRawEvents(`{"level":"error"}`, `{"level":"info"}`)
+
+	_, err := Execute(context.Background(),
+		`from main | stats count() by level | materialize "mv_test" retention=90d`,
+		events, Options{})
+	if err == nil {
+		t.Fatal("expected error for materialize in ephemeral mode, got nil")
+	}
+
+	errMsg := err.Error()
+	// The error should mention the view name and suggest lynxdb mv create.
+	if !strings.Contains(errMsg, "mv_test") {
+		t.Errorf("error should mention view name, got: %s", errMsg)
+	}
+	if !strings.Contains(errMsg, "lynxdb mv create") {
+		t.Errorf("error should suggest lynxdb mv create, got: %s", errMsg)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test: compare requires aggregated pipeline
+// ---------------------------------------------------------------------------
+
+func TestExecute_Compare_RequiresAggregation(t *testing.T) {
+	events := makeRawEvents(`{"level":"error"}`)
+
+	_, err := Execute(context.Background(),
+		`from main | compare previous 1h`,
+		events, Options{})
+	if err == nil {
+		t.Fatal("expected error for compare without aggregation, got nil")
+	}
+	if !strings.Contains(err.Error(), "compare requires an aggregated pipeline") {
+		t.Errorf("unexpected error: %s", err.Error())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test: compare with aggregation executes end-to-end
+// ---------------------------------------------------------------------------
+
+func TestExecute_Compare_WithAggregation(t *testing.T) {
+	// Create two windows of events:
+	// - "current" window: 2h ago to 1h ago (2 events)
+	// - We query from main (all events) | stats count() | compare previous 2h
+	// The compare should produce previous_count() and change_count() columns.
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+
+	events := make([]*event.Event, 4)
+	// Events at t-90m and t-80m (in the "current" 0..now window)
+	events[0] = event.NewEvent(now.Add(-90*time.Minute), `{"level":"error"}`)
+	events[0].Index = "main"
+	events[1] = event.NewEvent(now.Add(-80*time.Minute), `{"level":"info"}`)
+	events[1].Index = "main"
+	// Events at t-3h (in the "previous" window shifted back by 2h)
+	events[2] = event.NewEvent(now.Add(-3*time.Hour), `{"level":"warn"}`)
+	events[2].Index = "main"
+	events[3] = event.NewEvent(now.Add(-4*time.Hour), `{"level":"debug"}`)
+	events[3].Index = "main"
+
+	store := map[string][]*event.Event{"main": events}
+
+	rows, err := Execute(context.Background(),
+		`from main | stats count() | compare previous 2h`,
+		store, Options{Now: now})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// Should produce at least 1 row with count(), previous_count(), change_count().
+	if len(rows) == 0 {
+		t.Fatal("expected at least 1 row, got 0")
+	}
+
+	row := rows[0]
+	// Check that previous_count() and change_count() columns exist.
+	if _, ok := row["previous_count()"]; !ok {
+		t.Errorf("missing previous_count() column; row keys: %v", rowKeys(row))
+	}
+	if _, ok := row["change_count()"]; !ok {
+		t.Errorf("missing change_count() column; row keys: %v", rowKeys(row))
+	}
+}
+
+// TestExecute_Compare_WithGroupBy tests compare with a group-by variant.
+func TestExecute_Compare_WithGroupBy(t *testing.T) {
+	now := time.Date(2026, 6, 12, 12, 0, 0, 0, time.UTC)
+
+	mkEvent := func(offset time.Duration, raw string, fields map[string]event.Value) *event.Event {
+		ev := event.NewEvent(now.Add(offset), raw)
+		ev.Index = "main"
+		for k, v := range fields {
+			ev.Fields[k] = v
+		}
+		return ev
+	}
+
+	events := []*event.Event{
+		mkEvent(-30*time.Minute, `{"level":"error"}`, map[string]event.Value{"level": event.StringValue("error")}),
+		mkEvent(-20*time.Minute, `{"level":"error"}`, map[string]event.Value{"level": event.StringValue("error")}),
+		mkEvent(-10*time.Minute, `{"level":"info"}`, map[string]event.Value{"level": event.StringValue("info")}),
+		mkEvent(-150*time.Minute, `{"level":"error"}`, map[string]event.Value{"level": event.StringValue("error")}),
+		mkEvent(-140*time.Minute, `{"level":"info"}`, map[string]event.Value{"level": event.StringValue("info")}),
+	}
+	store := map[string][]*event.Event{"main": events}
+
+	rows, err := Execute(context.Background(),
+		`from main | stats count() by level | compare previous 2h`,
+		store, Options{Now: now})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+
+	// Should produce rows with level, count(), previous_count(), change_count().
+	if len(rows) == 0 {
+		t.Fatal("expected rows, got 0")
+	}
+
+	for i, row := range rows {
+		if _, ok := row["level"]; !ok {
+			t.Errorf("row %d: missing level column", i)
+		}
+		if _, ok := row["previous_count()"]; !ok {
+			t.Errorf("row %d: missing previous_count() column; keys: %v", i, rowKeys(row))
+		}
+		if _, ok := row["change_count()"]; !ok {
+			t.Errorf("row %d: missing change_count() column; keys: %v", i, rowKeys(row))
+		}
+	}
+}
+
+func rowKeys(row map[string]event.Value) []string {
+	var keys []string
+	for k := range row {
+		keys = append(keys, k)
+	}
+	return keys
 }

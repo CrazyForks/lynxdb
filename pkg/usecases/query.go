@@ -10,7 +10,10 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/config"
 	enginepipeline "github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/logical"
+	"github.com/lynxbase/lynxdb/pkg/logical/physical"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/format"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/sema"
 	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/planner"
@@ -19,9 +22,10 @@ import (
 
 // QueryService orchestrates query planning and execution.
 type QueryService struct {
-	planner  planner.Planner
-	engine   QueryEngine
-	queryCfg atomic.Pointer[config.QueryConfig]
+	planner     planner.Planner
+	engine      QueryEngine
+	queryCfg    atomic.Pointer[config.QueryConfig]
+	viewService *ViewService // optional; when set, inline | materialize is handled
 }
 
 // NewQueryService creates a QueryService.
@@ -33,6 +37,14 @@ func NewQueryService(p planner.Planner, engine QueryEngine, cfg config.QueryConf
 	svc.ReloadConfig(cfg)
 
 	return svc
+}
+
+// SetViewService configures the ViewService for inline materialize handling.
+// When set, queries ending with | materialize "name" are intercepted: the
+// materialize stage is stripped and the prefix query is passed to
+// ViewService.Create. Must be called before serving requests.
+func (s *QueryService) SetViewService(vs *ViewService) {
+	s.viewService = vs
 }
 
 // ReloadConfig swaps the live query config snapshot used for new requests.
@@ -638,6 +650,17 @@ func queryHasRexLiteralPreFilter(plan *logical.Plan) bool {
 	return hasParse && hasTermPushdown
 }
 
+// MaterializeResult is returned when a query's trailing | materialize stage
+// is intercepted and delegated to ViewService.Create.
+type MaterializeResult struct {
+	ViewName string
+	Status   string // "created"
+}
+
+// ErrMaterializeNoViewService is returned when a query contains | materialize
+// but no ViewService is configured (should not happen in a properly wired server).
+var ErrMaterializeNoViewService = errors.New("materialize requires a running server with view support")
+
 // Submit plans and executes a query with sync/hybrid/async dispatch.
 func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitResult, error) {
 	queryCfg := s.currentQueryConfig()
@@ -649,6 +672,12 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// Intercept inline materialize: when the plan root is Materialize, strip
+	// it, reconstruct the prefix query text, and delegate to ViewService.Create.
+	if mat, ok := physical.IsMaterializeRoot(plan.Program.Root); ok {
+		return s.handleMaterialize(mat, req.Query)
 	}
 
 	// Sync/hybrid queries derive from the caller's context so client disconnect
@@ -781,6 +810,69 @@ func (s *QueryService) Submit(ctx context.Context, req SubmitRequest) (*SubmitRe
 	}
 
 	return buildJobHandle(job), nil
+}
+
+// handleMaterialize intercepts a query with a trailing | materialize stage,
+// strips the materialize, reconstructs the prefix query text from the AST,
+// and delegates to ViewService.Create. Returns a one-row result with the
+// view name and status.
+func (s *QueryService) handleMaterialize(mat *logical.Materialize, rawQuery string) (*SubmitResult, error) {
+	if s.viewService == nil {
+		return nil, ErrMaterializeNoViewService
+	}
+
+	// Reconstruct the prefix query text by re-parsing the original query,
+	// dropping the trailing materialize stage, and formatting the result.
+	prefixQuery, err := stripMaterializeStage(rawQuery)
+	if err != nil {
+		return nil, fmt.Errorf("usecases.handleMaterialize: %w", err)
+	}
+
+	retention := mat.Retention // already a string from lowering
+	createReq := CreateViewRequest{
+		Name:      mat.Name,
+		Query:     prefixQuery,
+		Retention: retention,
+	}
+
+	if err := s.viewService.Create(createReq); err != nil {
+		return nil, err
+	}
+
+	// Return a one-row result indicating the view was created.
+	return &SubmitResult{
+		Done:       true,
+		ResultType: server.ResultTypeEvents,
+		Results: []model.ResultRow{
+			{Fields: map[string]interface{}{
+				"view":    mat.Name,
+				"status":  "created",
+				"query":   prefixQuery,
+				"message": "Materialized view created; backfill started.",
+			}},
+		},
+	}, nil
+}
+
+// stripMaterializeStage parses the query, removes the trailing materialize
+// stage, and formats the result back to canonical LynxFlow text.
+func stripMaterializeStage(rawQuery string) (string, error) {
+	q, diags := parser.Parse(rawQuery)
+	for _, d := range diags {
+		if d.Severity == parser.SeverityError {
+			return "", fmt.Errorf("re-parse: %s", d.Message)
+		}
+	}
+	if len(q.Pipeline.Stages) == 0 {
+		return "", fmt.Errorf("query has no stages")
+	}
+	last := q.Pipeline.Stages[len(q.Pipeline.Stages)-1]
+	if last.Name != "materialize" {
+		return "", fmt.Errorf("last stage is %q, expected materialize", last.Name)
+	}
+	// Remove the materialize stage.
+	q.Pipeline.Stages = q.Pipeline.Stages[:len(q.Pipeline.Stages)-1]
+	return format.Query(q), nil
 }
 
 // Stream plans a query and returns a streaming iterator.

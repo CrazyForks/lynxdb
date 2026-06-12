@@ -2,6 +2,7 @@ package physical
 
 import (
 	"context"
+	"errors"
 	"math"
 	"os"
 	"path/filepath"
@@ -1385,5 +1386,74 @@ func TestBuild_CTEMaterializationRespectsContext(t *testing.T) {
 	// With a cancelled context, the CTE materialization should fail.
 	if err == nil {
 		t.Log("Build succeeded despite cancelled context; CTE may have been empty or optimized away")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test: Materialize backstop returns NotYetImplementedError
+// ---------------------------------------------------------------------------
+
+func TestBuild_Materialize_Backstop(t *testing.T) {
+	// If a Materialize node somehow reaches physical.Build (should not happen
+	// in normal operation), it should return a NotYetImplementedError.
+	plan := &logical.Plan{
+		Root: &logical.Materialize{},
+	}
+	_, err := Build(plan, BuildOptions{})
+	if err == nil {
+		t.Fatal("expected error for Materialize node in physical.Build")
+	}
+	var nie *NotYetImplementedError
+	if !errors.As(err, &nie) {
+		t.Errorf("expected NotYetImplementedError, got: %T: %v", err, err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test: IsMaterializeRoot correctly identifies Materialize nodes
+// ---------------------------------------------------------------------------
+
+func TestIsMaterializeRoot(t *testing.T) {
+	mat := &logical.Materialize{Name: "test_view"}
+	got, ok := IsMaterializeRoot(mat)
+	if !ok {
+		t.Fatal("expected IsMaterializeRoot to return true for *Materialize")
+	}
+	if got.Name != "test_view" {
+		t.Errorf("got name %q, want %q", got.Name, "test_view")
+	}
+
+	// Non-Materialize should return false.
+	scan := &logical.Scan{}
+	_, ok = IsMaterializeRoot(scan)
+	if ok {
+		t.Error("expected IsMaterializeRoot to return false for *Scan")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Test: compare executes end-to-end through physical.Build
+// ---------------------------------------------------------------------------
+
+func TestBuild_Compare_EndToEnd(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"level": strV("error"), "status": intV(500), "_time": tsV(time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC))},
+		{"level": strV("error"), "status": intV(503), "_time": tsV(time.Date(2026, 1, 1, 10, 30, 0, 0, time.UTC))},
+		{"level": strV("info"), "status": intV(200), "_time": tsV(time.Date(2026, 1, 1, 10, 45, 0, 0, time.UTC))},
+	}
+
+	// Compare with a stats prefix: produces previous_count() and change_count().
+	result := drain(t, `from main | stats count() by level | compare previous 2h`, rows)
+	if len(result) == 0 {
+		t.Fatal("expected results from compare query")
+	}
+
+	for i, row := range result {
+		if _, ok := row["previous_count()"]; !ok {
+			t.Errorf("row %d: missing previous_count() column", i)
+		}
+		if _, ok := row["change_count()"]; !ok {
+			t.Errorf("row %d: missing change_count() column", i)
+		}
 	}
 }

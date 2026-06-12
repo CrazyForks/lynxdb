@@ -116,6 +116,7 @@ func NewServer(cfg Config) (*Server, error) {
 	p := planner.New(planner.WithViewCatalog(engine))
 	queryService := usecases.NewQueryService(p, engine, cfg.Query)
 	viewService := usecases.NewViewService(engine)
+	queryService.SetViewService(viewService)
 	tailService := usecases.NewTailService(p, engine)
 
 	// Initialize saved queries store.

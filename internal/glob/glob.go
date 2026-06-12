@@ -8,6 +8,7 @@
 package glob
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 	"sync"
@@ -54,6 +55,52 @@ func ToRegex(pattern string, caseInsensitive bool) *regexp.Regexp {
 	return toRegex(pattern, caseInsensitive, true)
 }
 
+// Compile is like ToRegex but rejects malformed patterns instead of silently
+// matching them literally or panicking: an unterminated character class
+// ("[ab") or an invalid range ("[z-a]") returns an error. Use it when the
+// pattern comes from user input.
+func Compile(pattern string, caseInsensitive bool) (*regexp.Regexp, error) {
+	if err := validateClasses(pattern); err != nil {
+		return nil, err
+	}
+	return regexp.Compile(buildRegexString(pattern, caseInsensitive, true, false))
+}
+
+// validateClasses rejects unterminated [ character classes. Other malformed
+// class contents (empty class, reversed range) surface as regexp.Compile
+// errors from the translated pattern.
+func validateClasses(pattern string) error {
+	for i := 0; i < len(pattern); i++ {
+		switch pattern[i] {
+		case '\\':
+			if i+1 < len(pattern) {
+				i++
+			}
+		case '[':
+			j := i + 1
+			if j < len(pattern) && (pattern[j] == '!' || pattern[j] == '^') {
+				j++
+			}
+			closed := false
+			for ; j < len(pattern); j++ {
+				if pattern[j] == '\\' {
+					j++
+					continue
+				}
+				if pattern[j] == ']' {
+					closed = true
+					break
+				}
+			}
+			if !closed {
+				return fmt.Errorf("glob: unterminated character class in %q", pattern)
+			}
+			i = j
+		}
+	}
+	return nil
+}
+
 // Match reports whether text matches an RFC glob pattern.
 // This is a convenience wrapper around ToRegex.
 func Match(pattern, text string, caseInsensitive bool) bool {
@@ -81,6 +128,10 @@ func toRegex(pattern string, caseInsensitive bool, anchored bool) *regexp.Regexp
 }
 
 func toRegexWithMode(pattern string, caseInsensitive bool, anchored bool, wildcardMatchesSlash bool) *regexp.Regexp {
+	return regexp.MustCompile(buildRegexString(pattern, caseInsensitive, anchored, wildcardMatchesSlash))
+}
+
+func buildRegexString(pattern string, caseInsensitive bool, anchored bool, wildcardMatchesSlash bool) string {
 	var buf strings.Builder
 	if caseInsensitive {
 		buf.WriteString("(?i)")
@@ -143,13 +194,39 @@ func toRegexWithMode(pattern string, caseInsensitive bool, anchored bool, wildca
 		buf.WriteString("$")
 	}
 
-	return regexp.MustCompile(buf.String())
+	return buf.String()
 }
 
 // ToContainsRegex converts a glob pattern to a regex without anchoring
 // (substring match).
 func ToContainsRegex(pattern string, caseInsensitive bool) *regexp.Regexp {
 	return toRegexWithMode(pattern, caseInsensitive, false, true)
+}
+
+// LiteralPrefix returns the leading literal run of a glob pattern: the
+// characters (with backslash escapes resolved) before the first
+// metacharacter (*, ?, [, {). Ordered-key scans such as FST term-dictionary
+// iteration use it to bound the range they must visit. Empty when the
+// pattern starts with a metacharacter.
+func LiteralPrefix(pattern string) string {
+	var b strings.Builder
+	for i := 0; i < len(pattern); i++ {
+		ch := pattern[i]
+		switch ch {
+		case '*', '?', '[', '{':
+			return b.String()
+		case '\\':
+			if i+1 < len(pattern) {
+				i++
+				b.WriteByte(pattern[i])
+				continue
+			}
+			b.WriteByte(ch)
+		default:
+			b.WriteByte(ch)
+		}
+	}
+	return b.String()
 }
 
 func isEscapableGlobChar(ch byte) bool {

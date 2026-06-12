@@ -628,3 +628,51 @@ func TestParseOnErrorUnknownMode(t *testing.T) {
 		t.Fatalf("no diagnostic mentions the unknown mode; got: %v", diagMsgs(diags))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Search-sugar glob values may start with a metacharacter (§3.1 glob value):
+// msg=*user*, host=?eb-01, port=* must parse clean and round-trip through the
+// formatter.
+// ---------------------------------------------------------------------------
+
+func TestParseSearchGlobLeadingMeta(t *testing.T) {
+	for _, src := range []string{
+		`from main msg=*user*`,
+		`from main msg=*user`,
+		`from main host=?eb-01`,
+		`from main port=*`,
+		`from main msg=us*er status>=500`,
+	} {
+		q, diags := Parse(src)
+		if len(diags) != 0 {
+			t.Errorf("%s: unexpected diags: %v", src, diagMsgs(diags))
+			continue
+		}
+		// Formatter fixpoint: format(parse(src)) must reparse to the same text.
+		formatted := format.Query(q)
+		q2, diags2 := Parse(formatted)
+		if len(diags2) != 0 {
+			t.Errorf("%s: formatted %q does not reparse: %v", src, formatted, diagMsgs(diags2))
+			continue
+		}
+		if again := format.Query(q2); again != formatted {
+			t.Errorf("%s: formatter not a fixpoint: %q -> %q", src, formatted, again)
+		}
+	}
+}
+
+func TestParseStarInStagePositionSuggests(t *testing.T) {
+	_, diags := Parse(`from main | *`)
+	if len(diags) == 0 {
+		t.Fatal("expected a diagnostic for '*' in stage position")
+	}
+	found := false
+	for _, d := range diags {
+		if strings.Contains(d.Message, "expected stage name") && d.Suggestion != "" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("star-in-stage-position diagnostic should carry a suggestion; got %v", diagMsgs(diags))
+	}
+}

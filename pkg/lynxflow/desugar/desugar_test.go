@@ -142,6 +142,24 @@ func TestGoldenExpansions(t *testing.T) {
 			wantReason: "search-sugar",
 		},
 		{
+			name:       "glob_value_leading_star",
+			input:      `from app msg=*user*`,
+			wantPipe:   `from app | where glob(msg, "*user*")`,
+			wantReason: "search-sugar",
+		},
+		{
+			name:       "glob_value_leading_question",
+			input:      `from app host=?eb-01`,
+			wantPipe:   `from app | where glob(host, "?eb-01")`,
+			wantReason: "search-sugar",
+		},
+		{
+			name:       "glob_star_only_is_exists",
+			input:      `from app port=*`,
+			wantPipe:   `from app | where exists(port)`,
+			wantReason: "search-sugar",
+		},
+		{
 			name:       "key_in",
 			input:      `from app level in ("ERROR", "WARN")`,
 			wantPipe:   `from app | where (level in ["ERROR", "WARN"])`,

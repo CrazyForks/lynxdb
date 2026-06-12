@@ -721,6 +721,16 @@ func (p *parser) parseSearchValue() ast.Expr {
 		return &ast.Ident{Name: name, Quoted: true, Pos: ast.Span{Start: start, End: end}}
 	}
 
+	// Glob value starting with a metacharacter: *user*, ?ser, *. Without this
+	// branch the expression lexer would surface '*' as the multiplication
+	// operator and reject spec-valid sugar like msg=*user* (§3.1 glob value).
+	if p.at(lexer.Star) || p.at(lexer.Question) {
+		tok := p.cur
+		p.advance()
+		pattern, end, _ := p.readAdjacentRun(tok.Text, tok.End)
+		return &ast.SearchGlobValue{Pattern: pattern, Pos: ast.Span{Start: start, End: end}}
+	}
+
 	// Check for glob or dashed value: span-adjacent run starting at an ident
 	if n, ok := p.identLike(); ok {
 		nameEnd := p.cur.End
@@ -816,7 +826,13 @@ func (p *parser) parseStage() ast.Stage {
 			Pos:      ast.Span{Start: start},
 			HasError: true,
 		}
-		p.errorf(p.cur, CodeStageError, nil, "",
+		// SPL2 muscle memory: `| *` meant match-all. A bare source already
+		// returns every event, so point at the working spellings instead.
+		suggestion := ""
+		if p.cur.Kind == lexer.Star {
+			suggestion = `a source alone returns all events (from idx); for text search use a bare term or where contains(_raw, "..."), for field masks use field=pat*`
+		}
+		p.errorf(p.cur, CodeStageError, nil, suggestion,
 			"expected stage name, got %s", kindName(p.cur.Kind))
 		p.skipToNextStage()
 		s.Pos.End = p.prev.End

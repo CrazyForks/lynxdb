@@ -249,8 +249,13 @@ func (d *desugarer) desugarKeyValue(kv *ast.SearchKeyValue) ast.Expr {
 	key := &ast.Ident{Name: kv.Key, Pos: kv.Pos}
 	val := cloneExpr(kv.Value)
 
-	// Glob value -> glob(key, "pattern")
+	// Glob value -> glob(key, "pattern"); bare key=* means "field present"
+	// and desugars to exists(key), which the planner can serve from column
+	// presence instead of a glob scan.
 	if gv, ok := kv.Value.(*ast.SearchGlobValue); ok && kv.Op == "=" {
+		if gv.Pattern == "*" {
+			return &ast.Call{Callee: "exists", Args: []ast.Expr{key}, Pos: kv.Pos}
+		}
 		return &ast.Call{
 			Callee: "glob",
 			Args: []ast.Expr{

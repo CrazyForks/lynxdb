@@ -42,44 +42,38 @@ The project includes a Makefile with common development tasks:
 # Build the binary (output: ./lynxdb)
 make build
 
-# Run all tests
+# Run the main test suite (unit + e2e + cli)
 make test
 
-# Run tests with race detector
-make test-race
-
-# Run only unit tests (fast)
+# Run only unit tests (includes the race detector)
 make test-unit
 
-# Run integration tests (starts a server)
-make test-integration
-
-# Run acceptance tests (10 canonical queries)
-make test-acceptance
-
-# Run end-to-end tests
+# Run end-to-end tests (starts a server)
 make test-e2e
 
-# Run the full test suite (unit + integration + acceptance + e2e)
-make test-all
+# Run CLI tests against the built binary
+make test-cli
 
-# Run benchmarks
-make bench
+# Run shipper compatibility tests (Filebeat, Fluent Bit, Vector, ...)
+make test-compat
+
+# Run micro benchmarks
+make bench-micro
+
+# Run macro benchmarks against the built binary
+make bench-macro
 
 # Run the linter (golangci-lint)
 make lint
 
-# Format code
-make fmt
+# Run go vet
+make vet
 
-# Generate code (if applicable)
-make generate
+# Regenerate the LynxFlow language reference docs from the registry
+make docs-gen
 
 # Clean build artifacts
 make clean
-
-# Build for all platforms (linux/darwin, amd64/arm64)
-make build-all
 ```
 
 ## Running Locally
@@ -90,10 +84,10 @@ The fastest way to test changes -- query local files or stdin:
 
 ```bash
 # Build and run a query against a log file
-go run ./cmd/lynxdb/ query --file /var/log/syslog '| stats count by level'
+go run ./cmd/lynxdb/ query --file /var/log/syslog 'stats count() by level'
 
 # Pipe data through
-echo '{"level":"error","msg":"test"}' | go run ./cmd/lynxdb/ query '| stats count by level'
+echo '{"level":"error","msg":"test"}' | go run ./cmd/lynxdb/ query 'stats count() by level'
 ```
 
 ### Server Mode
@@ -108,7 +102,7 @@ go run ./cmd/lynxdb/ server
 ./lynxdb ingest testdata/sample.log
 
 # Query
-./lynxdb query 'level=error | stats count'
+./lynxdb query 'from main level=error | stats count()'
 ```
 
 Start with a persistent data directory:
@@ -130,8 +124,8 @@ Run the built-in demo to generate realistic log data:
 go run ./cmd/lynxdb/ demo
 
 # Terminal 2: Query the demo data
-./lynxdb query '_source=nginx | stats count by status'
-./lynxdb query 'level=error | timechart count span=1m'
+./lynxdb query 'from main _source=nginx | stats count() by status'
+./lynxdb query 'from main level=error | every 1m stats count()'
 ```
 
 ## Running Tests
@@ -146,14 +140,14 @@ go test ./...
 
 # A specific package
 go test ./pkg/storage/segment/...
-go test ./pkg/spl2/...
+go test ./pkg/lynxflow/...
 go test ./pkg/vm/...
 
 # With verbose output
-go test -v ./pkg/spl2/...
+go test -v ./pkg/lynxflow/parser/...
 
 # A specific test function
-go test -v -run TestParseStatsCommand ./pkg/spl2/...
+go test -v -run TestRFC002Examples ./pkg/lynxflow/parser/...
 ```
 
 ### With Race Detector
@@ -164,20 +158,28 @@ Always run tests with the race detector during development:
 go test -race ./...
 ```
 
+### End-to-End Tests
+
+E2E tests start a real server and exercise the REST API end to end:
+
+```bash
+make test-e2e
+```
+
+### CLI Tests
+
+CLI tests invoke the built `lynxdb` binary as a subprocess and verify output, exit codes, and golden files:
+
+```bash
+make test-cli
+```
+
 ### Integration Tests
 
-Integration tests start a real HTTP server and exercise the REST API:
+Cluster and Sigma-compatibility integration tests:
 
 ```bash
 go test ./test/integration/...
-```
-
-### Acceptance Tests
-
-The acceptance test suite runs 10 canonical queries against a known test dataset and verifies exact result correctness:
-
-```bash
-go test ./test/acceptance/...
 ```
 
 ### Regression Tests
@@ -186,14 +188,6 @@ Regression tests verify that specific bug fixes remain in place:
 
 ```bash
 go test ./test/regression/...
-```
-
-### End-to-End Tests
-
-E2E tests exercise the full system from CLI invocation through query results:
-
-```bash
-go test ./test/e2e/...
 ```
 
 ## Benchmarks
@@ -258,7 +252,7 @@ A typical development cycle:
 2. **Make changes**: Edit code in `pkg/`, `cmd/`, or `internal/`.
 3. **Run unit tests**: `go test ./pkg/path/to/changed/package/...`
 4. **Run the linter**: `make lint`
-5. **Run the full test suite**: `make test-all`
+5. **Run the full test suite**: `make test`
 6. **Test manually**: Run `lynxdb demo` or `lynxdb server` and verify behavior.
 7. **Commit and push**: Follow the [coding guidelines](/docs/contributing/coding-guidelines).
 

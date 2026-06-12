@@ -1,57 +1,59 @@
 ---
 title: Time Series Analysis
-description: How to analyze log data over time using TIMECHART, BIN, time_bucket, and the span parameter in LynxDB.
+description: How to analyze log data over time using the every stage and the bin() time-bucketing function in LynxDB.
 ---
 
 # Time Series Analysis
 
-Log analytics often requires understanding trends over time: when do errors spike? Is latency increasing? How does traffic change throughout the day? LynxDB provides [`TIMECHART`](/docs/lynx-flow/commands/timechart), [`BIN`](/docs/lynx-flow/commands/bin), and the `time_bucket()` eval function for time-based aggregation.
+Log analytics often requires understanding trends over time: when do errors spike? Is latency increasing? How does traffic change throughout the day? LynxDB provides the [`every`](/docs/lynxflow/operators/every) stage and the `bin()` function for time-based aggregation (formerly `TIMECHART`, `BIN`, and `time_bucket()` in SPL2).
 
-## TIMECHART -- time series aggregation
+## Time bucketing with `every`
 
-The [`TIMECHART`](/docs/lynx-flow/commands/timechart) command is the primary tool for time series analysis. It buckets events into time intervals and computes aggregations for each bucket.
+The [`every`](/docs/lynxflow/operators/every) stage is the primary tool for time series analysis. It buckets events into time intervals and computes aggregations for each bucket.
 
 ### Basic time series
 
 Count events per 5-minute interval:
 
 ```bash
-lynxdb query 'level=error | timechart count span=5m'
+lynxdb query 'from main level=error | every 5m stats count() as count'
 ```
+
+`every` is pure sugar: it desugars to `stats count() as count by bin(_time, 5m)` (visible with `--show-rewritten`), and the bucket timestamp emits as `_time`.
 
 ### Choose the time span
 
-The `span` parameter controls the bucket size:
+The span argument controls the bucket size. Combine it with a bracket time range on `from`:
 
 ```bash
 # 1-minute granularity (high detail)
-lynxdb query 'level=error | timechart count span=1m' --since 1h
+lynxdb query 'from main[-1h] level=error | every 1m stats count() as count'
 
 # 1-hour granularity (overview)
-lynxdb query 'level=error | timechart count span=1h' --since 7d
+lynxdb query 'from main[-7d] level=error | every 1h stats count() as count'
 
 # 1-day granularity (trend)
-lynxdb query 'level=error | timechart count span=1d' --since 30d
+lynxdb query 'from main[-30d] level=error | every 1d stats count() as count'
 ```
 
 Common span values: `1m`, `5m`, `10m`, `15m`, `30m`, `1h`, `6h`, `12h`, `1d`.
 
-### Aggregation functions in TIMECHART
+### Aggregation functions in `every`
 
-Use any aggregation function, not just count:
+Use any aggregate function, not just count:
 
 ```bash
 # Average latency over time
-lynxdb query '_source=nginx | timechart avg(duration_ms) span=5m'
+lynxdb query 'from nginx | every 5m stats avg(duration_ms) as avg_lat'
 
 # P99 latency over time
-lynxdb query '_source=nginx | timechart perc99(duration_ms) AS p99 span=5m'
+lynxdb query 'from nginx | every 5m stats p99(duration_ms) as p99_lat'
 
 # Multiple aggregations
-lynxdb query '_source=nginx | timechart count, avg(duration_ms) AS avg_lat, perc99(duration_ms) AS p99_lat span=5m'
+lynxdb query 'from nginx | every 5m stats count() as count, avg(duration_ms) as avg_lat, p99(duration_ms) as p99_lat'
 
 # Sum of bytes transferred
-lynxdb query '_source=nginx | timechart sum(bytes) AS total_bytes span=1h'
+lynxdb query 'from nginx | every 1h stats sum(bytes) as total_bytes'
 ```
 
 ### Split by a field
@@ -60,83 +62,83 @@ Use `by <field>` to produce separate series for each value:
 
 ```bash
 # Error count over time, split by source
-lynxdb query 'level=error | timechart count span=5m by source'
+lynxdb query 'from main level=error | every 5m by source stats count() as count'
 
 # Latency by endpoint
-lynxdb query '_source=nginx | timechart avg(duration_ms) span=5m by uri'
+lynxdb query 'from nginx | every 5m by uri stats avg(duration_ms) as avg_lat'
 
 # Status code distribution over time
-lynxdb query '_source=nginx | timechart count span=5m by status'
+lynxdb query 'from nginx | every 5m by status stats count() as count'
+```
+
+:::warning
+In `every`, the `by` clause comes **before** the `stats` keyword: `every 5m by source stats count()`. Writing `every 5m stats count() by source` is a parse error.
+:::
+
+### The `rate` shortcut
+
+For plain event counts per bucket, the [`rate`](/docs/lynxflow/operators/rate) sugar stage is even shorter — it desugars to `every <per> [by <keys>] stats count() as rate`:
+
+```bash
+lynxdb query 'from nginx | rate per 5m by service'
 ```
 
 ---
 
-## BIN -- bucket timestamps
+## `bin()` -- explicit time buckets in `stats`
 
-The [`BIN`](/docs/lynx-flow/commands/bin) command groups the `_time` field into fixed-size time buckets without aggregating. This is useful when you want to assign events to time windows and then aggregate with `STATS`.
+`bin(_time, <span>)` snaps a timestamp to a bucket boundary. Used as a group key in [`stats`](/docs/lynxflow/operators/stats), it is the explicit form of `every` — useful when you want to combine time bucketing with other groupings or computations.
 
 :::info
-`_time` and `_timestamp` are interchangeable in LynxDB queries. `_time` is the canonical name used in API output.
+`_time` is the canonical timestamp field in LynxFlow queries and API output. In a `stats by` list, the binned key emits as `_time`.
 :::
 
 ### Basic binning
 
 ```bash
-lynxdb query '_source=nginx
-  | bin _time span=5m
-  | stats count, avg(duration_ms) AS avg_lat by _time'
+lynxdb query 'from nginx
+  | stats count() as count, avg(duration_ms) as avg_lat by bin(_time, 5m)'
 ```
 
 ### Correlate metrics with binned timestamps
 
 ```bash
-lynxdb query '_source=postgres duration_ms>1000
-  | bin _time span=5m
-  | stats count AS slow_queries, avg(duration_ms) AS avg_latency by _time
+lynxdb query 'from postgres duration_ms>1000
+  | stats count() as slow_queries, avg(duration_ms) as avg_latency by bin(_time, 5m)
   | where slow_queries > 10'
 ```
 
-### BIN vs TIMECHART
+### `bin()` in `extend`
 
-| Feature | TIMECHART | BIN + STATS |
-|---------|-----------|-------------|
-| Convenience | One command | Two commands |
-| Split by | Built-in `by` clause | Manual `by` in STATS |
-| Flexibility | Fixed to time grouping | Can combine time with other groupings |
+You can also materialize the bucket as a named column:
+
+```bash
+lynxdb query 'from nginx
+  | extend hour = bin(_time, 1h)
+  | stats avg(duration_ms) as avg_lat, count() as count by hour
+  | sort hour'
+```
+
+### `every` vs explicit `bin()`
+
+| Feature | `every` | `stats ... by bin(_time, ...)` |
+|---------|---------|--------------------------------|
+| Convenience | One keyword, reads naturally | Explicit group key |
+| Split by | `by` clause before `stats` | Any mix of keys in the `by` list |
+| Flexibility | Fixed to time grouping | Combine time with other groupings, name the bucket via `extend` |
 | Typical use | Quick time series charts | Complex multi-dimensional analysis |
 
-Use `TIMECHART` for straightforward time series. Use `BIN + STATS` when you need to combine time bucketing with grouping by multiple other fields.
+Both compile to the same plan — `every` is pure sugar.
 
 ---
 
-## time_bucket() in EVAL and STATS
+## `bin()` in materialized views
 
-The `time_bucket()` function works inside [`EVAL`](/docs/lynx-flow/commands/eval) and [`STATS`](/docs/lynx-flow/commands/stats) expressions for fine-grained control.
-
-### Use in STATS
-
-```bash
-lynxdb query 'level=error
-  | stats count by source, time_bucket(_time, "5m") AS bucket
-  | sort bucket'
-```
-
-### Use in EVAL
-
-```bash
-lynxdb query '_source=nginx
-  | eval hour_bucket = time_bucket(_time, "1h")
-  | stats avg(duration_ms) AS avg_lat, count by hour_bucket
-  | sort hour_bucket'
-```
-
-### time_bucket() in materialized views
-
-`time_bucket()` is essential for defining [materialized views](/docs/guides/materialized-views):
+`bin()`-based bucketing (formerly `time_bucket()`) is essential for defining [materialized views](/docs/guides/materialized-views):
 
 ```bash
 lynxdb mv create mv_errors_5m \
-  'level=error | stats count, avg(duration) by source, time_bucket(_time, "5m") AS bucket' \
+  'from main level=error | every 5m by source stats count() as count, avg(duration) as avg_duration' \
   --retention 90d
 ```
 
@@ -149,16 +151,15 @@ lynxdb mv create mv_errors_5m \
 Identify 5-minute windows with abnormally high error counts:
 
 ```bash
-lynxdb query 'level=error
-  | timechart count span=5m
-  | where count > 100' --since 24h
+lynxdb query 'from main[-24h] level=error
+  | every 5m stats count() as count
+  | where count > 100'
 ```
 
 ### Compare latency across endpoints
 
 ```bash
-lynxdb query '_source=nginx
-  | timechart avg(duration_ms) span=10m by uri' --since 6h
+lynxdb query 'from nginx[-6h] | every 10m by uri stats avg(duration_ms) as avg_lat'
 ```
 
 ### Traffic pattern analysis
@@ -166,30 +167,30 @@ lynxdb query '_source=nginx
 See how request volume changes hour by hour:
 
 ```bash
-lynxdb query '_source=nginx
-  | timechart count span=1h' --since 7d
+lynxdb query 'from nginx[-7d] | every 1h stats count() as count'
 ```
 
 ### Correlate errors with slow queries
 
 ```bash
-lynxdb query 'level=error OR (source=postgres AND duration_ms>1000)
-  | eval event_type = if(source="postgres", "slow_query", "error")
-  | timechart count span=5m by event_type' --since 6h
+lynxdb query 'from main[-6h] level=error or (source=postgres duration_ms>1000)
+  | extend event_type = if(source == "postgres", "slow_query", "error")
+  | every 5m by event_type stats count() as count'
 ```
 
-### Compute moving averages with STREAMSTATS
+### Compute moving averages with streamstats
 
 Smooth out spiky time series with a running average:
 
 ```bash
-lynxdb query '_source=nginx
-  | timechart avg(duration_ms) AS avg_lat span=5m
-  | streamstats avg(avg_lat) AS moving_avg window=6
-  | table _time, avg_lat, moving_avg'
+lynxdb query 'from nginx
+  | every 5m stats avg(duration_ms) as avg_lat
+  | sort +_time
+  | streamstats window=6 avg(avg_lat) as moving_avg
+  | keep _time, avg_lat, moving_avg'
 ```
 
-The `window=6` parameter computes the average over the previous 6 rows (30 minutes at 5-minute intervals).
+The `window=6` option computes the average over the trailing 6 rows (30 minutes at 5-minute intervals).
 
 ---
 
@@ -199,26 +200,25 @@ Time analysis works in pipe mode and file mode:
 
 ```bash
 # Analyze a local access log
-lynxdb query --file access.log '| timechart count span=1h'
+lynxdb query --file access.log '| every 1h stats count() as count'
 
 # Analyze kubectl output over time
 kubectl logs deploy/api --since=6h | lynxdb query '
-  | bin _time span=5m
-  | stats count, avg(duration_ms) by _time'
+  | stats count() as count, avg(duration_ms) as avg_dur by bin(_time, 5m)'
 ```
 
 ---
 
 ## Output format for time series
 
-Time series data often needs to be consumed by other tools. Use `--format csv` for spreadsheet compatibility or pipe to `jq` for JSON processing:
+Time series data often needs to be consumed by other tools. Use `--format csv` for spreadsheet compatibility or `--format json` for programmatic use:
 
 ```bash
 # CSV for spreadsheets or graphing tools
-lynxdb query 'level=error | timechart count span=1h' --since 7d --format csv > errors_by_hour.csv
+lynxdb query 'from main[-7d] level=error | every 1h stats count() as count' --format csv > errors_by_hour.csv
 
 # JSON for programmatic use
-lynxdb query 'level=error | timechart count span=1h' --since 7d --format json
+lynxdb query 'from main[-7d] level=error | every 1h stats count() as count' --format json
 ```
 
 ---
@@ -227,6 +227,6 @@ lynxdb query 'level=error | timechart count span=1h' --since 7d --format json
 
 - [Run aggregations](/docs/guides/aggregations) -- general aggregation patterns beyond time series
 - [Materialized views](/docs/guides/materialized-views) -- precompute time-bucketed aggregations
-- [TIMECHART command reference](/docs/lynx-flow/commands/timechart) -- full TIMECHART syntax
-- [BIN command reference](/docs/lynx-flow/commands/bin) -- full BIN syntax
-- [Time ranges reference](/docs/lynx-flow/time-ranges) -- all supported time range formats
+- [every reference](/docs/lynxflow/operators/every) -- full every syntax
+- [stats reference](/docs/lynxflow/operators/stats) -- stats with bin() group keys
+- [from reference](/docs/lynxflow/operators/from) -- bracket time ranges (`from main[-1h]`, `[@d]`, absolute ranges)

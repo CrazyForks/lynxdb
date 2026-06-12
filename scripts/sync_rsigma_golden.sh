@@ -3,10 +3,20 @@ set -euo pipefail
 
 # Sync LynxDB's pinned rsigma golden corpus.
 #
+# Syncs the Sigma rule sources (*.yml) and regenerates manifest.json from the
+# pinned rsigma tag. The executable .lynxflow goldens are maintained in-repo:
+# rsigma v0.9.0 has no LynxFlow output format (`rsigma convert -t lynxdb` still
+# emits the removed SPL2 dialect), so query goldens are hand-migrated and
+# validated by scripts/check_rsigma_golden_parses.sh and the pkg/sigmaqueries
+# parse/conformance tests instead of being regenerated here.
+#
 # Required tools:
 # - git, for cloning rsigma
-# - rsigma, installed by mise from the pinned git tag
-# - go, for the final SPL2 parse check
+# - go, for the final LynxFlow parse check and conformance tests
+#
+# The rsigma binary itself (pinned in mise.toml) is no longer invoked here; it
+# is kept pinned for manual conversion experiments and for a future LynxFlow
+# output format.
 #
 # Used by developers and the scheduled rsigma drift workflow.
 
@@ -52,11 +62,6 @@ if [[ -n "$requested_rsigma_ref" ]]; then
   echo "warning: --rsigma-ref is ignored; the rsigma version is pinned in mise.toml" >&2
 fi
 
-if ! rsigma_bin="$(command -v rsigma)"; then
-  echo "rsigma is required; install via \`mise install\` - the rsigma version is pinned in mise.toml" >&2
-  exit 1
-fi
-
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 golden_dir="${output_dir:-$repo_root/pkg/sigmaqueries/testdata/golden}"
 tmpdir="$(mktemp -d)"
@@ -83,7 +88,6 @@ for i in "${!yaml_files[@]}"; do
   yml="${yaml_files[$i]}"
   name="$(basename "$yml" .yml)"
   cp "$yml" "$golden_dir/$name.yml"
-  "$rsigma_bin" convert -t lynxdb -f default "$yml" >"$golden_dir/$name.spl2"
   if [[ "$with_matches" == false && ! -e "$golden_dir/$name.matches.json" ]]; then
     printf '{"events": [], "matches": []}\n' >"$golden_dir/$name.matches.json"
   fi
@@ -128,7 +132,10 @@ done
 
 printf '  }\n}\n' >>"$golden_dir/manifest.json"
 
-"$repo_root/scripts/check_rsigma_golden_parses.sh" "$golden_dir"
+# Validate the committed LynxFlow goldens: every .lynxflow fixture must parse,
+# and the conformance suite must still pass against the synced rule metadata.
+"$repo_root/scripts/check_rsigma_golden_parses.sh"
+(cd "$repo_root" && go test -count=1 -timeout 120s ./pkg/sigmaqueries/...)
 
 if [[ "$with_matches" == true ]]; then
   cat >"$tmpdir/write_rsigma_matches.go" <<'GO'
@@ -169,7 +176,7 @@ func main() {
 }
 GO
   echo "writing reference match sets using local_reference_evaluator"
-  echo "rsigma ${rsigma_ref} convert is still used for SPL2 from the mise-pinned binary; this repository's sync path does not have a matched-indices rsigma eval mode, so --with-matches maps the deterministic synthetic datasets with the local reference evaluator."
+  echo "this repository's sync path does not have a matched-indices rsigma eval mode, so --with-matches maps the deterministic synthetic datasets with the local reference evaluator."
   (cd "$repo_root" && go run "$tmpdir/write_rsigma_matches.go" "$golden_dir")
 fi
 

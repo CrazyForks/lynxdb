@@ -1,6 +1,14 @@
 # .github/workflows/rsigma-drift.yml
 #
-# Nightly rsigma output drift check for LynxDB.
+# Nightly rsigma corpus drift check for LynxDB.
+#
+# scripts/sync_rsigma_golden.sh regenerates the Sigma rule sources (*.yml) and
+# manifest.json from the pinned rsigma tag and validates the committed
+# .lynxflow goldens (parse + conformance). The diff step flags drift in the
+# upstream rule corpus; the .lynxflow goldens themselves are hand-maintained
+# (rsigma has no LynxFlow output format yet) and are exercised by the
+# conformance step below.
+#
 # Optional Slack notifications use secrets.SLACK_RSIGMA_DRIFT_WEBHOOK.
 
 name: rsigma Drift
@@ -46,13 +54,17 @@ jobs:
           set -euo pipefail
           committed_dir="$(mktemp -d)"
           generated_dir="$(mktemp -d)"
+          # Compare the synced rule sources and manifest against the committed
+          # corpus. Reference match sets (*.matches.json) are excluded: the
+          # sync script only writes empty placeholders for missing fixtures.
           find pkg/sigmaqueries/testdata/golden \
             -maxdepth 1 \
-            -name '*.lynxflow' \
-            ! -name '*_minimal.lynxflow' \
-            ! -name '*_index.lynxflow' \
+            \( -name '*.yml' -o -name 'manifest.json' \) \
             -exec cp {} "$committed_dir/" \;
-          cp "$DRIFT_OUTPUT_DIR"/*.lynxflow "$generated_dir/" 2>/dev/null || true
+          find "$DRIFT_OUTPUT_DIR" \
+            -maxdepth 1 \
+            \( -name '*.yml' -o -name 'manifest.json' \) \
+            -exec cp {} "$generated_dir/" \;
           if diff -ruN "$committed_dir" "$generated_dir" > drift.patch; then
             echo "has_drift=false" >> "$GITHUB_OUTPUT"
           else
@@ -85,7 +97,7 @@ jobs:
               "",
               `Run: ${runUrl}`,
               "",
-              "Triage: docs/sigma/drift-runbook.md",
+              "Triage: docs/site/docs/sigma/drift-runbook.md",
               "",
               "```diff",
               fencedPatch,

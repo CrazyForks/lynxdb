@@ -129,7 +129,7 @@ return &model.APIError{
     Code:       "INVALID_QUERY",
     Message:    "Unknown command 'staats'.",
     Suggestion: "stats",
-    DocsURL:    "https://lynxdb.io/docs/lynx-flow/overview",
+    DocsURL:    "https://lynxdb.io/docs/lynxflow/overview",
 }
 ```
 
@@ -260,11 +260,10 @@ For cold paths (configuration, setup, flush, compaction), prioritize clarity ove
 Test files live alongside the code they test:
 
 ```
-pkg/spl2/
-├── parser.go
-├── parser_test.go
+pkg/lynxflow/lexer/
 ├── lexer.go
-└── lexer_test.go
+├── lexer_test.go
+└── token.go
 ```
 
 ### Table-Driven Tests

@@ -38,22 +38,38 @@ detection:
   condition: selection
 YAML
 
-rsigma convert -t lynxdb -p cloudtrail-lynxdb.yml cloudtrail-create-user.yml > aws.spl2
+rsigma convert -t lynxdb -p cloudtrail-lynxdb.yml cloudtrail-create-user.yml
 ```
 
-Run a converted rule:
+The output is legacy SPL2, which LynxDB does not execute:
+
+```spl
+FROM aws | search (eventSource="iam.amazonaws.com" AND eventName="CreateUser")
+```
+
+Hand-migrate it to LynxFlow (see the
+[legacy SPL2 mapping](../spl2-mapping.md)):
 
 ```bash
-lynxdb query "$(cat aws.spl2)" --since 24h --format table
+cat > aws.lynxflow <<'EOF'
+from aws | where eventSource == "iam.amazonaws.com" and eventName == "CreateUser"
+EOF
+```
+
+Run the migrated rule:
+
+```bash
+lynxdb query "$(cat aws.lynxflow)" --since 24h --format table
 ```
 
 If the rule pack expects ECS or OCSF field names, add field mappings in the
 rsigma pipeline before conversion.
 
 To convert a checked-out SigmaHQ AWS pack after validating the single-rule
-flow:
+flow, generate a legacy SPL2 worksheet and hand-migrate it as in
+[tutorial 02](02-bulk-conversion.md):
 
 ```bash
 git clone https://github.com/SigmaHQ/sigma.git sigma
-rsigma convert -t lynxdb -p cloudtrail-lynxdb.yml sigma/rules/cloud/aws > aws-pack.spl2
+rsigma convert -t lynxdb -p cloudtrail-lynxdb.yml sigma/rules/cloud/aws > aws-pack.spl2  # legacy SPL2 worksheet
 ```

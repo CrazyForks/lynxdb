@@ -101,7 +101,7 @@ docker run -d --name lynxdb \
 
 # Run a one-off query
 echo '{"level":"error","msg":"test"}' | \
-  docker run -i ghcr.io/lynxbase/lynxdb query '| stats count by level'
+  docker run -i ghcr.io/lynxbase/lynxdb query 'stats count() by level'
 
 # Pull latest nightly for testing
 docker pull ghcr.io/lynxbase/lynxdb:nightly

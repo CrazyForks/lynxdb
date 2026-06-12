@@ -1,15 +1,15 @@
 ---
 sidebar_position: 2
 title: query
-description: Execute SPL2 queries against a LynxDB server, local files, or stdin.
+description: Execute LynxFlow queries against a LynxDB server, local files, or stdin.
 ---
 
 # query
 
-Execute an SPL2 query against a running server, a local file, or stdin.
+Execute a LynxFlow query against a running server, a local file, or stdin.
 
 ```
-lynxdb query [SPL2 query] [flags]
+lynxdb query [LynxFlow query] [flags]
 ```
 
 **Alias:** `q`
@@ -35,10 +35,11 @@ lynxdb query [SPL2 query] [flags]
 | `--no-lint` | | `false` | Disable advisory query lints |
 | `--no-suggestions` | | `false` | Disable advisory query suggestions |
 | `--show-rewritten` | | `false` | Show normalized query rewrites |
-| `--queries-file` | | | Run one SPL2 query per non-empty line from a file, or `-` for stdin |
-| `--param` | `-D` | | Set query parameter (`--param name=value`) |
+| `--queries-file` | | | Run one LynxFlow query per non-empty line from a file, or `-` for stdin |
+| `--language` | | | Query language. Only `lynxflow` is accepted; `spl2` is rejected with a migration error |
+| `--param` | `-D` | | Set query parameter (`--param name=value`); see [Query parameters](#query-parameters) |
 
-The query argument is required unless `--queries-file` is set. `FROM main` is automatically prepended if the query starts with `|` or a command name.
+The query argument is required unless `--queries-file` is set. `from main` is prepended automatically when the query starts with `|`. A query that starts with a stage name (such as `where`) is also valid — LynxFlow scans the default source implicitly.
 
 `--analyze` accepts an optional value; bare `--analyze` defaults to `basic`.
 
@@ -49,8 +50,8 @@ The query argument is required unless `--queries-file` is set. `FROM main` is au
 Sends the query to a running LynxDB server via HTTP. This is the default when no `--file` flag is set and stdin is a terminal.
 
 ```bash
-lynxdb query 'level=error | stats count by source'
-lynxdb q 'FROM main | where status>=500 | top 10 path' --since 24h
+lynxdb query 'from main level=error | stats count() by source'
+lynxdb q 'from main | where status >= 500 | top 10 path' --since 24h
 ```
 
 ### 2. File mode (`--file`)
@@ -58,8 +59,8 @@ lynxdb q 'FROM main | where status>=500 | top 10 path' --since 24h
 Ingests file(s) into an ephemeral in-memory engine and queries locally. No server required. Glob patterns are supported.
 
 ```bash
-lynxdb query --file access.log '| stats count by status'
-lynxdb query --file '/var/log/*.log' '| where level="ERROR" | stats count by source'
+lynxdb query --file access.log '| stats count() by status'
+lynxdb query --file '/var/log/*.log' '| where level == "ERROR" | stats count() by source'
 ```
 
 ### 3. Stdin mode (pipe detected)
@@ -67,7 +68,7 @@ lynxdb query --file '/var/log/*.log' '| where level="ERROR" | stats count by sou
 Reads stdin into an ephemeral engine and queries locally. Detected automatically when stdin is not a terminal. No server required.
 
 ```bash
-cat app.json | lynxdb query '| stats count by level'
+cat app.json | lynxdb query '| stats count() by level'
 kubectl logs deploy/api | lynxdb query '| where duration_ms > 1000 | stats avg(duration_ms) by endpoint'
 ```
 
@@ -79,22 +80,22 @@ You cannot use `--file` and stdin simultaneously. `--copy` is only supported in 
 
 ```bash
 # Query a running server
-lynxdb query 'level=error | stats count by source'
-lynxdb q 'FROM main | where status>=500 | top 10 path' --since 24h
+lynxdb query 'from main level=error | stats count() by source'
+lynxdb q 'from main | where status >= 500 | top 10 path' --since 24h
 
-# Short form (FROM main is auto-prepended)
-lynxdb query 'level=error | stats count'
-lynxdb query '| stats count by source'
+# Short form (from main is auto-prepended)
+lynxdb query '| stats count() by source'
+lynxdb query 'where level == "error" | stats count()'
 ```
 
 ### Time ranges
 
 ```bash
 # Relative time range
-lynxdb query 'level=error | stats count' --since 1h
+lynxdb query 'from main level=error | stats count()' --since 1h
 
 # Absolute time range
-lynxdb query 'FROM main | stats count by host' \
+lynxdb query 'from main | stats count() by host' \
   --from 2026-01-15T00:00:00Z --to 2026-01-15T23:59:59Z
 ```
 
@@ -102,11 +103,11 @@ lynxdb query 'FROM main | stats count by host' \
 
 ```bash
 # Query local files (no server needed)
-lynxdb query --file access.log '| stats count by status'
-lynxdb query --file '/var/log/*.log' '| where level="ERROR" | stats count by source'
+lynxdb query --file access.log '| stats count() by status'
+lynxdb query --file '/var/log/*.log' '| where level == "ERROR" | stats count() by source'
 
 # Pipe from stdin (no server needed)
-cat app.json | lynxdb query '| stats count by level'
+cat app.json | lynxdb query '| stats count() by level'
 kubectl logs deploy/api | lynxdb query '| where duration_ms > 1000 | stats avg(duration_ms) by endpoint'
 ```
 
@@ -114,22 +115,22 @@ kubectl logs deploy/api | lynxdb query '| where duration_ms > 1000 | stats avg(d
 
 ```bash
 # Profile query performance
-lynxdb query 'level=error | stats count' --analyze
-lynxdb query 'level=error | stats count' --analyze full
+lynxdb query 'from main level=error | stats count()' --analyze
+lynxdb query 'from main level=error | stats count()' --analyze full
 
 # Show query plan without executing
-lynxdb query 'level=error | stats count by source' --explain
+lynxdb query 'from main level=error | stats count() by source' --explain
 
 # Query with timeout
-lynxdb query 'level=error | stats count' --timeout 30s
+lynxdb query 'from main level=error | stats count()' --timeout 30s
 ```
 
 ### Query parameters
 
-Use `--param` to substitute `${name}` placeholders before execution:
+The `--param` flag is accepted for backward compatibility, but `${name}` placeholder substitution was removed together with SPL2. For parameterized pipelines, use LynxFlow `let` bindings instead:
 
 ```bash
-lynxdb query --file events.ndjson '| where level=${level} | stats count' -D level=error --format ndjson --no-stats
+lynxdb query --file events.ndjson 'let $errors = from main | where level == "ERROR"; from $errors | stats count()' --format ndjson --no-stats
 ```
 
 Expected output:
@@ -142,37 +143,37 @@ Expected output:
 
 ```bash
 # Force output format
-lynxdb query 'FROM main | stats count by host' --format csv
-lynxdb query 'FROM main | stats count by host' --format table
+lynxdb query 'from main | stats count() by host' --format csv
+lynxdb query 'from main | stats count() by host' --format table
 
 # Write results to file
-lynxdb query 'level=error' --output errors.json
+lynxdb query 'from main level=error' --output errors.json
 
 # Copy results to clipboard
-lynxdb query 'level=error | stats count by source' --copy
+lynxdb query 'from main level=error | stats count() by source' --copy
 ```
 
 ### Scripting
 
 ```bash
 # Exit code 6 when empty (for CI/scripting)
-lynxdb query 'level=FATAL' --fail-on-empty || echo "No fatal errors found"
+lynxdb query 'from main level=FATAL' --fail-on-empty || echo "No fatal errors found"
 
 # Pipe query results to jq
-lynxdb query 'FROM main | stats count by host' | jq '.host'
+lynxdb query 'from main | stats count() by host' | jq '.host'
 
 # Export to file
-lynxdb query 'FROM main | where level="ERROR"' --since 24h > errors.json
+lynxdb query 'from main | where level == "ERROR"' --since 24h > errors.json
 
 # Chain queries (query server, then local post-process)
-lynxdb query 'FROM main | where status>=500' --since 1h \
-  | lynxdb query '| stats count by path'
+lynxdb query 'from main | where status >= 500' --since 1h \
+  | lynxdb query '| stats count() by path'
 
 # Export as CSV
-lynxdb query 'FROM main | stats count by host' --format csv > report.csv
+lynxdb query 'from main | stats count() by host' --format csv > report.csv
 
 # Run one query per non-empty line
-lynxdb query --queries-file rules.spl2 --since 24h --format ndjson
+lynxdb query --queries-file rules.lynxflow --since 24h --format ndjson
 ```
 
 ## Console Output
@@ -219,7 +220,7 @@ Stats and metadata are written to stderr so they do not interfere with piped dat
 To force machine-readable output in a terminal:
 
 ```bash
-lynxdb query 'FROM main | stats count' --format json
+lynxdb query 'from main | stats count()' --format json
 ```
 
 ## See Also
@@ -227,4 +228,4 @@ lynxdb query 'FROM main | stats count' --format json
 - [Output Formats](/docs/cli/output-formats) for details on `--format` options
 - [Shortcuts](/docs/cli/shortcuts) for `count`, `sample`, `last`, and `explain` shortcuts
 - [Interactive Shell](/docs/cli/shell) for the REPL interface
-- [Lynx Flow Reference](/docs/lynx-flow/overview) for the query language reference
+- [LynxFlow v2 Reference](/docs/lynxflow/overview) for the query language reference

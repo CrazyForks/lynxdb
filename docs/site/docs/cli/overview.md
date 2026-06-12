@@ -32,7 +32,7 @@ Starts the HTTP server. Commands such as `query`, `ingest`, `status`, `fields`, 
 ### Local file mode
 
 ```bash
-lynxdb query --file access.log '| stats count by status'
+lynxdb query --file access.log '| stats count() by status'
 ```
 
 Queries files directly without a running server. LynxDB creates an ephemeral in-memory engine, ingests the matching file set, runs the query, prints results, and exits.
@@ -40,7 +40,7 @@ Queries files directly without a running server. LynxDB creates an ephemeral in-
 ### Stdin pipe mode
 
 ```bash
-cat app.log | lynxdb query '| stats count by level'
+cat app.log | lynxdb query '| stats count() by level'
 ```
 
 This is the same ephemeral execution path as file mode, but the input comes from stdin.
@@ -53,12 +53,12 @@ If stdin is piped and you run `lynxdb` with no subcommand, LynxDB defaults to a 
 cat app.log | lynxdb
 ```
 
-That runs the equivalent of `| take 10` after format detection.
+That runs the equivalent of `| head 10` after format detection.
 
 If stdin is piped and the first argument is not a known subcommand, LynxDB treats the remaining arguments as a query:
 
 ```bash
-cat app.log | lynxdb 'level=error | stats count by source'
+cat app.log | lynxdb 'where level == "error" | stats count() by source'
 ```
 
 ## Global Flags
@@ -90,16 +90,16 @@ With `--format auto`, LynxDB chooses a human-friendly format for interactive ter
 
 ```bash
 # Stable JSON for scripts
-lynxdb query 'level=error | stats count by source' --format json
+lynxdb query 'from main level=error | stats count() by source' --format json
 
 # Stable CSV export
-lynxdb query 'level=error | stats count by source' --format csv
+lynxdb query 'from main level=error | stats count() by source' --format csv
 
 # Human-readable table output
-lynxdb query 'level=error | stats count by source' --format table
+lynxdb query 'from main level=error | stats count() by source' --format table
 
 # Vertical output for wide rows
-lynxdb query 'level=error | head 2' --format vertical
+lynxdb query 'from main level=error | head 2' --format vertical
 ```
 
 `NO_COLOR` disables colored output when set. `--format line` and `--format G`
@@ -137,14 +137,15 @@ Some commands have dedicated reference pages in this documentation set. Others a
 | Setup and maintenance | `init`, [`install`](/docs/cli/install), `uninstall`, `upgrade`, `version`, [`completion`](/docs/cli/completion), `admin format-upgrade` |
 | Diagnostics and misc | [`bench`](/docs/cli/bench-demo), `demo`, `grammar`, `explain-error`, `sigma` |
 
-## SPL Compatibility Hints
+## Migration Hints
 
-When using file or stdin query mode, LynxDB detects several common Splunk-style patterns and prints compatibility hints to stderr.
-
-Example:
+LynxFlow v2 replaced the legacy SPL2 language. When a query uses a removed SPL2 stage, the parser rejects it with a targeted error and a suggestion for the v2 equivalent:
 
 ```
-hint: "index=main" is Splunk SPL syntax. In LynxDB SPL2, use "FROM main" instead.
+error[E011] at 1:3: eval is renamed to extend in v2
+  | eval is_slow = duration_ms > 1000
+    ^~~~
+  suggestion: extend
 ```
 
 Run `lynxdb examples` for a built-in query cookbook.

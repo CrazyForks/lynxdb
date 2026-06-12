@@ -8,7 +8,8 @@ import (
 	"strings"
 )
 
-// Query is one SPL2 query read from an rsigma-produced query file.
+// Query is one LynxFlow query read from a query file (one query per line),
+// such as the files produced by `rsigma convert -t lynxdb`.
 type Query struct {
 	Line       string
 	Source     string
@@ -32,7 +33,7 @@ type ManifestEntry struct {
 	Tags    []string `json:"tags"`
 }
 
-// ReadFile reads SPL2 queries from path.
+// ReadFile reads LynxFlow queries from path.
 func ReadFile(path string) ([]Query, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -45,8 +46,9 @@ func ReadFile(path string) ([]Query, error) {
 
 // ReadReader reads one query per non-blank, non-comment line from r.
 //
-// Lines whose first non-space character is '#' are ignored. Inline comments are
-// not stripped because SPL2 has no comment syntax.
+// Lines whose first non-space character is '#' are ignored (query-file comment
+// convention). Inline comments are not stripped here; the LynxFlow parser
+// handles its own `//` and `/* */` comments.
 func ReadReader(r io.Reader, source string) ([]Query, error) {
 	scanner := bufio.NewScanner(r)
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)

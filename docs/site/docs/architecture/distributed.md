@@ -70,7 +70,7 @@ Ingest nodes are **stateless after flush**. If an ingest node fails, its replica
 Query nodes handle the read path:
 
 1. Receive query requests via the REST API.
-2. Parse and optimize the SPL2 query.
+2. Parse and optimize the LynxFlow query.
 3. Determine which shards (and therefore which segments) are relevant using time range pruning and shard key matching.
 4. Scatter the query to the appropriate nodes via gRPC (or read segments directly from S3/cache).
 5. Merge partial results from all shards.
@@ -205,7 +205,7 @@ Distributed queries use the same partial aggregation engine described in [Query 
 ### Scatter-Gather Pattern
 
 ```
-Client query: "source=nginx | where status>=500 | stats count by uri | sort -count | head 10"
+Client query: "from main _source=nginx status>=500 | stats count() by uri | sort -count | head 10"
 
                       ┌──────────────────────┐
                       │   Query Coordinator   │
@@ -238,22 +238,22 @@ Client query: "source=nginx | where status>=500 | stats count by uri | sort -cou
 The optimizer determines where to split the pipeline between shard-level (pushed) and coordinator-level (merged) execution:
 
 **Pushable operators** (execute on shards):
-- Scan, Filter (WHERE), Eval, partial STATS, partial TopK
+- Scan, Filter (`where`), Eval (`extend`), partial `stats`, partial TopK
 
 **Coordinator operators** (execute after merge):
-- Sort, Head, Tail, Join, Dedup, StreamStats, global STATS merge
+- Sort, Head, Tail, Join, Dedup, StreamStats, global `stats` merge
 
 The split point is the **last pushable operator** in the pipeline. Everything before it runs on shards; everything after runs on the coordinator.
 
 ### Example Split
 
-```spl
-source=nginx | where status>=500 | stats count by uri | sort -count | head 10
+```
+from main _source=nginx | where status >= 500 | stats count() by uri | sort -count | head 10
 ```
 
 | Location | Pipeline |
 |----------|----------|
-| **Shard** | `scan(source=nginx) → filter(status>=500) → partial_stats(count by uri)` |
+| **Shard** | `scan(_source=nginx) → filter(status >= 500) → partial_stats(count() by uri)` |
 | **Coordinator** | `merge_stats → sort(-count) → head(10)` |
 
 ### TopK Optimization

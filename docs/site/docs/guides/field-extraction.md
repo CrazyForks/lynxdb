@@ -1,11 +1,11 @@
 ---
 title: Extract Fields at Query Time
-description: How to extract fields from unstructured logs at query time using REX, EVAL, and LynxDB's schema-on-read approach.
+description: How to extract fields from unstructured logs at query time using parse regex, extend, and LynxDB's schema-on-read approach.
 ---
 
 # Extract Fields at Query Time
 
-LynxDB follows a schema-on-read philosophy: you do not need to define a schema before ingesting data. JSON and text logs remain queryable without an upfront schema, but each ingest transport has its own endpoint contract. Fields from JSON events are indexed automatically. For unstructured text logs, use [`REX`](/docs/lynx-flow/commands/rex) and [`EVAL`](/docs/lynx-flow/commands/eval) to extract and compute fields at query time.
+LynxDB follows a schema-on-read philosophy: you do not need to define a schema before ingesting data. JSON and text logs remain queryable without an upfront schema, but each ingest transport has its own endpoint contract. Fields from JSON events are indexed automatically. For unstructured text logs, use [`parse regex`](/docs/lynxflow/operators/parse) (formerly `rex` in SPL2) and [`extend`](/docs/lynxflow/operators/extend) (formerly `eval`) to extract and compute fields at query time.
 
 ## How schema-on-read works
 
@@ -30,13 +30,17 @@ duration_ms               float          50%    min=0.1, max=30001.0, avg=145.3
 source                    string        100%    nginx(50%), api-gw(37%), redis(13%)
 ```
 
-See the [`lynxdb fields`](/docs/cli/shortcuts) command reference for details.
+See the [`lynxdb fields`](/docs/cli/shortcuts) command reference for details. Inside a query, the [`describe`](/docs/lynxflow/operators/describe) stage gives the same view of the *current* stream — one row per field with type, coverage, and top values:
+
+```bash
+lynxdb query 'from main | parse json | describe'
+```
 
 ---
 
-## Extract fields with REX
+## Extract fields with `parse regex`
 
-The [`REX`](/docs/lynx-flow/commands/rex) command extracts fields from a text field using named capture groups in a regular expression.
+The [`parse regex`](/docs/lynxflow/operators/parse) stage extracts fields from a text field using named capture groups in a regular expression.
 
 ### Basic extraction
 
@@ -49,228 +53,259 @@ Given raw log lines like:
 Extract `host`, `service`, `duration`, and `status`:
 
 ```bash
-lynxdb query 'search "duration"
-  | rex field=_raw "host=(?P<host>\S+) service=(?P<service>\S+) duration=(?P<duration>\d+)ms status=(?P<status>\d+)"
-  | table _timestamp, host, service, duration, status'
+lynxdb query 'from main "duration"
+  | parse regex r"host=(?P<host>\S+) service=(?P<service>\S+) duration=(?P<duration>\d+)ms status=(?P<status>\d+)"
+  | keep _time, host, service, duration, status'
 ```
 
 ### Named capture group syntax
 
-REX uses Go-style named capture groups: `(?P<field_name>pattern)`.
+`parse regex` uses Go-style named capture groups: `(?P<field_name>pattern)`.
 
 | Pattern | Matches |
 |---------|---------|
 | `(?P<ip>\d+\.\d+\.\d+\.\d+)` | An IPv4 address |
 | `(?P<host>\S+)` | A non-whitespace token |
 | `(?P<code>\d{3})` | A 3-digit status code |
-| `(?P<path>[^ "]+)` | A path (no spaces or quotes) |
+| `(?P<path>[^ ]+)` | A path (no spaces) |
 | `(?P<msg>.+)` | Everything to end of line |
+
+:::note
+Patterns are raw strings (`r"..."`): backslashes are literal, so `\d` and `\S` need no double-escaping. A raw string cannot contain a literal `"` — match a quote character with `\x22` instead.
+:::
 
 ### Extract from Apache/Nginx access logs
 
+For standard access-log formats, prefer the purpose-built [`parse combined`](/docs/lynxflow/operators/parse) (see [below](#structured-log-parsing-with-parse-formats)). The regex equivalent looks like this:
+
 ```bash
 lynxdb query --file access.log '
-  | rex field=_raw "(?P<client_ip>\S+) \S+ \S+ \[(?P<timestamp>[^\]]+)\] \"(?P<method>\w+) (?P<uri>\S+) \S+\" (?P<status>\d+) (?P<bytes>\d+)"
-  | stats count by method, status
+  | parse regex r"(?P<client_ip>\S+) \S+ \S+ \[(?P<ts>[^\]]+)\] \x22(?P<method>\w+) (?P<uri>\S+) [^\x22]*\x22 (?P<status>\d+) (?P<bytes>\d+)"
+  | stats count() as count by method, status
   | sort -count'
 ```
 
 ### Extract from application logs
 
 ```bash
-lynxdb query 'search "connection refused"
-  | rex field=_raw "host=(?P<host>\S+)"
-  | stats count by host
+lynxdb query 'from main "connection refused"
+  | parse regex r"host=(?P<host>\S+)"
+  | stats count() as count by host
   | sort -count'
 ```
 
 ### Extract from a non-default field
 
-By default, `REX` operates on `_raw`. Use `field=` to extract from any field:
+By default, `parse` operates on `_raw`. Use `from <field>` to extract from any field:
 
 ```bash
-lynxdb query '| rex field=message "user_id=(?P<uid>\d+)"
-  | stats dc(uid) AS unique_users'
+lynxdb query 'from main
+  | parse regex r"user_id=(?P<uid>\d+)" from message
+  | stats dc(uid) as unique_users'
+```
+
+### Typed captures
+
+`into (...)` coerces captures at extraction time — no separate conversion step needed:
+
+```bash
+lynxdb query 'from main
+  | parse regex r"duration=(?P<dur>\d+)ms" into (dur as int)
+  | stats avg(dur) as avg_ms'
 ```
 
 ---
 
-## Compute fields with EVAL
+## Compute fields with `extend`
 
-The [`EVAL`](/docs/lynx-flow/commands/eval) command creates new fields by evaluating expressions.
+The [`extend`](/docs/lynxflow/operators/extend) stage (formerly `eval` in SPL2) creates new fields by evaluating expressions. Remember: `=` binds, `==` compares.
 
 ### Create a computed field
 
 ```bash
-lynxdb query '_source=nginx
-  | eval duration_sec = duration_ms / 1000
-  | table uri, duration_ms, duration_sec'
+lynxdb query 'from nginx
+  | extend duration_sec = duration_ms / 1000
+  | keep uri, duration_ms, duration_sec'
 ```
 
-### Conditional fields with IF
+### Conditional fields with if
 
 ```bash
-lynxdb query '_source=nginx
-  | eval severity = if(status >= 500, "critical", if(status >= 400, "warning", "ok"))
-  | stats count by severity'
+lynxdb query 'from nginx
+  | extend severity = if(status >= 500, "critical", if(status >= 400, "warning", "ok"))
+  | stats count() as count by severity'
 ```
 
-### Conditional fields with CASE
+### Conditional fields with case
+
+A trailing odd argument is the default — no `1=1` sentinel needed:
 
 ```bash
-lynxdb query '_source=nginx
-  | eval category = case(
+lynxdb query 'from nginx
+  | extend category = case(
       status >= 500, "5xx",
       status >= 400, "4xx",
       status >= 300, "3xx",
       status >= 200, "2xx",
-      1=1, "other"
+      "other"
     )
-  | stats count by category'
+  | stats count() as count by category'
 ```
 
 ### String manipulation
 
 ```bash
 # Convert to lowercase
-lynxdb query '| eval level_lower = lower(level) | stats count by level_lower'
+lynxdb query 'from main | extend level_lower = lower(level) | stats count() as count by level_lower'
 
-# Extract substring
-lynxdb query '| eval short_path = substr(uri, 1, 20) | stats count by short_path'
+# Extract substring (0-based start; SPL2 substr was 1-based)
+lynxdb query 'from main | extend short_path = substr(uri, 0, 20) | stats count() as count by short_path'
 
 # String length
-lynxdb query '| eval msg_len = len(message) | where msg_len > 500 | table _timestamp, msg_len, message'
+lynxdb query 'from main | extend msg_len = len(message) | where msg_len > 500 | keep _time, msg_len, message'
 ```
 
 ### Type conversion
 
+The SPL2 `tonumber`/`tostring` functions are gone — cast with the type name:
+
 ```bash
 # Convert a string field to a number
-lynxdb query '| eval status_num = tonumber(status) | where status_num >= 500'
+lynxdb query 'from main | extend status_num = int(status) | where status_num >= 500'
 
 # Convert a number to string for display
-lynxdb query '| eval status_str = tostring(status) | table status_str, uri'
+lynxdb query 'from main | extend status_str = string(status) | keep status_str, uri'
 ```
+
+`int()` and `float()` return null on failure; the strict variants `int!()` and `float!()` raise a query error instead.
 
 ### Coalesce (first non-null)
 
 ```bash
-lynxdb query '| eval display_time = coalesce(timestamp, @timestamp, _timestamp)
-  | table display_time, message'
+lynxdb query 'from main
+  | extend display_time = coalesce(timestamp, `@timestamp`, _time)
+  | keep display_time, message'
 ```
+
+For a single fallback, the `??` operator is shorter: `region ?? "unknown"`. Field names with special characters (like `@timestamp`) are quoted with backticks.
 
 ### Time formatting
 
 ```bash
-lynxdb query '| eval human_time = strftime(_timestamp, "%Y-%m-%d %H:%M:%S")
-  | table human_time, level, message'
+lynxdb query 'from main
+  | extend human_time = strftime(_time, "%Y-%m-%d %H:%M:%S")
+  | keep human_time, level, message'
 ```
 
-See the [eval functions reference](/docs/lynx-flow/functions/eval-functions) for the complete list of available functions.
+See the [scalar functions reference](/docs/lynxflow/functions) for the complete list of available functions.
 
 ---
 
-## Combine REX and EVAL
+## Combine `parse regex` and `extend`
 
-Extract raw values with REX, then transform them with EVAL:
+Extract typed values with `parse regex ... into`, then transform them with `extend`:
 
 ```bash
-lynxdb query 'search "request completed"
-  | rex field=_raw "duration=(?P<dur_str>\d+)ms"
-  | eval duration_ms = tonumber(dur_str)
-  | eval is_slow = if(duration_ms > 1000, "slow", "fast")
-  | stats count by is_slow'
+lynxdb query 'from main "request completed"
+  | parse regex r"duration=(?P<dur>\d+)ms" into (dur as int)
+  | extend is_slow = if(dur > 1000, "slow", "fast")
+  | stats count() as count by is_slow'
 ```
 
 ---
 
-## Multivalue field operations
+## Array operations
 
-When a field contains multiple values (for example, from `values()` aggregation or structured input), use multivalue functions:
+LynxFlow arrays are first-class values (SPL2's multivalue `mv*` functions are gone). When a field contains an array — for example, from a `values()` aggregation or parsed JSON — use the native array functions:
 
 ```bash
-# Join multivalue into a string
-lynxdb query 'level=error | stats values(source) AS sources by host | eval src_list = mvjoin(sources, ", ")'
+# Join an array into a string (formerly mvjoin)
+lynxdb query 'from main level=error | stats values(source) as sources by host | extend src_list = join(sources, ", ")'
 
-# Deduplicate multivalue
-lynxdb query '| eval unique_tags = mvdedup(tags)'
+# Deduplicate an array (formerly mvdedup)
+lynxdb query 'from main | extend unique_tags = array_distinct(tags)'
 
-# Append to multivalue
-lynxdb query '| eval all_ids = mvappend(primary_id, secondary_id)'
+# Concatenate values into one array (formerly mvappend)
+lynxdb query 'from main | extend all_ids = array_concat([primary_id], [secondary_id])'
 ```
+
+See the array section of the [scalar functions reference](/docs/lynxflow/functions) for `slice`, `flatten`, `filter`, `map`, and more.
 
 ---
 
 ## Null handling
 
-Check for missing or null fields:
+LynxFlow distinguishes **null** (the field is present with an explicit null) from **missing** (the field was never extracted). SPL2's `isnull`/`isnotnull` are gone:
 
 ```bash
-# Find events missing a field
-lynxdb query '| where isnull(user_id) | stats count by source'
+# Find events where a field is explicitly null
+lynxdb query 'from main | where is_null(user_id) | stats count() as count by source'
 
-# Find events that have a field
-lynxdb query '| where isnotnull(duration_ms) | stats avg(duration_ms)'
+# Find events that have a non-null field
+lynxdb query 'from main | where exists(duration_ms) | stats avg(duration_ms)'
 
-# Replace null with a default
-lynxdb query '| eval region = coalesce(region, "unknown") | stats count by region'
+# Replace null/missing with a default
+lynxdb query 'from main | extend region = region ?? "unknown" | stats count() as count by region'
 ```
+
+`is_missing(f)` is true only when the field was never extracted at all.
 
 ---
 
 ## Field extraction on local files
 
-All extraction commands work in pipe mode:
+All extraction stages work in pipe mode:
 
 ```bash
 # Extract from a local file
 lynxdb query --file /var/log/syslog '
-  | rex field=_raw "(?P<process>\w+)\[(?P<pid>\d+)\]"
-  | stats count by process
+  | parse regex r"(?P<process>\w+)\[(?P<pid>\d+)\]"
+  | stats count() as count by process
   | sort -count
   | head 10'
 
 # Extract from piped input
 kubectl logs deploy/api | lynxdb query '
-  | rex field=_raw "endpoint=(?P<ep>\S+) status=(?P<code>\d+) duration=(?P<dur>\d+)ms"
-  | eval dur_num = tonumber(dur)
-  | stats avg(dur_num) AS avg_ms, p99(dur_num) AS p99_ms by ep'
+  | parse regex r"endpoint=(?P<ep>\S+) status=(?P<code>\d+) duration=(?P<dur>\d+)ms" into (dur as int)
+  | stats avg(dur) as avg_ms, p99(dur) as p99_ms by ep'
 ```
 
 ---
 
-## Structured log parsing with unpack
+## Structured log parsing with parse formats
 
-For structured log formats, LynxDB provides purpose-built `unpack_*` commands that are faster and more accurate than regex extraction:
+For structured log formats, the unified [`parse`](/docs/lynxflow/operators/parse) stage has purpose-built named formats (formerly the 16 `unpack_*` commands) that are faster and more accurate than regex extraction:
 
-| Format | Command | Example input |
-|--------|---------|---------------|
-| JSON | [`unpack_json`](/docs/lynx-flow/commands/unpack-json) | `{"level":"error","msg":"timeout"}` |
-| logfmt | [`unpack_logfmt`](/docs/lynx-flow/commands/unpack-logfmt) | `level=error msg="request failed" duration=245ms` |
-| Syslog | [`unpack_syslog`](/docs/lynx-flow/commands/unpack-syslog) | `<134>Jan 15 14:23:01 web-01 nginx: connection reset` |
-| Combined (access log) | [`unpack_combined`](/docs/lynx-flow/commands/unpack-combined) | `10.0.1.5 - - [10/Oct/2025:13:55:36 -0700] "GET /api HTTP/1.1" 200 2326 "-" "curl/7.64"` |
-| CLF | [`unpack_clf`](/docs/lynx-flow/commands/unpack-clf) | `127.0.0.1 - frank [10/Oct/2025:13:55:36 -0700] "GET /api HTTP/1.1" 200 2326` |
-| Nginx error | [`unpack_nginx_error`](/docs/lynx-flow/commands/unpack-nginx-error) | `2026/02/14 14:52:01 [error] 12345#67: *890 message, client: 10.0.1.5` |
-| CEF | [`unpack_cef`](/docs/lynx-flow/commands/unpack-cef) | `CEF:0\|Vendor\|Product\|1.0\|100\|Alert\|7\|src=10.0.0.1` |
-| Key=value | [`unpack_kv`](/docs/lynx-flow/commands/unpack-kv) | `host=web-01 status=200 duration=45ms` |
+| Format | Stage | Example input |
+|--------|-------|---------------|
+| JSON | `parse json` | `{"level":"error","msg":"timeout"}` |
+| logfmt | `parse logfmt` | `level=error msg="request failed" duration=245ms` |
+| Key=value | `parse kv` | `host=web-01 status=200 duration=45ms` |
+| Syslog | `parse syslog` | `<134>Jan 15 14:23:01 web-01 nginx: connection reset` |
+| Combined (access log) | `parse combined` | `10.0.1.5 - - [10/Oct/2025:13:55:36 -0700] "GET /api HTTP/1.1" 200 2326 "-" "curl/7.64"` |
+| CLF | `parse clf` | `127.0.0.1 - frank [10/Oct/2025:13:55:36 -0700] "GET /api HTTP/1.1" 200 2326` |
+| Nginx error | `parse nginx_error` | `2026/02/14 14:52:01 [error] 12345#67: *890 message, client: 10.0.1.5` |
+| CEF | `parse cef` | `CEF:0\|Vendor\|Product\|1.0\|100\|Alert\|7\|src=10.0.0.1` |
+
+Additional named formats: `docker`, `redis`, `apache_error`, `postgres`, `mysql_slow`, `haproxy`, `leef`, `w3c`. Fallback chains try formats in order per row: `parse first_of(json, logfmt)`.
 
 ```bash
 # Parse logfmt and aggregate
-cat app.log | lynxdb query '| unpack_logfmt | stats count by level'
+cat app.log | lynxdb query '| parse logfmt | stats count() as count by level'
 
 # Parse nginx access logs
-lynxdb query --file access.log '| unpack_combined | where status >= 500 | stats count by uri'
+lynxdb query --file access.log '| parse combined | where status >= 500 | stats count() as count by uri'
 ```
 
-For JSON-specific workflows (dot-notation, json_extract, unroll), see the [Working with JSON Logs](/docs/guides/json-processing) guide.
+For JSON-specific workflows (object access, `from_json`, `explode`), see the [Working with JSON Logs](/docs/guides/json-processing) guide.
 
 ---
 
 ## Next steps
 
-- [Working with JSON Logs](/docs/guides/json-processing) -- dot-notation, json commands, unroll
+- [Working with JSON Logs](/docs/guides/json-processing) -- parse json, object access, explode
 - [Search and filter logs](/docs/guides/search-and-filter) -- filter before extracting fields
 - [Run aggregations](/docs/guides/aggregations) -- aggregate over extracted fields
-- [REX command reference](/docs/lynx-flow/commands/rex) -- full REX syntax and options
-- [EVAL command reference](/docs/lynx-flow/commands/eval) -- full EVAL syntax and all functions
-- [Eval functions reference](/docs/lynx-flow/functions/eval-functions) -- complete function list
+- [parse reference](/docs/lynxflow/operators/parse) -- full parse syntax, formats, and options
+- [extend reference](/docs/lynxflow/operators/extend) -- full extend syntax
+- [Scalar functions reference](/docs/lynxflow/functions) -- complete function list

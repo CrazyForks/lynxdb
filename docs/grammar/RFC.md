@@ -1,12 +1,20 @@
 # RFC-001: LynxDB Query Syntax
 
+> **SUPERSEDED — historical reference only.**
+> This document is superseded by [RFC-002: LynxFlow v2 Query Language](RFC-002.md)
+> (shipped 2026-06-11). The two-layer SPL2+sugar architecture described below no
+> longer exists: `pkg/spl2` has been deleted and LynxFlow v2 is the only query
+> language. Nothing in this document describes current behavior; it is retained
+> for historical context.
+
 | Field | Value |
 |---|---|
-| Status | Draft |
+| Status | Superseded by [RFC-002](RFC-002.md) |
 | Author | Evgenii Orlov (evgenii@eorlov.org) |
-| Last updated | 2026-05-12 |
+| Last updated | 2026-05-12 (superseded marker added 2026-06-12) |
 | Supersedes | — |
-| Related | `pkg/spl2/`, `pkg/sigmaqueries/`, README, CLAUDE.md |
+| Superseded by | RFC-002 (`docs/grammar/RFC-002.md`) |
+| Related | `pkg/spl2/` (deleted in RFC-002 Phase 10), `pkg/sigmaqueries/`, README, CLAUDE.md |
 
 ---
 

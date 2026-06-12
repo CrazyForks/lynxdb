@@ -88,17 +88,17 @@ Use `/api/v1/es/_bulk` for Elasticsearch-style NDJSON shippers. `/api/v1/ingest/
 
 ```bash
 # Basic search
-lynxdb query 'level=error'
+lynxdb query 'from main level=error'
 
 # Aggregation
-lynxdb query 'level=error | stats count by source | sort -count'
+lynxdb query 'from main level=error | stats count() as count by source | sort -count'
 
 # Time range
-lynxdb query 'level=error | stats count' --since 1h
+lynxdb query 'from main level=error | stats count()' --since 1h
 
 # Output formats
-lynxdb query 'level=error | stats count by source' --format table
-lynxdb query 'level=error | stats count by source' --format csv > report.csv
+lynxdb query 'from main level=error | stats count() by source' --format table
+lynxdb query 'from main level=error | stats count() by source' --format csv > report.csv
 ```
 
 ### API
@@ -106,11 +106,11 @@ lynxdb query 'level=error | stats count by source' --format csv > report.csv
 ```bash
 # Synchronous query
 curl -s localhost:3100/api/v1/query \
-  -d '{"q": "level=error | stats count by source", "from": "-1h"}' | jq .
+  -d '{"q": "from main level=error | stats count() by source", "from": "-1h"}' | jq .
 
 # Streaming results (NDJSON)
 curl -s localhost:3100/api/v1/query/stream \
-  -d '{"q": "level=error", "from": "-1h"}'
+  -d '{"q": "from main level=error", "from": "-1h"}'
 ```
 
 ## Monitor with Live Tail
@@ -122,10 +122,10 @@ Stream log events in real-time:
 lynxdb tail
 
 # Tail with filter
-lynxdb tail 'level=error'
+lynxdb tail 'where level == "error"'
 
 # Tail with pipeline
-lynxdb tail '_source=nginx status>=500 | fields _time, uri, status'
+lynxdb tail 'where _source == "nginx" and status >= 500 | keep _time, uri, status'
 ```
 
 ## Check Server Status
@@ -216,7 +216,7 @@ See the full [Configuration Reference](/docs/configuration/overview) for all opt
 
 ## Next Steps
 
-- **[Your First SPL2 Query](/docs/getting-started/first-query)** -- Learn the query language
+- **[Your First LynxFlow Query](/docs/getting-started/first-query)** -- Learn the query language
 - **[Ingesting Data](/docs/guides/ingest-data)** -- All ingestion methods
 - **[Configuration](/docs/configuration/overview)** -- Tune your server
 - **[Deployment](/docs/deployment/single-node)** -- Production deployment guide

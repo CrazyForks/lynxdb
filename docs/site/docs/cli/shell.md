@@ -1,12 +1,12 @@
 ---
 sidebar_position: 10
 title: Interactive Shell
-description: LynxDB interactive SPL2 REPL with tab completion, query history, slash commands, and result scrolling.
+description: LynxDB interactive LynxFlow REPL with tab completion, query history, slash commands, and result scrolling.
 ---
 
 # Interactive Shell
 
-Start an interactive SPL2 REPL with tab completion, query history, and slash commands.
+Start an interactive LynxFlow REPL with tab completion, query history, and slash commands.
 
 ```
 lynxdb shell [flags]
@@ -41,7 +41,7 @@ lynxdb shell --since 1h
   Connected to http://localhost:3100
   Type /help for commands.
 
-lynxdb> level=error | stats count by source
+lynxdb> where level == "error" | stats count() by source
   source          count
   nginx           340
   api-gateway     120
@@ -72,7 +72,7 @@ Meta-operations available inside the shell:
 | `/save <name> [query]` | Save last query or a specified query (server mode) |
 | `/run <name>` | Run a saved query by name (server mode) |
 | `/queries` | List saved queries (server mode) |
-| `/tail <query>` | Start live tail with an SPL2 filter (server mode) |
+| `/tail <query>` | Start live tail with a LynxFlow filter (server mode) |
 
 ## Keyboard Shortcuts
 
@@ -132,7 +132,7 @@ elapsed time).
 
 The shell tab-completes:
 
-- SPL2 command names (`stats`, `where`, `eval`, `sort`, etc.)
+- LynxFlow stage names (`stats`, `where`, `extend`, `sort`, etc.)
 - Aggregation function names (`count`, `avg`, `sum`, `p99`, etc.)
 - Field names from the server's field catalog
 
@@ -147,8 +147,8 @@ The shell tab-completes:
 Press `Shift+Enter`, or end a line with `|`, to continue on the next line:
 
 ```
-lynxdb> level=error |
-   ...> stats count by source |
+lynxdb> where level == "error" |
+   ...> stats count() by source |
    ...> sort -count |
    ...> head 10
 ```
@@ -167,7 +167,7 @@ lynxdb shell --file /var/log/nginx/access.log
   Loaded: /var/log/nginx/access.log (50,000 events)
   Type /help for commands.
 
-lynxdb> | stats count by status
+lynxdb> | stats count() by status
   status    count
   200       45000
   404       3000
@@ -178,4 +178,4 @@ lynxdb> | stats count by status
 
 - [query](/docs/cli/query) for one-shot queries
 - [Shortcuts](/docs/cli/shortcuts) for quick access commands
-- [Lynx Flow Reference](/docs/lynx-flow/overview) for the query language reference
+- [LynxFlow v2 Reference](/docs/lynxflow/overview) for the query language reference

@@ -1,13 +1,17 @@
 ---
 title: Migrating from Splunk
-description: Migrate from Splunk to LynxDB -- SPL to SPL2 syntax differences, HEC endpoint setup, data export, and forwarder configuration.
+description: Migrate from Splunk to LynxDB -- SPL to LynxFlow syntax mapping, HEC endpoint setup, data export, and forwarder configuration.
 ---
 
 # Migrating from Splunk
 
-LynxDB speaks SPL2, a modern evolution of Splunk's SPL query language. Most SPL knowledge transfers directly. This guide covers the key differences and provides a step-by-step migration path.
+LynxDB speaks LynxFlow, a pipeline query language in the same tradition as Splunk's SPL. The pipe-stage model and most stage names (`stats`, `sort`, `dedup`, `top`) carry over directly, so most SPL knowledge transfers. This guide covers the key differences and provides a step-by-step migration path.
 
-## SPL vs SPL2 Differences
+:::note SPL2 history
+LynxDB originally shipped an SPL2 dialect; it was replaced by LynxFlow v2 as a clean-break redesign. If you are migrating from an older LynxDB version rather than from Splunk, see the full capability mapping in `docs/grammar/RFC-002.md` §15 and the CHANGELOG section "Breaking Changes (LynxFlow vs SPL2)".
+:::
+
+## SPL vs LynxFlow Differences
 
 ### Index Selection
 
@@ -15,57 +19,78 @@ LynxDB speaks SPL2, a modern evolution of Splunk's SPL query language. Most SPL 
 # Splunk SPL
 index=main sourcetype=nginx
 
-# LynxDB SPL2
-FROM main WHERE sourcetype="nginx"
-# Or simply:
-source=nginx
+# LynxDB LynxFlow
+from main sourcetype=nginx
 ```
 
-LynxDB auto-prepends `FROM main` when your query starts with `|` or a field filter, so in most cases you can simply write:
+The `from` stage accepts search sugar -- bare terms, quoted phrases, and `field=value` comparisons -- so Splunk-style search expressions mostly carry over after replacing `index=main` with `from main`:
 
 ```
-source=nginx status>=500 | stats count by uri
+from main _source=nginx status>=500 | stats count() by uri
 ```
 
-### Compatibility Hints
+### The Big Four Differences
 
-LynxDB detects common Splunk SPL1 patterns and suggests SPL2 equivalents:
-
-```
-$ lynxdb query 'index=main sourcetype=nginx'
-hint: "index=main" is Splunk SPL syntax. In LynxDB SPL2, use "FROM main" instead.
-```
+1. **`==` compares, `=` binds**: In expressions, write `where status == 500`, not `where status = 500`. The from-stage search sugar (`level=error`) is the single exception.
+2. **`count()` requires parentheses**: `stats count() by host`, not `stats count by host`.
+3. **Renamed stages**: `eval` is now `extend`, `table`/`fields` are now `keep`/`drop`, `rex` is now `parse regex`, and `timechart` is now `every ... stats`.
+4. **`search` is from-stage only**: Mid-pipeline, use `where has(_raw, "term")` or `where contains(_raw, "substring")` instead of `| search term`.
 
 ### Quick Syntax Reference
 
-| Operation | Splunk SPL | LynxDB SPL2 |
-|-----------|-----------|--------------|
-| Select index | `index=main` | `FROM main` |
-| Search | `search error` | `search "error"` or `level=error` |
-| Filter | `where status>500` | `where status>=500` (same) |
-| Aggregate | `stats count by host` | `stats count by host` (same) |
-| Time chart | `timechart count span=5m` | `timechart count span=5m` (same) |
+| Operation | Splunk SPL | LynxDB LynxFlow |
+|-----------|-----------|-----------------|
+| Select index | `index=main` | `from main` |
+| Search | `search error` | `from main error` |
+| Filter | `where status>500` | `where status > 500` |
+| Aggregate | `stats count by host` | `stats count() by host` |
+| Time chart | `timechart count span=5m` | `every 5m stats count()` |
+| Time chart split by field | `timechart count by host span=5m` | `every 5m by host stats count()` |
 | Top values | `top limit=10 uri` | `top 10 uri` |
-| Field extraction | `rex field=_raw "(?<ip>\d+\.\d+\.\d+\.\d+)"` | `rex field=_raw "(?P<ip>\d+\.\d+\.\d+\.\d+)"` |
-| Rename | `rename src AS source_ip` | `rename src AS source_ip` (same) |
-| Eval | `eval duration_sec=duration_ms/1000` | `eval duration_sec=duration_ms/1000` (same) |
-| Dedup | `dedup host` | `dedup host` (same) |
-| CTE / subsearch | `[search index=threats \| fields ip]` | `$threats = FROM threats \| FIELDS ip;` |
-| Macro | `\`my_macro\`` | Not yet supported |
+| Field extraction | `rex field=_raw "(?<ip>\d+\.\d+\.\d+\.\d+)"` | `parse regex r"(?P<ip>\d+\.\d+\.\d+\.\d+)"` |
+| Select columns | `table _time, level, message` | `keep _time, level, message` |
+| Compute fields | `eval duration_sec=duration_ms/1000` | `extend duration_sec = duration_ms / 1000` |
+| Fill nulls | `fillnull value=0 status` | `extend status = status ?? 0` |
+| Rename | `rename src AS source_ip` | `rename src as source_ip` |
+| Dedup | `dedup host` | `dedup host` |
+| Subsearch / CTE | `[search index=threats \| fields ip]` | `let $threats = from threats \| keep ip;` |
+| Macro | `` `my_macro` `` | Not supported |
 
-Most SPL commands work identically in SPL2. The main differences are in index selection (`FROM` vs `index=`) and the regex named group syntax (`(?P<name>...)` vs `(?<name>...)`).
+### Stage Mapping
 
-### Commands Available in Both
+Stages that keep their Splunk names: `stats`, `sort`, `head`, `tail`, `dedup`, `rename`, `top`, `rare`, `streamstats`, `eventstats`, `join`, `union`, `transaction`, `where`.
 
-These commands work the same way in Splunk and LynxDB:
+Stages that were renamed:
 
-`WHERE`, `EVAL`, `STATS`, `SORT`, `TABLE`, `FIELDS`, `RENAME`, `HEAD`, `TAIL`, `DEDUP`, `REX`, `BIN`, `TIMECHART`, `TOP`, `RARE`, `STREAMSTATS`, `EVENTSTATS`, `JOIN`, `APPEND`, `MULTISEARCH`, `TRANSACTION`, `XYSERIES`, `FILLNULL`
+| Splunk SPL | LynxFlow |
+|-----------|----------|
+| `eval` | `extend` |
+| `table`, `fields` | `keep`, `drop` |
+| `rex` | `parse regex` (plus `parse json`, `parse logfmt`) |
+| `timechart` | `every <span> stats ...` or `stats ... by bin(_time, <span>)` |
+| `bin` | `bin(_time, <span>)` as a grouping function |
+| `fillnull` | `extend f = f ?? value` |
+| `search` (mid-pipeline) | `where has(...)` / `where contains(...)` |
 
 ### Aggregation Functions
 
-All common Splunk aggregation functions are supported:
+All common Splunk aggregation functions are supported (note that `count` requires parentheses):
 
-`count`, `sum`, `avg`, `min`, `max`, `dc` (distinct count), `values`, `stdev`, `perc50`, `perc75`, `perc90`, `perc95`, `perc99`, `earliest`, `latest`
+`count()`, `sum`, `avg`, `min`, `max`, `dc` (distinct count), `estdc`, `values`, `list`, `stdev`, `var`, `mode`, `first`, `last`, `earliest`, `latest`, `perc(x, p)`, `p50`, `p75`, `p90`, `p95`, `p99`
+
+Conditional aggregation replaces `eval`-wrapped tricks: `stats count(where status >= 500)`.
+
+### Diagnostics
+
+The parser reports errors with stable codes, caret spans, and suggestions, which catches most Splunk-isms immediately:
+
+```
+$ lynxdb query 'from main | stats count by host'
+error[E013] at 1:19: count requires parentheses: count()
+  from main | stats count by host
+                    ^~~~~
+  suggestion: count()
+```
 
 ## Migration Steps
 
@@ -145,7 +170,7 @@ Convert your Splunk saved searches to LynxDB saved queries:
 ```bash
 # Splunk: index=main sourcetype=nginx status>=500 | stats count by uri | sort -count | head 10
 # LynxDB:
-lynxdb save "5xx-by-uri" '_source=nginx status>=500 | stats count by uri | sort -count | head 10'
+lynxdb save "5xx-by-uri" 'from main _source=nginx status>=500 | stats count() by uri | sort -count | head 10'
 
 # Run saved query
 lynxdb run 5xx-by-uri --since 24h
@@ -164,10 +189,9 @@ lynxdb run 5xx-by-uri --since 24h
 
 | Feature | Splunk | LynxDB |
 |---------|--------|--------|
-| Query language | SPL | SPL2 (SPL-compatible) |
+| Query language | SPL | LynxFlow (SPL-inspired pipeline language) |
 | Full-text search | tsidx | FST + roaring bitmaps |
 | Schema | On-read | On-read |
-| Dashboards | Yes (XML) | Yes (JSON) |
 | Materialized views | Data model acceleration | Materialized views (~400x) |
 | Pipe mode | No | Yes |
 | REST API | Yes | Yes (streaming-first) |
@@ -175,6 +199,5 @@ lynxdb run 5xx-by-uri --since 24h
 
 ## Next Steps
 
-- [Lynx Flow Reference](/docs/lynx-flow/overview) -- learn the full SPL2 query language
-- [SPL to SPL2 Migration Guide](/docs/lynx-flow/splunk-migration) -- detailed syntax comparison
+- [LynxFlow Reference](/docs/lynxflow/overview) -- learn the full query language
 - [Quick Start](/docs/getting-started/quickstart) -- get started with LynxDB

@@ -6,7 +6,7 @@ LDFLAGS  = -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).Dat
 
 CUSTOM_GCL = ./custom-gcl
 
-.PHONY: build test test-unit test-e2e test-cli test-compat test-conformance test-compat-filebeat test-compat-fluentbit test-compat-vector test-compat-otelcol test-compat-splunk-hec docs-check-shippers vet clean lint lint-build sync-rsigma-golden compat-manifest
+.PHONY: build test test-unit test-e2e test-cli test-compat test-conformance test-compat-filebeat test-compat-fluentbit test-compat-vector test-compat-otelcol test-compat-splunk-hec docs-check-shippers docs-gen vet clean lint lint-build sync-rsigma-golden compat-manifest
 
 build:
 	go build -ldflags "$(LDFLAGS)" -o lynxdb ./cmd/lynxdb/
@@ -43,6 +43,11 @@ test-compat-splunk-hec:
 docs-check-shippers:
 	go test ./cmd/lynxdb -run "^TestDocsShipperConfigsContainRenderedTemplates$$" -count=1
 
+# Regenerate registry-driven docs (docs/site/docs/lynxflow/*, docs/grammar/lynxflow.ebnf).
+# Never commit a built docgen binary; always go run it.
+docs-gen:
+	go run ./internal/docgen
+
 test-cli: build
 	go test -tags clitest -count=1 -timeout 300s ./test/cli/
 
@@ -73,7 +78,7 @@ bench-micro:
 	@mkdir -p artifacts
 	go test -bench=. -benchmem -count=5 -timeout 300s \
 		./pkg/engine/pipeline/... \
-		./pkg/spl2/... \
+		./pkg/vm/... \
 		./pkg/ingest/pipeline/... \
 		| tee artifacts/bench-micro.txt
 

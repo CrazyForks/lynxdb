@@ -9,7 +9,7 @@ Materialized views precompute aggregations in the background so that repeated qu
 
 ## How materialized views work
 
-1. You define a view with an SPL2 aggregation query and a time bucket.
+1. You define a view with a LynxFlow aggregation query and a time bucket.
 2. LynxDB runs the aggregation continuously against incoming data and stores the precomputed results.
 3. When you run a query that matches the view's aggregation pattern, the optimizer rewrites the query to read from the view instead of scanning raw events.
 4. The view also backfills historical data automatically.
@@ -24,7 +24,7 @@ Use [`lynxdb mv create`](/docs/cli/mv):
 
 ```bash
 lynxdb mv create mv_errors_5m \
-  'level=error | stats count, avg(duration) by source, time_bucket(_time, "5m") AS bucket' \
+  'from main level=error | extend bucket = bin(_time, 5m) | stats count() as count, avg(duration) by source, bucket' \
   --retention 90d
 ```
 
@@ -41,7 +41,7 @@ Use [`POST /api/v1/views`](/docs/api/views):
 ```bash
 curl -X POST localhost:3100/api/v1/views -d '{
   "name": "mv_errors_5m",
-  "q": "level=error | stats count, avg(duration) by source, time_bucket(_time, \"5m\") AS bucket",
+  "q": "from main level=error | extend bucket = bin(_time, 5m) | stats count() as count, avg(duration) by source, bucket",
   "retention": "90d"
 }'
 ```
@@ -53,7 +53,7 @@ curl -X POST localhost:3100/api/v1/views -d '{
 Once the view is active, matching queries are automatically accelerated. You do not change your queries:
 
 ```bash
-lynxdb query 'level=error | stats count by source' --since 7d
+lynxdb query 'from main level=error | stats count() by source' --since 7d
 ```
 
 LynxDB detects that this query can be satisfied by `mv_errors_5m` and reads from the view instead of scanning raw events:
@@ -82,7 +82,7 @@ lynxdb mv status mv_errors_5m
 ```
 Name:       mv_errors_5m
 Status:     active
-Query:      level=error | stats count, avg(duration) by source, time_bucket(...)
+Query:      from main level=error | extend bucket = bin(_time, 5m) | stats count() as count, avg(...)
 Retention:  90d
 ```
 
@@ -111,8 +111,8 @@ lynxdb mv list
 
 ```
 NAME            STATUS       QUERY
-mv_errors_5m    active       level=error | stats count, avg(duration) by ...
-mv_5xx_hourly   backfilling  source=nginx status>=500 | stats count, p95(dur...
+mv_errors_5m    active       from main level=error | extend bucket = bin(_t...
+mv_5xx_hourly   backfilling  from main _source=nginx status>=500 | extend h...
 ```
 
 ---
@@ -124,17 +124,17 @@ Build views on top of other views to create multi-granularity rollups. This is u
 ```bash
 # Base view: 5-minute buckets
 lynxdb mv create mv_errors_5m \
-  'level=error | stats count, avg(duration) by source, time_bucket(_time, "5m") AS bucket' \
+  'from main level=error | extend bucket = bin(_time, 5m) | stats count() as count, avg(duration) by source, bucket' \
   --retention 90d
 
 # Hourly rollup (reads from the 5-minute view, not raw events)
 lynxdb mv create mv_errors_1h \
-  '| from mv_errors_5m | stats sum(count) AS count by source, time_bucket(bucket, "1h") AS hour' \
+  'from mv_errors_5m | extend hour = bin(bucket, 1h) | stats sum(count) as count by source, hour' \
   --retention 365d
 
 # Daily rollup (reads from the hourly view)
 lynxdb mv create mv_errors_1d \
-  '| from mv_errors_1h | stats sum(count) AS count by source, time_bucket(hour, "1d") AS day' \
+  'from mv_errors_1h | extend day = bin(hour, 1d) | stats sum(count) as count by source, day' \
   --retention 730d
 ```
 
@@ -161,7 +161,7 @@ Set a retention period to automatically discard old precomputed data:
 
 ```bash
 lynxdb mv create mv_5xx_hourly \
-  '_source=nginx status>=500 | stats count, perc95(duration_ms) by uri, time_bucket(_time, "1h") AS hour' \
+  'from main _source=nginx status>=500 | extend hour = bin(_time, 1h) | stats count() as count, p95(duration_ms) by uri, hour' \
   --retention 30d
 ```
 
@@ -234,7 +234,7 @@ Think about what queries you run most often and include those aggregations in th
 ```bash
 # If you often query count, avg, and p99, include all three:
 lynxdb mv create mv_nginx_5m \
-  '_source=nginx | stats count, avg(duration_ms), perc99(duration_ms) by uri, time_bucket(_time, "5m") AS bucket' \
+  'from main _source=nginx | extend bucket = bin(_time, 5m) | stats count() as count, avg(duration_ms), p99(duration_ms) by uri, bucket' \
   --retention 90d
 ```
 
@@ -249,22 +249,22 @@ The optimizer can only rewrite queries that match the view's aggregation pattern
 ```bash
 # 1. Fine-grained error tracking
 lynxdb mv create mv_errors_5m \
-  'level=error | stats count by source, time_bucket(_time, "5m") AS bucket' \
+  'from main level=error | extend bucket = bin(_time, 5m) | stats count() as count by source, bucket' \
   --retention 90d
 
 # 2. Nginx latency tracking
 lynxdb mv create mv_nginx_latency_5m \
-  '_source=nginx | stats count, avg(duration_ms), perc95(duration_ms), perc99(duration_ms) by uri, time_bucket(_time, "5m") AS bucket' \
+  'from main _source=nginx | extend bucket = bin(_time, 5m) | stats count() as count, avg(duration_ms), p95(duration_ms), p99(duration_ms) by uri, bucket' \
   --retention 90d
 
 # 3. Hourly rollup for long-term trends
 lynxdb mv create mv_errors_1h \
-  '| from mv_errors_5m | stats sum(count) AS count by source, time_bucket(bucket, "1h") AS hour' \
+  'from mv_errors_5m | extend hour = bin(bucket, 1h) | stats sum(count) as count by source, hour' \
   --retention 365d
 
 # 4. Now your repeat queries are instant:
-lynxdb query 'level=error | stats count by source' --since 7d
-lynxdb query '_source=nginx | stats avg(duration_ms), p99(duration_ms) by uri' --since 24h
+lynxdb query 'from main level=error | stats count() by source' --since 7d
+lynxdb query 'from main _source=nginx | stats avg(duration_ms), p99(duration_ms) by uri' --since 24h
 ```
 
 ---

@@ -5,7 +5,7 @@ description: How to stream logs in real time using lynxdb tail, the SSE tail end
 
 # Live Log Tailing
 
-LynxDB provides real-time log streaming with full SPL2 pipeline support. Use `lynxdb tail` from the CLI or connect to the SSE `/api/v1/tail` endpoint programmatically. The tail stream first catches up with recent historical events, then transitions to live streaming.
+LynxDB provides real-time log streaming with full LynxFlow pipeline support. Use `lynxdb tail` from the CLI or connect to the SSE `/api/v1/tail` endpoint programmatically. The tail stream first catches up with recent historical events, then transitions to live streaming.
 
 ## Tail from the CLI
 
@@ -21,21 +21,21 @@ Apply any search filter to tail only matching events:
 
 ```bash
 # Tail only errors
-lynxdb tail 'level=error'
+lynxdb tail 'where level == "error"'
 
 # Tail 5xx from nginx
-lynxdb tail '_source=nginx status>=500'
+lynxdb tail 'where _source == "nginx" and status >= 500'
 
 # Tail with field-value filter
-lynxdb tail '_source=api-gateway duration_ms>1000'
+lynxdb tail 'where _source == "api-gateway" and duration_ms > 1000'
 ```
 
-### Apply an SPL2 pipeline
+### Apply a LynxFlow pipeline
 
-Use eval, fields, and other commands to transform the stream:
+Use extend, keep, and other operators to transform the stream:
 
 ```bash
-lynxdb tail 'level=error | eval sev=upper(level) | fields _timestamp, source, sev, message'
+lynxdb tail 'where level == "error" | extend sev = upper(level) | keep _time, _source, sev, message'
 ```
 
 ### Control catchup behavior
@@ -47,10 +47,10 @@ By default, `lynxdb tail` fetches the last 100 historical events from the past h
 lynxdb tail --count 50
 
 # Look back 6 hours for historical catchup
-lynxdb tail 'level=error' --from -6h
+lynxdb tail 'where level == "error"' --from -6h
 
 # Fetch last 200 events from the past 24 hours
-lynxdb tail 'level=error' --count 200 --from -24h
+lynxdb tail 'where level == "error"' --count 200 --from -24h
 ```
 
 ### Console output
@@ -74,7 +74,9 @@ Press `Ctrl+C` to stop tailing.
 Connect to the [`GET /api/v1/tail`](/docs/api/tail-histogram) endpoint to receive events as Server-Sent Events (SSE):
 
 ```bash
-curl -N "localhost:3100/api/v1/tail?q=level%3Derror&from=-1h&count=100"
+curl -N -G "localhost:3100/api/v1/tail" \
+  --data-urlencode 'q=where level == "error"' \
+  -d from=-1h -d count=100
 ```
 
 ### SSE event types
@@ -107,7 +109,7 @@ data: {"_time":"2026-01-15T14:23:15Z","level":"error","message":"disk full","sou
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `q` | (none) | SPL2 filter or pipeline |
+| `q` | (none) | LynxFlow filter or pipeline |
 | `from` | `-1h` | Historical lookback period |
 | `count` | `100` | Max historical events to fetch |
 
@@ -139,10 +141,10 @@ Open two terminals:
 
 ```bash
 # Terminal 1: Tail errors from all sources
-lynxdb tail 'level=error | fields _timestamp, source, message'
+lynxdb tail 'where level == "error" | keep _time, _source, message'
 
 # Terminal 2: Tail slow queries
-lynxdb tail '_source=postgres duration_ms>500 | fields _timestamp, query, duration_ms'
+lynxdb tail 'where _source == "postgres" and duration_ms > 500 | keep _time, query, duration_ms'
 ```
 
 ### Monitor a deployment
@@ -150,13 +152,13 @@ lynxdb tail '_source=postgres duration_ms>500 | fields _timestamp, query, durati
 Start tailing before deploying and watch for errors:
 
 ```bash
-lynxdb tail 'level=error OR level=fatal | fields _timestamp, source, level, message' --from -5m
+lynxdb tail 'where level == "error" or level == "fatal" | keep _time, _source, level, message' --from -5m
 ```
 
 ### Watch a specific service
 
 ```bash
-lynxdb tail '_source=api-gateway | fields _timestamp, level, endpoint, duration_ms, message'
+lynxdb tail 'where _source == "api-gateway" | keep _time, level, endpoint, duration_ms, message'
 ```
 
 ### Tail with grep-like filtering
@@ -165,7 +167,7 @@ Combine tail with Unix tools for additional processing:
 
 ```bash
 # Pipe tail output to grep for secondary filtering
-lynxdb tail '_source=nginx' --format json | grep "timeout"
+lynxdb tail 'where _source == "nginx"' --format json | grep "timeout"
 ```
 
 ---
@@ -199,10 +201,10 @@ If you want to see aggregation results update over time (instead of individual e
 
 ```bash
 # Re-run an aggregation every 5 seconds
-lynxdb watch 'level=error | stats count by source' --interval 5s
+lynxdb watch 'where level == "error" | stats count() by source' --interval 5s
 
 # Show deltas between runs
-lynxdb watch '| stats count by level' --since 15m --diff
+lynxdb watch 'stats count() by level' --since 15m --diff
 ```
 
 `watch` re-executes the query at each interval and displays the latest results. It is useful for monitoring aggregate trends rather than individual events.

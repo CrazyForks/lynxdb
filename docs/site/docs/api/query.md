@@ -16,7 +16,7 @@ Async work created by `POST /query` is tracked under `/api/v1/query/jobs/...`.
 
 ## POST /query
 
-Execute an SPL2 query and return either final results or a job handle.
+Execute a LynxFlow query and return either final results or a job handle.
 
 ### Request Body
 
@@ -34,8 +34,24 @@ Execute an SPL2 query and return either final results or a job handle.
 | `profile` | string | No | Profiling level: `basic`, `full`, or `trace` |
 | `variables` | object | No | Replaces `$name` tokens in the query with quoted, escaped string values |
 | `format` | string | No | Response format. Only empty or `json` are accepted on this endpoint. Use `POST /api/v1/query/stream` for NDJSON output |
+| `language` | string | No | Query language. Only `lynxflow` (or omitted) is accepted |
 
 \* One of `q` or `query` is required.
+
+### Query Language
+
+All queries execute as LynxFlow. The `language` field is optional; when present, only `"lynxflow"` is accepted. Requesting `"spl2"` returns `400 VALIDATION_ERROR` with migration guidance:
+
+```json
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "language \"spl2\" is no longer supported; migrate queries to LynxFlow — see CHANGELOG for migration guide"
+  }
+}
+```
+
+Successful responses include `meta.language: "lynxflow"`.
 
 ### Execution Modes
 
@@ -53,7 +69,7 @@ Execute an SPL2 query and return either final results or a job handle.
 curl -s localhost:3100/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
-    "q": "FROM main | where level=\"error\" | head 2",
+    "q": "from main | where level == \"error\" | head 2",
     "from": "-1h"
   }' | jq .
 ```
@@ -79,7 +95,8 @@ curl -s localhost:3100/api/v1/query \
   "meta": {
     "took_ms": 89,
     "scanned": 12400000,
-    "query_id": "qry_7f3a..."
+    "query_id": "qry_7f3a...",
+    "language": "lynxflow"
   }
 }
 ```
@@ -90,7 +107,7 @@ curl -s localhost:3100/api/v1/query \
 curl -s localhost:3100/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
-    "q": "FROM main | where source=\"nginx\" and status>=500 | stats count by uri | sort -count | head 10",
+    "q": "from main | where source == \"nginx\" and status >= 500 | stats count() by uri | sort -count | head 10",
     "from": "-1h"
   }' | jq .
 ```
@@ -142,7 +159,7 @@ Current handlers return a minimal job handle only. They do not include `query`, 
 curl -s localhost:3100/api/v1/query \
   -H 'Content-Type: application/json' \
   -d '{
-    "q": "FROM main | where source=$source and level=$level | head 5",
+    "q": "from main | where source == $source and level == $level | head 5",
     "variables": {
       "source": "nginx",
       "level": "error"
@@ -155,18 +172,17 @@ curl -s localhost:3100/api/v1/query \
 - `POST /query` always returns the standard JSON envelope.
 - For NDJSON export, use [`POST /query/stream`](#post-querystream).
 - `format` values other than `json` are rejected with `400 VALIDATION_ERROR`.
-- Unsupported SPL2 commands are rejected with `UNSUPPORTED_COMMAND`.
+- Removed SPL2 stages (`eval`, `rex`, `table`, `timechart`, ...) are rejected at parse time with `400 INVALID_QUERY` and a suggestion for the LynxFlow equivalent.
 
 ### Error Responses
 
 | Status | Code | When |
 |---|---|---|
 | `400` | `INVALID_JSON` | Request body is not valid JSON |
-| `400` | `VALIDATION_ERROR` | Query is missing |
 | `400` | `INVALID_QUERY` | Parse or planning failed |
 | `400` | `QUERY_TOO_LARGE` | Query exceeds `query.max_query_length` |
 | `400` | `QUERY_MEMORY_EXCEEDED` | Query exceeded its per-query memory budget |
-| `400` | `UNSUPPORTED_COMMAND` | Query contains a command LynxDB rejects for this path |
+| `400` | `VALIDATION_ERROR` | Query is missing, `format` is not `json`, or `language` is not `lynxflow` |
 | `401` | `AUTH_REQUIRED` / `INVALID_TOKEN` | Authentication failure |
 | `403` | `FORBIDDEN` | Token lacks query scope |
 | `429` | `TOO_MANY_REQUESTS` | Query concurrency limit reached |
@@ -185,9 +201,10 @@ GET convenience variant for simple queries.
 | `to` | No | End time bound |
 | `limit` | No | Result row limit |
 | `format` | No | Optional response format. Only empty or `json` are accepted |
+| `language` | No | Query language. Only `lynxflow` (or omitted) is accepted |
 
 ```bash
-curl -s "localhost:3100/api/v1/query?q=FROM+main+%7C+head+5&limit=5" | jq .
+curl -s "localhost:3100/api/v1/query?q=from+main+%7C+head+5&limit=5" | jq .
 ```
 
 `GET /query` returns the same JSON envelope and result shapes as `POST /query`. As with `POST /query`, `format=csv`, `format=ndjson`, and other non-JSON values are rejected.
@@ -206,6 +223,7 @@ This path is for export and pipeline use, not job management.
 - `from` or `earliest`
 - `to` or `latest`
 - `variables`
+- `language` (only `lynxflow` or omitted)
 
 `limit`, `offset`, `wait`, `profile`, and `format` are not silently ignored on this path. If any of them are present, the handler returns `400 VALIDATION_ERROR`.
 
@@ -214,7 +232,7 @@ This path is for export and pipeline use, not job management.
 ```bash
 curl -s localhost:3100/api/v1/query/stream \
   -H 'Content-Type: application/json' \
-  -d '{"q":"FROM main | where level=\"error\"","from":"-24h"}'
+  -d '{"q":"from main | where level == \"error\"","from":"-24h"}'
 ```
 
 Example response:
@@ -243,44 +261,30 @@ Parse and explain a query without executing it.
 |---|---|---|
 | `q` | Yes* | Query text |
 | `query` | Yes* | Alias for `q` |
-| `from` | No | Start time bound |
-| `to` | No | End time bound |
-| `analyze` | No | When `true`, also executes the query with `profile=full` and adds `execution` stats |
+| `from` | No | Start time bound (accepted for compatibility; does not change the plan text) |
+| `to` | No | End time bound (accepted for compatibility; does not change the plan text) |
+| `analyze` | No | Accepted for compatibility; the LynxFlow explain response does not currently include execution stats |
+| `language` | No | Query language. Only `lynxflow` (or omitted) is accepted |
 
 \* One of `q` or `query` is required.
 
 ### Valid Response Example
 
 ```bash
-curl -s "localhost:3100/api/v1/query/explain?q=FROM%20main%20%7C%20search%20%22error%22%20%7C%20head%2010" | jq .
+curl -s "localhost:3100/api/v1/query/explain?q=from%20main%20%22error%22%20%7C%20head%2010" | jq .
 ```
+
+The response carries the optimized plan as text in `lynxflow_plan`, including desugar rewrites and the optimizer rules that fired:
 
 ```json
 {
   "data": {
     "is_valid": true,
-    "parsed": {
-      "pipeline": [
-        {
-          "command": "search",
-          "description": "search \"error\""
-        },
-        {
-          "command": "head",
-          "description": "head 10"
-        }
-      ],
-      "result_type": "events",
-      "estimated_cost": "low",
-      "uses_full_scan": false,
-      "fields_read": [],
-      "search_terms": ["error"],
-      "has_time_bounds": false
-    },
-    "errors": [],
-    "acceleration": {
-      "available": false
-    }
+    "lynxflow_plan": "1. Limit(10)\n  2. Filter(contains(_raw, \"error\"))\n    3. Scan(main)\n      bloom_term: \"error\"\n\nAnnotations:\n  Desugar rewrites:\n    search-sugar: \"error\" => where contains(_raw, \"error\")\n  Optimizer rules:\n    predicate-pushdown (1x)\n",
+    "errors": []
+  },
+  "meta": {
+    "language": "lynxflow"
   }
 }
 ```
@@ -295,17 +299,15 @@ curl -s "localhost:3100/api/v1/query/explain?q=FROM%20main%20%7C%20search%20%22e
     "is_valid": false,
     "errors": [
       {
-        "message": "Unknown command 'staats'",
-        "suggestion": "stats"
+        "message": "lynxflow.Explain: parse: unknown stage \"staats\", did you mean \"stats\"?"
       }
     ]
+  },
+  "meta": {
+    "language": "lynxflow"
   }
 }
 ```
-
-### `analyze=true`
-
-When `analyze=true`, the response keeps the normal explain payload and adds an `execution` object with actual runtime stats from a profiled execution.
 
 ## GET /query/jobs
 
@@ -321,7 +323,7 @@ curl -s localhost:3100/api/v1/query/jobs | jq .
     "jobs": [
       {
         "job_id": "qry_9c1d4e",
-        "query": "FROM main | head 5",
+        "query": "from main | head 5",
         "status": "running",
         "created_at": "2026-02-14T14:50:00Z"
       }
@@ -347,7 +349,7 @@ Fetch a specific job.
     "type": "job",
     "job_id": "qry_9c1d4e",
     "status": "running",
-    "query": "FROM main | head 5",
+    "query": "from main | head 5",
     "progress": {
       "phase": "scanning_segments",
       "segments_total": 30,
@@ -374,7 +376,7 @@ Fetch a specific job.
     "type": "job",
     "job_id": "qry_9c1d4e",
     "status": "done",
-    "query": "FROM main | stats count by source",
+    "query": "from main | stats count() by source",
     "created_at": "2026-02-14T14:50:00Z",
     "completed_at": "2026-02-14T14:50:37Z",
     "results": {
@@ -479,4 +481,4 @@ The current implementation does not emit a separate `partial` event type. Previe
 - **[REST API overview](/docs/api/overview)** for authentication, envelopes, and endpoint map
 - **[Live Tail & Histogram](/docs/api/tail-histogram)** for SSE log streaming
 - **[`lynxdb query`](/docs/cli/query)** for the CLI behavior on top of these endpoints
-- **[Lynx Flow Reference](/docs/lynx-flow/overview)** for SPL2 syntax
+- **[LynxFlow v2 Reference](/docs/lynxflow/overview)** for LynxFlow syntax

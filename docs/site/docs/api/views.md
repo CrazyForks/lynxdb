@@ -25,7 +25,7 @@ curl -s localhost:3100/api/v1/views | jq .
       {
         "name": "mv_errors_5m",
         "kind": "aggregation",
-        "query": "level=error | stats count, avg(duration) by source, time_bucket(timestamp, '5m') AS bucket",
+        "query": "from main level=error | stats count(), avg(duration) by source, bin(_time, 5m)",
         "retention": "90d",
         "status": "active",
         "version": 1,
@@ -39,7 +39,7 @@ curl -s localhost:3100/api/v1/views | jq .
       {
         "name": "mv_5xx_hourly",
         "kind": "aggregation",
-        "query": "source=nginx status>=500 | stats count, p95(duration) by uri, time_bucket(timestamp, '1h') AS hour",
+        "query": "from main source=nginx status>=500 | stats count(), p95(duration) by uri, bin(_time, 1h)",
         "retention": "365d",
         "status": "backfilling",
         "version": 1,
@@ -67,7 +67,7 @@ curl -s localhost:3100/api/v1/views | jq .
 |---|---|---|
 | `name` | string | View name (must start with `mv_`) |
 | `kind` | string | `aggregation` or `projection` |
-| `query` | string | Source SPL2 pipeline |
+| `query` | string | Source LynxFlow pipeline |
 | `retention` | string | Data retention period |
 | `status` | string | `active`, `backfilling`, `rebuilding`, `paused`, `error` |
 | `version` | integer | Schema version (incremented on rebuild) |
@@ -90,7 +90,7 @@ Create a materialized view (or trigger a versioned rebuild of an existing one). 
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `name` | string | Yes | View name (must start with `mv_`, lowercase, alphanumeric with underscores) |
-| `q` | string | Yes | SPL2 pipeline (without `| materialize`) |
+| `query` | string | Yes | LynxFlow pipeline (without `| materialize`) |
 | `retention` | string | No | Retention period (default: same as index retention) |
 | `partition_by` | string | No | Partition strategy expression |
 
@@ -106,7 +106,7 @@ Create a materialized view (or trigger a versioned rebuild of an existing one). 
 curl -X POST localhost:3100/api/v1/views \
   -d '{
     "name": "mv_errors_5m",
-    "q": "level=error | stats count, avg(duration) by source, time_bucket(timestamp, '\''5m'\'') AS bucket",
+    "query": "from main level=error | stats count(), avg(duration) by source, bin(_time, 5m)",
     "retention": "90d"
   }'
 ```
@@ -118,7 +118,7 @@ curl -X POST localhost:3100/api/v1/views \
   "data": {
     "name": "mv_errors_5m",
     "kind": "aggregation",
-    "query": "level=error | stats count, avg(duration) by source, time_bucket(timestamp, '5m') AS bucket",
+    "query": "from main level=error | stats count(), avg(duration) by source, bin(_time, 5m)",
     "retention": "90d",
     "status": "backfilling",
     "version": 1,
@@ -137,9 +137,9 @@ curl -X POST localhost:3100/api/v1/views \
 curl -X POST localhost:3100/api/v1/views \
   -d '{
     "name": "mv_access",
-    "q": "source=nginx | extract timestamp, method, uri, status, size, duration",
+    "query": "from main source=nginx | keep _time, method, uri, status, size, duration",
     "retention": "14d",
-    "partition_by": "date(timestamp)"
+    "partition_by": "date(_time)"
   }'
 ```
 
@@ -149,7 +149,7 @@ curl -X POST localhost:3100/api/v1/views \
 curl -X POST localhost:3100/api/v1/views \
   -d '{
     "name": "mv_errors_1h",
-    "q": "| from mv_errors_5m | stats sum(count) AS count by source, time_bucket(bucket, '\''1h'\'') AS hour",
+    "query": "from mv_errors_5m | stats sum(count) as count by source, bin(_time, 1h)",
     "retention": "365d"
   }'
 ```
@@ -165,7 +165,7 @@ If a view with the same name already exists, POSTing triggers a **versioned rebu
   "data": {
     "name": "mv_errors_5m",
     "kind": "aggregation",
-    "query": "level=error | stats count, avg(duration), p99(duration) by source, time_bucket(timestamp, '5m') AS bucket",
+    "query": "from main level=error | stats count(), avg(duration), p99(duration) by source, bin(_time, 5m)",
     "retention": "90d",
     "status": "rebuilding",
     "version": 2,
@@ -191,7 +191,7 @@ curl -X POST localhost:3100/api/v1/views \
   -H "If-None-Match: *" \
   -d '{
     "name": "mv_errors_5m",
-    "q": "level=error | stats count by source, time_bucket(timestamp, '\''5m'\'') AS bucket",
+    "query": "from main level=error | stats count() by source, bin(_time, 5m)",
     "retention": "90d"
   }'
 ```
@@ -224,17 +224,17 @@ curl -s localhost:3100/api/v1/views/mv_errors_5m | jq .
   "data": {
     "name": "mv_errors_5m",
     "kind": "aggregation",
-    "query": "level=error | stats count, avg(duration) by source, time_bucket(timestamp, '5m') AS bucket",
+    "query": "from main level=error | stats count(), avg(duration) by source, bin(_time, 5m)",
     "retention": "90d",
     "status": "active",
     "version": 1,
     "columns": [
       {"name": "source", "type": "string", "encoding": "dictionary"},
-      {"name": "bucket", "type": "timestamp", "encoding": "delta-of-delta"},
+      {"name": "_time", "type": "timestamp", "encoding": "delta-of-delta"},
       {"name": "count", "type": "int64", "encoding": "delta-varint"},
       {"name": "avg(duration)", "type": "float64", "derived_from": ["_sum_duration", "_count_duration"]}
     ],
-    "group_by": ["source", "bucket"],
+    "group_by": ["source", "_time"],
     "aggregations": ["count", "avg(duration)"],
     "stats": {
       "rows": 142847,
@@ -280,7 +280,7 @@ curl -s localhost:3100/api/v1/views/mv_errors_5m | jq .
 
 ## PATCH /views/\{name\}
 
-Update mutable MV properties. Only `retention` and `paused` can be changed without a rebuild. To change `q`, `partition_by`, or `group_by`, use `POST /views` with the same name (triggers a rebuild).
+Update mutable MV properties. Only `retention` and `paused` can be changed without a rebuild. To change `query`, `partition_by`, or `group_by`, use `POST /views` with the same name (triggers a rebuild).
 
 ### Path Parameters
 

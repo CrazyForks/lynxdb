@@ -16,13 +16,18 @@ type CompatManifest struct {
 	Fixtures      []CompatFixture `json:"fixtures"`
 }
 
-// CompatFixture describes one rsigma-generated SPL2 fixture.
+// CompatFixture describes one fixture of the rsigma compatibility corpus.
+// The executable goldens are the .lynxflow files under testdata/golden; this
+// manifest entry carries the Sigma rule metadata and the expected match count.
 type CompatFixture struct {
-	Name               string   `json:"name"`
-	RuleID             string   `json:"rule_id"`
-	Title              string   `json:"title,omitempty"`
-	Level              string   `json:"level,omitempty"`
-	Tags               []string `json:"tags,omitempty"`
+	Name   string   `json:"name"`
+	RuleID string   `json:"rule_id"`
+	Title  string   `json:"title,omitempty"`
+	Level  string   `json:"level,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
+	// SPL2 is the legacy rsigma SPL2 output for this fixture, retained only
+	// for expected_match_count bookkeeping. The SPL2 language was removed in
+	// RFC-002 Phase 10; conformance runs against the .lynxflow goldens.
 	SPL2               string   `json:"spl2"`
 	Format             string   `json:"format"`
 	Shapes             []string `json:"shapes"`

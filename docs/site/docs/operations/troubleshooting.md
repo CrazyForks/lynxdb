@@ -84,7 +84,7 @@ export LYNXDB_TOKEN=lxk_your_token_here
 
 ```bash
 # Skip verification (development only)
-lynxdb query 'level=error' --tls-skip-verify
+lynxdb query 'from main level=error' --tls-skip-verify
 
 # Or re-trust the certificate
 lynxdb login --server https://localhost:3100
@@ -92,7 +92,7 @@ lynxdb login --server https://localhost:3100
 
 ## Query Issues
 
-### "Bad SPL2 syntax"
+### "Bad LynxFlow syntax"
 
 **Symptoms:** Exit code 4 (QueryParse).
 
@@ -101,20 +101,26 @@ lynxdb login --server https://localhost:3100
 lynxdb explain 'your query here'
 
 # Common mistakes:
-# Wrong: index=main sourcetype=nginx
-# Right: FROM main WHERE sourcetype="nginx"  (or: source=nginx)
+# Wrong: index=main sourcetype=nginx     (Splunk SPL)
+# Right: from main sourcetype=nginx
 
-# Wrong: stats count BY host
-# Right: stats count by host  (case-insensitive, but check quotes)
+# Wrong: stats count by host             (count needs parentheses)
+# Right: stats count() by host
+
+# Wrong: where level = "error"           (= binds, == compares)
+# Right: where level == "error"
 ```
 
-LynxDB provides compatibility hints for common Splunk SPL1 patterns:
+Parse errors carry stable error codes, caret spans, and suggestions:
 
 ```
-hint: "index=main" is Splunk SPL syntax. In LynxDB SPL2, use "FROM main" instead.
+error[E013] at 1:7: count requires parentheses: count()
+  stats count by host
+        ^~~~~
+  suggestion: count()
 ```
 
-See the [Lynx Flow Reference](/docs/lynx-flow/overview) for the full query language reference.
+See the [LynxFlow Reference](/docs/lynxflow/overview) for the full query language reference.
 
 ### "Query timeout"
 
@@ -152,12 +158,12 @@ If you send `limit`, `offset`, `wait`, `profile`, or `format`, LynxDB rejects th
 # Wrong for /query/stream
 curl -X POST localhost:3100/api/v1/query/stream \
   -H 'Content-Type: application/json' \
-  -d '{"q":"FROM main | head 10","limit":10}'
+  -d '{"q":"from main | head 10","limit":10}'
 
 # Right: use /query for bounded JSON responses
 curl -X POST localhost:3100/api/v1/query \
   -H 'Content-Type: application/json' \
-  -d '{"q":"FROM main | head 10","limit":10}'
+  -d '{"q":"from main | head 10","limit":10}'
 ```
 
 ### Slow Queries
@@ -174,7 +180,7 @@ Check the output for:
 
 **Common fixes:**
 - Add time range to narrow the scan: `--since 1h`
-- Use more selective filters: `source=nginx AND status>=500` instead of just `source=nginx`
+- Use more selective filters: `from main _source=nginx status>=500` instead of just `from main _source=nginx`
 - Create materialized views for repeated queries
 - Increase cache size if hit rate is low
 
@@ -362,7 +368,7 @@ lynxdb config validate
 | 1 | General | Unspecified failure |
 | 2 | Usage | Invalid flags or missing arguments |
 | 3 | Connection | Cannot reach server |
-| 4 | QueryParse | Bad SPL2 syntax |
+| 4 | QueryParse | Bad LynxFlow syntax |
 | 5 | QueryTimeout | Query timed out |
 | 6 | NoResults | No results (with `--fail-on-empty`) |
 | 7 | Auth | Authentication failure |
@@ -388,4 +394,4 @@ lynxdb shell
 - [Monitoring](/docs/operations/monitoring) -- track server health
 - [Performance Tuning](/docs/operations/performance-tuning) -- optimize performance
 - [Configuration Overview](/docs/configuration/overview) -- configuration reference
-- [Lynx Flow Reference](/docs/lynx-flow/overview) -- query language reference
+- [LynxFlow Reference](/docs/lynxflow/overview) -- query language reference

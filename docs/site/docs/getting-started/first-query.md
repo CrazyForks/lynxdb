@@ -1,133 +1,137 @@
 ---
 sidebar_position: 5
-title: Your First SPL2 Query
-description: Learn SPL2 basics -- search, filter, aggregate, and visualize log data.
+title: Your First LynxFlow Query
+description: Learn LynxFlow basics -- search, filter, aggregate, and visualize log data.
 ---
 
-# Your First SPL2 Query
+# Your First LynxFlow Query
 
-SPL2 is LynxDB's query language. It's a pipeline language inspired by Splunk's SPL -- data flows left to right through pipe (`|`) operators.
+LynxFlow is LynxDB's query language. It's a pipeline language inspired by Splunk's SPL -- data flows left to right through pipe (`|`) operators.
 
 ## The Pipeline Concept
 
-Every SPL2 query is a pipeline of commands:
+Every LynxFlow query is a pipeline of operators:
 
 ```
-[search terms] | command1 args | command2 args | command3 args
+from <dataset> [search terms] | operator1 args | operator2 args | operator3 args
 ```
 
-Data starts on the left (a search or data source) and flows through each command. Each command transforms the data and passes it to the next.
+Data starts on the left (a `from` stage with optional search terms) and flows through each operator. Each operator transforms the data and passes it to the next.
 
 ## Step 1: Search
 
-The simplest query is a keyword search:
+The simplest query is a keyword search attached to the `from` stage:
 
 ```spl
-error
+from main error
 ```
 
 This finds all events containing the word "error". You can also search specific fields:
 
 ```spl
-level=error
+from main level=error
 ```
 
 Combine terms with boolean operators:
 
 ```spl
-level=error source=nginx
-level=error OR level=warn
-level=error NOT source=redis
+from main level=error source=nginx
+from main level=error OR level=warn
+from main level=error NOT source=redis
 ```
 
 :::tip
-If your query starts with `|`, LynxDB automatically prepends `FROM main`. So `| stats count` is equivalent to `FROM main | stats count`.
+If your query omits the `from` stage, LynxDB reads from the default `main` dataset. So `stats count()` is equivalent to `from main | stats count()`. Note that search-term sugar like `level=error` only works in the `from` stage -- everywhere else, use `where` with `==`.
 :::
 
 ## Step 2: Filter with WHERE
 
-Use `WHERE` for precise filtering:
+Use `where` for precise filtering. Inside `where`, `==` compares (a bare `=` binds values, so it is not a comparison):
 
 ```spl
-source=nginx | where status >= 500
-source=nginx | where status >= 500 AND duration_ms > 1000
-source=nginx | where uri LIKE "%/api/%"
+from main source=nginx | where status >= 500
+from main source=nginx | where status >= 500 and duration_ms > 1000
+from main source=nginx | where contains(uri, "/api/")
 ```
 
 ## Step 3: Aggregate with STATS
 
-`STATS` computes aggregations:
+`stats` computes aggregations. Aggregate calls always take parentheses -- `count()`, not `count`:
 
 ```spl
-# Count events
-| stats count
+// Count events
+from main | stats count()
 
-# Count by field
-level=error | stats count by source
+// Count by field
+from main level=error | stats count() by source
 
-# Multiple aggregations
-source=nginx | stats count, avg(duration_ms), p99(duration_ms) by uri
+// Multiple aggregations
+from main source=nginx | stats count(), avg(duration_ms), p99(duration_ms) by uri
 
-# With renaming
-source=nginx | stats count as requests, avg(duration_ms) as avg_latency by uri
+// With renaming
+from main source=nginx | stats count() as requests, avg(duration_ms) as avg_latency by uri
 ```
 
 ## Step 4: Sort and Limit
 
+Alias `count()` with `as count` when later stages reference it:
+
 ```spl
-# Sort descending (prefix with -)
-source=nginx | stats count by uri | sort -count
+// Sort descending (prefix with -)
+from main source=nginx | stats count() as count by uri | sort -count
 
-# Take top N
-source=nginx | stats count by uri | sort -count | head 10
+// Take top N
+from main source=nginx | stats count() as count by uri | sort -count | head 10
 
-# Or use the TOP shortcut
-source=nginx | top 10 uri
+// Or use the TOP shortcut
+from main source=nginx | top 10 uri
 ```
 
 ## Step 5: Select Columns
 
 ```spl
-# Pick specific fields
-level=error | table _time, source, message
+// Pick specific fields
+from main level=error | keep _time, source, message
 
-# Remove fields
-level=error | fields - _raw
+// Remove fields
+from main level=error | drop _raw
 ```
 
-## Step 6: Transform with EVAL
+## Step 6: Transform with EXTEND
 
 Create computed fields:
 
 ```spl
-source=nginx
-  | stats count as total, count(eval(status>=500)) as errors by uri
-  | eval error_rate = round(errors/total*100, 1)
+from main source=nginx
+  | stats count() as total, count(where status >= 500) as errors by uri
+  | extend error_rate = round(errors / total * 100, 1)
   | where error_rate > 5
   | sort -error_rate
-  | table uri, total, errors, error_rate
+  | keep uri, total, errors, error_rate
 ```
 
-## Step 7: Time Series with TIMECHART
+## Step 7: Time Series with EVERY
 
 Aggregate over time buckets:
 
 ```spl
-# Error count per 5-minute bucket
-level=error | timechart count span=5m
+// Error count per 5-minute bucket
+from main level=error | every 5m stats count()
 
-# Error count by source per 5 minutes
-level=error | timechart count span=5m by source
+// Error count by source per 5 minutes
+from main level=error | every 5m by source stats count()
 ```
 
-## Step 8: Extract Fields with REX
+`every` is sugar for grouping by a time bucket -- `every 5m stats count()` desugars to `stats count() by bin(_time, 5m)`.
+
+## Step 8: Extract Fields with PARSE
 
 Extract new fields from raw text using regex:
 
 ```spl
-search "connection refused"
-  | rex field=_raw "host=(?P<host>\S+) port=(?P<port>\d+)"
-  | stats count by host, port
+from main "connection refused"
+  | parse regex r"host=(?P<host>\S+) port=(?P<port>\d+)"
+  | stats count() as count by host, port
   | sort -count
 ```
 
@@ -136,38 +140,38 @@ search "connection refused"
 Here's a real-world query that finds the slowest API endpoints with high error rates:
 
 ```spl
-source=nginx
-  | stats count as total,
-          count(eval(status>=500)) as errors,
+from main source=nginx
+  | stats count() as total,
+          count(where status >= 500) as errors,
           avg(duration_ms) as avg_latency,
           p99(duration_ms) as p99_latency
     by uri
-  | eval error_rate = round(errors/total*100, 1)
-  | where error_rate > 5 OR p99_latency > 1000
+  | extend error_rate = round(errors / total * 100, 1)
+  | where error_rate > 5 or p99_latency > 1000
   | sort -error_rate
-  | table uri, total, errors, error_rate, avg_latency, p99_latency
+  | keep uri, total, errors, error_rate, avg_latency, p99_latency
 ```
 
-## Command Quick Reference
+## Operator Quick Reference
 
-| Command | What it does | Example |
-|---------|-------------|---------|
-| `search` | Full-text search | `search "connection refused"` |
+| Operator | What it does | Example |
+|----------|-------------|---------|
+| `from` | Choose dataset + search sugar | `from main "connection refused"` |
 | `where` | Filter rows | `\| where status >= 500` |
-| `stats` | Aggregate | `\| stats count, avg(x) by y` |
-| `eval` | Compute fields | `\| eval rate = errors/total*100` |
+| `stats` | Aggregate | `\| stats count(), avg(x) by y` |
+| `extend` | Compute fields | `\| extend rate = errors / total * 100` |
 | `sort` | Order results | `\| sort -count` |
 | `head` | Limit results | `\| head 10` |
-| `table` | Select columns | `\| table uri, count` |
-| `fields` | Add/remove fields | `\| fields - _raw` |
-| `rex` | Extract via regex | `\| rex "host=(?P<host>\S+)"` |
-| `timechart` | Time series | `\| timechart count span=5m` |
+| `keep` | Select columns | `\| keep uri, count` |
+| `drop` | Remove fields | `\| drop _raw` |
+| `parse` | Extract via regex/json/logfmt | `\| parse regex r"host=(?P<host>\S+)"` |
+| `every` | Time series | `\| every 5m stats count()` |
 | `top` | Top N values | `\| top 10 uri` |
 | `dedup` | Remove duplicates | `\| dedup host` |
 
 ## Next Steps
 
-- **[Lynx Flow Reference](/docs/lynx-flow/overview)** -- Full language reference
+- **[LynxFlow v2 Reference](/docs/lynxflow/operators/from)** -- Full language reference
 - **[Searching & Filtering](/docs/guides/search-and-filter)** -- Advanced search techniques
 - **[Aggregations](/docs/guides/aggregations)** -- All aggregation functions
-- **[SPL2 Commands](/docs/lynx-flow/commands/stats)** -- Detailed command reference
+- **[STATS operator](/docs/lynxflow/operators/stats)** -- Detailed operator reference

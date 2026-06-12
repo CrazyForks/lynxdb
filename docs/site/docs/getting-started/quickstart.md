@@ -68,7 +68,7 @@ EOF
 Run an aggregation:
 
 ```bash
-lynxdb query --file events.ndjson '| stats count by level | sort level' --format ndjson --no-stats
+lynxdb query --file events.ndjson 'stats count() as count by level | sort level' --format ndjson --no-stats
 ```
 
 Expected output:
@@ -81,7 +81,7 @@ Expected output:
 Run a filter and projection:
 
 ```bash
-lynxdb query --file events.ndjson '| where status>=500 | table level, status, message | sort message' --format vertical --no-stats
+lynxdb query --file events.ndjson 'where status >= 500 | keep level, status, message | sort message' --format vertical --no-stats
 ```
 
 Expected output:
@@ -103,13 +103,13 @@ You can query any log file the same way:
 
 ```bash
 # Query a local log file
-lynxdb query --file /var/log/syslog '| stats count by level'
+lynxdb query --file /var/log/syslog 'stats count() by level'
 
 # Pipe from any command
-kubectl logs deploy/api | lynxdb query '| stats avg(duration_ms) by endpoint'
+kubectl logs deploy/api | lynxdb query 'stats avg(duration_ms) by endpoint'
 
 # Query nginx access logs
-lynxdb query --file '/var/log/nginx/*.log' '| where status>=500 | top 10 uri'
+lynxdb query --file '/var/log/nginx/*.log' 'where status >= 500 | top 10 uri'
 ```
 
 ## Option 2: Run the Built-in Demo
@@ -123,15 +123,15 @@ lynxdb demo
 
 ```bash
 # Terminal 2: Query the demo data
-lynxdb query '_source=nginx status>=500
-  | stats count, avg(duration_ms) as avg_lat by uri
+lynxdb query 'from main _source=nginx status>=500
+  | stats count() as count, avg(duration_ms) as avg_lat by uri
   | sort -count
   | head 5'
 ```
 
 ```bash
 # Live tail errors
-lynxdb tail 'level=error'
+lynxdb tail 'where level == "error"'
 ```
 
 ## Option 3: Start a Server
@@ -151,16 +151,16 @@ curl -X POST localhost:3100/api/v1/ingest \
 lynxdb ingest access.log --source web-01
 
 # Query it
-lynxdb query 'level=info | stats count by service'
+lynxdb query 'from main level=info | stats count() by service'
 ```
 
-## Your First SPL2 Query
+## Your First LynxFlow Query
 
-SPL2 is a pipeline language. Data flows left to right through `|` (pipe) operators:
+LynxFlow is a pipeline language. Data flows left to right through `|` (pipe) operators:
 
 ```spl
-source=nginx status>=500
-  | stats count, avg(duration_ms) by uri
+from main source=nginx status>=500
+  | stats count() as count, avg(duration_ms) by uri
   | sort -count
   | head 10
 ```
@@ -168,12 +168,12 @@ source=nginx status>=500
 This reads as: "From nginx logs where status is 500+, count events and average duration by URI, sort by count descending, take top 10."
 
 :::tip
-If your query starts with `|`, LynxDB automatically prepends `FROM main` -- so `| stats count` is the same as `FROM main | stats count`.
+If your query omits the `from` stage, LynxDB reads from the default `main` dataset -- so `stats count()` is the same as `from main | stats count()`.
 :::
 
 ## Next Steps
 
 - **[Pipe Mode](/docs/getting-started/pipe-mode)** -- Master serverless querying
 - **[Server Mode](/docs/getting-started/server-mode)** -- Set up persistent storage
-- **[Your First SPL2 Query](/docs/getting-started/first-query)** -- SPL2 crash course
-- **[Lynx Flow Reference](/docs/lynx-flow/overview)** -- Full language reference
+- **[Your First LynxFlow Query](/docs/getting-started/first-query)** -- LynxFlow crash course
+- **[LynxFlow v2 Reference](/docs/lynxflow/operators/from)** -- Full language reference

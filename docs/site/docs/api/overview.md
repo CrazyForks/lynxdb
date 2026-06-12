@@ -36,7 +36,7 @@ Errors use an `error` envelope:
 {
   "error": {
     "code": "INVALID_QUERY",
-    "message": "Unknown command 'staats'.",
+    "message": "parse error: unknown stage \"staats\"",
     "suggestion": "stats"
   }
 }
@@ -133,7 +133,7 @@ See [Query API](/docs/api/query) for the exact request and response formats.
 | `POST` | `/ingest/raw` | Ingest newline-delimited raw text | [Ingest](/docs/api/ingest) |
 | `POST` | `/ingest/hec` | Splunk HEC-compatible ingest | [Ingest](/docs/api/ingest) |
 | `POST` | `/ingest/bulk` | Elasticsearch bulk ingest alias (prefer `/es/_bulk`) | [Ingest](/docs/api/ingest) |
-| `POST` | `/query` | Execute SPL2 query | [Query](/docs/api/query) |
+| `POST` | `/query` | Execute LynxFlow query | [Query](/docs/api/query) |
 | `GET` | `/query` | Execute query (GET convenience) | [Query](/docs/api/query) |
 | `POST` | `/query/stream` | NDJSON streaming export | [Query](/docs/api/query) |
 | `GET` | `/query/explain` | Parse and explain query | [Query](/docs/api/query) |

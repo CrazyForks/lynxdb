@@ -26,7 +26,7 @@ lynxdb mv <subcommand>
 
 ## mv create
 
-Create a new materialized view from an SPL2 aggregation query.
+Create a new materialized view from a LynxFlow aggregation query.
 
 ```
 lynxdb mv create <name> <query> [--retention <duration>]
@@ -43,20 +43,20 @@ lynxdb mv create <name> <query> [--retention <duration>]
 ```bash
 # Create a view for error counts by host
 lynxdb mv create errors_by_host \
-  'FROM main | where level="ERROR" | stats count by host'
+  'from main | where level == "ERROR" | stats count() by host'
 
 # With retention
 lynxdb mv create daily_summary \
-  'FROM main | stats count by source' --retention 90d
+  'from main | stats count() by source' --retention 90d
 
 # Time-bucketed view for repeated aggregations
 lynxdb mv create errors_5m \
-  'FROM main | where level="ERROR" | stats count, avg(duration) by source, time_bucket(_time, "5m") AS bucket' \
+  'from main | where level == "ERROR" | stats count(), avg(duration) by source, bin(_time, 5m)' \
   --retention 90d
 
 # Cascading view (build on top of another view)
 lynxdb mv create errors_1h \
-  '| from errors_5m | stats sum(count) AS count by source, time_bucket(bucket, "1h") AS hour' \
+  'from errors_5m | stats sum(count) as count by source, bin(_time, 1h)' \
   --retention 365d
 ```
 
@@ -78,8 +78,8 @@ Supports `--format json`.
 
 ```
 NAME            STATUS       QUERY
-mv_errors_5m    active       level=error | stats count, avg(duration) by ...
-mv_5xx_hourly   backfilling  source=nginx status>=500 | stats count, p95(dur...
+mv_errors_5m    active       from main level=error | stats count(), avg(dur...
+mv_5xx_hourly   backfilling  from main source=nginx status>=500 | stats cou...
 ```
 
 ---
@@ -99,7 +99,7 @@ Tab-completes view names. Supports `--format json`.
 ```
 Name:       mv_errors_5m
 Status:     active
-Query:      level=error | stats count, avg(duration) by source, time_bucket(...)
+Query:      from main level=error | stats count(), avg(duration) by source, bin(...)
 Retention:  90d
 ```
 
@@ -181,7 +181,7 @@ When you run a query that matches a materialized view, LynxDB automatically rewr
 
 ```bash
 # This query:
-lynxdb query 'level=error | stats count by source'
+lynxdb query 'from main level=error | stats count() by source'
 
 # Is automatically accelerated by mv_errors_5m if it matches
 # Response metadata shows:

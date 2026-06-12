@@ -169,14 +169,14 @@ lynxdb import es_export.json --format esbulk --dry-run
 
 ### Step 4: Convert Queries
 
-| Elasticsearch DSL | LynxDB SPL2 |
+| Elasticsearch DSL | LynxDB LynxFlow |
 |---|---|
-| `{"match": {"level": "error"}}` | `level=error` |
-| `{"range": {"status": {"gte": 500}}}` | `status>=500` |
-| `{"bool": {"must": [...]}}` | `level=error AND status>=500` |
-| `{"aggs": {"by_host": {"terms": {"field": "host"}}}}` | `\| stats count by host` |
-| `{"sort": [{"@timestamp": "desc"}]}` | `\| sort -_time` |
-| `_search?size=10` | `\| head 10` |
+| `{"match": {"level": "error"}}` | `where level == "error"` |
+| `{"range": {"status": {"gte": 500}}}` | `where status >= 500` |
+| `{"bool": {"must": [...]}}` | `where level == "error" and status >= 500` |
+| `{"aggs": {"by_host": {"terms": {"field": "host"}}}}` | `stats count() by host` |
+| `{"sort": [{"@timestamp": "desc"}]}` | `sort -_time` |
+| `_search?size=10` | `head 10` |
 
 **Example conversions:**
 
@@ -187,43 +187,43 @@ lynxdb import es_export.json --format esbulk --dry-run
 #   {"range": {"@timestamp": {"gte": "now-1h"}}}
 # ]}}, "aggs": {"by_uri": {"terms": {"field": "uri", "size": 10}}}}
 
-# LynxDB SPL2:
-lynxdb query '_source=nginx status>=500 | stats count by uri | sort -count | head 10' --since 1h
+# LynxDB LynxFlow:
+lynxdb query 'from main _source=nginx status>=500 | stats count() by uri | sort -count | head 10' --since 1h
 ```
 
 ```bash
 # Elasticsearch: Full-text search
 # {"query": {"match": {"message": "connection refused"}}}
 
-# LynxDB SPL2:
-lynxdb query 'search "connection refused"'
+# LynxDB LynxFlow:
+lynxdb query 'from main "connection refused"'
 ```
 
 ## Feature Comparison
 
 | Feature | Elasticsearch | LynxDB |
 |---------|---------------|--------|
-| Query language | Lucene DSL / ES\|QL | SPL2 |
+| Query language | Lucene DSL / ES\|QL | LynxFlow |
 | Schema | On-write (mappings) | On-read (auto-discovery) |
 | Full-text search | Lucene inverted index | FST + roaring bitmaps |
 | Deployment | 3+ nodes minimum | Single binary |
 | Dependencies | JVM | None |
 | Memory (idle) | ~4GB minimum | ~50MB |
 | _bulk API | Native | Compatible endpoint |
-| Aggregations | Powerful but verbose JSON | Concise SPL2 pipes |
+| Aggregations | Powerful but verbose JSON | Concise LynxFlow pipelines |
 | License | ELv2 / AGPL | Apache 2.0 |
 
 ## Advantages of Switching
 
 - **No schema management**: No mappings, no index templates, no dynamic field type conflicts
 - **No cluster management**: No shard allocation, no replica settings, no cluster health yellow/red
-- **Simpler queries**: `source=nginx status>=500 | stats count by uri` instead of 20-line JSON DSL
+- **Simpler queries**: `from main _source=nginx status>=500 | stats count() by uri` instead of 20-line JSON DSL
 - **Lower resource usage**: ~50MB idle vs ~4GB per node
 - **Single binary**: No JVM, no node discovery, no split-brain concerns
 
 ## Next Steps
 
-- [Lynx Flow Reference](/docs/lynx-flow/overview) -- learn the query language
+- [LynxFlow Reference](/docs/lynxflow/overview) -- learn the query language
 - [Quick Start](/docs/getting-started/quickstart) -- get started in 5 minutes
 - [REST API](/docs/api/overview) -- full API reference
 - [Materialized Views](/docs/guides/materialized-views) -- accelerate repeated queries

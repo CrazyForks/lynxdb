@@ -1,6 +1,6 @@
 ---
 title: Migrating from Grafana Loki
-description: Migrate from Grafana Loki to LynxDB -- LogQL to SPL2 conversion, Promtail/Alloy reconfiguration, and feature comparison.
+description: Migrate from Grafana Loki to LynxDB -- LogQL to LynxFlow conversion, Promtail/Alloy reconfiguration, and feature comparison.
 ---
 
 # Migrating from Grafana Loki
@@ -11,11 +11,11 @@ LynxDB provides a fundamentally different approach to log analytics compared to 
 
 - **Full-text search**: LynxDB indexes all content with FST + roaring bitmaps. Loki greps through unindexed log lines.
 - **No label cardinality limits**: In Loki, high-cardinality labels (like `user_id` or `request_id`) cause performance degradation. LynxDB indexes all fields automatically.
-- **Richer query language**: SPL2 provides CTEs, joins, subsearches, and 20+ transformation commands. LogQL is limited to label matching and line filtering.
+- **Richer query language**: LynxFlow provides `let` bindings, joins, subqueries, and dozens of transformation stages. LogQL is limited to label matching and line filtering.
 - **Schema-on-read**: LynxDB auto-discovers fields from JSON logs. Loki requires explicit label extraction at ingest time.
 - **Simpler operations**: Single binary, no separate ingester/distributor/querier/compactor components.
 
-## LogQL to SPL2 Conversion
+## LogQL to LynxFlow Conversion
 
 ### Basic Queries
 
@@ -23,8 +23,8 @@ LynxDB provides a fundamentally different approach to log analytics compared to 
 # Loki LogQL
 {job="nginx"} |= "error"
 
-# LynxDB SPL2
-source=nginx search "error"
+# LynxDB LynxFlow
+from main _source=nginx "error"
 ```
 
 ### Label Matching
@@ -33,8 +33,8 @@ source=nginx search "error"
 # Loki LogQL
 {job="nginx", level="error"}
 
-# LynxDB SPL2
-source=nginx level=error
+# LynxDB LynxFlow
+from main _source=nginx level=error
 ```
 
 ### Regex Filtering
@@ -43,10 +43,10 @@ source=nginx level=error
 # Loki LogQL
 {job="nginx"} |~ "status=(4|5)\\d{2}"
 
-# LynxDB SPL2
-source=nginx | rex field=_raw "status=(?P<status_code>\d{3})" | where status_code >= 400
+# LynxDB LynxFlow
+from main _source=nginx | parse regex r"status=(?P<status_code>\d{3})" | where int(status_code) >= 400
 # Or simply:
-source=nginx | where status >= 400
+from main _source=nginx | where status >= 400
 ```
 
 ### Aggregations
@@ -55,16 +55,16 @@ source=nginx | where status >= 400
 # Loki LogQL
 sum(rate({job="nginx"} |= "error" [5m])) by (host)
 
-# LynxDB SPL2
-source=nginx level=error | timechart count by host span=5m
+# LynxDB LynxFlow
+from main _source=nginx level=error | every 5m by host stats count()
 ```
 
 ```
 # Loki LogQL
 topk(10, sum(rate({job="nginx"} [1h])) by (uri))
 
-# LynxDB SPL2
-source=nginx | stats count by uri | sort -count | head 10
+# LynxDB LynxFlow
+from main _source=nginx | stats count() by uri | sort -count | head 10
 ```
 
 ### JSON Extraction
@@ -73,22 +73,22 @@ source=nginx | stats count by uri | sort -count | head 10
 # Loki LogQL
 {job="api"} | json | duration_ms > 1000
 
-# LynxDB SPL2 (JSON fields are auto-extracted)
-source=api duration_ms > 1000
+# LynxDB LynxFlow (JSON fields are auto-extracted)
+from main _source=api | where duration_ms > 1000
 ```
 
 ### Quick Reference
 
-| LogQL | SPL2 |
-|-------|------|
-| `{job="nginx"}` | `source=nginx` |
-| `\|= "error"` | `search "error"` |
-| `\|~ "pattern"` | `\| rex field=_raw "pattern"` |
-| `\| json` | (automatic for JSON logs) |
-| `\| label_format` | `\| eval` or `\| rename` |
-| `\| line_format` | `\| eval _raw=...` |
-| `sum(rate(...[5m]))` | `\| timechart count span=5m` |
-| `count_over_time(...[1h])` | `\| stats count` with `--since 1h` |
+| LogQL | LynxFlow |
+|-------|----------|
+| `{job="nginx"}` | `from main _source=nginx` |
+| `\|= "error"` | `"error"` in the `from` stage, or `\| where has(_raw, "error")` |
+| `\|~ "pattern"` | `\| parse regex r"pattern"` or `\| where matches(_raw, r"pattern")` |
+| `\| json` | (automatic for JSON logs; explicit: `\| parse json`) |
+| `\| label_format` | `\| extend` or `\| rename` |
+| `\| line_format` | `\| extend _raw = ...` |
+| `sum(rate(...[5m]))` | `\| every 5m stats count()` |
+| `count_over_time(...[1h])` | `\| stats count()` with `--since 1h` |
 | `topk(10, ...)` | `\| sort -count \| head 10` |
 
 ## Migration Steps
@@ -171,7 +171,7 @@ service:
 | Feature | Grafana Loki | LynxDB |
 |---------|-------------|--------|
 | Full-text search | Line grep (no index) | FST + roaring bitmap inverted index |
-| Query language | LogQL | SPL2 (20+ commands, CTEs, joins) |
+| Query language | LogQL | LynxFlow (dozens of stages, `let` bindings, joins) |
 | Schema | Labels only (static at ingest) | Schema-on-read (all fields indexed) |
 | High cardinality | Degrades performance | Handled natively |
 | Deployment | Ingester + Distributor + Querier + Compactor | Single binary |
@@ -183,7 +183,7 @@ service:
 
 ## Next Steps
 
-- [Lynx Flow Reference](/docs/lynx-flow/overview) -- learn the full query language
+- [LynxFlow Reference](/docs/lynxflow/overview) -- learn the full query language
 - [Quick Start](/docs/getting-started/quickstart) -- get started in 5 minutes
 - [Pipe Mode](/docs/getting-started/pipe-mode) -- query local files without a server
 - [Migration from grep/awk](/docs/migration/from-grep) -- for CLI-first workflows

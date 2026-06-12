@@ -6,15 +6,17 @@ description: Quick access CLI commands for common operations -- event counting, 
 
 # Quick Access Commands
 
-Shortcut commands for frequent operations. Each wraps a common SPL2 pattern into a single, easy-to-type command.
+Shortcut commands for frequent operations. Each wraps a common LynxFlow pattern into a single, easy-to-type command.
 
 ## count
 
-Quick event count shortcut. Faster than `query ... | stats count`.
+Quick event count shortcut. Faster than `query ... | stats count()`.
 
 ```
 lynxdb count [filter] [flags]
 ```
+
+The filter is inserted as a pipeline stage between `from main` and `stats count()`, so write it as a stage such as `where level == "error"`.
 
 ### Flags
 
@@ -29,7 +31,7 @@ lynxdb count [filter] [flags]
 lynxdb count
 
 # Count errors
-lynxdb count 'level=error'
+lynxdb count 'where level == "error"'
 
 # Count events in last hour
 lynxdb count --since 1h
@@ -45,7 +47,7 @@ Show a sample of recent events, useful for exploring data structure.
 lynxdb sample [count] [filter] [flags]
 ```
 
-The first argument is parsed as a number (sample size, default 5). Any remaining arguments are treated as an SPL2 filter.
+The first argument is parsed as a number (sample size, default 5). Any remaining arguments are treated as a LynxFlow filter stage (such as `where _source == "nginx"`), inserted between `from main` and `head`.
 
 ### Flags
 
@@ -63,7 +65,7 @@ lynxdb sample
 lynxdb sample 10
 
 # 5 nginx events
-lynxdb sample 5 '_source=nginx'
+lynxdb sample 5 'where _source == "nginx"'
 
 # JSON for inspecting structure
 lynxdb sample 3 --format json | jq .
@@ -168,7 +170,7 @@ status                    number        80%     200(60%), 404(15%), 500(5%)
 Show query execution plan without running the query.
 
 ```
-lynxdb explain [SPL2 query] [flags]
+lynxdb explain [LynxFlow query] [flags]
 ```
 
 ### Flags
@@ -181,31 +183,37 @@ lynxdb explain [SPL2 query] [flags]
 
 ```bash
 # Show plan
-lynxdb explain 'level=error | stats count by source'
+lynxdb explain 'from main level=error | stats count() by source'
 
 # JSON format
-lynxdb explain 'status>=500 | top 10 uri' --format json
+lynxdb explain 'from main status>=500 | top 10 uri' --format json
 
 # Execute and show actual stats
-lynxdb explain --analyze 'level=error | stats count'
+lynxdb explain --analyze 'from main level=error | stats count()'
 ```
 
 ### Console Output
 
+The engine returns the optimized LynxFlow plan, including desugar rewrites and the optimizer rules that fired:
+
 ```
-Plan:
-  FROM -> WHERE -> STATS
+1. Aggregate(count() by source [partial])  [spill-capable]
+  2. Filter(level == error)
+    3. Scan(main)
 
-Estimated cost: low
-
-Fields read: level, source
+Annotations:
+  Desugar rewrites:
+    search-sugar: level=error => where (level == error)
+  Optimizer rules:
+    partial-agg (1x)
+    column-pruning (1x)
 ```
 
 ---
 
 ## examples
 
-Show a cookbook of common SPL2 query patterns.
+Show a cookbook of common LynxFlow query patterns.
 
 ```
 lynxdb examples
@@ -221,11 +229,11 @@ Displays categorized examples for:
 - Transformation
 - Local File Queries
 
-Run this command when you need a quick reference for SPL2 syntax and patterns.
+Run this command when you need a quick reference for LynxFlow syntax and patterns.
 
 ## See Also
 
 - [query](/docs/cli/query) for the full query command reference
 - [Real-Time Commands](/docs/cli/tail) for `tail`, `top`, `watch`, and `diff`
-- [Lynx Flow Reference](/docs/lynx-flow/overview) for the complete query language reference
+- [LynxFlow v2 Reference](/docs/lynxflow/overview) for the complete query language reference
 - [Output Formats](/docs/cli/output-formats) for `--format` options

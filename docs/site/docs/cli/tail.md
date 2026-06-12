@@ -32,10 +32,10 @@ lynxdb tail [filter] [flags]
 lynxdb tail
 
 # Stream errors only
-lynxdb tail 'level=error'
+lynxdb tail 'from main level=error'
 
 # Stream 5xx from nginx
-lynxdb tail '_source=nginx status>=500'
+lynxdb tail 'from main _source=nginx status>=500'
 
 # Last 50 events + live
 lynxdb tail --count 50 --from -1h
@@ -95,7 +95,7 @@ lynxdb top --interval 5s
 Re-run a query at regular intervals with a live-updating TUI display.
 
 ```
-lynxdb watch [SPL2 query] [flags]
+lynxdb watch [LynxFlow query] [flags]
 ```
 
 ### Flags
@@ -112,13 +112,13 @@ Press `q` or `Ctrl+C` to quit.
 
 ```bash
 # Watch error counts by source, refresh every 5s
-lynxdb watch 'level=error | stats count by source'
+lynxdb watch 'from main level=error | stats count() by source'
 
 # Custom interval
-lynxdb watch 'level=error | stats count' --interval 10s
+lynxdb watch 'from main level=error | stats count()' --interval 10s
 
 # Show changes between refreshes
-lynxdb watch '| stats count by level' --since 1h --diff
+lynxdb watch '| stats count() by level' --since 1h --diff
 ```
 
 ---
@@ -128,7 +128,7 @@ lynxdb watch '| stats count by level' --since 1h --diff
 Compare query results across two consecutive time periods. Useful for spotting trends and anomalies.
 
 ```
-lynxdb diff [SPL2 query] [flags]
+lynxdb diff [LynxFlow query] [flags]
 ```
 
 ### Flags
@@ -141,13 +141,13 @@ lynxdb diff [SPL2 query] [flags]
 
 ```bash
 # Compare error counts: last hour vs previous hour
-lynxdb diff 'level=error | stats count by source'
+lynxdb diff 'from main level=error | stats count() by source'
 
 # Explicit period
-lynxdb diff 'level=error | stats count by source' --period 1h
+lynxdb diff 'from main level=error | stats count() by source' --period 1h
 
 # Compare 5xx over 24h
-lynxdb diff 'status>=500 | stats count by uri' --period 24h
+lynxdb diff 'from main status>=500 | stats count() by uri' --period 24h
 ```
 
 ### Console Output

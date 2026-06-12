@@ -48,8 +48,7 @@ func walkLynxFlowFixtures(t *testing.T, fn func(t *testing.T, fixture, line stri
 }
 
 // TestParseLynxFlowGoldens verifies that every line in every .lynxflow golden
-// parses cleanly with the LynxFlow parser. This mirrors TestParseEveryGoldenLine
-// for .spl2 files.
+// parses cleanly with the LynxFlow parser.
 func TestParseLynxFlowGoldens(t *testing.T) {
 	walkLynxFlowFixtures(t, func(t *testing.T, fixture, line string, _ int) {
 		q, diags := parser.Parse(line)
@@ -65,8 +64,8 @@ func TestParseLynxFlowGoldens(t *testing.T) {
 }
 
 // TestLynxFlowConformance executes every non-minimal, non-index .lynxflow
-// golden against the sigmacompat deterministic dataset and asserts the same
-// expected_match_count as the SPL2 compat_manifest.json.
+// golden against the sigmacompat deterministic dataset and asserts the
+// expected_match_count recorded in compat_manifest.json.
 //
 // Minimal and index variants are tested by TestParseLynxFlowGoldens (parse-only)
 // because their match semantics are identical to the default variant.

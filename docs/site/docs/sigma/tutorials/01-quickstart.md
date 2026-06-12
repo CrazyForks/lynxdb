@@ -2,8 +2,10 @@
 
 [Back to Sigma docs](../index.md)
 
-This tutorial uses rsigma as an external converter and LynxDB as the SPL2
-execution target.
+This tutorial uses rsigma as an external converter and LynxDB as the LynxFlow
+execution target. One honest caveat up front: rsigma v0.9.0 emits the legacy
+SPL2 dialect, which LynxDB no longer executes, so there is a hand-migration
+step between converting and running. It is a one-liner for this rule.
 
 Install rsigma:
 
@@ -31,23 +33,32 @@ Create one matching event:
 printf '%s\n' '{"CommandLine":"cmd.exe /c whoami","Image":"C:\\Windows\\System32\\cmd.exe"}' > events.ndjson
 ```
 
-Convert the rule:
+Convert the rule to see what rsigma produces:
 
 ```bash
-rsigma convert -t lynxdb whoami.yml > whoami.spl2
-cat whoami.spl2
+rsigma convert -t lynxdb whoami.yml
 ```
 
-Expected query shape:
+Expected output shape — this is legacy SPL2, which LynxDB cannot execute:
 
 ```spl
 FROM main | search CommandLine=*"whoami"*
 ```
 
-Run the query against the event file:
+Hand-migrate it to LynxFlow: `FROM main | search` becomes `from main | where`,
+and the `*"whoami"*` contains-glob becomes `contains(CommandLine, "whoami")`
+(full table in the [legacy SPL2 mapping](../spl2-mapping.md)):
 
 ```bash
-lynxdb query --file events.ndjson "$(cat whoami.spl2)" --format ndjson
+cat > whoami.lynxflow <<'EOF'
+from main | where contains(CommandLine, "whoami")
+EOF
+```
+
+Run the migrated query against the event file:
+
+```bash
+lynxdb query --file events.ndjson "$(cat whoami.lynxflow)" --format ndjson
 ```
 
 The output should contain the event with `cmd.exe /c whoami`.
@@ -62,7 +73,7 @@ In another terminal:
 
 ```bash
 lynxdb ingest events.ndjson --source windows --sourcetype json
-QUERY="$(cat whoami.spl2)"
+QUERY="$(cat whoami.lynxflow)"
 curl -sS http://localhost:3100/api/v1/query \
   -H 'content-type: application/json' \
   -d "{\"query\":$(printf '%s' "$QUERY" | jq -Rs .)}"

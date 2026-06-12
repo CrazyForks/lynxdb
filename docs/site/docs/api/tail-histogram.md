@@ -10,25 +10,25 @@ Real-time log streaming and time-bucketed event counts. These endpoints power th
 
 ## GET /tail
 
-Server-Sent Events (SSE) stream for real-time log tailing with full SPL2 pipeline support. Uses the same query engine as `POST /query`, but in streaming mode.
+Server-Sent Events (SSE) stream for real-time log tailing with full LynxFlow pipeline support. Uses the same query engine as `POST /query`, but in streaming mode.
 
 ### Query Parameters
 
 | Parameter | Required | Default | Description |
 |---|---|---|---|
-| `q` | Yes | -- | SPL2 query (streaming commands only) |
+| `q` | Yes | -- | LynxFlow query (streaming stages only) |
 | `count` | No | `100` | Number of historical events to replay during catchup (max 10,000) |
 | `from` | No | `"-1h"` | Catchup lookback window (relative or ISO 8601) |
 
 ### Two Phases
 
 1. **Catchup** -- replays the last `count` matching events from storage (time range: `from` to now). Each event is sent as `event: result`. Phase ends with `event: catchup_done`.
-2. **Live** -- streams new events from the EventBus through the SPL2 pipeline in real time. Events are sent as `event: result`. Heartbeat sent every 15 seconds as `event: heartbeat`.
+2. **Live** -- streams new events from the EventBus through the LynxFlow pipeline in real time. Events are sent as `event: result`. Heartbeat sent every 15 seconds as `event: heartbeat`.
 
 ### Basic Example
 
 ```bash
-curl -N "localhost:3100/api/v1/tail?q=level%3Derror&from=-1h&count=100"
+curl -N "localhost:3100/api/v1/tail?q=from+main+level%3Derror&from=-1h&count=100"
 ```
 
 **SSE event stream:**
@@ -50,32 +50,31 @@ event: heartbeat
 data: {"ts":"2026-02-14T14:52:30Z"}
 ```
 
-### With SPL2 Pipeline
+### With a LynxFlow Pipeline
 
 Apply streaming transformations to the live tail:
 
 ```bash
 # Filter and project fields
-curl -N "localhost:3100/api/v1/tail?q=search+ERROR+%7C+where+status%3E500+%7C+fields+_time,uri,status&count=50"
+curl -N "localhost:3100/api/v1/tail?q=from+main+%22ERROR%22+%7C+where+status+%3E+500+%7C+keep+_time,uri,status&count=50"
 
-# Extract fields with rex
-curl -N "localhost:3100/api/v1/tail?q=search+%22connection+refused%22+%7C+rex+field%3D_raw+%22host%3D(%3FP%3Chost%3E%5CS%2B)%22&from=-30m"
+# Extract fields with parse regex
+curl -N "localhost:3100/api/v1/tail?q=from+main+%22connection+refused%22+%7C+parse+regex+r%22host%3D(%3FP%3Chost%3E%5CS%2B)%22&from=-30m"
 ```
 
-### Supported SPL2 Commands
+### Supported LynxFlow Stages
 
-Only streaming (event-by-event) commands are supported in live tail:
+Only streaming (event-by-event) stages are supported in live tail:
 
 | Supported | Not Supported |
 |---|---|
-| `search`, `where`, `eval`, `fields`, `table`, `rename`, `rex`, `fillnull`, `head`, `bin` | `stats`, `sort`, `join`, `dedup`, `timechart`, `top`, `rare`, `streamstats`, `eventstats`, `transaction` |
+| `where`, `extend`, `parse`, `keep`, `drop`, `rename`, `head` | `stats`, `sort`, `top` |
 
-Commands requiring full materialization (aggregation, sorting, deduplication) are rejected with `422`:
+Stages that must see all input before producing output (aggregation, sorting, top-k) are rejected with `422`:
 
 ```json
 {
-  "error": "unsupported commands for tail: stats (aggregation and stateful commands require full materialization)",
-  "unsupported": ["stats"]
+  "error": "command \"stats\" is not supported in live tail (it requires all data before producing output)"
 }
 ```
 
@@ -92,7 +91,7 @@ Commands requiring full materialization (aggregation, sorting, deduplication) ar
 
 ```javascript
 const params = new URLSearchParams({
-  q: 'level=error | where status > 500',
+  q: 'from main level=error | where status > 500',
   count: 100,
   from: '-1h'
 });
@@ -120,8 +119,8 @@ es.addEventListener("error", (e) => {
 
 | Status | Code | Description |
 |---|---|---|
-| `400` | -- | Invalid SPL2 query (parse error, includes `suggestion`) |
-| `422` | -- | Query contains unsupported commands for tail |
+| `400` | -- | Invalid LynxFlow query (parse error, includes `suggestion`) |
+| `422` | -- | Query contains stages unsupported in live tail |
 
 :::tip Why SSE and not WebSocket?
 Live tail is a unidirectional server-to-client stream. SSE auto-reconnects, passes through HTTP proxies without special configuration, and works with the native `EventSource` browser API. WebSocket would add unnecessary complexity for a one-way data flow.
@@ -137,7 +136,7 @@ Time-bucketed event counts for the timeline bar chart. Designed to be fast -- fi
 
 | Parameter | Required | Default | Description |
 |---|---|---|---|
-| `q` | No | -- | SPL2 filter expression (search part only, before pipes) |
+| `q` | No | -- | LynxFlow filter expression (e.g. `level=error`) |
 | `from` | Yes | -- | Start time (relative or ISO 8601) |
 | `to` | No | `"now"` | End time |
 | `buckets` | No | `60` | Target number of buckets. Server picks the best interval (1s, 5s, 1m, 5m, 1h). |
@@ -203,5 +202,5 @@ curl -s "localhost:3100/api/v1/histogram?from=-6h&buckets=72" | jq .
 
 - **[`lynxdb tail` CLI command](/docs/cli/tail)** -- live tail from the command line
 - **[Live Tail guide](/docs/guides/live-tail)** -- usage patterns and tips
-- **[Query API](/docs/api/query)** -- full SPL2 query execution
-- **[Time Ranges](/docs/lynx-flow/time-ranges)** -- relative and absolute time syntax
+- **[Query API](/docs/api/query)** -- full LynxFlow query execution
+- **[`from` operator](/docs/lynxflow/operators/from)** -- bracket time ranges and search-sugar syntax

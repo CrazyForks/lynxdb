@@ -5,20 +5,20 @@ description: How to save, list, run, and manage saved queries in LynxDB for repe
 
 # Save and Reuse Queries
 
-Saved queries let you store frequently used SPL2 queries on the server so you can re-run them by name instead of retyping them. This is useful for standardized reports, on-call runbooks, and team-shared analysis.
+Saved queries let you store frequently used LynxFlow queries on the server so you can re-run them by name instead of retyping them. This is useful for standardized reports, on-call runbooks, and team-shared analysis.
 
 ## Save a query
 
 Use [`lynxdb save`](/docs/cli/shortcuts) (shortcut for `lynxdb saved create`):
 
 ```bash
-lynxdb save "5xx-rate" '_source=nginx status>=500 | stats count by uri | sort -count'
+lynxdb save "5xx-rate" 'from main _source=nginx status>=500 | stats count() as count by uri | sort -count'
 ```
 
 Or use the full form:
 
 ```bash
-lynxdb saved create "error-by-source" 'level=error | stats count by source | sort -count | head 10'
+lynxdb saved create "error-by-source" 'from main level=error | stats count() as count by source | sort -count | head 10'
 ```
 
 ### Save via the REST API
@@ -28,7 +28,7 @@ Use [`POST /api/v1/queries`](/docs/api/saved-queries):
 ```bash
 curl -X POST localhost:3100/api/v1/queries -d '{
   "name": "5xx-rate",
-  "q": "source=nginx status>=500 | stats count by uri | sort -count"
+  "q": "from main _source=nginx status>=500 | stats count() as count by uri | sort -count"
 }'
 ```
 
@@ -103,13 +103,13 @@ Save the queries your on-call team uses most often:
 
 ```bash
 # Error overview
-lynxdb save "oncall-errors" 'level=error | stats count by source | sort -count | head 20'
+lynxdb save "oncall-errors" 'from main level=error | stats count() as count by source | sort -count | head 20'
 
 # Slow endpoints
-lynxdb save "oncall-slow-endpoints" '_source=nginx duration_ms>1000 | stats count, avg(duration_ms) AS avg, p99(duration_ms) AS p99 by uri | sort -count | head 10'
+lynxdb save "oncall-slow-endpoints" 'from main _source=nginx duration_ms>1000 | stats count() as count, avg(duration_ms) as avg, p99(duration_ms) as p99 by uri | sort -count | head 10'
 
 # Recent fatal errors
-lynxdb save "oncall-fatal" 'level=fatal | sort -_timestamp | head 20 | table _timestamp, source, message'
+lynxdb save "oncall-fatal" 'from main level=fatal | sort -_time | head 20 | keep _time, _source, message'
 
 # Run during an incident
 lynxdb run oncall-errors --since 1h
@@ -121,7 +121,7 @@ lynxdb run oncall-fatal --since 1h
 
 ```bash
 # Save the report query
-lynxdb save "daily-summary" '_source=nginx | stats count, count(eval(status>=500)) AS errors, avg(duration_ms) AS avg_lat by uri | eval error_rate=round(errors/count*100, 1) | sort -count | head 20'
+lynxdb save "daily-summary" 'from main _source=nginx | stats count() as count, count(where status >= 500) as errors, avg(duration_ms) as avg_lat by uri | extend error_rate = round(errors / count * 100, 1) | sort -count | head 20'
 
 # Generate a daily CSV
 lynxdb run daily-summary --since 24h --format csv > "report-$(date +%Y-%m-%d).csv"
@@ -133,7 +133,7 @@ Use saved queries in CI pipelines to check for regressions:
 
 ```bash
 # Save a health check query
-lynxdb save "ci-error-check" 'level=error source=api | stats count AS errors | where errors > 0'
+lynxdb save "ci-error-check" 'from main level=error source=api | stats count() as errors | where errors > 0'
 
 # In your CI script
 if lynxdb run ci-error-check --since 10m --fail-on-empty 2>/dev/null; then

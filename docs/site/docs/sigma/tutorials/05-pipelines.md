@@ -3,7 +3,9 @@
 [Back to Sigma docs](../index.md)
 
 Use rsigma pipelines to select a LynxDB index and map rule fields to ingested
-event fields.
+event fields. The pipeline shapes what rsigma emits; the emitted query is
+still legacy SPL2 and needs the usual hand-migration to LynxFlow before it
+runs.
 
 Create a concrete event:
 
@@ -37,13 +39,30 @@ transformations:
 YAML
 ```
 
-Convert and run:
+Convert:
 
 ```bash
-rsigma convert -t lynxdb -p ecs-lynxdb.yml ecs-whoami.yml > ecs-whoami.spl2
-lynxdb query "$(cat ecs-whoami.spl2)" --since 24h
+rsigma convert -t lynxdb -p ecs-lynxdb.yml ecs-whoami.yml
+```
+
+The legacy SPL2 output (reference only):
+
+```spl
+FROM security | search process.command_line=*"whoami"*
+```
+
+Hand-migrate to LynxFlow and run:
+
+```bash
+cat > ecs-whoami.lynxflow <<'EOF'
+from security | where contains(process.command_line, "whoami")
+EOF
+
+lynxdb query "$(cat ecs-whoami.lynxflow)" --since 24h
 ```
 
 If your ingested fields differ from the rule fields, add rsigma field-mapping
-transformations to the same pipeline. Keep those mappings near the rule pack so
-the generated SPL2 is reproducible.
+transformations to the same pipeline so the emitted (and therefore migrated)
+query uses your real field names. Keep those mappings near the rule pack, and
+commit the migrated `.lynxflow` file next to the rule so the runnable query is
+reproducible.

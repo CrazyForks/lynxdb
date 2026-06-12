@@ -50,7 +50,7 @@ LynxDB is a columnar log analytics database written from scratch in Go. Every co
 │                    Query Engine                            │
 │                                                           │
 │  ┌─────────┐  ┌───────────┐  ┌──────────┐  ┌──────────┐ │
-│  │  SPL2   │→ │ Optimizer │→ │ Pipeline │→ │  Output  │ │
+│  │LynxFlow │→ │ Optimizer │→ │ Pipeline │→ │  Output  │ │
 │  │ Parser  │  │ (rules)   │  │ (Volcano │  │  (JSON/  │ │
 │  │         │  │           │  │ iterator)│  │ table/csv│ │
 │  └─────────┘  └───────────┘  └──────────┘  └──────────┘ │
@@ -70,18 +70,18 @@ LynxDB ships as a single static binary. The same binary runs in three modes depe
 ### Pipe Mode (Ephemeral, In-Memory)
 
 ```bash
-cat app.log | lynxdb query '| where level="ERROR" | stats count by service'
-lynxdb query --file '/var/log/nginx/*.log' '| where status>=500 | top 10 uri'
+cat app.log | lynxdb query 'where level == "ERROR" | stats count() by service'
+lynxdb query --file '/var/log/nginx/*.log' 'where status >= 500 | top 10 uri'
 ```
 
 In pipe mode, LynxDB behaves like `grep` or `awk`. The binary:
 
 1. Creates an ephemeral in-memory storage engine (no data directory, no persisted parts).
 2. Ingests all data from stdin or the specified file(s).
-3. Runs the full SPL2 pipeline -- parser, optimizer, Volcano iterator, bytecode VM.
+3. Runs the full LynxFlow pipeline -- parser, optimizer, Volcano iterator, bytecode VM.
 4. Prints results to stdout and exits.
 
-There is no daemon, no config file, no network I/O. The entire SPL2 engine runs locally in-process. This mode is ideal for ad-hoc debugging, scripting, and integration with Unix pipelines.
+There is no daemon, no config file, no network I/O. The entire LynxFlow engine runs locally in-process. This mode is ideal for ad-hoc debugging, scripting, and integration with Unix pipelines.
 
 ### Server Mode (Persistent, Single-Node)
 
@@ -146,24 +146,24 @@ See [Storage Engine](/docs/architecture/storage-engine) and [Segment Format](/do
 
 ### Query Engine
 
-The query engine transforms SPL2 text into a streaming execution pipeline:
+The query engine transforms LynxFlow text into a streaming execution pipeline:
 
 ```mermaid
 flowchart LR
-    A["SPL2 Text"] --> B["Parser"]
+    A["LynxFlow Text"] --> B["Parser"]
     B --> C["AST"]
-    C --> D["Optimizer<br/>(rule-based, multi-phase)"]
-    D --> E["Execution Plan"]
+    C --> D["Sema + Desugar"]
+    D --> E["Logical Plan + Optimizer"]
     E --> F["Volcano Pipeline"]
     F --> G["Results"]
 ```
 
 Key components:
 
-- **Parser**: Recursive descent parser for full SPL2. Error recovery with syntax suggestions and Splunk SPL1 compatibility hints.
-- **Optimizer**: Rule-based across multiple phases -- expression simplification, predicate/projection pushdown, scan optimization, aggregation optimization, expression optimization, join optimization.
-- **Pipeline**: Volcano iterator model with one streaming operator per Lynx Flow command. Pull-based with 1024-row batches. `head 10` on 100M events reads one batch, not the entire dataset.
-- **Bytecode VM**: Stack-based VM with 60+ opcodes for evaluating WHERE, EVAL, and STATS expressions. Fixed 256-slot stack. 22ns/op for a simple predicate (`status >= 500`). Zero heap allocations on the hot path.
+- **Frontend** (`pkg/lynxflow`): Recursive descent parser for full LynxFlow, semantic analysis with schema inference, and desugaring of sugar stages onto the core operator set. Error recovery with caret diagnostics and suggestions.
+- **Optimizer** (`pkg/logical/opt`): Rule-based, fixed-point -- expression simplification, predicate pushdown, column pruning, partial aggregation, TopK pushdown, limit pushdown, materialized view rewrite.
+- **Pipeline** (`pkg/engine/pipeline`): Volcano iterator model with one streaming operator per LynxFlow core stage. Pull-based with 1024-row batches. `head 10` on 100M events reads one batch, not the entire dataset.
+- **Bytecode VM** (`pkg/vm`): Stack-based VM with 60+ opcodes for evaluating `where`, `extend`, and `stats` expressions. Fixed 256-slot stack. 22ns/op for a simple predicate (`status >= 500`). Zero heap allocations on the hot path.
 - **Cache**: Filesystem-based segment query cache. Key = `(segment_id, CRC32, query_hash, time_range)`. TTL + LRU eviction. Persistent across restarts.
 
 See [Query Engine](/docs/architecture/query-engine) for the full breakdown.
@@ -210,9 +210,9 @@ HTTP POST /api/v1/ingest, /api/v1/ingest/raw, /api/v1/es/_bulk, or /api/v1/otlp/
 ### Read Path
 
 ```
-SPL2 query text
-  → Parse to AST
-  → Optimize (rule-based, multi-phase)
+LynxFlow query text
+  → Parse to AST, desugar, lower to logical plan
+  → Optimize (rule-based, fixed-point)
   → Build Volcano pipeline
   → Scan operator:
     → Check segment time ranges (prune by time)
@@ -230,7 +230,7 @@ SPL2 query text
 | Metric | Value |
 |--------|-------|
 | VM simple predicate (`status >= 500`) | 22 ns/op, 0 allocs |
-| VM complex predicate (`status >= 500 AND host = "web-01"`) | 55 ns/op, 0 allocs |
+| VM complex predicate (`status >= 500 and host == "web-01"`) | 55 ns/op, 0 allocs |
 | Streaming `head 10` on 100K events | 0.23 ms |
 | Binary search on sorted timestamps (1M events) | 15 ns vs 232 us full scan |
 | Cache hit latency | 299 ns |
@@ -245,4 +245,4 @@ SPL2 query text
 - [Query Engine](/docs/architecture/query-engine) -- parser, optimizer, pipeline, bytecode VM
 - [Indexing](/docs/architecture/indexing) -- bloom filters, FST inverted index, roaring bitmaps
 - [Distributed Architecture](/docs/architecture/distributed) -- Raft, sharding, scatter-gather, S3
-- [Design Decisions](/docs/architecture/design-decisions) -- why columnar, why SPL2, why Go, why single binary
+- [Design Decisions](/docs/architecture/design-decisions) -- why columnar, why LynxFlow, why Go, why single binary

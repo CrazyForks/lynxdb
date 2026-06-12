@@ -47,6 +47,13 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'LynxFlow v2 Reference',
       collapsed: false,
+      link: {
+        type: 'generated-index',
+        title: 'LynxFlow v2 Reference',
+        description:
+          'The LynxFlow v2 query language: operators, scalar functions, and aggregate functions. Generated from the registry (pkg/lynxflow/registry) by internal/docgen.',
+        slug: '/lynxflow/overview',
+      },
       items: [
         {
           type: 'category',

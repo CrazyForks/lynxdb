@@ -1,195 +1,218 @@
 ---
 title: Working with JSON Logs
-description: How to parse, query, and transform JSON log data using dot-notation, unpack commands, JSON functions, and unroll.
+description: How to parse, query, and transform JSON log data using parse json, object and array access, from_json/to_json, and explode.
 ---
 
 # Working with JSON Logs
 
-LynxDB provides multiple tools for working with JSON log data, from zero-config dot-notation to full structural extraction and array manipulation. This guide covers all the approaches and when to use each one.
+LynxDB provides multiple tools for working with JSON log data, from one-stage extraction to nested object access and array manipulation. This guide covers all the approaches and when to use each one.
 
 ## Quick reference
 
 | Approach | Use when | Example |
 |----------|----------|---------|
-| **Dot-notation** | Ad-hoc queries on nested JSON | `\| where response.status >= 500` |
-| **`\| json`** | Quick extraction of all/some fields | `\| json \| stats count by level` |
-| **`\| unpack_json`** | Production pipelines with prefix/field control | `\| unpack_json prefix=app_` |
-| **`json_extract()`** | Extracting one value in an eval/where | `\| eval name = json_extract(data, "user.name")` |
-| **`\| unroll`** | Exploding JSON arrays into rows | `\| unroll field=items` |
+| **`\| parse json`** | Extracting all/some fields | `\| parse json \| stats count() as count by level` |
+| **Object access `f.a.b`** | Querying nested values after extraction | `\| parse json \| where response.status >= 500` |
+| **`\| parse json into (...)`** | Production pipelines with typed, projected captures | `\| parse json into (status as int)` |
+| **`from_json()`** | Extracting one embedded JSON value in an extend/where | `\| extend payload = from_json(body)` |
+| **`\| explode`** | Exploding JSON arrays into rows | `\| parse json \| explode items` |
 
 ---
 
-## Dot-notation: zero-config nested access
+## `parse json` -- extraction
 
-LynxDB supports dot-notation for accessing nested JSON fields directly in `where`, `eval`, and `stats` without any explicit extraction step.
+The [`parse`](/docs/lynxflow/operators/parse) stage is LynxFlow's unified schema-on-read extractor (formerly the `json` and `unpack_json` commands in SPL2). `parse json` extracts all JSON keys from `_raw` (or a specified field) into columns:
 
 ```bash
-# Filter on a nested field -- no unpack needed
-echo '{"level":"error","request":{"method":"POST","duration_ms":5012}}' \
-  | lynxdb query '| where request.duration_ms > 1000 | table level, request.method'
+# Extract all fields
+cat app.json | lynxdb query '| parse json | stats count() as count by level'
+
+# Extract specific fields only (faster for wide objects)
+cat app.json | lynxdb query '| parse json into (level, status, duration_ms) | where status >= 500'
+
+# Extract from a non-default field
+cat logs.json | lynxdb query '| parse json from message | keep level, service'
 ```
 
-### How it works
+### Typed captures
 
-When the VM encounters a field like `request.method`:
+`into (...)` both projects the fields you want and coerces their types at extraction time:
 
-1. **Direct lookup** -- checks if a field literally named `request.method` exists (e.g., from a previous `unpack_json`).
-2. **Root extraction** -- if not found, looks for a field named `request` and extracts `method` from its JSON value.
-3. **_raw fallback** -- if the root field doesn't exist either, tries to extract `request.method` from `_raw`.
+```bash
+lynxdb query 'from main | parse json into (level as string, status as int)'
+```
 
-This means dot-notation works whether or not you've explicitly extracted fields.
+### Prefixes
+
+Add a prefix to avoid field name collisions:
+
+```bash
+lynxdb query 'from main | parse json prefix app_ | where app_level == "error"'
+```
+
+### Merge rules
+
+`parse` stages never delete columns and never silently overwrite an existing non-null field — on collision the existing value wins and a per-query warning counter increments. There is no `keep_original=` option because the original field is always kept.
+
+---
+
+## Object and array access
+
+After `parse json`, nested values are real objects and arrays. Use dot-notation for objects and `[index]` for arrays:
+
+```bash
+echo '{"level":"error","request":{"method":"POST","duration_ms":5012}}' \
+  | lynxdb query '| where request.duration_ms > 1000 | extend method = request.method | keep level, method'
+```
+
+(Pipe mode auto-detects JSON input, so the nested `request` object is already a column here. For raw text containing JSON, add `| parse json` first.)
 
 ### Multi-level nesting
 
 ```spl
--- Access deeply nested values
-| where response.headers.content_type = "application/json"
-| eval origin = request.headers.origin
-| stats count by response.status
+// Access deeply nested values
+| parse json
+| where response.headers.content_type == "application/json"
+| extend origin = request.headers.origin
+| stats count() as count by response.status
 ```
 
----
-
-## `| json` -- quick extraction
-
-The `| json` command extracts all JSON keys from `_raw` (or a specified field) into top-level fields.
-
-```bash
-# Extract all fields
-cat app.json | lynxdb query '| json | stats count by level'
-
-# Extract specific paths only (faster for wide objects)
-cat app.json | lynxdb query '| json level, status, duration_ms | where status >= 500'
-
-# Extract from a non-default field
-cat logs.json | lynxdb query '| json field=message | table level, service'
-```
-
----
-
-## `| unpack_json` -- production extraction
-
-For production pipelines, `unpack_json` provides full control over extraction:
+### Array elements
 
 ```spl
--- Add a prefix to avoid field name collisions
-| unpack_json prefix=app_
-| where app_level = "error"
-
--- Extract only specific fields (performance optimization)
-| unpack_json fields=level,status,duration_ms
-
--- Keep the original _raw field
-| unpack_json keep_original=true
-
--- Extract from a specific field
-| unpack_json field=metadata prefix=meta_
-```
-
----
-
-## JSON eval functions
-
-Use JSON functions in `eval` and `where` for precise extraction and validation.
-
-### Extract a single value
-
-```spl
-| eval user = json_extract(payload, "user.name")
-| eval first_tag = json_extract(metadata, "tags.0")
-```
-
-### Validate JSON before processing
-
-```spl
-| where json_valid(message) = true
-| unpack_json field=message
-```
-
-### Inspect structure
-
-```spl
--- Get keys of a JSON object
-| eval keys = json_keys(config)
-
--- Get length of a JSON array
-| eval num_items = json_array_length(order, "items")
+| parse json
+| extend first_tag = tags[0]
+| extend num_items = len(order.items)
 | where num_items > 10
 ```
 
-### Build JSON output
+`len()` returns the element count of an array (formerly `json_array_length`); `keys()` returns the keys of an object (formerly `json_keys`).
 
-```spl
--- Construct a JSON object for export
-| stats count by host, level
-| eval summary = json_object("host", host, "level", level, "count", count)
-| table summary
+### How field resolution works
+
+When LynxFlow sees `request.method` in an expression, it resolves in order:
+
+1. **Flat column** -- a column literally named `request.method` (e.g. produced by ingest-time extraction).
+2. **Object access** -- the `method` key of the object column `request`.
+
+Backticks force interpretation 1 (`` `request.method` ``); `(request).method` or `request["method"]` force interpretation 2.
+
+:::warning Breaking change from SPL2
+There is no implicit `_raw` JSON fallback anymore. If no stage produced the field, dotted access yields `missing` — it does not silently re-parse `_raw`. Add `| parse json` to extract structure.
+:::
+
+### Safe access with `?.`
+
+Use `?.` when intermediate objects may be absent:
+
+```bash
+lynxdb query 'from main | parse json | extend origin = request?.headers?.origin'
 ```
-
-See the [JSON Functions Reference](/docs/lynx-flow/functions/json-functions) for the complete API.
 
 ---
 
-## `| unroll` -- exploding arrays
+## Single values: `from_json()`
 
-When a field contains a JSON array, `| unroll` creates one row per element.
+When one field contains an embedded JSON string and you only need a value or two, `from_json()` (formerly `json_extract`) parses it into an object you can access directly:
+
+```bash
+lynxdb query 'from main | extend payload = from_json(body) | extend user = payload?.user?.name'
+```
+
+`from_json()` returns `null` on invalid JSON — never the original string. The strict variant `from_json!()` raises a query error instead.
+
+### Build JSON output
+
+Construct objects with `{...}` literals and serialize with `to_json()` (formerly `json_object`):
+
+```bash
+lynxdb query 'from main
+  | stats count() as count by host, level
+  | extend summary = to_json({host: host, level: level, count: count})
+  | keep summary'
+```
+
+---
+
+## Handling malformed JSON
+
+Instead of pre-validating with `json_valid()`, LynxFlow's `parse` stage has explicit `on_error` modes:
+
+```bash
+# Drop rows that fail to parse
+lynxdb query 'from main | parse json on_error drop'
+```
+
+The default mode is `propagate`: rows survive with best-effort fields, and the `_error` / `_error_detail` columns record what went wrong. Inspecting failures is a first-class workflow:
+
+```bash
+lynxdb query 'from main | parse json | where exists(_error) | keep _error, _error_detail, _raw'
+```
+
+Other modes: `null` (row survives, fields null, no error columns) and `strict` (the query fails on the first offending row). See the [parse reference](/docs/lynxflow/operators/parse).
+
+---
+
+## `explode` -- arrays into rows
+
+When a field contains an array, [`explode`](/docs/lynxflow/operators/explode) (formerly `unroll`) creates one row per element:
 
 ```bash
 echo '{"order":"ORD-1","items":[{"sku":"A1","qty":2},{"sku":"B3","qty":1}]}' \
-  | lynxdb query '| json | unroll field=items | table order, items.sku, items.qty'
+  | lynxdb query '| parse json | explode items | extend sku = items.sku, qty = items.qty | keep order, sku, qty'
 ```
 
 Output:
 
 ```
-order    items.sku    items.qty
-ORD-1    A1           2
-ORD-1    B3           1
+order    sku    qty
+ORD-1    A1     2
+ORD-1    B3     1
 ```
+
+Rows with a missing or empty array are dropped.
 
 ### Array of objects
 
-Object elements are flattened with dot-notation. For `field=items`:
-- `items.sku` = the `sku` key from each element
-- `items.qty` = the `qty` key from each element
+After `explode items`, each row's `items` column holds one element. Object elements are reached with dot-notation (`items.sku`, `items.qty`). Note that `keep` only accepts flat column names — materialize nested values with `extend` first, as in the example above.
 
 ### Array of scalars
 
-Scalar elements replace the field value directly:
+Use `as` to name the element column:
 
 ```spl
--- Input: {"name": "alice", "tags": ["admin", "user"]}
-| json | unroll field=tags
--- Row 1: name=alice, tags=admin
--- Row 2: name=alice, tags=user
+// Input: {"name": "alice", "tags": ["admin", "user"]}
+| parse json | explode tags as tag
+// Row 1: name=alice, tag=admin
+// Row 2: name=alice, tag=user
 ```
 
-### Aggregate over unrolled data
+### Aggregate over exploded data
 
-```spl
-| json
-| unroll field=items
-| stats sum(items.qty) AS total_sold, dc(order_id) AS orders by items.sku
-| sort -total_sold
-| head 20
+```bash
+lynxdb query '| parse json
+  | explode items
+  | stats sum(items.qty) as total_sold, dc(order_id) as orders by items.sku
+  | sort -total_sold
+  | head 20'
 ```
 
 ---
 
 ## Chaining parsers
 
-Real-world logs often have nested formats. Chain extraction commands to handle them:
+Real-world logs often have nested formats. Chain `parse` stages to handle them:
 
 ### Docker JSON logs with embedded application log
 
 ```bash
 # Docker wraps each log line in JSON: {"log":"...","stream":"stdout","time":"..."}
-# The inner "log" field contains the application's logfmt output
+# The inner "log" field contains the application logfmt output
 cat docker-logs.json | lynxdb query '
-  | json
-  | unpack_logfmt field=log prefix=app_
-  | where app_level = "error"
-  | stats count by app_service'
+  | parse json
+  | parse logfmt from log prefix app_
+  | where app_level == "error"
+  | stats count() as count by app_service'
 ```
 
 ### Syslog with embedded JSON
@@ -197,47 +220,49 @@ cat docker-logs.json | lynxdb query '
 ```bash
 # Syslog header wraps a JSON application message
 cat syslog.log | lynxdb query '
-  | unpack_syslog
-  | unpack_json field=message prefix=app_
-  | stats count by hostname, app_level'
+  | parse syslog
+  | parse json from message prefix app_
+  | stats count() as count by hostname, app_level'
 ```
 
 ### Nginx access log with JSON body field
 
 ```bash
 cat access.log | lynxdb query '
-  | unpack_combined
-  | unpack_json field=request_body prefix=body_
-  | where body_action = "purchase"
-  | stats sum(body_amount) by client_ip'
+  | parse combined
+  | parse json from request_body prefix body_
+  | where body_action == "purchase"
+  | stats sum(body_amount) as revenue by client_ip'
+```
+
+### Mixed-format streams
+
+When lines may be JSON or logfmt, use a fallback chain — the first format that succeeds per row wins:
+
+```bash
+cat app.log | lynxdb query '| parse first_of(json, logfmt)'
 ```
 
 ---
 
 ## Performance tips
 
-1. **Use dot-notation for ad-hoc queries.** No extraction overhead for fields you don't materialize.
+1. **Use `into (...)` for wide objects.** Extracting 3 fields from a 50-key JSON object is much faster than extracting all 50, and you get typed columns for free.
 
-2. **Specify `fields=` when using `unpack_json`.** Extracting 3 fields from a 50-key JSON object is much faster than extracting all 50.
+2. **Use `from_json()` in extend/where for single embedded values.** When only one field holds JSON, you avoid running a full parse stage.
 
-3. **Use `json_extract()` in eval/where for single values.** When you only need one field, `json_extract` avoids parsing the entire object.
-
-4. **Place extraction early in the pipeline.** Extract before `where` so the filter can operate on typed fields:
+3. **Place extraction early in the pipeline.** Extract before `where` so the filter operates on typed fields:
    ```spl
-   | json | where status >= 500   -- fast: status is an integer
+   | parse json into (status as int) | where status >= 500   // fast: status is an int
    ```
 
-5. **Use `json_valid()` to guard against malformed data.** Avoid parse errors in production pipelines:
-   ```spl
-   | where json_valid(_raw) = true | json
-   ```
+4. **Choose an `on_error` mode deliberately.** `on_error drop` keeps malformed data out of production pipelines; the default `propagate` keeps rows and lets you audit failures via `_error`.
 
 ---
 
 ## Next steps
 
-- [json command reference](/docs/lynx-flow/commands/json-cmd)
-- [unpack_json reference](/docs/lynx-flow/commands/unpack-json)
-- [unroll reference](/docs/lynx-flow/commands/unroll)
-- [JSON Functions reference](/docs/lynx-flow/functions/json-functions)
-- [Field Extraction Guide](/docs/guides/field-extraction) -- REX, EVAL, and schema-on-read
+- [parse reference](/docs/lynxflow/operators/parse)
+- [explode reference](/docs/lynxflow/operators/explode)
+- [Scalar functions reference](/docs/lynxflow/functions) -- object and array function sections
+- [Field Extraction Guide](/docs/guides/field-extraction) -- parse regex, extend, and schema-on-read

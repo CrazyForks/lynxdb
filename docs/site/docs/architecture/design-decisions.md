@@ -1,7 +1,7 @@
 ---
 sidebar_position: 7
 title: Design Decisions
-description: Key design decisions behind LynxDB -- why columnar storage, why SPL2, why Go, why a single binary, why schema-on-read, and why FST + roaring bitmaps.
+description: Key design decisions behind LynxDB -- why columnar storage, why LynxFlow, why Go, why a single binary, why schema-on-read, and why FST + roaring bitmaps.
 ---
 
 # Design Decisions
@@ -16,16 +16,16 @@ This page explains the reasoning behind the major design decisions in LynxDB. Ea
 
 **Reasoning**:
 
-Log analytics queries almost always access a subset of fields. A query like `stats count by level` needs only the `level` column -- in a columnar format, it reads that single column. In a row-oriented format, it reads every byte of every event to extract one field.
+Log analytics queries almost always access a subset of fields. A query like `stats count() by level` needs only the `level` column -- in a columnar format, it reads that single column. In a row-oriented format, it reads every byte of every event to extract one field.
 
 | Access pattern | Columnar | Row-oriented |
 |---------------|----------|-------------|
-| `stats count by level` (1 field) | Read ~5% of data | Read 100% of data |
-| `where status>=500` (1 field predicate) | Read ~5% of data | Read 100% of data |
-| `table _time, level, message` (3 fields) | Read ~15% of data | Read 100% of data |
+| `stats count() by level` (1 field) | Read ~5% of data | Read 100% of data |
+| `where status >= 500` (1 field predicate) | Read ~5% of data | Read 100% of data |
+| `keep _time, level, message` (3 fields) | Read ~15% of data | Read 100% of data |
 | Full event reconstruction | Read 100% of data | Read 100% of data |
 
-The only case where row-oriented wins is full event reconstruction, which is rare in analytics workloads. Even for `search "error"` where you display the full event, the inverted index resolves matching events first, and then only the matching rows are read in full.
+The only case where row-oriented wins is full event reconstruction, which is rare in analytics workloads. Even for `from main "error"` where you display the full event, the inverted index resolves matching events first, and then only the matching rows are read in full.
 
 Additionally, columnar storage enables type-specific encoding:
 
@@ -36,22 +36,24 @@ Additionally, columnar storage enables type-specific encoding:
 
 A row-oriented store can only apply generic compression (e.g., gzip) to entire rows, which is significantly less effective.
 
-## Why SPL2 (Not SQL)
+## Why LynxFlow (Not SQL)
 
-**Decision**: Use SPL2 (Search Processing Language 2) as the query language, not SQL.
+**Decision**: Use LynxFlow, a pipeline query language purpose-built for log analytics, not SQL.
 
-**Alternatives**: SQL, LogQL (Grafana Loki), Lucene DSL (Elasticsearch), custom DSL.
+**Alternatives**: SQL, SPL/SPL2 (Splunk), LogQL (Grafana Loki), Lucene DSL (Elasticsearch).
+
+**History**: LynxDB originally shipped an SPL2 dialect. Living with it exposed too much inherited ambiguity -- `=` doubling as comparison and assignment, `count` versus `count()`, a search-specific precedence model, and a long tail of overlapping commands. LynxFlow v2 (RFC-002, June 2026) replaced it as a clean-break redesign: same pipeline philosophy, one consistent grammar. The full capability mapping is in `docs/grammar/RFC-002.md` §15 and the CHANGELOG section "Breaking Changes (LynxFlow vs SPL2)".
 
 **Reasoning**:
 
-SPL (and SPL2) was specifically designed for log analytics. SQL was designed for relational data. The mismatch shows in practice:
+Pipeline languages in the SPL tradition were specifically designed for log analytics. SQL was designed for relational data. The mismatch shows in practice:
 
-**Pipeline vs. nested subqueries**: Log analysis is naturally a pipeline: filter -> transform -> aggregate -> sort -> limit. SPL2 expresses this directly:
+**Pipeline vs. nested subqueries**: Log analysis is naturally a pipeline: filter -> transform -> aggregate -> sort -> limit. LynxFlow expresses this directly:
 
-```spl
-source=nginx status>=500
-  | eval duration_sec = duration_ms / 1000
-  | stats count, avg(duration_sec) by uri
+```
+from nginx | where status >= 500
+  | extend duration_sec = duration_ms / 1000
+  | stats count(), avg(duration_sec) by uri
   | sort -count
   | head 10
 ```
@@ -67,24 +69,24 @@ ORDER BY cnt DESC
 LIMIT 10
 ```
 
-For simple queries, SQL is comparable. But SPL2 shines for multi-stage transformations:
+For simple queries, SQL is comparable. But LynxFlow shines for multi-stage transformations:
 
-```spl
-source=nginx
-  | rex field=_raw "client=(?P<ip>\d+\.\d+\.\d+\.\d+)"
-  | stats dc(ip) as unique_ips, count by uri
+```
+from main
+  | parse regex r"client=(?P<ip>\d+\.\d+\.\d+\.\d+)"
+  | stats dc(ip) as unique_ips, count() by uri
   | where unique_ips > 100
   | sort -count
 ```
 
-This would require nested subqueries in SQL, and the `rex` (regex extraction) step has no clean SQL equivalent.
+This would require nested subqueries in SQL, and the `parse regex` (regex extraction) step has no clean SQL equivalent.
 
 **Practical benefits**:
 
-- **Splunk ecosystem**: Millions of engineers already know SPL. SPL2 is a natural evolution that makes migration from Splunk straightforward.
-- **Search-first**: Bare `level=error` is a valid query. In SQL, you always need `SELECT ... FROM ... WHERE`.
+- **Splunk familiarity**: Millions of engineers already know SPL. LynxFlow keeps the pipe-stage model and most stage names (`stats`, `sort`, `dedup`, `top`), so migration from Splunk stays straightforward.
+- **Search-first**: `from main level=error` is a complete query, with search sugar in the `from` stage. In SQL, you always need `SELECT ... FROM ... WHERE`.
 - **Pipeline composability**: Each stage is independent. You can build queries incrementally by adding pipe stages.
-- **Compatibility hints**: LynxDB detects SPL1 syntax and suggests the SPL2 equivalent, easing the learning curve.
+- **One grammar, no ambiguity**: `==` always compares, `=` always binds (the from-stage search sugar `level=error` is the single exception). Diagnostics carry error codes, caret spans, and suggestions.
 
 ## Why Go (Not Rust or C++)
 
@@ -132,7 +134,7 @@ The key factors:
 
 1. **Operational simplicity**: One binary to install, update, and monitor. `curl | sh` gives you everything. No version matrix between components.
 
-2. **Pipe mode**: The CLI `lynxdb query --file app.log '| stats count'` creates an ephemeral in-memory engine inside the same binary. This only works because the entire storage engine and query engine are linked into the binary. Separate binaries cannot offer this.
+2. **Pipe mode**: The CLI `lynxdb query --file app.log 'stats count()'` creates an ephemeral in-memory engine inside the same binary. This only works because the entire storage engine and query engine are linked into the binary. Separate binaries cannot offer this.
 
 3. **Gradual scaling**: Start with `lynxdb server` on a laptop. When you need a cluster, add `--cluster.seeds` to the same binary. No re-architecture, no new binaries, no migration. Role selection is a config flag (`--cluster.role ingest`).
 
@@ -159,11 +161,11 @@ Schema-on-write systems require defining the schema before ingesting data. When 
 
 Schema-on-read accepts any data and extracts structure at query time:
 
-```spl
-# Extract fields from raw text with rex
-search "connection refused"
-  | rex field=_raw "host=(?P<host>\S+) port=(?P<port>\d+)"
-  | stats count by host, port
+```
+// Extract fields from raw text with parse regex
+from main "connection refused"
+  | parse regex r"host=(?P<host>\S+) port=(?P<port>\d+)"
+  | stats count() by host, port
 ```
 
 This is more flexible and more forgiving. The trade-off is that queries over unindexed fields require scanning, but the bloom filter and inverted index provide efficient full-text search for the common case, and materialized views handle the repeated-query case.

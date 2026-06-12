@@ -57,74 +57,102 @@ Key responsibilities:
 
 See [REST API Overview](/docs/api/overview) for the user-facing API documentation.
 
-### `pkg/spl2/` -- SPL2 Query Language
+### `pkg/lynxflow/` -- LynxFlow Query Language
 
-The SPL2 lexer, parser, AST definitions, search predicate parser, and Splunk SPL1 compatibility hint generator.
+The LynxFlow v2 frontend: lexer, parser, AST, semantic analysis, desugaring, and the registry that defines the language surface. (The old `pkg/spl2` package was removed when LynxFlow v2 replaced the SPL2 dialect -- see `docs/grammar/RFC-002.md`.)
 
 ```
-pkg/spl2/
-├── lexer.go              # Tokenizer
-├── parser.go             # Recursive descent parser
-├── ast.go                # AST node types
-├── search.go             # Search predicate parser (field=value, boolean, wildcards)
-├── compat.go             # SPL1 → SPL2 compatibility hints
-└── errors.go             # Parse error types with suggestions
+pkg/lynxflow/
+├── lexer/                # Tokenizer
+├── parser/               # Recursive descent parser with caret diagnostics
+├── ast/                  # AST node types
+├── sema/                 # Semantic analysis, schema inference, suggestions
+├── desugar/              # Sugar stages → core operator rewrites
+├── registry/             # Operator/function/aggregate catalog (single source of truth)
+├── lint/                 # Query linting
+├── format/               # Query formatting
+└── run/                  # Embedded execution for CLI file/pipe mode
 ```
 
 Key responsibilities:
-- Convert SPL2 text to a typed AST.
-- Error recovery (report multiple errors per query).
-- Syntax suggestions for common mistakes.
-- Detect SPL1 syntax and suggest SPL2 equivalents.
+- Convert LynxFlow text to a typed AST.
+- Error recovery (report multiple errors per query) with error codes, caret spans, and suggestions.
+- Infer the schema flowing through each stage and validate arguments against the registry.
+- Desugar sugar stages (`every`, `top`, search sugar, ...) onto the core operator set.
 
-See [Query Engine](/docs/architecture/query-engine) for how the parser fits into the query pipeline.
+The registry is the single source of truth for the language surface: the parser, sema, shell highlighting, and the docs generator (`internal/docgen`) all read from it.
 
-### `pkg/engine/pipeline/` -- Volcano Iterator Pipeline
+See [Query Engine](/docs/architecture/query-engine) for how the frontend fits into the query pipeline.
 
-The streaming query execution engine. Implements the Volcano iterator model.
+### `pkg/logical/` -- Logical Plan IR and Optimizer
+
+The typed logical plan IR, lowering from the desugared AST, and plan optimization.
 
 ```
-pkg/engine/pipeline/
-├── pipeline.go           # Pipeline builder (AST → operator tree)
-├── scan.go               # Scan operator (reads .lsg parts + batcher buffer)
-├── filter.go             # Filter operator (WHERE)
-├── project.go            # Project operator (FIELDS, TABLE)
-├── eval.go               # Eval operator (EVAL)
-├── aggregate.go          # Aggregate operator (STATS, partial + global)
-├── sort.go               # Sort operator (SORT)
-├── limit.go              # Limit operator (HEAD, TAIL, LIMIT)
-├── rex.go                # Rex operator (REX regex extraction)
-├── bin.go                # Bin operator (BIN)
-├── streamstats.go        # StreamStats operator (STREAMSTATS)
-├── eventstats.go         # EventStats operator (EVENTSTATS)
-├── join.go               # Join operator (JOIN)
-├── union.go              # Union operator (APPEND, MULTISEARCH)
-├── dedup.go              # Dedup operator (DEDUP)
-├── rename.go             # Rename operator (RENAME)
-├── xyseries.go           # XYSeries operator (XYSERIES)
-├── transaction.go        # Transaction operator (TRANSACTION)
-└── tail.go               # Tail operator (live tail streaming)
+pkg/logical/
+├── lower.go              # Desugared AST → logical plan lowering
+├── node.go, plan.go      # Plan node types (Scan, Filter, Project, Aggregate, ...)
+├── render.go             # Plan rendering
+├── explain/              # EXPLAIN output from the logical plan
+├── opt/                  # Rule-based fixed-point optimizer (expression + plan rules)
+└── physical/             # Physical pipeline builder (plan → pipeline operators + VM programs)
 ```
 
-Each operator implements the `Operator` interface with a `Next()` method that returns the next batch of rows.
-
-### `pkg/optimizer/` -- Query Optimizer
-
-The 40-rule query optimizer. Transforms the AST to reduce work at execution time.
-
-Key responsibilities:
-- Expression simplification (constant folding, boolean algebra).
-- Predicate and projection pushdown.
-- Scan optimization (time range pruning, bloom filter pruning, inverted index lookup).
-- Aggregation optimization (partial aggregation, TopK pushdown, MV rewrite).
-- Expression optimization (regex literal extraction, CSE).
-- Join optimization.
+Key responsibilities of `pkg/logical/opt`:
+- Expression simplification (constant folding, boolean algebra, `??`/`if()` folding).
+- Filter merge/elimination and predicate pushdown.
+- Aggregation optimization (partial aggregation, TopK pushdown).
+- Limit pushdown and column pruning.
+- Materialized view rewrite.
 
 See [Query Engine -- Optimizer](/docs/architecture/query-engine#optimizer) for the full rule list.
 
+### `pkg/planner/` -- Server-Side Query Planning
+
+A thin wrapper around the LynxFlow parser, desugarer, semantic analyzer, and logical optimizer. It presents the `Planner` interface that the server stack (REST API) uses to plan queries. CLI file/pipe mode uses `pkg/lynxflow/run` instead.
+
+### `pkg/langdetect/` -- Language Validation
+
+Post-SPL2-removal shim: the only supported language is LynxFlow. Validates an explicit `language` parameter and returns an explicit error for `spl2`.
+
+### `pkg/sigmaqueries/` -- Sigma Compatibility Corpus
+
+The Sigma/rsigma compatibility corpus with `.lynxflow` golden queries and tests.
+
+### `pkg/engine/pipeline/` -- Volcano Iterator Pipeline
+
+The streaming query execution engine. Implements the Volcano iterator model. Representative files (the package contains many more operators and their tests):
+
+```
+pkg/engine/pipeline/
+├── iterator.go           # Operator interface and iterator plumbing
+├── batch.go              # Row batches (1024 rows per Next())
+├── from.go               # Scan entry (reads .lsg parts + batcher buffer)
+├── rowscan.go            # Row-oriented scan
+├── columnar_scan.go      # Columnar scan
+├── livescan.go           # Live tail streaming scan (SSE)
+├── eval.go               # Eval operator (extend)
+├── aggregate.go          # Aggregate operator (stats)
+├── partial_agg.go        # Partial aggregation (per-segment partial + merge)
+├── sort.go               # Sort operator (sort), spill-to-disk in spill.go
+├── limit.go              # Limit operator (head)
+├── parse_iterator.go     # Parse operator (parse json / logfmt / regex)
+├── streamstats.go        # StreamStats operator (streamstats)
+├── eventstats.go         # EventStats operator (eventstats)
+├── join.go               # Join operator (join)
+├── union.go              # Union operator (union)
+├── dedup.go              # Dedup operator (dedup)
+├── rename.go             # Rename operator (rename)
+├── top.go                # Top/Rare operator (top, rare)
+├── transaction.go        # Transaction operator (transaction)
+└── tee.go                # Tee sink (tee, CLI mode only)
+```
+
+Each operator implements the `Operator` interface with a `Next()` method that returns the next batch of rows. Aggregation functions (`count()`, `avg`, `dc`, `perc`, ...) are implemented here with partial/merge semantics for distributed execution; their signatures are declared in `pkg/lynxflow/registry`.
+
 ### `pkg/vm/` -- Bytecode VM
 
-The stack-based bytecode VM for evaluating expressions in WHERE, EVAL, and STATS commands.
+The stack-based bytecode VM for evaluating expressions in `where`, `extend`, and `stats` stages.
 
 Key responsibilities:
 - Compile AST expressions to bytecode programs.
@@ -204,10 +232,6 @@ pkg/ingest/
 
 Handles the ingest path from raw bytes to structured events ready for the storage engine.
 
-### `pkg/aggregation/` -- Aggregation Functions
-
-Implementations of all aggregation functions: `count`, `sum`, `avg`, `min`, `max`, `dc` (distinct count), `values`, `stdev`, `perc50/75/90/95/99`, `earliest`, `latest`. Each function implements the `Partial` + `Merge` interface for distributed execution.
-
 ### `pkg/client/` -- Go Client Library
 
 A Go HTTP client for the LynxDB REST API. Used by the CLI in server mode and available for external integrations.
@@ -217,6 +241,10 @@ A Go HTTP client for the LynxDB REST API. Used by the CLI in server mode and ava
 Parsing and manipulation of time ranges. Handles relative expressions (`-1h`, `earliest=-7d latest=now`) and absolute timestamps.
 
 ## `internal/` -- Private Packages
+
+### `internal/docgen/` -- Docs Generator
+
+Generates the registry-driven language reference (`docs/site/docs/lynxflow/**`) and the EBNF grammar (`docs/grammar/lynxflow.ebnf`) from `pkg/lynxflow/registry`. Run with `go run ./internal/docgen` or `make docs-gen`.
 
 ### `internal/objstore/` -- Object Store Interface
 
@@ -233,16 +261,19 @@ Formatters for CLI output: JSON (default), table (human-readable), CSV, and raw 
 
 ```
 test/
-├── acceptance/           # 10 canonical queries with expected results
-├── integration/          # HTTP API integration tests
-├── e2e/                  # End-to-end tests (CLI invocation → results)
-└── regression/           # Bug fix regression tests
+├── e2e/                  # End-to-end HTTP API tests (ingest, query, tail, views, compat)
+├── cli/                  # CLI tests against the built binary (pipe/file mode, exit codes, goldens)
+├── integration/          # Cluster and Sigma-compatibility integration tests
+├── regression/           # Query correctness regression tests
+├── chaos/                # Fault-injection tests (Docker-based)
+└── simulation/           # Property-based cluster/network/S3 simulation tests
 ```
 
-- **Acceptance tests**: Run 10 carefully chosen queries against a fixed test dataset and verify exact result correctness. These are the "golden" tests that must pass before any release.
-- **Integration tests**: Start a real HTTP server and exercise the REST API endpoints.
-- **E2E tests**: Invoke the `lynxdb` CLI binary as a subprocess and verify output.
+- **E2E tests**: Start a real server and exercise the REST API end to end (`make test-e2e`).
+- **CLI tests**: Invoke the `lynxdb` binary as a subprocess and verify output, exit codes, and golden files (`make test-cli`).
+- **Integration tests**: Cluster behavior and the Sigma compatibility corpus.
 - **Regression tests**: Each test corresponds to a specific bug fix and ensures the bug does not reappear.
+- **Chaos and simulation tests**: Fault injection and property-based simulation of cluster components.
 
 ## Dependency Graph
 
@@ -253,18 +284,26 @@ flowchart TD
     CMD["cmd/lynxdb"] --> API["pkg/api/rest"]
     CMD --> CONFIG["pkg/config"]
     CMD --> CLIENT["pkg/client"]
+    CMD --> RUN["pkg/lynxflow/run (file/pipe mode)"]
 
     API --> ENGINE["pkg/storage (engine)"]
-    API --> SPL2["pkg/spl2"]
-    API --> PIPELINE["pkg/engine/pipeline"]
-    API --> OPTIMIZER["pkg/optimizer"]
+    API --> PLANNER["pkg/planner"]
+
+    PLANNER --> LYNXFLOW["pkg/lynxflow (parser, sema, desugar)"]
+    PLANNER --> LOGICAL["pkg/logical"]
+    PLANNER --> OPT["pkg/logical/opt"]
+
+    RUN --> LYNXFLOW
+    RUN --> OPT
+    RUN --> PHYSICAL["pkg/logical/physical"]
+
+    OPT --> LOGICAL
+    PHYSICAL --> LOGICAL
+    PHYSICAL --> PIPELINE["pkg/engine/pipeline"]
 
     PIPELINE --> VM["pkg/vm"]
     PIPELINE --> ENGINE
-    PIPELINE --> AGG["pkg/aggregation"]
     PIPELINE --> CACHE["pkg/cache"]
-
-    OPTIMIZER --> SPL2
 
     ENGINE --> PART["pkg/storage/part"]
     ENGINE --> SEGMENT["pkg/storage/segment"]

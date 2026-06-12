@@ -1,6 +1,6 @@
 /**
  * URL hash encoding/decoding for query sharing.
- * Format: #q=level%3Derror&from=-1h&to=...
+ * Format: #q=from+main+level%3D%22error%22&from=-1h&to=...
  */
 
 /**

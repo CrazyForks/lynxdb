@@ -2,6 +2,7 @@ import { test, expect, request as apiRequest } from "@playwright/test";
 
 const API = "http://127.0.0.1:3100";
 const MARKER = "hello smoke parity";
+const QUERY = 'from main level="error"';
 
 // Seed a queryable event before the UI run, retrying until the async batcher
 // has flushed it so "run a query, see results" is deterministic.
@@ -15,7 +16,7 @@ test.beforeAll(async () => {
     .poll(
       async () => {
         const res = await ctx.post(`${API}/api/v1/query`, {
-          data: { q: "level=error", from: "-1h", to: "now" },
+          data: { q: QUERY, from: "-1h", to: "now" },
         });
         if (!res.ok()) return 0;
         return JSON.stringify(await res.json()).includes(MARKER) ? 1 : 0;
@@ -37,8 +38,9 @@ test("app shell loads with the query editor and run control", async ({
 });
 
 test("running a query shows results", async ({ page }) => {
-  await page.goto("/ui/#q=level%3Derror&from=-1h");
-  await expect(page.locator(".cm-content")).toContainText("level=error");
+  const hash = new URLSearchParams({ q: QUERY, from: "-1h" }).toString();
+  await page.goto(`/ui/#${hash}`);
+  await expect(page.locator(".cm-content")).toContainText('level="error"');
   await page.getByRole("button", { name: "Run query" }).click();
   await expect(page.getByText(MARKER).first()).toBeVisible({
     timeout: 15_000,

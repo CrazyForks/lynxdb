@@ -48,7 +48,7 @@ func defaultPlanRules() []PlanRule {
 
 // Rule: filter-elim
 //
-// Removes Filter(true) — a filter whose predicate is a true literal is a
+// Removes Filter(true): a filter whose predicate is a true literal is a
 // no-op; the node is replaced by its input child.
 func filterElim(root logical.Node) (logical.Node, bool) {
 	return rewritePlanBottomUp(root, func(n logical.Node) (logical.Node, bool) {

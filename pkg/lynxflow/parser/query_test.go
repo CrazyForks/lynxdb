@@ -660,7 +660,6 @@ func TestParseStarInStagePositionSuggests(t *testing.T) {
 
 // count sugar stage (D36): `| count [()] [by <fields>]` parses clean,
 // round-trips through the formatter, and aggregate names in stage position
-// get a stats-pointing diagnostic.
 
 func TestParseCountStage(t *testing.T) {
 	for src, want := range map[string]string{

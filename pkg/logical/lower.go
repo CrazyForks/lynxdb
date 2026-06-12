@@ -130,7 +130,6 @@ func isProjection(name string) bool {
 }
 
 func (l *lowerer) lowerFrom(f *ast.FromStage) Node {
-	// Check for single-CTE source.
 	if len(f.Sources) == 1 && f.Sources[0].Kind == ast.SourceCTE {
 		cteName := f.Sources[0].Name
 		if letPlan, ok := l.lets[cteName]; ok {

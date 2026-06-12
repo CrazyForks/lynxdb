@@ -241,7 +241,6 @@ func (p *lynxFlowPlanner) Plan(req PlanRequest) (*PlanResult, error) {
 		}
 	}
 
-	// Build optimizer stats.
 	stats := make(map[string]int)
 	totalRules := 0
 	for _, a := range applied {

@@ -147,7 +147,6 @@ func classifyInput(input string) []styledSpan {
 		class := classifyToken(tok, tokens, i, expectStage)
 		spans = append(spans, styledSpan{start: tok.Start, end: tok.End, class: class})
 
-		// Update stage expectation state.
 		if tok.Kind == lexer.Pipe {
 			expectStage = true
 		} else if tok.Kind != lexer.EOF {

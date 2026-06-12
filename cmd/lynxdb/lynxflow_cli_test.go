@@ -61,7 +61,6 @@ func TestQueryFile_SPL2_Explicit(t *testing.T) {
 
 // Test LynxFlow file mode with NDJSON input via temp file.
 func TestQueryFile_LynxFlow_NDJSONTempFile(t *testing.T) {
-	// Create a temp NDJSON file.
 	tmpFile := t.TempDir() + "/events.ndjson"
 	lines := []string{
 		`{"level":"error","service":"api","duration_ms":150}`,

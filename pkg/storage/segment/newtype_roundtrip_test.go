@@ -83,7 +83,6 @@ func TestNewType_DurationColumn_WithNulls(t *testing.T) {
 		e.Source = "test"
 		events[i] = e
 	}
-	// Set duration on only some events.
 	events[0].SetField("dur", event.DurationValue(100*time.Millisecond))
 	events[2].SetField("dur", event.DurationValue(200*time.Millisecond))
 

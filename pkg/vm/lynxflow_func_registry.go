@@ -163,7 +163,6 @@ func makeStrictCastEmitter(name string, normalEmit func(*lfCompiler, *lfast.Call
 		// After OpDup:  [original, original]
 		// After cast:   [original, castResult]
 		// OpStrictCastCheck: if castResult is null and original is not null,
-		//   return ErrStrictCast
 
 		// Reset and redo more carefully:
 		// We already compiled the arg and duped it. Now apply the normal cast:
@@ -492,7 +491,6 @@ func lfEmitIf(c *lfCompiler, call *lfast.Call) error {
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
-	// Check for null condition first
 	c.prog.EmitOp(OpDup)
 	jumpNull := c.prog.EmitOp(OpJumpIfNull3VL, 0)
 	// Not null. Check truthiness.

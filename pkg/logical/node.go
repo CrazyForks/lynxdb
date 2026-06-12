@@ -201,7 +201,6 @@ func (n *Filter) String() string {
 	return "Filter(" + n.Expr.String() + ")"
 }
 
-// Parse
 
 // Capture is a typed capture field in a Parse node.
 type Capture struct {
@@ -1135,11 +1134,9 @@ func inferUnaryType(u *ast.Unary, schema []sema.Field) sema.FieldType {
 
 func inferCallType(c *ast.Call, schema []sema.Field) sema.FieldType {
 	callee := strings.ToLower(c.Callee)
-	// Check scalar functions first.
 	if fn, ok := registry.LookupFunction(callee); ok {
 		return registryToSemaType(fn.Result)
 	}
-	// Check aggregate functions.
 	if agg, ok := registry.LookupAggregate(callee); ok {
 		return registryToSemaType(agg.Result)
 	}

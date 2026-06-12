@@ -139,12 +139,10 @@ func analyzePlan(plan *logical.Plan) (*MVAnalysis, error) {
 
 	aggNode := chain[aggIdx].(*logical.Aggregate)
 
-	// Validate the aggregate node.
 	if aggNode.Window != nil {
 		return nil, fmt.Errorf("views.AnalyzeLynxFlow: eventstats/streamstats not supported for MV")
 	}
 
-	// Build AggSpec from the Aggregate node.
 	spec, groupBy, err := buildAggSpecFromIR(aggNode)
 	if err != nil {
 		return nil, err
@@ -320,7 +318,6 @@ func buildAggSpecFromIR(agg *logical.Aggregate) (*pipeline.PartialAggSpec, []str
 		})
 	}
 
-	// Build group-by keys.
 	groupBy := make([]string, 0, len(agg.Keys)+1)
 	if agg.TimeBin != nil {
 		groupBy = append(groupBy, "_time")

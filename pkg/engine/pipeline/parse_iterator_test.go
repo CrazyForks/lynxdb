@@ -564,7 +564,6 @@ func TestParseIterator_OnErrorMatrix(t *testing.T) {
 			assertIntVal(t, rows[0], "status", 200)
 
 			if m.mode != OnErrorDrop && m.wantLen > 1 {
-				// Check error column on failing row.
 				_, hasError := rows[1]["_error"]
 				if hasError != m.hasErr {
 					t.Errorf("_error present: got %v, want %v", hasError, m.hasErr)

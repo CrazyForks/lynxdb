@@ -89,7 +89,6 @@ func TestDispatcher_LynxFlow_FilteredAgg(t *testing.T) {
 		makeTestEvent("nginx", "/api/b", "500"),
 		makeTestEvent("nginx", "/api/c", "500"),
 	}
-	// Set host and index on events.
 	for _, e := range events {
 		e.Index = "main"
 		e.SetField("host", event.StringValue("web1"))

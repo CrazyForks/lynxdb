@@ -449,7 +449,6 @@ func TestPurityOriginalPlanUnchanged(t *testing.T) {
 	e := parseExpr(t, exprStr)
 	originalStr := format.Expr(e)
 
-	// Create a plan with this expression.
 	plan := &logical.Plan{
 		Root: &logical.Filter{Expr: e},
 	}

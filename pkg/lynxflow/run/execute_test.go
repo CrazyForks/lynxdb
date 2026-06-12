@@ -368,7 +368,6 @@ func TestExecute_Compare_RequiresAggregation(t *testing.T) {
 // Test: compare with aggregation executes end-to-end
 
 func TestExecute_Compare_WithAggregation(t *testing.T) {
-	// Create two windows of events:
 	// - "current" window: 2h ago to 1h ago (2 events)
 	// - We query from main (all events) | stats count() | compare previous 2h
 	// The compare should produce previous_count() and change_count() columns.

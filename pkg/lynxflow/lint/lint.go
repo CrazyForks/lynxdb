@@ -170,12 +170,10 @@ func hasLeadingRegexWildcard(pat string) bool {
 func checkBroadScopeStar(q *ast.Query) []Lint {
 	var lints []Lint
 
-	// Check main pipeline.
 	if l := checkBroadScopeStarPipeline(q.Pipeline); l != nil {
 		lints = append(lints, *l)
 	}
 
-	// Check CTEs.
 	for _, let := range q.Lets {
 		if l := checkBroadScopeStarPipeline(let.Pipeline); l != nil {
 			lints = append(lints, *l)
@@ -373,7 +371,6 @@ func isRegexMetaclass(ch byte) bool {
 func checkMaterializeStrictParse(q *ast.Query) []Lint {
 	var lints []Lint
 
-	// Check main pipeline.
 	if l := checkMaterializePipeline(q.Pipeline); l != nil {
 		lints = append(lints, *l)
 	}
@@ -387,7 +384,6 @@ func checkMaterializeStrictParse(q *ast.Query) []Lint {
 }
 
 func checkMaterializePipeline(p ast.Pipeline) *Lint {
-	// Check if pipeline ends with materialize.
 	hasMaterialize := false
 	var matSpan ast.Span
 	for _, s := range p.Stages {
@@ -423,7 +419,6 @@ func checkMaterializePipeline(p ast.Pipeline) *Lint {
 func checkHeadBeforeSort(q *ast.Query) []Lint {
 	var lints []Lint
 
-	// Check main pipeline.
 	lints = append(lints, checkHeadBeforeSortStages(q.Pipeline.Stages)...)
 	for _, let := range q.Lets {
 		lints = append(lints, checkHeadBeforeSortStages(let.Pipeline.Stages)...)

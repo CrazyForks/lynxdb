@@ -226,7 +226,6 @@ func TestEphemeralPushdown_FieldPredicates(t *testing.T) {
 // Task 2: Skip-effectiveness tests (Part-backed)
 
 func TestPartSource_SkipEffectiveness(t *testing.T) {
-	// Create multiple parts with controlled content:
 	// Part 1: events with "needle" term
 	// Part 2: events WITHOUT "needle" term
 	// Part 3: events WITHOUT "needle" term

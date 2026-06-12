@@ -86,7 +86,6 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 			columns = pd.Columns
 		}
 
-		// Build segment predicates from FieldPredicates.
 		var segPreds []segment.Predicate
 		for _, expr := range pd.FieldPredicates {
 			if sp, ok := exprToSegmentPredicate(expr); ok {

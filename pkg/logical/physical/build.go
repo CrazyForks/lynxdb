@@ -686,7 +686,6 @@ func (b *builder) buildDescribe(nd *logical.Describe) (pipeline.Iterator, error)
 	return NewDescribeSummaryIterator(child, b.opts.batchSize()), nil
 }
 
-// Parse
 
 func (b *builder) buildParse(nd *logical.Parse) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)

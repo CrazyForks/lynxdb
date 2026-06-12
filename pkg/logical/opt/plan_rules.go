@@ -662,7 +662,6 @@ func extractRegexLiterals(pattern string) []string {
 				continue
 			default:
 				// Escaped literal: \. -> ., \- -> -, etc.
-				// Check if followed by a quantifier.
 				if i < len(runes) && isQuantifier(runes[i]) {
 					q := runes[i]
 					if q == '+' {
@@ -702,7 +701,6 @@ func extractRegexLiterals(pattern string) []string {
 
 		// Regular literal char.
 		i++
-		// Check if followed by a quantifier.
 		if i < len(runes) && isQuantifier(runes[i]) {
 			q := runes[i]
 			if q == '+' {

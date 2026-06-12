@@ -54,7 +54,6 @@ func partialAgg(root logical.Node) (logical.Node, bool) {
 		if agg.Window != nil {
 			return n, false
 		}
-		// Check every agg function.
 		for _, a := range agg.Aggs {
 			if !isDecomposableAgg(a.Func) {
 				return n, false
@@ -697,7 +696,6 @@ func schemaSet(n logical.Node) map[string]bool {
 }
 
 // collectExprIdents walks an expression tree and adds all Ident names to the
-// set.
 func collectExprIdents(e ast.Expr, cols map[string]bool) {
 	if e == nil {
 		return

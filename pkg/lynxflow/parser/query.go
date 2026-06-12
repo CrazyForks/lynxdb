@@ -29,7 +29,6 @@ const (
 	CodeStageError DiagCode = "E014"
 )
 
-// Parse entry point
 
 // Parse parses a complete LynxFlow v2 query and returns the AST along with
 // any diagnostics. On success diags is empty. On error the returned Query
@@ -151,7 +150,6 @@ func (p *parser) parsePipeline() ast.Pipeline {
 		}
 	}
 
-	// Parse pipe-delimited stages.
 	for {
 		if p.at(lexer.EOF) || p.at(lexer.Semicolon) || p.at(lexer.RBracket) {
 			break
@@ -193,7 +191,6 @@ func (p *parser) parseFromStage() ast.FromStage {
 		})
 	}
 
-	// Parse optional bracket time ranges.
 	for p.at(lexer.LBracket) {
 		tr := p.parseTimeRange()
 		from.TimeRanges = append(from.TimeRanges, tr)
@@ -437,7 +434,6 @@ func (p *parser) parseTimeRange() ast.TimeRange {
 	// Parse start expression (may be negative duration like -1h, absolute timestamp, etc.)
 	tr.Start = p.parseExpr()
 
-	// Check for range operator ..
 	if p.at(lexer.DotDot) {
 		p.advance()
 		tr.End = p.parseExpr()
@@ -830,7 +826,6 @@ func (p *parser) isStageStart() bool {
 func (p *parser) parseStage() ast.Stage {
 	start := p.cur.Start
 
-	// Check for killed spellings first.
 	if fix, ok := p.checkKilledSpelling(); ok {
 		s := ast.Stage{
 			Name:     strings.ToLower(p.cur.Text),
@@ -1275,7 +1270,6 @@ func isFieldRef(e ast.Expr) bool {
 func (p *parser) parseFieldPatternsBody(s *ast.Stage, isKeep bool) {
 	payload := &ast.FieldPatternsPayload{}
 
-	// Check for * except ...
 	if p.at(lexer.Star) {
 		savedStart := p.cur.Start
 		p.advance()
@@ -1293,7 +1287,6 @@ func (p *parser) parseFieldPatternsBody(s *ast.Stage, isKeep bool) {
 		}
 	}
 
-	// Parse patterns.
 	for {
 		if p.at(lexer.Pipe) || p.at(lexer.EOF) || p.at(lexer.Semicolon) || p.at(lexer.RBracket) {
 			break
@@ -1910,7 +1903,6 @@ func (p *parser) parseTransactionBody(s *ast.Stage) {
 		if p.at(lexer.Pipe) || p.at(lexer.EOF) || p.at(lexer.Semicolon) || p.at(lexer.RBracket) {
 			break
 		}
-		// Check for option keywords
 		if n, ok := p.identLike(); ok {
 			if (n == "maxspan" || n == "startswith" || n == "endswith") && p.peekIsEq() {
 				break
@@ -1922,7 +1914,6 @@ func (p *parser) parseTransactionBody(s *ast.Stage) {
 		}
 	}
 
-	// Parse options
 	for {
 		if p.at(lexer.Pipe) || p.at(lexer.EOF) || p.at(lexer.Semicolon) || p.at(lexer.RBracket) {
 			break
@@ -1973,7 +1964,6 @@ func (p *parser) parseCorrelateBody(s *ast.Stage) {
 func (p *parser) parseRollupBody(s *ast.Stage) {
 	payload := &ast.RollupPayload{}
 
-	// Parse duration list
 	for {
 		if p.at(lexer.Pipe) || p.at(lexer.EOF) || p.at(lexer.Semicolon) || p.at(lexer.RBracket) || p.at(lexer.KwBy) {
 			break
@@ -2012,7 +2002,6 @@ func (p *parser) parseGenericOptionsBody(s *ast.Stage) {
 
 		// Check if this looks like option=value.
 		if n, ok := p.identLike(); ok && p.peekIsEq() {
-			// Validate against registry.
 			if found {
 				valid := false
 				for _, opt := range op.Options {

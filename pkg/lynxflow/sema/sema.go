@@ -163,7 +163,6 @@ func Analyze(q *ast.Query, cat Catalog) Result {
 		streamingSafe: true,
 	}
 
-	// Build initial schema: builtins + catalog fields.
 	a.schema = a.initialSchema()
 
 	// Analyze Let bindings (CTEs).
@@ -444,7 +443,6 @@ func (a *analyzer) analyzeStatsPayload(sp *ast.StatsPayload, stageSpan ast.Span,
 		}
 	}
 
-	// Validate and type aggregation expressions.
 	savedAggCtx := a.inAggContext
 	a.inAggContext = true
 	var aggFields []Field

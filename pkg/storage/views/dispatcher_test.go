@@ -1155,7 +1155,6 @@ func TestDispatcher_NeedsMigration_AlreadyMarked(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	d := NewDispatcher(reg, layout, logger, 0, 0)
 
-	// Create a view already marked needs-migration.
 	def := ViewDefinition{
 		Name:    "mv_already_migrated",
 		Version: 1,

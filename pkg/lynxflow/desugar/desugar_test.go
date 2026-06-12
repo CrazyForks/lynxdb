@@ -379,7 +379,6 @@ func TestGoldenExpansions(t *testing.T) {
 				t.Errorf("Desugar pipeline:\n  got:  %s\n  want: %s", got, tt.wantPipe)
 			}
 
-			// Check reason.
 			if tt.wantReason != "" {
 				found := false
 				for _, r := range rewrites {

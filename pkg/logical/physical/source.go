@@ -310,7 +310,6 @@ func evalFieldPredicate(ev *event.Event, expr ast.Expr) bool {
 		return true
 	}
 
-	// Get the event's field value.
 	var fieldVal event.Value
 	var found bool
 	switch fieldName {

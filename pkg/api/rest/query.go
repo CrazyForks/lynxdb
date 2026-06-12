@@ -109,7 +109,6 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 		return
 	}
 
-	// Validate explicit language parameter.
 	if msg := validateExplicitLanguage(req.Language); msg != "" {
 		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,
 			WithSuggestion(`set language="lynxflow" or omit it; SPL2 was removed — see https://lynxdb.dev/docs/migration`))

@@ -362,7 +362,6 @@ func rewriteSubsetMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, qu
 		},
 	}
 
-	// Build rolled-up aggregation.
 	var aggs []logical.Agg
 	for _, qa := range queryAggs {
 		key := qa.Func + "\x00" + qa.Arg

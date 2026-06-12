@@ -798,7 +798,6 @@ func (c *lfCompiler) compileLambdaBody(lambda *lfast.Lambda) (int, error) {
 	// Save the parent instruction stream
 	parentInstructions := c.prog.Instructions
 
-	// Create a sub-program instruction stream
 	c.prog.Instructions = nil
 
 	// Push lambda param into scope

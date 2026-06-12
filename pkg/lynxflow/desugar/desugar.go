@@ -793,7 +793,6 @@ func (d *desugarer) expandFacets(s ast.Stage, pip ast.Pipeline, stageIdx int) []
 		fromClone = d.desugarFrom(pip.Source)
 	}
 
-	// Build per-field pipelines.
 	var facetPipelines []facetBranch
 	for _, fieldExpr := range f.Fields {
 		fieldName := exprFieldName(fieldExpr)

@@ -22,7 +22,6 @@ func (s *Server) handleQueryExplain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Validate explicit language parameter.
 	langParam := r.URL.Query().Get("language")
 	if msg := validateExplicitLanguage(langParam); msg != "" {
 		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,

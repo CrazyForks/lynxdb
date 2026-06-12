@@ -486,7 +486,6 @@ func runMVMigrateDryRun(ctx context.Context, name, query string) error {
 	fmt.Println(t.KeyValue("Current query", view.Query))
 
 	if query != "" {
-		// Validate the proposed replacement query.
 		if _, err := apiClient().Explain(ctx, query); err != nil {
 			if client.IsInvalidQuery(err) {
 				fmt.Println()

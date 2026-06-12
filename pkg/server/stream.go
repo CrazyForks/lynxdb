@@ -83,7 +83,6 @@ func (e *Engine) buildStreamingPipelineReal(ctx context.Context, prog *logical.P
 		return segs[i].meta.MaxTime.After(segs[j].meta.MaxTime)
 	})
 
-	// Build segment sources with pre-filtering.
 	var ss storeStats
 	ss.SegmentsTotal = len(segs)
 	ss.BufferedEvents = len(memEvents)

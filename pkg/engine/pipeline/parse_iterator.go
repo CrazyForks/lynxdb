@@ -257,7 +257,6 @@ func (p *ParseIterator) processBatchWithDrop(batch *Batch, srcCol []event.Value)
 		return batch, nil
 	}
 
-	// Build filtered batch.
 	out := &Batch{
 		Columns: make(map[string][]event.Value, len(batch.Columns)),
 		Len:     survivedCount,
@@ -313,7 +312,6 @@ func (p *ParseIterator) parseSingleFormat(batch *Batch, rowIdx int, input string
 		return p.applyCaptures(batch, rowIdx)
 	}
 
-	// Parse failed.
 	return p.handleParseFailure(batch, rowIdx, input, p.formatNames[0], parseErr)
 }
 

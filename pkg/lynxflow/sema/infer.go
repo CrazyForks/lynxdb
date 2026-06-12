@@ -122,11 +122,9 @@ func (a *analyzer) inferLiteral(lit *ast.Literal) FieldType {
 }
 
 func (a *analyzer) inferIdent(id *ast.Ident) FieldType {
-	// Check schema.
 	if typ, ok := a.schema.lookup(id.Name); ok {
 		return typ
 	}
-	// Check catalog.
 	if typ, ok := a.cat.Lookup(id.Name); ok {
 		return FieldType(typ)
 	}
@@ -399,7 +397,6 @@ func (a *analyzer) inferUnary(u *ast.Unary) FieldType {
 func (a *analyzer) inferCall(c *ast.Call) FieldType {
 	callee := strings.ToLower(c.Callee)
 
-	// Check if it's an aggregate function.
 	if agg, ok := registry.LookupAggregate(callee); ok {
 		if !a.inAggContext {
 			a.addDiag(CodeAggOutsideStats, parser.SeverityError, c.Pos,
@@ -413,7 +410,6 @@ func (a *analyzer) inferCall(c *ast.Call) FieldType {
 		return registryTypeToFieldType(agg.Result)
 	}
 
-	// Check if it's a scalar function.
 	if fn, ok := registry.LookupFunction(callee); ok {
 		// Arity check.
 		a.checkArity(c, fn)

@@ -94,7 +94,6 @@ func TestLynxFlowConformance(t *testing.T) {
 			}
 			query := strings.TrimSpace(string(data))
 
-			// Get expected match count.
 			wantCount, ok := expected[fixtureName]
 			if !ok {
 				t.Fatalf("fixture %s not found in compat_manifest.json", fixtureName)

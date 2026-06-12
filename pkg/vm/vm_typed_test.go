@@ -1068,21 +1068,18 @@ func TestVMArrayOfObjects(t *testing.T) {
 	// Index
 	c1 := p.AddConstant(event.IntValue(1))
 
-	// Build object 0
 	p.EmitOp(OpConstStr, cName)
 	p.EmitOp(OpConstStr, cAlice)
 	p.EmitOp(OpConstStr, cAge)
 	p.EmitOp(OpConstInt, c30)
 	p.EmitOp(OpObjectBuild, 2)
 
-	// Build object 1
 	p.EmitOp(OpConstStr, cName)
 	p.EmitOp(OpConstStr, cBob)
 	p.EmitOp(OpConstStr, cAge)
 	p.EmitOp(OpConstInt, c25)
 	p.EmitOp(OpObjectBuild, 2)
 
-	// Build array of 2 objects
 	p.EmitOp(OpArrayBuild, 2)
 
 	// Index [1]
@@ -1119,7 +1116,6 @@ func TestVMNestedArray(t *testing.T) {
 	p.EmitOp(OpConstInt, 3)
 	p.EmitOp(OpArrayBuild, 2)
 
-	// Build outer array
 	p.EmitOp(OpArrayBuild, 2)
 
 	// Index [1]

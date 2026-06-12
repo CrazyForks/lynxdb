@@ -923,7 +923,6 @@ func TestBuild_E2E_DedupSortHead(t *testing.T) {
 // Tests: CondProgram wiring on AggFunc (direct build, not via parser)
 
 func TestBuild_CondProgram_AggFunc(t *testing.T) {
-	// Build plan manually to test CondProgram.
 	scan := &logical.Scan{OutputSchema: nil}
 	agg := &logical.Aggregate{
 		Aggs: []logical.Agg{

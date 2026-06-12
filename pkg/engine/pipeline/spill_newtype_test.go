@@ -14,7 +14,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/memgov"
 )
 
-// ---------- msgpack spill round-trip (spill.go) ----------
+// msgpack spill round-trip (spill.go)
 
 func TestSpillRoundtripDuration(t *testing.T) {
 	dir := t.TempDir()
@@ -261,7 +261,7 @@ func TestSpillRoundtripNestedArrayOfObjects(t *testing.T) {
 	}
 }
 
-// ---------- msgpack spill property test: random nested values ----------
+// msgpack spill property test: random nested values
 
 func TestSpillRoundtripRandomValues(t *testing.T) {
 	dir := t.TempDir()
@@ -384,7 +384,7 @@ func randomScalar(rng *rand.Rand) event.Value {
 	}
 }
 
-// ---------- columnar spill round-trip for new types ----------
+// columnar spill round-trip for new types
 
 func TestColumnarSpillDurationColumn(t *testing.T) {
 	mgr, err := NewSpillManager(t.TempDir(), nil)
@@ -718,7 +718,7 @@ func TestColumnarSpillObjectWithNulls(t *testing.T) {
 	}
 }
 
-// ---------- pipeline-level test: sort + dedup + stats over new types with spill ----------
+// pipeline-level test: sort + dedup + stats over new types with spill
 
 func TestSortDedupStatsWithNewTypesAndSpill(t *testing.T) {
 	// Build rows with array, object, and duration fields. Force spill via tiny budget.
@@ -820,7 +820,7 @@ func TestSortDedupStatsWithNewTypesAndSpill(t *testing.T) {
 	}
 }
 
-// ---------- memory accounting unit tests ----------
+// memory accounting unit tests
 
 func TestEstimateRowBytesArrayAccountsForPayload(t *testing.T) {
 	// A row with a large array of 1000 strings should account for substantially
@@ -868,7 +868,7 @@ func TestEstimateBatchBytesIncludesArrayPayload(t *testing.T) {
 	}
 }
 
-// ---------- backward compatibility: existing scalar spill semantics ----------
+// backward compatibility: existing scalar spill semantics
 
 func TestSpillRoundtripScalarsUnchanged(t *testing.T) {
 	dir := t.TempDir()
@@ -924,7 +924,7 @@ func TestSpillRoundtripScalarsUnchanged(t *testing.T) {
 	}
 }
 
-// ---------- columnar spill round-trip: random nested values (property test) ----------
+// columnar spill round-trip: random nested values (property test)
 
 func TestColumnarSpillRoundtripRandomNestedValues(t *testing.T) {
 	mgr, err := NewSpillManager(t.TempDir(), nil)

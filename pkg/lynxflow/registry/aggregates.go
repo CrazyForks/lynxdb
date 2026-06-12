@@ -28,7 +28,7 @@ var aggregates = []Aggregate{
 	{Name: "rate", SupportsWhere: true, Result: TFloat, Doc: "Row count divided by the group's time-bucket span."},
 	{Name: "per_second", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "sum(x) divided by the group's time-bucket span in seconds."},
 
-	// ---- window (streamstats only) -------------------------------------------
+	// window (streamstats only)
 	{Name: "lag", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt, Optional: true}}, WindowOnly: true, Result: TAny, Doc: "Value n rows back (default 1)."},
 	{Name: "lead", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt, Optional: true}}, WindowOnly: true, Result: TAny, Doc: "Value n rows ahead (default 1)."},
 	{Name: "row_number", WindowOnly: true, Result: TInt, Doc: "1-based row index within the group."},

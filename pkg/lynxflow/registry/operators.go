@@ -2,7 +2,7 @@ package registry
 
 // operators is the frozen v1 stage-operator surface (RFC-002 §8, §9).
 var operators = []Operator{
-	// ---- source -------------------------------------------------------------
+	// source
 	{
 		Name: "from", Class: ClassSource, Streaming: StreamingRow,
 		Positionals: []Positional{
@@ -12,7 +12,7 @@ var operators = []Operator{
 		Examples: []string{`from nginx[-1h] timeout status>=500`, `from logs*,!logs-debug*[-7d..-1d]`, `from $errs`},
 	},
 
-	// ---- core ---------------------------------------------------------------
+	// core
 	{
 		Name: "where", Class: ClassCore, Streaming: StreamingRow,
 		Positionals: []Positional{{Name: "predicate", Type: ArgPredicate, Required: true}},
@@ -138,7 +138,7 @@ var operators = []Operator{
 		Examples: []string{`parse json | describe`},
 	},
 
-	// ---- sugar (mechanical desugar, RFC-002 §9.1) ----------------------------
+	// sugar (mechanical desugar, RFC-002 §9.1)
 	{
 		Name: "top", Class: ClassSugar, Streaming: StreamingAcc,
 		Positionals: []Positional{
@@ -264,7 +264,7 @@ var operators = []Operator{
 		Examples:    []string{`exemplars 5 by endpoint`},
 	},
 
-	// ---- helpers (runtime operators, RFC-002 §9.2) ----------------------------
+	// helpers (runtime operators, RFC-002 §9.2)
 	{
 		Name: "patterns", Class: ClassHelper, Streaming: StreamingAcc,
 		Options: []Option{
@@ -359,7 +359,7 @@ var operators = []Operator{
 		Examples: []string{`stats count() by service, level | xyseries service level count`},
 	},
 
-	// ---- management -----------------------------------------------------------
+	// management
 	{
 		Name: "materialize", Class: ClassManagement, Streaming: StreamingAcc,
 		Positionals: []Positional{{Name: "name", Type: ArgString, Required: true}},

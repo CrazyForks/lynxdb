@@ -44,7 +44,7 @@ func Generate(root string) error {
 	return nil
 }
 
-// --- operator pages ----------------------------------------------------------
+// operator pages
 
 func generateOperatorPages(root string) error {
 	dir := filepath.Join(root, "docs", "site", "docs", "lynxflow", "operators")
@@ -169,7 +169,7 @@ func renderOperatorPage(op registry.Operator) string {
 	return b.String()
 }
 
-// --- functions page ----------------------------------------------------------
+// functions page
 
 func generateFunctionsPage(root string) error {
 	path := filepath.Join(root, "docs", "site", "docs", "lynxflow", "functions.md")
@@ -252,7 +252,7 @@ func renderParams(params []registry.Param) string {
 	return "(" + strings.Join(parts, ", ") + ")"
 }
 
-// --- aggregates page ---------------------------------------------------------
+// aggregates page
 
 func generateAggregatesPage(root string) error {
 	path := filepath.Join(root, "docs", "site", "docs", "lynxflow", "aggregates.md")
@@ -327,7 +327,7 @@ func renderAggParams(params []registry.Param) string {
 	return "(" + strings.Join(parts, ", ") + ")"
 }
 
-// --- EBNF generation ---------------------------------------------------------
+// EBNF generation
 
 func generateEBNF(root string) error {
 	path := filepath.Join(root, "docs", "grammar", "lynxflow.ebnf")

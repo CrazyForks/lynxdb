@@ -79,7 +79,7 @@ func lookupLFFunc(name string) *lfFuncSpec {
 	return lfFuncRegistry[name]
 }
 
-// --- Emitter helpers -------------------------------------------------------
+// Emitter helpers
 
 func lfEmitUnary(op Opcode) func(*lfCompiler, *lfast.Call) error {
 	return func(c *lfCompiler, call *lfast.Call) error {
@@ -131,7 +131,7 @@ func lfEmitHash(op Opcode) func(*lfCompiler, *lfast.Call) error {
 	return lfEmitUnary(op)
 }
 
-// --- Strict-cast wrapper ---------------------------------------------------
+// Strict-cast wrapper
 
 // makeStrictCastEmitter wraps a normal cast emitter so that it emits:
 //
@@ -294,8 +294,6 @@ func lfEmitStrictCast(castName string, castOp Opcode) func(*lfCompiler, *lfast.C
 	}
 }
 
-// --- Build the spec table --------------------------------------------------
-
 func buildLFFuncSpecs() []lfFuncSpec {
 	return []lfFuncSpec{
 		// ---- Conversion (§10) ----
@@ -412,7 +410,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 	}
 }
 
-// --- Bespoke emitters -------------------------------------------------------
+// Bespoke emitters
 
 // lfStrictCast creates a strict-cast emitter that halts on null result.
 func lfStrictCast(name string, castOp Opcode) func(*lfCompiler, *lfast.Call) error {

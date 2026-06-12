@@ -44,40 +44,40 @@ func (l *Lexer) Next() Token {
 	start := l.pos
 	ch := l.src[l.pos]
 
-	// --- raw string r"..." ------------------------------------------------
+	// raw string r"..."
 	// r immediately followed by " with no space.
 	if ch == 'r' && l.pos+1 < len(l.src) && l.src[l.pos+1] == '"' {
 		return l.lexRawString()
 	}
 
-	// --- identifiers / keywords -------------------------------------------
+	// identifiers / keywords
 	if isIdentStart(ch) {
 		return l.lexIdentOrKeyword()
 	}
 
-	// --- numbers and duration ---------------------------------------------
+	// numbers and duration
 	if ch >= '0' && ch <= '9' {
 		return l.lexNumber()
 	}
 
-	// --- strings ----------------------------------------------------------
+	// strings
 	if ch == '"' {
 		return l.lexString()
 	}
 
-	// --- backtick identifiers ---------------------------------------------
+	// backtick identifiers
 	if ch == '`' {
 		return l.lexBacktickIdent()
 	}
 
-	// --- single-quote error (D18) -----------------------------------------
+	// single-quote error (D18)
 	if ch == '\'' {
 		l.pos++
 		return Token{Kind: Error, Start: start, End: l.pos,
 			Text: "single quotes are not allowed; use double quotes for strings or backticks for identifiers"}
 	}
 
-	// --- multi-character operators -----------------------------------------
+	// multi-character operators
 	if l.pos+1 < len(l.src) {
 		two := l.src[l.pos : l.pos+2]
 		switch two {
@@ -108,7 +108,7 @@ func (l *Lexer) Next() Token {
 		}
 	}
 
-	// --- single-character tokens -------------------------------------------
+	// single-character tokens
 	l.pos++
 	switch ch {
 	case '|':

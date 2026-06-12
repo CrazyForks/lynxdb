@@ -13,13 +13,14 @@ import (
 	"math/rand"
 	"net"
 	"net/url"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+
+	"github.com/lynxbase/lynxdb/internal/glob"
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
@@ -55,6 +56,8 @@ type VM struct {
 	regexPatterns []string                             // source patterns for regexCache error messages
 	replaceHints  []func(s, replacement string) string // per-regex fast-path; nil = use regex
 	matchHints    []func(string) bool                  // per-regex fast-path; nil = use regex
+	globCache     []*regexp.Regexp                     // compiled Program.GlobPatterns (glob→regex); nil entry = invalid pattern
+	globPatterns  []string                             // source patterns for globCache error messages
 	cidrNets      []*net.IPNet                         // lazy-copied from Program.CIDRNets
 
 	// jsonCache is a single-entry cache for JSON dot-notation lookups.
@@ -350,7 +353,9 @@ func (vm *VM) execStrMatch(ins []byte, ip int) (int, error) {
 	return ip + 2, nil
 }
 
-// execGlobMatch performs glob matching with bounds checking.
+// execGlobMatch performs glob matching with bounds checking. Patterns are
+// compiled once per program by ensureGlobCache (RFC glob syntax: *, ?, [a-z],
+// {a,b}, backslash escapes — portable across platforms, unlike filepath.Match).
 func (vm *VM) execGlobMatch(prog *Program, ins []byte, ip int) (int, error) {
 	idx, err := readIndexSafe(ins, ip, len(prog.GlobPatterns), "pattern")
 	if err != nil {
@@ -361,13 +366,43 @@ func (vm *VM) execGlobMatch(prog *Program, ins []byte, ip int) (int, error) {
 	if a.IsNull() {
 		vm.stack[vm.sp-1] = event.BoolValue(false)
 	} else {
-		pattern := prog.GlobPatterns[idx]
-		matched, matchErr := filepath.Match(pattern, valueToString(a))
-		if matchErr != nil {
-			return 0, fmt.Errorf("glob match: invalid pattern %q: %w", pattern, matchErr)
+		re := vm.globCache[idx]
+		if re == nil {
+			return 0, fmt.Errorf("glob match: invalid pattern %q", prog.GlobPatterns[idx])
 		}
-		vm.stack[vm.sp-1] = event.BoolValue(matched)
+		vm.stack[vm.sp-1] = event.BoolValue(re.MatchString(valueToString(a)))
 	}
+
+	return ip + 2, nil
+}
+
+// execHasTokenGlob implements has_glob(field, pattern): case-insensitive
+// whole-token glob match per §6.1. The pattern is lowercased at compile time;
+// tokens are lowercased here, so the cached regex stays case-sensitive.
+func (vm *VM) execHasTokenGlob(prog *Program, ins []byte, ip int) (int, error) {
+	idx, err := readIndexSafe(ins, ip, len(prog.GlobPatterns), "pattern")
+	if err != nil {
+		return 0, err
+	}
+
+	a := vm.stack[vm.sp-1]
+	if a.IsNull() {
+		vm.stack[vm.sp-1] = event.NullValue()
+		return ip + 2, nil
+	}
+	re := vm.globCache[idx]
+	if re == nil {
+		return 0, fmt.Errorf("has_glob: invalid pattern %q", prog.GlobPatterns[idx])
+	}
+
+	matched := false
+	for _, tok := range tokenize(strings.ToLower(valueToString(a))) {
+		if re.MatchString(tok) {
+			matched = true
+			break
+		}
+	}
+	vm.stack[vm.sp-1] = event.BoolValue(matched)
 
 	return ip + 2, nil
 }
@@ -448,6 +483,7 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 	vm.sp = 0
 	vm.predicateCtx = predicateCtx
 	vm.ensureRegexCache(prog)
+	vm.ensureGlobCache(prog)
 	vm.ensureCIDRCache(prog)
 
 	ins := prog.Instructions
@@ -687,6 +723,13 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 
 		case OpGlobMatch:
 			newIP, err := vm.execGlobMatch(prog, ins, ip)
+			if err != nil {
+				return event.NullValue(), err
+			}
+			ip = newIP
+
+		case OpHasTokenGlob:
+			newIP, err := vm.execHasTokenGlob(prog, ins, ip)
 			if err != nil {
 				return event.NullValue(), err
 			}
@@ -1936,6 +1979,27 @@ func (vm *VM) ensureRegexCache(prog *Program) {
 		vm.regexCache[i] = re
 		vm.replaceHints[i] = analyzeReplacePattern(p)
 		vm.matchHints[i] = analyzeMatchPattern(p)
+	}
+}
+
+// ensureGlobCache compiles the program's glob patterns into anchored regexes
+// via internal/glob. Globs are compiled once per program instead of being
+// re-interpreted per row; a nil entry means the pattern's character class is
+// invalid and the opcode reports a runtime error.
+func (vm *VM) ensureGlobCache(prog *Program) {
+	n := len(prog.GlobPatterns)
+	if len(vm.globCache) == n &&
+		(n == 0 || (len(vm.globPatterns) == n && &vm.globPatterns[0] == &prog.GlobPatterns[0])) {
+		return
+	}
+	vm.globCache = make([]*regexp.Regexp, n)
+	vm.globPatterns = prog.GlobPatterns
+	for i, p := range prog.GlobPatterns {
+		re, err := glob.Compile(p, false)
+		if err != nil {
+			continue
+		}
+		vm.globCache[i] = re
 	}
 }
 

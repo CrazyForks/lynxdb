@@ -44,6 +44,7 @@ var functions = []Function{
 	{Name: "contains", Category: "search", Params: []Param{{Name: "field", Type: TString}, {Name: "sub", Type: TString}}, Result: TBool, Fallibility: NullOnFailure, Doc: "Substring, case-insensitive; bloom-assisted scan. Moderate."},
 	{Name: "contains_cs", Category: "search", Params: []Param{{Name: "field", Type: TString}, {Name: "sub", Type: TString}}, Result: TBool, Fallibility: NullOnFailure, Doc: "Case-sensitive substring."},
 	{Name: "glob", Category: "search", Params: []Param{{Name: "field", Type: TString}, {Name: "pattern", Type: TString}}, Result: TBool, Fallibility: NullOnFailure, Doc: "Glob match, case-sensitive; literal-prefix extraction when possible."},
+	{Name: "has_glob", Category: "search", Params: []Param{{Name: "field", Type: TString}, {Name: "pattern", Type: TString}}, Result: TBool, Fallibility: NullOnFailure, Doc: "Whole-token glob match (*, ?, \\-escapes), always case-insensitive; FST term-dictionary expansion. Moderate."},
 
 	// ---- regex --------------------------------------------------------------------
 	{Name: "matches", Category: "regex", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}}, Result: TBool, Fallibility: NullOnFailure, Doc: "Regex match (linear-time engine). Slow tier; (?i) for case-insensitive."},

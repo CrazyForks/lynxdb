@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
-	"path/filepath"
 	"regexp"
 	"sort"
 	"strings"
@@ -18,6 +17,7 @@ import (
 	lfast "github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/registry"
 
+	"github.com/lynxbase/lynxdb/internal/glob"
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
@@ -344,6 +344,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "contains", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpContainsCI)},
 		{name: "contains_cs", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpContains)},
 		{name: "glob", minArgs: 2, maxArgs: 2, emit: lfEmitGlob},
+		{name: "has_glob", minArgs: 2, maxArgs: 2, emit: lfEmitHasGlob},
 
 		// ---- Regex (§10) ----
 		{name: "matches", minArgs: 2, maxArgs: 2, emit: lfEmitMatches},
@@ -738,16 +739,33 @@ func addValidatedRegex(c *lfCompiler, fn, pattern string) (int, error) {
 }
 
 func lfEmitGlob(c *lfCompiler, call *lfast.Call) error {
-	// glob(field, pattern) — case-sensitive, uses filepath.Match
+	// glob(field, pattern) — case-sensitive whole-value match.
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
 	pattern := lfExprToString(call.Args[1])
-	if _, err := filepath.Match(pattern, ""); err != nil {
+	if _, err := glob.Compile(pattern, false); err != nil {
 		return fmt.Errorf("glob: invalid pattern %q: %w", pattern, err)
 	}
 	globIdx := c.prog.AddGlob(pattern)
 	c.prog.EmitOp(OpGlobMatch, globIdx)
+	return nil
+}
+
+func lfEmitHasGlob(c *lfCompiler, call *lfast.Call) error {
+	// has_glob(field, pattern) — case-insensitive whole-token glob match.
+	// The pattern is lowercased here so the compiled regex matches the
+	// lowercased tokens produced at runtime (and the lowercased terms in the
+	// segment inverted index).
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	pattern := strings.ToLower(lfExprToString(call.Args[1]))
+	if _, err := glob.Compile(pattern, false); err != nil {
+		return fmt.Errorf("has_glob: invalid pattern %q: %w", pattern, err)
+	}
+	globIdx := c.prog.AddGlob(pattern)
+	c.prog.EmitOp(OpHasTokenGlob, globIdx)
 	return nil
 }
 

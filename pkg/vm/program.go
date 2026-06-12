@@ -13,9 +13,12 @@ type Program struct {
 	Constants     []event.Value
 	FieldNames    []string
 	RegexPatterns []string
-	// GlobPatterns holds raw glob patterns for OpGlobMatch. They are NOT
-	// regexes and must stay out of RegexPatterns: ensureRegexCache compiles
-	// that pool, and a glob like "*user*" is an invalid regex.
+	// GlobPatterns holds raw glob patterns for OpGlobMatch (case-sensitive
+	// whole-value) and OpHasTokenGlob (case-insensitive whole-token; the
+	// compiler stores those lowercased). They are NOT regexes and must stay
+	// out of RegexPatterns: ensureRegexCache compiles that pool, and a glob
+	// like "*user*" is an invalid regex. ensureGlobCache compiles this pool
+	// via internal/glob.
 	GlobPatterns []string
 	CIDRNets     []*net.IPNet // compiled CIDR networks for cidrmatch()
 

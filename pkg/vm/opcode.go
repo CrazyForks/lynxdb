@@ -217,6 +217,7 @@ const (
 	OpTimeOfDay       Opcode = 0x16 // pop timestamp; push duration since midnight UTC
 	OpDayOfWeek       Opcode = 0x17 // pop timestamp; push int 0-6 (0=Sunday, per time.Weekday)
 	OpXXHash64        Opcode = 0x18 // pop string; push hex-encoded xxhash64 digest string
+	OpHasTokenGlob    Opcode = 0x19 // 2-byte operand: glob pool index; pop field; true if any token matches the glob (CI)
 	OpKeys            Opcode = 0x23 // pop object, push sorted array of key strings
 	OpValues          Opcode = 0x24 // pop object, push array of values in key-sorted order
 	OpMerge           Opcode = 0x25 // pop 2 objects (a, b), push merged (b wins)
@@ -299,15 +300,16 @@ var definitions = map[Opcode]*Definition{
 	OpDiv: {"OpDiv", nil},
 	OpMod: {"OpMod", nil},
 
-	OpConcat:    {"OpConcat", nil},
-	OpStrLen:    {"OpStrLen", nil},
-	OpSubstr:    {"OpSubstr", nil},
-	OpToLower:   {"OpToLower", nil},
-	OpToUpper:   {"OpToUpper", nil},
-	OpStrMatch:  {"OpStrMatch", []int{2}},
-	OpGlobMatch: {"OpGlobMatch", []int{2}},
-	OpReplace:   {"OpReplace", []int{2}},
-	OpSplit:     {"OpSplit", nil},
+	OpConcat:       {"OpConcat", nil},
+	OpStrLen:       {"OpStrLen", nil},
+	OpSubstr:       {"OpSubstr", nil},
+	OpToLower:      {"OpToLower", nil},
+	OpToUpper:      {"OpToUpper", nil},
+	OpStrMatch:     {"OpStrMatch", []int{2}},
+	OpGlobMatch:    {"OpGlobMatch", []int{2}},
+	OpHasTokenGlob: {"OpHasTokenGlob", []int{2}},
+	OpReplace:      {"OpReplace", []int{2}},
+	OpSplit:        {"OpSplit", nil},
 
 	OpStartsWith: {"OpStartsWith", nil},
 	OpEndsWith:   {"OpEndsWith", nil},

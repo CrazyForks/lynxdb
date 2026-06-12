@@ -56,6 +56,7 @@ const (
 	At        // @
 	Dollar    // $
 	Bang      // !   (strict-cast suffix like int!(x))
+	Backslash // \   (glob metacharacter escape in search sugar)
 
 	// Keywords.
 	//
@@ -226,6 +227,7 @@ var kindNames = [...]string{
 	At:            "At",
 	Dollar:        "Dollar",
 	Bang:          "Bang",
+	Backslash:     "Backslash",
 	KwFrom:        "KwFrom",
 	KwLet:         "KwLet",
 	KwWhere:       "KwWhere",

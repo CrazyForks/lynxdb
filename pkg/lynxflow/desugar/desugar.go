@@ -165,6 +165,39 @@ func (d *desugarer) desugarSearchExpr(se ast.SearchExpr) ast.Expr {
 	}
 	switch s := se.(type) {
 	case *ast.SearchBareWord:
+		// bare glob word -> has_glob(_raw, "us*r"); a word of only stars is a
+		// match-anything pattern and desugars to exists(_raw) (mirrors D35).
+		if s.Glob {
+			if strings.Trim(s.Word, "*") == "" {
+				return &ast.Call{
+					Callee: "exists",
+					Args:   []ast.Expr{&ast.Ident{Name: "_raw", Pos: s.Pos}},
+					Pos:    s.Pos,
+				}
+			}
+			return &ast.Call{
+				Callee: "has_glob",
+				Args: []ast.Expr{
+					&ast.Ident{Name: "_raw", Pos: s.Pos},
+					&ast.Literal{Kind: ast.LitString, Raw: fmt.Sprintf("%q", s.Word), Value: s.Word, Pos: s.Pos},
+				},
+				Pos: s.Pos,
+			}
+		}
+		// Escaped metacharacters (us\*r) leave literal *, ?, or \ in the word.
+		// The tokenizer strips those characters, so a token-tier has() could
+		// never match them; case-insensitive substring containment is the
+		// honest tier for "this exact text".
+		if strings.ContainsAny(s.Word, `*?\`) {
+			return &ast.Call{
+				Callee: "contains",
+				Args: []ast.Expr{
+					&ast.Ident{Name: "_raw", Pos: s.Pos},
+					&ast.Literal{Kind: ast.LitString, Raw: fmt.Sprintf("%q", s.Word), Value: s.Word, Pos: s.Pos},
+				},
+				Pos: s.Pos,
+			}
+		}
 		// bare word -> has(_raw, "word")
 		return &ast.Call{
 			Callee: "has",

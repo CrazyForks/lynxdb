@@ -124,7 +124,11 @@ func (d *dumper) dumpSearchExpr(se SearchExpr, depth int) {
 	}
 	switch s := se.(type) {
 	case *SearchBareWord:
-		d.line(depth, "BareWord %q", s.Word)
+		if s.Glob {
+			d.line(depth, "BareWord %q glob", s.Word)
+		} else {
+			d.line(depth, "BareWord %q", s.Word)
+		}
 	case *SearchPhrase:
 		d.line(depth, "Phrase %q", s.Text)
 	case *SearchKeyValue:

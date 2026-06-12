@@ -258,9 +258,9 @@ func (p *parser) parseSourceAtom() ast.SourceAtom {
 	// !-prefixed exclude
 	if p.at(lexer.Bang) {
 		p.advance()
-		name, pattern, quoted := p.parseSourceName()
+		name, pattern, quoted, isGlob := p.parseSourceName()
 		end := p.prev.End
-		if !quoted && (strings.Contains(pattern, "*") || strings.Contains(pattern, "?")) {
+		if !quoted && isGlob {
 			return ast.SourceAtom{Kind: ast.SourceNegated, Name: name, Pattern: pattern, Pos: ast.Span{Start: start, End: end}}
 		}
 		return ast.SourceAtom{Kind: ast.SourceNegated, Name: pattern, Quoted: quoted, Pos: ast.Span{Start: start, End: end}}
@@ -282,17 +282,17 @@ func (p *parser) parseSourceAtom() ast.SourceAtom {
 	if n, ok := p.identLike(); ok {
 		nameEnd := p.cur.End
 		p.advance()
-		pattern, nameEnd, isGlob := p.readAdjacentRun(n, nameEnd)
-		if isGlob {
-			return ast.SourceAtom{Kind: ast.SourceGlob, Name: n, Pattern: pattern, Pos: ast.Span{Start: start, End: nameEnd}}
+		run := p.readAdjacentRun(n, nameEnd)
+		if run.isGlob {
+			return ast.SourceAtom{Kind: ast.SourceGlob, Name: n, Pattern: run.pattern, Pos: ast.Span{Start: start, End: run.end}}
 		}
-		return ast.SourceAtom{Kind: ast.SourceName, Name: pattern, Pos: ast.Span{Start: start, End: nameEnd}}
+		return ast.SourceAtom{Kind: ast.SourceName, Name: unescapeRun(run.pattern), Pos: ast.Span{Start: start, End: run.end}}
 	}
 
 	return ast.SourceAtom{Kind: SourceAtomEmpty}
 }
 
-func (p *parser) parseSourceName() (name, pattern string, quoted bool) {
+func (p *parser) parseSourceName() (name, pattern string, quoted, isGlob bool) {
 	// Backtick names are exact: their content is never glob-interpreted.
 	if p.at(lexer.BacktickIdent) {
 		raw := p.cur.Text
@@ -301,25 +301,29 @@ func (p *parser) parseSourceName() (name, pattern string, quoted bool) {
 			n = raw[1 : len(raw)-1]
 		}
 		p.advance()
-		return n, n, true
+		return n, n, true, false
 	}
 	if n, ok := p.identLike(); ok {
 		nameEnd := p.cur.End
 		p.advance()
-		pattern, nameEnd, _ = p.readAdjacentRun(n, nameEnd)
-		return n, pattern, false
+		run := p.readAdjacentRun(n, nameEnd)
+		if run.isGlob {
+			return n, run.pattern, false, true
+		}
+		return n, unescapeRun(run.pattern), false, false
 	}
-	return "", "", false
+	return "", "", false, false
 }
 
 // runTokenOK reports whether the current token may extend a bare-word/glob
-// run: glob metacharacters, dashes, digit groups, or further ident chunks.
-// Source names and search-sugar values commonly contain dashes
-// (`logs-debug*`, `host=web-01`), which the lexer splits into separate
+// run: glob metacharacters, backslash escapes, dashes, digit groups, or
+// further ident chunks. Source names and search-sugar values commonly contain
+// dashes (`logs-debug*`, `host=web-01`), which the lexer splits into separate
 // tokens; the parser reassembles span-adjacent runs.
 func (p *parser) runTokenOK() bool {
 	switch p.cur.Kind {
-	case lexer.Star, lexer.Minus, lexer.Question, lexer.Int, lexer.Float, lexer.Duration:
+	case lexer.Star, lexer.Minus, lexer.Question, lexer.Int, lexer.Float,
+		lexer.Duration, lexer.Backslash:
 		return true
 	case lexer.BacktickIdent:
 		// Backtick idents carry their quotes and can never be glued into a
@@ -330,20 +334,63 @@ func (p *parser) runTokenOK() bool {
 	return ok
 }
 
-// readAdjacentRun extends pattern with span-adjacent run tokens starting at
-// byte offset end. It returns the assembled text, the new end offset, and
-// whether the run contains glob metacharacters.
-func (p *parser) readAdjacentRun(pattern string, end int) (string, int, bool) {
-	isGlob := strings.ContainsAny(pattern, "*?")
-	for p.cur.Start == end && p.runTokenOK() {
-		if p.cur.Kind == lexer.Star || p.cur.Kind == lexer.Question {
-			isGlob = true
+// adjacentRun is the result of reassembling a span-adjacent bare-word/glob run.
+type adjacentRun struct {
+	pattern string // raw run text with backslash escapes preserved (glob syntax)
+	end     int    // byte offset one past the run
+	isGlob  bool   // run contains at least one unescaped * or ?
+	escaped bool   // run contains at least one backslash escape
+}
+
+// readAdjacentRun extends seed with span-adjacent run tokens starting at byte
+// offset end. A backslash escapes the immediately following metacharacter
+// (`\*`, `\?`, `\\`), making it literal: the escape is preserved in pattern
+// (so glob matchers see it) and does not mark the run as a glob. Use
+// unescapeRun to recover the literal text for non-glob consumers.
+func (p *parser) readAdjacentRun(seed string, end int) adjacentRun {
+	run := adjacentRun{pattern: seed, end: end, isGlob: strings.ContainsAny(seed, "*?")}
+	esc := seed == `\`
+	run.escaped = esc
+	for p.cur.Start == run.end && p.runTokenOK() {
+		switch p.cur.Kind {
+		case lexer.Backslash:
+			if esc {
+				esc = false // \\ -> literal backslash
+			} else {
+				esc = true
+				run.escaped = true
+			}
+		case lexer.Star, lexer.Question:
+			if esc {
+				esc = false // \* or \? -> literal metacharacter
+			} else {
+				run.isGlob = true
+			}
+		default:
+			esc = false
 		}
-		pattern += p.cur.Text
-		end = p.cur.End
+		run.pattern += p.cur.Text
+		run.end = p.cur.End
 		p.advance()
 	}
-	return pattern, end, isGlob
+	return run
+}
+
+// unescapeRun removes backslash escapes from a run: `\x` becomes `x`.
+// A trailing lone backslash is kept literally.
+func unescapeRun(s string) string {
+	if !strings.Contains(s, `\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s))
+	for i := 0; i < len(s); i++ {
+		if s[i] == '\\' && i+1 < len(s) {
+			i++
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // ---------------------------------------------------------------------------
@@ -542,9 +589,11 @@ func (p *parser) isSearchTermStart() bool {
 		return false
 	}
 	// Ident, string, (, not, backtick, int, float — all can start terms.
+	// Star/Question/Backslash start bare glob terms (*user, ?ser, \*literal).
 	switch p.cur.Kind {
 	case lexer.Ident, lexer.BacktickIdent, lexer.String, lexer.LParen,
-		lexer.KwNot, lexer.Int, lexer.Float, lexer.True, lexer.False:
+		lexer.KwNot, lexer.Int, lexer.Float, lexer.True, lexer.False,
+		lexer.Star, lexer.Question, lexer.Backslash:
 		return true
 	}
 	if isSoftKeyword(p.cur.Kind) {
@@ -653,11 +702,30 @@ func (p *parser) parseSearchPrimary() ast.SearchExpr {
 
 		// Bare word — check for adjacent glob/dash run (span-adjacent)
 		if p.cur.Start == nameEnd && p.runTokenOK() {
-			pattern, gEnd, _ := p.readAdjacentRun(name, nameEnd)
-			return &ast.SearchBareWord{Word: pattern, Pos: ast.Span{Start: start, End: gEnd}}
+			run := p.readAdjacentRun(name, nameEnd)
+			pos := ast.Span{Start: start, End: run.end}
+			if run.isGlob {
+				return &ast.SearchBareWord{Word: run.pattern, Glob: true, Pos: pos}
+			}
+			return &ast.SearchBareWord{Word: unescapeRun(run.pattern), Pos: pos}
 		}
 
 		return &ast.SearchBareWord{Word: name, Pos: ast.Span{Start: start, End: nameEnd}}
+	}
+
+	// Bare glob run starting with a metacharacter (*user, ?ser, *) or a
+	// backslash escape (\*literal). Without this branch a leading '*' would
+	// surface as the multiplication operator and reject spec-valid sugar.
+	if p.at(lexer.Star) || p.at(lexer.Question) || p.at(lexer.Backslash) {
+		start := p.cur.Start
+		tok := p.cur
+		p.advance()
+		run := p.readAdjacentRun(tok.Text, tok.End)
+		pos := ast.Span{Start: start, End: run.end}
+		if run.isGlob {
+			return &ast.SearchBareWord{Word: run.pattern, Glob: true, Pos: pos}
+		}
+		return &ast.SearchBareWord{Word: unescapeRun(run.pattern), Pos: pos}
 	}
 
 	return nil
@@ -721,25 +789,31 @@ func (p *parser) parseSearchValue() ast.Expr {
 		return &ast.Ident{Name: name, Quoted: true, Pos: ast.Span{Start: start, End: end}}
 	}
 
-	// Glob value starting with a metacharacter: *user*, ?ser, *. Without this
-	// branch the expression lexer would surface '*' as the multiplication
-	// operator and reject spec-valid sugar like msg=*user* (§3.1 glob value).
-	if p.at(lexer.Star) || p.at(lexer.Question) {
+	// Glob value starting with a metacharacter (*user*, ?ser, *) or a
+	// backslash escape (\*literal). Without this branch the expression lexer
+	// would surface '*' as the multiplication operator and reject spec-valid
+	// sugar like msg=*user* (§3.1 glob value).
+	if p.at(lexer.Star) || p.at(lexer.Question) || p.at(lexer.Backslash) {
 		tok := p.cur
 		p.advance()
-		pattern, end, _ := p.readAdjacentRun(tok.Text, tok.End)
-		return &ast.SearchGlobValue{Pattern: pattern, Pos: ast.Span{Start: start, End: end}}
+		run := p.readAdjacentRun(tok.Text, tok.End)
+		pos := ast.Span{Start: start, End: run.end}
+		if run.isGlob {
+			return &ast.SearchGlobValue{Pattern: run.pattern, Pos: pos}
+		}
+		return &ast.Ident{Name: unescapeRun(run.pattern), Pos: pos}
 	}
 
 	// Check for glob or dashed value: span-adjacent run starting at an ident
 	if n, ok := p.identLike(); ok {
 		nameEnd := p.cur.End
 		p.advance()
-		pattern, nameEnd, isGlob := p.readAdjacentRun(n, nameEnd)
-		if isGlob {
-			return &ast.SearchGlobValue{Pattern: pattern, Pos: ast.Span{Start: start, End: nameEnd}}
+		run := p.readAdjacentRun(n, nameEnd)
+		pos := ast.Span{Start: start, End: run.end}
+		if run.isGlob {
+			return &ast.SearchGlobValue{Pattern: run.pattern, Pos: pos}
 		}
-		return &ast.Ident{Name: pattern, Pos: ast.Span{Start: start, End: nameEnd}}
+		return &ast.Ident{Name: unescapeRun(run.pattern), Pos: pos}
 	}
 
 	// Fallback: parse a primary expression only (not a full expression).
@@ -1271,8 +1345,12 @@ func (p *parser) parseFieldPattern() ast.FieldPattern {
 	if n, ok := p.identLike(); ok {
 		nameEnd := p.cur.End
 		p.advance()
-		pattern, nameEnd, isGlob := p.readAdjacentRun(n, nameEnd)
-		return ast.FieldPattern{Name: pattern, Glob: isGlob, Pos: ast.Span{Start: start, End: nameEnd}}
+		run := p.readAdjacentRun(n, nameEnd)
+		name := run.pattern
+		if !run.isGlob {
+			name = unescapeRun(name)
+		}
+		return ast.FieldPattern{Name: name, Glob: run.isGlob, Pos: ast.Span{Start: start, End: run.end}}
 	}
 	if p.at(lexer.BacktickIdent) {
 		raw := p.cur.Text

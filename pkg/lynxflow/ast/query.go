@@ -203,9 +203,13 @@ type SearchExpr interface {
 	String() string
 }
 
-// SearchBareWord is a bare search term: timeout, error.
+// SearchBareWord is a bare search term: timeout, error. When Glob is true the
+// word contains at least one unescaped glob metacharacter (us*r, ?ser) and
+// Word holds the glob pattern with backslash escapes preserved; otherwise
+// Word holds the literal (already unescaped) text.
 type SearchBareWord struct {
 	Word string
+	Glob bool
 	Pos  Span
 }
 

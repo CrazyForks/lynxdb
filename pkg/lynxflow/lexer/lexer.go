@@ -157,6 +157,8 @@ func (l *Lexer) Next() Token {
 		return Token{Kind: Dollar, Start: start, End: l.pos, Text: "$"}
 	case '!':
 		return Token{Kind: Bang, Start: start, End: l.pos, Text: "!"}
+	case '\\':
+		return Token{Kind: Backslash, Start: start, End: l.pos, Text: `\`}
 	}
 
 	// Unknown character -- emit error and skip one rune.

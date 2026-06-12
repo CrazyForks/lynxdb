@@ -594,7 +594,14 @@ func formatSearchNot(b *strings.Builder, se ast.SearchExpr) {
 func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 	switch s := se.(type) {
 	case *ast.SearchBareWord:
-		b.WriteString(s.Word)
+		if s.Glob {
+			// Word is the glob pattern with escapes preserved — print as-is.
+			b.WriteString(s.Word)
+		} else {
+			// Word is literal text; re-escape glob metacharacters so the
+			// formatted query reparses with the same (non-glob) semantics.
+			b.WriteString(escapeGlobMeta(s.Word))
+		}
 	case *ast.SearchPhrase:
 		b.WriteString(s.Raw)
 	case *ast.SearchKeyValue:
@@ -626,6 +633,24 @@ func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 		formatSearchOr(b, s.Inner)
 		b.WriteByte(')')
 	}
+}
+
+// escapeGlobMeta backslash-escapes glob metacharacters (* ? \) so a literal
+// bare word survives a format→parse round trip without becoming a glob.
+func escapeGlobMeta(s string) string {
+	if !strings.ContainsAny(s, `*?\`) {
+		return s
+	}
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	for i := 0; i < len(s); i++ {
+		switch s[i] {
+		case '*', '?', '\\':
+			b.WriteByte('\\')
+		}
+		b.WriteByte(s[i])
+	}
+	return b.String()
 }
 
 // ---------------------------------------------------------------------------

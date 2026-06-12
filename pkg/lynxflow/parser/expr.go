@@ -60,9 +60,7 @@ func ParseExpr(input string) (ast.Expr, []Diag) {
 	return expr, p.diags
 }
 
-// ---------------------------------------------------------------------------
 // Token helpers
-// ---------------------------------------------------------------------------
 
 // advance consumes the current token and reads the next one.
 func (p *parser) advance() {
@@ -115,9 +113,7 @@ func (p *parser) curSpan() ast.Span {
 	return ast.Span{Start: p.cur.Start, End: p.cur.End}
 }
 
-// ---------------------------------------------------------------------------
 // Soft keyword handling (D29)
-// ---------------------------------------------------------------------------
 
 // identLike checks whether the current token can be treated as an identifier
 // in an expression position. This includes bare Ident, BacktickIdent, and all
@@ -182,9 +178,7 @@ func isHardKeyword(k lexer.Kind) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // Expression parser — precedence climbing
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseExpr() ast.Expr {
 	return p.parseOr()
@@ -681,9 +675,7 @@ func (p *parser) parseLambda(param string) *ast.Lambda {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Primary
-// ---------------------------------------------------------------------------
 
 func (p *parser) parsePrimary() ast.Expr {
 	switch {
@@ -800,9 +792,7 @@ func (p *parser) parseParen() ast.Expr {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Literal parsers
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseStringLiteral() *ast.Literal {
 	tok := p.cur
@@ -977,9 +967,7 @@ func (p *parser) parseObjectEntry() ast.ObjectEntry {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Error helpers
-// ---------------------------------------------------------------------------
 
 func (p *parser) errorf(tok lexer.Token, code DiagCode, expected []string, suggestion, format string, args ...interface{}) {
 	p.diags = append(p.diags, Diag{
@@ -1001,9 +989,7 @@ func (p *parser) recoverTo(kind lexer.Kind) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Value parsers
-// ---------------------------------------------------------------------------
 
 // parseInt parses an integer literal (decimal or hex).
 func parseInt(s string) (int64, error) {

@@ -9,9 +9,7 @@ import (
 	"strings"
 )
 
-// ---------------------------------------------------------------------------
 // Query (top-level)
-// ---------------------------------------------------------------------------
 
 // Query is the root AST node for a LynxFlow v2 query.
 //
@@ -36,9 +34,7 @@ func (q *Query) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Let (CTE binding)
-// ---------------------------------------------------------------------------
 
 // Let is a CTE binding: let $name = <pipeline>.
 type Let struct {
@@ -53,9 +49,7 @@ func (l *Let) String() string {
 	return "let $" + l.Name + " = " + l.Pipeline.String()
 }
 
-// ---------------------------------------------------------------------------
 // Pipeline
-// ---------------------------------------------------------------------------
 
 // Pipeline is a source stage followed by zero or more pipeline stages.
 type Pipeline struct {
@@ -79,9 +73,7 @@ func (p *Pipeline) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // FromStage (source stage)
-// ---------------------------------------------------------------------------
 
 // FromStage is the scan stage: from <sources>[range] [sugar-terms].
 type FromStage struct {
@@ -111,9 +103,7 @@ func (f *FromStage) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // SourceAtom (individual source reference in from)
-// ---------------------------------------------------------------------------
 
 // SourceAtomKind classifies a source reference.
 type SourceAtomKind uint8
@@ -157,9 +147,7 @@ func (s *SourceAtom) String() string {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // TimeRange
-// ---------------------------------------------------------------------------
 
 // TimeRange represents a bracket time range: [-1h], [-7d..-1d], [@d],
 // [-1h][@h], [2026-06-01T00:00:00Z..2026-06-02T00:00:00Z].
@@ -191,9 +179,7 @@ func (tr *TimeRange) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Search sugar expressions (§3.1)
-// ---------------------------------------------------------------------------
 
 // SearchExpr is the interface for search-sugar expressions in the from stage.
 // These are NOT desugared here — PR (d) does that. The parser represents them
@@ -307,9 +293,7 @@ type SearchGlobValue struct {
 func (s *SearchGlobValue) ExprSpan() Span { return s.Pos }
 func (s *SearchGlobValue) String() string { return s.Pattern }
 
-// ---------------------------------------------------------------------------
 // Stage (generic pipeline stage)
-// ---------------------------------------------------------------------------
 
 // Stage is a single pipeline stage: where, stats, extend, etc.
 type Stage struct {
@@ -507,9 +491,7 @@ func (s *Stage) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Stage payloads
-// ---------------------------------------------------------------------------
 
 // WherePayload is the typed payload for a where stage.
 type WherePayload struct {

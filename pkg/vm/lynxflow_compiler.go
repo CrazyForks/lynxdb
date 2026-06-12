@@ -93,9 +93,7 @@ func (c *lfCompiler) compile(e lfast.Expr) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Literals
-// ---------------------------------------------------------------------------
 
 func (c *lfCompiler) compileLiteral(lit *lfast.Literal) error {
 	switch lit.Kind {
@@ -145,9 +143,7 @@ func (c *lfCompiler) compileLiteral(lit *lfast.Literal) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Unary operators
-// ---------------------------------------------------------------------------
 
 func (c *lfCompiler) compileUnary(u *lfast.Unary) error {
 	if err := c.compile(u.Operand); err != nil {
@@ -169,9 +165,7 @@ func (c *lfCompiler) compileUnary(u *lfast.Unary) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Binary operators
-// ---------------------------------------------------------------------------
 
 func (c *lfCompiler) compileBinary(b *lfast.Binary) error {
 	switch b.Op {
@@ -352,9 +346,7 @@ func (c *lfCompiler) compileCoalesce(b *lfast.Binary) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Member access (dotted paths per RFC-002 D25 / §4.4)
-// ---------------------------------------------------------------------------
 
 // compileMember handles expr.field.
 // If the chain is rooted at an Ident, we collect the full dotted path
@@ -459,9 +451,7 @@ func collectIdentSafeMemberPath(sm *lfast.SafeMember) ([]string, bool) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Index
-// ---------------------------------------------------------------------------
 
 func (c *lfCompiler) compileIndex(idx *lfast.Index) error {
 	if err := c.compile(idx.Object); err != nil {
@@ -474,9 +464,7 @@ func (c *lfCompiler) compileIndex(idx *lfast.Index) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Array / Object literals
-// ---------------------------------------------------------------------------
 
 func (c *lfCompiler) compileArray(arr *lfast.Array) error {
 	for _, elem := range arr.Elems {
@@ -501,9 +489,7 @@ func (c *lfCompiler) compileObject(obj *lfast.Object) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // In / Between
-// ---------------------------------------------------------------------------
 
 // compileIn: `x in [a, b, c]` -> chained OpEqStrict + 3VL or for literal arrays.
 // For non-array RHS, evaluate and use OpInStrict (new opcode).
@@ -597,9 +583,7 @@ func (c *lfCompiler) compileBetween(bt *lfast.Between) error {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // Function calls
-// ---------------------------------------------------------------------------
 
 func (c *lfCompiler) compileCall(call *lfast.Call) error {
 	// Method-call chains: receiver.method(args) or receiver?.method(args)
@@ -666,9 +650,7 @@ func (c *lfCompiler) compileMethodCall(call *lfast.Call) error {
 	return c.compileCall(syntheticCall)
 }
 
-// ---------------------------------------------------------------------------
 // Warning counters
-// ---------------------------------------------------------------------------
 
 // WarningCounters tracks runtime warning counts per category.
 // Thread-safe via atomic increments.
@@ -723,9 +705,7 @@ func (w *WarningCounters) Reset() {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helper: literal float for clamp
-// ---------------------------------------------------------------------------
 
 func constFloat(c *lfCompiler, f float64) {
 	idx := c.prog.AddConstant(event.FloatValue(f))

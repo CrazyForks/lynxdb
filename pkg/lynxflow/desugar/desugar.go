@@ -40,9 +40,7 @@ func Desugar(q *ast.Query, opts Options) (*ast.Query, []Rewrite) {
 	return out, d.rewrites
 }
 
-// ---------------------------------------------------------------------------
 // Internal desugarer
-// ---------------------------------------------------------------------------
 
 type desugarer struct {
 	opts     Options
@@ -58,9 +56,7 @@ func (d *desugarer) addRewrite(before, after, reason string, span ast.Span) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Query / Let / Pipeline
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) desugarQuery(q *ast.Query) *ast.Query {
 	out := &ast.Query{Pos: q.Pos}
@@ -117,9 +113,7 @@ func (d *desugarer) desugarPipeline(p ast.Pipeline, topLevel bool) ast.Pipeline 
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // From stage: extract search sugar terms into a where stage
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) desugarFrom(f *ast.FromStage) *ast.FromStage {
 	// Clone the from stage without sugar terms.
@@ -326,9 +320,7 @@ func (d *desugarer) desugarKeyValue(kv *ast.SearchKeyValue) ast.Expr {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Stage desugaring dispatch
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) desugarStage(s ast.Stage, pip ast.Pipeline, stageIdx int) []ast.Stage {
 	// Check if this is a sugar stage.
@@ -376,9 +368,7 @@ func (d *desugarer) expandSugar(s ast.Stage, pip ast.Pipeline, stageIdx int) []a
 	return []ast.Stage{d.cloneStage(s)}
 }
 
-// ---------------------------------------------------------------------------
 // top / rare
-// ---------------------------------------------------------------------------
 
 // expandCount rewrites `count [by <fields>]` into
 // `stats count() as count [by <fields>]` (D36).
@@ -530,9 +520,7 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // every
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandEvery(s ast.Stage) []ast.Stage {
 	ev := s.Every
@@ -568,9 +556,7 @@ func (d *desugarer) expandEvery(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // rate
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandRate(s ast.Stage) []ast.Stage {
 	r := s.Rate
@@ -618,9 +604,7 @@ func (d *desugarer) expandRate(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // latency
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandLatency(s ast.Stage) []ast.Stage {
 	l := s.Latency
@@ -665,9 +649,7 @@ func (d *desugarer) expandLatency(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // percentiles
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandPercentiles(s ast.Stage) []ast.Stage {
 	p := s.Percentiles
@@ -713,9 +695,7 @@ func (d *desugarer) expandPercentiles(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // proportion
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandProportion(s ast.Stage) []ast.Stage {
 	pr := s.Proportion
@@ -787,9 +767,7 @@ func (d *desugarer) expandProportion(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // facets
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandFacets(s ast.Stage, pip ast.Pipeline, stageIdx int) []ast.Stage {
 	f := s.Facets
@@ -971,9 +949,7 @@ func (d *desugarer) buildSearchSugarWhere(f *ast.FromStage) *ast.Stage {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // impact
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandImpact(s ast.Stage) []ast.Stage {
 	im := s.Impact
@@ -1079,9 +1055,7 @@ func impactVarName(agg ast.AggExpr) string {
 	return "v"
 }
 
-// ---------------------------------------------------------------------------
 // baseline
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandBaseline(s ast.Stage) []ast.Stage {
 	bl := s.Baseline
@@ -1173,9 +1147,7 @@ func (d *desugarer) expandBaseline(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // changes
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandChanges(s ast.Stage) []ast.Stage {
 	ch := s.Changes
@@ -1249,9 +1221,7 @@ func (d *desugarer) expandChanges(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // exemplars
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) expandExemplars(s ast.Stage) []ast.Stage {
 	ex := s.Exemplars
@@ -1306,9 +1276,7 @@ func (d *desugarer) expandExemplars(s ast.Stage) []ast.Stage {
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // Stage cloning (for non-sugar stages with sub-pipelines)
-// ---------------------------------------------------------------------------
 
 func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 	out := ast.Stage{
@@ -1419,9 +1387,7 @@ func (d *desugarer) cloneSubPipeline(sp ast.SubPipeline) ast.SubPipeline {
 	return ast.SubPipeline{Pos: sp.Pos}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 // renderStages renders a list of stages as a pipe-separated string.
 func renderStages(stages []ast.Stage) string {
@@ -1451,9 +1417,7 @@ func sanitizeFieldName(name string) string {
 	return strings.ReplaceAll(name, ".", "_")
 }
 
-// ---------------------------------------------------------------------------
 // Expression / AST cloning utilities
-// ---------------------------------------------------------------------------
 
 func cloneExpr(e ast.Expr) ast.Expr {
 	if e == nil {

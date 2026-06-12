@@ -12,9 +12,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/registry"
 )
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func mustParse(t *testing.T, input string) *ast.Query {
 	t.Helper()
@@ -79,9 +77,7 @@ func hasSugarTerms(q *ast.Query) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // 1. Golden expansion tests
-// ---------------------------------------------------------------------------
 
 func TestGoldenExpansions(t *testing.T) {
 	tests := []struct {
@@ -428,9 +424,7 @@ func rewriteReasons(rw []Rewrite) []string {
 	return reasons
 }
 
-// ---------------------------------------------------------------------------
 // 2. Corpus: desugar all 63 corpus queries
-// ---------------------------------------------------------------------------
 
 type corpusEntry struct {
 	ID       string   `json:"id"`
@@ -511,9 +505,7 @@ func TestCorpusDesugar(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 3. Input immutability
-// ---------------------------------------------------------------------------
 
 func TestInputImmutability(t *testing.T) {
 	input := `from app timeout status>=500 | top 5 uri | latency dur every 1h by service`
@@ -529,9 +521,7 @@ func TestInputImmutability(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 4. Facets prefix-clone correctness
-// ---------------------------------------------------------------------------
 
 func TestFacetsPrefixClone(t *testing.T) {
 	input := `from x[-1h] | where a == 1 | facets s, h limit=2`
@@ -588,9 +578,7 @@ func TestFacetsPrefixClone(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 5. Fuzz: parse+desugar corpus-seeded inputs
-// ---------------------------------------------------------------------------
 
 func FuzzDesugar(f *testing.F) {
 	// Seed with corpus queries.
@@ -640,9 +628,7 @@ func FuzzDesugar(f *testing.F) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Additional edge cases
-// ---------------------------------------------------------------------------
 
 func TestIdempotence_CoreOnly(t *testing.T) {
 	// A query with no sugar should return zero rewrites (except implicit-source).
@@ -790,9 +776,7 @@ func TestCTEDesugar(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Sugar stage class check
-// ---------------------------------------------------------------------------
 
 func TestSugarStageNames(t *testing.T) {
 	// All sugar-class operators should be recognized.

@@ -230,9 +230,7 @@ func TestTimeBounds_EventsWithoutTimestamp(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func makeTimedEvent(ts time.Time, raw string) *event.Event {
 	return event.NewEvent(ts, raw)

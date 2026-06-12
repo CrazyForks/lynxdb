@@ -8,9 +8,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/format"
 )
 
-// ---------------------------------------------------------------------------
 // Precedence golden table
-// ---------------------------------------------------------------------------
 
 func TestPrecedenceGolden(t *testing.T) {
 	tests := []struct {
@@ -106,9 +104,7 @@ func TestPrecedenceGolden(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Error cases with exact message/suggestion assertions
-// ---------------------------------------------------------------------------
 
 func TestError_SingleEquals(t *testing.T) {
 	_, diags := ParseExpr("a = b")
@@ -166,9 +162,7 @@ func TestError_WhereNotOk(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Span assertions
-// ---------------------------------------------------------------------------
 
 func TestSpan_BinaryCoversOperands(t *testing.T) {
 	tests := []struct {
@@ -244,9 +238,7 @@ func TestSpan_ArrayLiteral(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Soft keyword test (D29)
-// ---------------------------------------------------------------------------
 
 func TestSoftKeywords(t *testing.T) {
 	// rate, latency, top — all stage-starting keywords, but ordinary idents
@@ -287,9 +279,7 @@ func TestSoftKeyword_AsIdent(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Corpus smoke: RFC-002 example expressions
-// ---------------------------------------------------------------------------
 
 func TestCorpusExpressions(t *testing.T) {
 	tests := []struct {
@@ -322,9 +312,7 @@ func TestCorpusExpressions(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Specific feature tests
-// ---------------------------------------------------------------------------
 
 func TestLambda_Nested(t *testing.T) {
 	// any(tags, t -> t.name == "vip")
@@ -520,9 +508,7 @@ func TestNullLiteral(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Walk / Inspect
-// ---------------------------------------------------------------------------
 
 func TestWalk(t *testing.T) {
 	expr, _ := ParseExpr("a + b * c")
@@ -571,9 +557,7 @@ func TestInspect(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // ErrorExpr recovery
-// ---------------------------------------------------------------------------
 
 func TestErrorExpr_RecoveryAtComma(t *testing.T) {
 	// f(, x) — missing first argument produces ErrorExpr, then x is parsed.
@@ -599,9 +583,7 @@ func TestErrorExpr_EmptyInput(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Fuzz test
-// ---------------------------------------------------------------------------
 
 func FuzzParseExpr(f *testing.F) {
 	// Seed with golden table inputs.
@@ -722,9 +704,7 @@ func FuzzParseExpr(f *testing.F) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func diagMessages(diags []Diag) []string {
 	msgs := make([]string, len(diags))

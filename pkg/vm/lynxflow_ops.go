@@ -24,9 +24,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
-// ---------------------------------------------------------------------------
 // Strict comparison (RFC-002 §5.4)
-// ---------------------------------------------------------------------------
 
 // strictCompare implements RFC-002 strict comparison semantics:
 // - null/missing operand → null
@@ -135,9 +133,7 @@ func strictEq(a, b event.Value, warnings *WarningCounters) (bool, bool) {
 	return cmp == 0, false
 }
 
-// ---------------------------------------------------------------------------
 // Strict arithmetic (RFC-002 §5.4)
-// ---------------------------------------------------------------------------
 
 // addStrict implements RFC-002 §5.4 addition:
 // - null propagation
@@ -336,9 +332,7 @@ func isNumericType(t event.FieldType) bool {
 	return t == event.FieldTypeInt || t == event.FieldTypeFloat
 }
 
-// ---------------------------------------------------------------------------
 // OpLoadPath: flat-column first, then object walk, no _raw fallback (D25)
-// ---------------------------------------------------------------------------
 
 func execLoadPath(fields map[string]event.Value, path string) event.Value {
 	// 1. Flat column lookup (the full dotted path as a literal column name)
@@ -376,9 +370,7 @@ func execLoadPath(fields map[string]event.Value, path string) event.Value {
 	return val
 }
 
-// ---------------------------------------------------------------------------
 // OpHasToken: case-insensitive whole-token match per §6.1/6.2
-// ---------------------------------------------------------------------------
 
 // hasToken checks if the field string contains the search term as a whole token,
 // case-insensitively. A token is a run of ASCII alphanumerics and Unicode
@@ -437,9 +429,7 @@ func tokenize(s string) []string {
 	return tokens
 }
 
-// ---------------------------------------------------------------------------
 // OpSubstr0Based: 0-based start per RFC-002
-// ---------------------------------------------------------------------------
 
 func substr0Based(str, start, length event.Value) event.Value {
 	if str.IsNull() || start.IsNull() {
@@ -484,9 +474,7 @@ func substr0Based(str, start, length event.Value) event.Value {
 	return event.StringValue(string(runes[si:end]))
 }
 
-// ---------------------------------------------------------------------------
 // OpExtract / OpExtractAll
-// ---------------------------------------------------------------------------
 
 func extractFirst(re *regexp.Regexp, s string) event.Value {
 	if re.NumSubexp() == 0 {
@@ -534,9 +522,7 @@ func extractAllMatches(re *regexp.Regexp, s string) event.Value {
 	return event.ArrayValue(elems)
 }
 
-// ---------------------------------------------------------------------------
 // OpInStrict: strict equality in-list check with null awareness
-// ---------------------------------------------------------------------------
 
 // inStrict checks if val is in the list using strict equality.
 // If val is null → result is null.
@@ -565,9 +551,7 @@ func inStrict(val event.Value, items []event.Value, warnings *WarningCounters) e
 	return event.BoolValue(false)
 }
 
-// ---------------------------------------------------------------------------
 // Strict-cast bang error
-// ---------------------------------------------------------------------------
 
 // ErrStrictCast is returned when a strict-cast function (e.g. int!()) fails.
 // The error includes the function name and the value that could not be cast,
@@ -583,9 +567,7 @@ func (e *ErrStrictCast) Error() string {
 	return fmt.Sprintf("strict cast %s failed: cannot convert %s (type %s)", e.Func, e.Value, e.Type)
 }
 
-// ---------------------------------------------------------------------------
 // Lambda execution: any, all, filter, map
-// ---------------------------------------------------------------------------
 
 // execLambdaForElement runs a sub-program against the current row with a
 // lambda parameter value pushed onto the lambda param stack. Pool lookups
@@ -740,9 +722,7 @@ func (vm *VM) execArrayMap(prog *Program, subIdx int, arrVal event.Value, fields
 	return event.ArrayValue(result), nil
 }
 
-// ---------------------------------------------------------------------------
 // Slice, ArrayConcat, ArrayDistinct, ArraySort, Flatten
-// ---------------------------------------------------------------------------
 
 // execSlice implements slice(arr, start[, end]).
 // Stack: [..., arr, start, end] or [..., arr, start] (end=null means to end).
@@ -921,9 +901,7 @@ func execFlatten(v event.Value) event.Value {
 	return event.ArrayValue(result)
 }
 
-// ---------------------------------------------------------------------------
 // Object functions: keys, values, merge, has_key
-// ---------------------------------------------------------------------------
 
 // execKeys returns sorted array of key strings.
 func execKeys(v event.Value) event.Value {
@@ -1000,9 +978,7 @@ func execHasKey(obj, key event.Value) event.Value {
 	return event.BoolValue(ok)
 }
 
-// ---------------------------------------------------------------------------
 // url_parse, ip_parse, from_json (native)
-// ---------------------------------------------------------------------------
 
 // execURLParse parses a URL into an object.
 func execURLParse(v event.Value) event.Value {

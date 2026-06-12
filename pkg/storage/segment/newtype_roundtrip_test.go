@@ -11,9 +11,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/storage/segment/column"
 )
 
-// ----------------------------------------------------------------
 // 1. Duration column round-trip
-// ----------------------------------------------------------------
 
 func TestNewType_DurationColumn_RoundTrip(t *testing.T) {
 	durations := []time.Duration{
@@ -75,9 +73,7 @@ func TestNewType_DurationColumn_RoundTrip(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 2. Duration with nulls
-// ----------------------------------------------------------------
 
 func TestNewType_DurationColumn_WithNulls(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -125,9 +121,7 @@ func TestNewType_DurationColumn_WithNulls(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 3. Array column round-trip
-// ----------------------------------------------------------------
 
 func TestNewType_ArrayColumn_RoundTrip(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -216,9 +210,7 @@ func TestNewType_ArrayColumn_RoundTrip(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 4. Object column round-trip
-// ----------------------------------------------------------------
 
 func TestNewType_ObjectColumn_RoundTrip(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -306,9 +298,7 @@ func TestNewType_ObjectColumn_RoundTrip(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 5. Array/Object columns with nulls (mixed present/absent)
-// ----------------------------------------------------------------
 
 func TestNewType_ArrayObject_WithNulls(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -376,9 +366,7 @@ func TestNewType_ArrayObject_WithNulls(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 6. Backward compatibility: scalar-only segment reads identically
-// ----------------------------------------------------------------
 
 func TestNewType_BackwardCompat_ScalarOnlySegment(t *testing.T) {
 	// Write a segment with only scalar types (the old format).
@@ -442,9 +430,7 @@ func TestNewType_BackwardCompat_ScalarOnlySegment(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 7. Zone map pruning safety with array/object columns
-// ----------------------------------------------------------------
 
 func TestNewType_ZoneMapPruning_ArrayColumn_NoPanicNoFalsePrune(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -496,9 +482,7 @@ func TestNewType_ZoneMapPruning_ArrayColumn_NoPanicNoFalsePrune(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 8. ReadRowGroupFiltered with array column - no panic, no incorrect skip
-// ----------------------------------------------------------------
 
 func TestNewType_ReadRowGroupFiltered_ArrayColumn(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -536,9 +520,7 @@ func TestNewType_ReadRowGroupFiltered_ArrayColumn(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 9. Columnar read path (ReadColumnar) round-trip for new types
-// ----------------------------------------------------------------
 
 func TestNewType_ColumnarRead_NewTypes(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -611,9 +593,7 @@ func TestNewType_ColumnarRead_NewTypes(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 10. Mixed scalar and new-type columns in one segment
-// ----------------------------------------------------------------
 
 func TestNewType_MixedColumns_Segment(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -699,9 +679,7 @@ func TestNewType_MixedColumns_Segment(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 11. StreamWriter round-trip with new types
-// ----------------------------------------------------------------
 
 func TestNewType_StreamWriter_RoundTrip(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -759,9 +737,7 @@ func TestNewType_StreamWriter_RoundTrip(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 12. Bloom filter exclusion: array/object columns must NOT feed blooms
-// ----------------------------------------------------------------
 
 func TestNewType_BloomExclusion_ArrayObjectColumns(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -804,9 +780,7 @@ func TestNewType_BloomExclusion_ArrayObjectColumns(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 13. Zone map values for duration columns
-// ----------------------------------------------------------------
 
 func TestNewType_DurationColumn_ZoneMap(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -844,9 +818,7 @@ func TestNewType_DurationColumn_ZoneMap(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 14. Zone map values empty for array/object columns
-// ----------------------------------------------------------------
 
 func TestNewType_ArrayObjectColumn_ZoneMapEmpty(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -888,9 +860,7 @@ func TestNewType_ArrayObjectColumn_ZoneMapEmpty(t *testing.T) {
 	}
 }
 
-// ----------------------------------------------------------------
 // 15. RGFilter safety with new types
-// ----------------------------------------------------------------
 
 func TestNewType_RGFilter_DurationColumn(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)

@@ -8,7 +8,6 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/sema"
 )
 
-// ---------------------------------------------------------------------------
 // Batch 3 plan rules: aggregation, TopK, tail-scan, limit-pushdown,
 // column-pruning.
 //
@@ -18,7 +17,6 @@ import (
 //   - tail-scan:         converts tail through streaming nodes into reverse scan
 //   - limit-pushdown:    swaps Limit below row-count-preserving per-row nodes
 //   - column-pruning:    top-down required-column analysis -> Scan.Pushdown.Columns
-// ---------------------------------------------------------------------------
 
 // batch3PlanRules returns the five batch-3 plan rules in their defined order.
 func batch3PlanRules() []PlanRule {
@@ -31,9 +29,7 @@ func batch3PlanRules() []PlanRule {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Rule: partial-agg
-// ---------------------------------------------------------------------------
 //
 // Sets Aggregate.Partial = true when ALL aggregation functions are decomposable
 // into a partial (per-segment) + merge (global) pair. Window variants
@@ -97,9 +93,7 @@ func isDecomposableAgg(expr ast.Expr) bool {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Rule: topk-into-agg
-// ---------------------------------------------------------------------------
 //
 // When TopK sits directly above an Aggregate (no Window), and every TopK sort
 // key references an output column of the Aggregate, set Aggregate.TopK hint.
@@ -194,9 +188,7 @@ func stringInSlice(s string, ss []string) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // Rule: tail-scan
-// ---------------------------------------------------------------------------
 //
 // Converts Limit{Tail:true, N} into Limit{Tail:false, N} (head) on a
 // reversed Scan, when the entire path from the Limit down to the Scan
@@ -277,9 +269,7 @@ func cloneChainSetReverse(n logical.Node) logical.Node {
 	return newNode
 }
 
-// ---------------------------------------------------------------------------
 // Rule: limit-pushdown
-// ---------------------------------------------------------------------------
 //
 // Swaps Limit{Tail:false} below row-count-preserving per-row nodes:
 // Extend and Project.
@@ -331,9 +321,7 @@ func swapLimitBelowUnary(lim *logical.Limit, child logical.Node) logical.Node {
 	return newChild
 }
 
-// ---------------------------------------------------------------------------
 // Rule: column-pruning
-// ---------------------------------------------------------------------------
 //
 // Top-down required-column analysis. Computes the minimal set of columns
 // needed from the Scan by walking the plan tree and propagating required

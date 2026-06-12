@@ -8,9 +8,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
-// ---------------------------------------------------------------------------
 // OpConstDuration
-// ---------------------------------------------------------------------------
 
 func TestVMConstDuration(t *testing.T) {
 	p := &Program{}
@@ -43,9 +41,7 @@ func TestVMConstDuration_Zero(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // OpArrayBuild
-// ---------------------------------------------------------------------------
 
 func TestVMArrayBuild_Empty(t *testing.T) {
 	p := &Program{}
@@ -91,9 +87,7 @@ func TestVMArrayBuild_ThreeElements(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // OpObjectBuild
-// ---------------------------------------------------------------------------
 
 func TestVMObjectBuild_Empty(t *testing.T) {
 	p := &Program{}
@@ -138,9 +132,7 @@ func TestVMObjectBuild_TwoEntries(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // OpIndex
-// ---------------------------------------------------------------------------
 
 func TestVMIndex_ArrayPositive(t *testing.T) {
 	// Build [10, 20, 30], then index with 1 -> 20
@@ -325,9 +317,7 @@ func TestVMIndex_NonContainerType(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // OpMember
-// ---------------------------------------------------------------------------
 
 func TestVMMember_Existing(t *testing.T) {
 	// Build {"name": "alice"}, OpMember "name" -> "alice"
@@ -392,9 +382,7 @@ func TestVMMember_NonObject(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // OpLen
-// ---------------------------------------------------------------------------
 
 func TestVMLen_String(t *testing.T) {
 	p := &Program{}
@@ -479,9 +467,7 @@ func TestVMLen_Int(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Duration arithmetic matrix (RFC-002 section 5.4)
-// ---------------------------------------------------------------------------
 
 func TestVMDuration_AddDurations(t *testing.T) {
 	// 1s + 2s = 3s
@@ -701,9 +687,7 @@ func TestVMDuration_ModByZero(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Timestamp +/- duration
-// ---------------------------------------------------------------------------
 
 func TestVMTimestamp_AddDuration(t *testing.T) {
 	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -785,9 +769,7 @@ func TestVMDuration_AddNull(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Deep equality
-// ---------------------------------------------------------------------------
 
 func TestVMDeepEquality_Arrays(t *testing.T) {
 	tests := []struct {
@@ -941,9 +923,7 @@ func TestVMDeepEquality_Duration(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Duration comparison (ordering)
-// ---------------------------------------------------------------------------
 
 func TestVMDuration_Compare(t *testing.T) {
 	tests := []struct {
@@ -977,9 +957,7 @@ func TestVMDuration_Compare(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Array comparison (ordering)
-// ---------------------------------------------------------------------------
 
 func TestVMArray_Compare(t *testing.T) {
 	tests := []struct {
@@ -1017,9 +995,7 @@ func TestVMArray_Compare(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Truthiness for new types
-// ---------------------------------------------------------------------------
 
 func TestVMTruthiness_Duration(t *testing.T) {
 	tests := []struct {
@@ -1075,9 +1051,7 @@ func TestVMTruthiness_Object(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Nesting: array of objects
-// ---------------------------------------------------------------------------
 
 func TestVMArrayOfObjects(t *testing.T) {
 	// Build [{name: "alice", age: 30}, {name: "bob", age: 25}]
@@ -1164,9 +1138,7 @@ func TestVMNestedArray(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // IsArray / IsObject with native types
-// ---------------------------------------------------------------------------
 
 func TestVMIsArray_NativeType(t *testing.T) {
 	p := &Program{}
@@ -1207,9 +1179,7 @@ func TestVMIsArray_NonArray(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Duration + Add commutative (duration + timestamp)
-// ---------------------------------------------------------------------------
 
 func TestVMDuration_PlusTimestamp(t *testing.T) {
 	ts := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -1233,9 +1203,7 @@ func TestVMDuration_PlusTimestamp(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Opcode encoding tests for new opcodes
-// ---------------------------------------------------------------------------
 
 func TestMakeNewOpcodes(t *testing.T) {
 	tests := []struct {
@@ -1265,9 +1233,7 @@ func TestMakeNewOpcodes(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Cross-type: duration vs non-matching types yield null/false
-// ---------------------------------------------------------------------------
 
 func TestVMDuration_CrossTypeEquality(t *testing.T) {
 	// duration == string -> false (not equal, falls through to string compare)
@@ -1318,9 +1284,7 @@ func TestVMArray_CrossTypeArithmetic(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Opcode definitions completeness: every new opcode has a definition entry
-// ---------------------------------------------------------------------------
 
 func TestNewOpcodeDefinitions(t *testing.T) {
 	newOps := []Opcode{OpArrayBuild, OpObjectBuild, OpIndex, OpMember, OpLen, OpConstDuration}
@@ -1336,9 +1300,7 @@ func TestNewOpcodeDefinitions(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // TypeOf for new types
-// ---------------------------------------------------------------------------
 
 func TestVMTypeOf_NewTypes(t *testing.T) {
 	tests := []struct {

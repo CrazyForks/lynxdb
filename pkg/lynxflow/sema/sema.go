@@ -301,9 +301,7 @@ func (a *analyzer) analyzeStage(s ast.Stage) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Stage analyzers
-// ---------------------------------------------------------------------------
 
 func (a *analyzer) analyzeWhere(s ast.Stage) {
 	if s.Where == nil {
@@ -593,9 +591,7 @@ func (a *analyzer) analyzeParse(s ast.Stage) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helper stage analyzers
-// ---------------------------------------------------------------------------
 
 func (a *analyzer) analyzeCompare(_ ast.Stage) {
 	// compare adds previous_*/change_* fields as "any".
@@ -650,9 +646,7 @@ func (a *analyzer) analyzeXyseries(_ ast.Stage) {
 	a.schema.open = true
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 // allKnownFields returns all field names from the schema and catalog,
 // deduplicated.

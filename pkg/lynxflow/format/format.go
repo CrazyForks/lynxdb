@@ -40,9 +40,7 @@ func Expr(e ast.Expr) string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Precedence levels (higher = tighter binding)
-// ---------------------------------------------------------------------------
 
 type prec int
 
@@ -88,9 +86,7 @@ func isLeftAssoc(op ast.BinaryOp) bool {
 	return true
 }
 
-// ---------------------------------------------------------------------------
 // Expression formatting
-// ---------------------------------------------------------------------------
 
 // formatExpr writes the expression e into b, inserting parentheses only when
 // the surrounding context (parentPrec) demands it.
@@ -378,9 +374,7 @@ func quoteString(s string) string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Let formatting
-// ---------------------------------------------------------------------------
 
 func formatLet(b *strings.Builder, l *ast.Let) {
 	b.WriteString("let $")
@@ -390,9 +384,7 @@ func formatLet(b *strings.Builder, l *ast.Let) {
 	b.WriteString(";\n")
 }
 
-// ---------------------------------------------------------------------------
 // Pipeline formatting
-// ---------------------------------------------------------------------------
 
 func formatPipeline(b *strings.Builder, p *ast.Pipeline, afterLets bool) {
 	totalStages := len(p.Stages)
@@ -435,9 +427,7 @@ func formatPipelineInline(b *strings.Builder, p *ast.Pipeline) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // From stage
-// ---------------------------------------------------------------------------
 
 func formatFromStage(b *strings.Builder, f *ast.FromStage) {
 	b.WriteString("from")
@@ -534,9 +524,7 @@ func formatTimeRange(b *strings.Builder, tr *ast.TimeRange) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Search sugar formatting
-// ---------------------------------------------------------------------------
 
 func formatSearchExpr(b *strings.Builder, se ast.SearchExpr) {
 	if se == nil {
@@ -653,9 +641,7 @@ func escapeGlobMeta(s string) string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Stage formatting
-// ---------------------------------------------------------------------------
 
 func formatStage(b *strings.Builder, s *ast.Stage) {
 	b.WriteString(strings.ToLower(s.Name))
@@ -795,9 +781,7 @@ func formatStage(b *strings.Builder, s *ast.Stage) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Payload formatters
-// ---------------------------------------------------------------------------
 
 func formatAssignPayload(b *strings.Builder, p *ast.AssignPayload) {
 	for i, a := range p.Assignments {

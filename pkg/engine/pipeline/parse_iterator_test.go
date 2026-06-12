@@ -9,9 +9,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 // mixedFormatBatch returns a batch with JSON, logfmt, and garbage lines.
 func mixedFormatBatch() *Batch {
@@ -47,9 +45,7 @@ func mustParser(t *testing.T, name string) unpack.FormatParser {
 	return p
 }
 
-// ---------------------------------------------------------------------------
 // Test: on_error=propagate (default)
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_Propagate_JSONMixed(t *testing.T) {
 	batch := mixedFormatBatch()
@@ -105,9 +101,7 @@ func TestParseIterator_Propagate_JSONMixed(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: on_error=null
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_Null_JSONMixed(t *testing.T) {
 	batch := mixedFormatBatch()
@@ -139,9 +133,7 @@ func TestParseIterator_Null_JSONMixed(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: on_error=drop
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_Drop_JSONMixed(t *testing.T) {
 	batch := mixedFormatBatch()
@@ -161,9 +153,7 @@ func TestParseIterator_Drop_JSONMixed(t *testing.T) {
 	assertVal(t, rows[1], "service", "api")
 }
 
-// ---------------------------------------------------------------------------
 // Test: on_error=strict
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_Strict_JSONMixed(t *testing.T) {
 	batch := mixedFormatBatch()
@@ -192,9 +182,7 @@ func TestParseIterator_Strict_JSONMixed(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: first_of chain
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_FirstOf_JSONLogfmt(t *testing.T) {
 	batch := mixedFormatBatch()
@@ -256,9 +244,7 @@ func TestParseIterator_FirstOf_JSONLogfmt(t *testing.T) {
 	assertVal(t, rows[3], "service", "api")
 }
 
-// ---------------------------------------------------------------------------
 // Test: typed captures
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_TypedCaptures(t *testing.T) {
 	batch := &Batch{
@@ -319,9 +305,7 @@ func TestParseIterator_TypedCaptures(t *testing.T) {
 	assertVal(t, rows[1], "name", "ok")
 }
 
-// ---------------------------------------------------------------------------
 // Test: typed captures with on_error=strict
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_TypedCaptures_Strict(t *testing.T) {
 	batch := &Batch{
@@ -356,9 +340,7 @@ func TestParseIterator_TypedCaptures_Strict(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: captures act as projection for dynamic formats
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_CapturesProjection(t *testing.T) {
 	batch := &Batch{
@@ -399,9 +381,7 @@ func TestParseIterator_CapturesProjection(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: no-overwrite merge
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_NoOverwriteMerge(t *testing.T) {
 	batch := &Batch{
@@ -435,9 +415,7 @@ func TestParseIterator_NoOverwriteMerge(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: prefix
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_Prefix(t *testing.T) {
 	batch := &Batch{
@@ -467,9 +445,7 @@ func TestParseIterator_Prefix(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: from field (not _raw)
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_FromField(t *testing.T) {
 	batch := &Batch{
@@ -490,9 +466,7 @@ func TestParseIterator_FromField(t *testing.T) {
 	assertVal(t, rows[0], "key", "val")
 }
 
-// ---------------------------------------------------------------------------
 // Test: null source rows are passed through
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_NullSource(t *testing.T) {
 	batch := &Batch{
@@ -525,9 +499,7 @@ func TestParseIterator_NullSource(t *testing.T) {
 	assertVal(t, rows[1], "a", "b")
 }
 
-// ---------------------------------------------------------------------------
 // Test: missing source column passes batch through
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_MissingSourceColumn(t *testing.T) {
 	batch := &Batch{
@@ -550,9 +522,7 @@ func TestParseIterator_MissingSourceColumn(t *testing.T) {
 	assertVal(t, rows[0], "other", "data")
 }
 
-// ---------------------------------------------------------------------------
 // Test: on_error mode matrix (4 modes x passing/failing rows)
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_OnErrorMatrix(t *testing.T) {
 	modes := []struct {
@@ -632,9 +602,7 @@ func TestParseIterator_OnErrorMatrix(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Test: first_of with drop mode
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_FirstOf_Drop(t *testing.T) {
 	batch := mixedFormatBatch() // 5 rows: json, logfmt, garbage, json, broken
@@ -652,9 +620,7 @@ func TestParseIterator_FirstOf_Drop(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: docker format through ParseIterator
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_DockerFormat(t *testing.T) {
 	batch := &Batch{
@@ -681,9 +647,7 @@ func TestParseIterator_DockerFormat(t *testing.T) {
 	assertVal(t, rows[0], "stream", "stderr")
 }
 
-// ---------------------------------------------------------------------------
 // Test: logfmt format (sanity)
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_Logfmt(t *testing.T) {
 	batch := &Batch{
@@ -705,10 +669,8 @@ func TestParseIterator_Logfmt(t *testing.T) {
 	assertIntVal(t, rows[0], "duration", 1234)
 }
 
-// ---------------------------------------------------------------------------
 // Test: RFC-002 §13 ex.15 debugging workflow
 // parse json | where exists(_error) | keep _error, _raw | head 20
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_RFC002_Ex15_ErrorDebugging(t *testing.T) {
 	// Build a batch that mixes valid JSON with garbage.
@@ -764,9 +726,7 @@ func TestParseIterator_RFC002_Ex15_ErrorDebugging(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: all-valid batch (no errors)
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_AllValid(t *testing.T) {
 	batch := &Batch{
@@ -798,9 +758,7 @@ func TestParseIterator_AllValid(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: empty batch
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_EmptyBatch(t *testing.T) {
 	batch := &Batch{
@@ -828,9 +786,7 @@ func TestParseIterator_EmptyBatch(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: prefix + no-overwrite interaction
-// ---------------------------------------------------------------------------
 
 func TestParseIterator_Prefix_NoOverwrite(t *testing.T) {
 	batch := &Batch{

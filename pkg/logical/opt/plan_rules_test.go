@@ -7,9 +7,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/logical"
 )
 
-// ---------------------------------------------------------------------------
 // Helper: parse, desugar, lower, optimize, dump
-// ---------------------------------------------------------------------------
 
 func optimizedDump(t *testing.T, query string) string {
 	t.Helper()
@@ -18,9 +16,7 @@ func optimizedDump(t *testing.T, query string) string {
 	return plan.Dump()
 }
 
-// ---------------------------------------------------------------------------
 // Test: filter-elim (Filter(true) -> removed)
-// ---------------------------------------------------------------------------
 
 func TestFilterElim(t *testing.T) {
 	tests := []struct {
@@ -68,9 +64,7 @@ func TestFilterElim(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: filter-false-to-empty (Filter(false/null) -> Empty)
-// ---------------------------------------------------------------------------
 
 func TestFilterFalseToEmpty(t *testing.T) {
 	tests := []struct {
@@ -129,9 +123,7 @@ func TestFilterFalseToEmpty(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Test: filter-merge (adjacent Filter(a) | Filter(b) -> Filter(a AND b))
-// ---------------------------------------------------------------------------
 
 func TestFilterMerge(t *testing.T) {
 	tests := []struct {
@@ -170,9 +162,7 @@ func TestFilterMerge(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Test: predicate-pushdown — time bounds
-// ---------------------------------------------------------------------------
 
 func TestPredicatePushdown_TimeBounds(t *testing.T) {
 	tests := []struct {
@@ -245,9 +235,7 @@ func TestPredicatePushdown_TimeBounds(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: predicate-pushdown — has() -> RawTerms
-// ---------------------------------------------------------------------------
 
 func TestPredicatePushdown_HasRawTerms(t *testing.T) {
 	tests := []struct {
@@ -301,9 +289,7 @@ func TestPredicatePushdown_HasRawTerms(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: predicate-pushdown — field predicates
-// ---------------------------------------------------------------------------
 
 func TestPredicatePushdown_FieldPredicates(t *testing.T) {
 	tests := []struct {
@@ -361,9 +347,7 @@ func TestPredicatePushdown_FieldPredicates(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: predicate-pushdown — contains/glob/matches -> BloomTerms
-// ---------------------------------------------------------------------------
 
 func TestPredicatePushdown_BloomTerms(t *testing.T) {
 	tests := []struct {
@@ -451,9 +435,7 @@ func TestPredicatePushdown_BloomTerms(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: mixed conjunct decomposition
-// ---------------------------------------------------------------------------
 
 func TestPredicatePushdown_MixedConjuncts(t *testing.T) {
 	// One consumed (time), two hinted (field + has), remainder kept.
@@ -481,9 +463,7 @@ func TestPredicatePushdown_MixedConjuncts(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Test: predicate pushdown does NOT push through Parse/Extend/Project
-// ---------------------------------------------------------------------------
 
 func TestPredicatePushdown_NotThroughBarrier(t *testing.T) {
 	tests := []struct {
@@ -520,9 +500,7 @@ func TestPredicatePushdown_NotThroughBarrier(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: determinism (run twice, same result)
-// ---------------------------------------------------------------------------
 
 func TestPlanRulesDeterminism(t *testing.T) {
 	queries := []string{
@@ -553,9 +531,7 @@ func TestPlanRulesDeterminism(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: purity (original plan unchanged by plan rules)
-// ---------------------------------------------------------------------------
 
 func TestPlanRulesPurity(t *testing.T) {
 	query := `from main | where status >= 500 and has(_raw, "timeout")`
@@ -572,9 +548,7 @@ func TestPlanRulesPurity(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: Applied reporting includes plan rules
-// ---------------------------------------------------------------------------
 
 func TestAppliedIncludesPlanRules(t *testing.T) {
 	// filter-elim should fire.
@@ -630,9 +604,7 @@ func TestAppliedIncludesPlanRules(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: regex literal extraction edge cases
-// ---------------------------------------------------------------------------
 
 func TestExtractRegexLiterals(t *testing.T) {
 	tests := []struct {
@@ -712,9 +684,7 @@ func TestExtractRegexLiterals(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: glob literal extraction
-// ---------------------------------------------------------------------------
 
 func TestExtractGlobLiterals(t *testing.T) {
 	tests := []struct {
@@ -769,9 +739,7 @@ func TestExtractGlobLiterals(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: tokenizer
-// ---------------------------------------------------------------------------
 
 func TestTokenize(t *testing.T) {
 	tests := []struct {

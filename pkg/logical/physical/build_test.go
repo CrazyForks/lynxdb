@@ -20,9 +20,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
 )
 
-// ---------------------------------------------------------------------------
 // sliceSource helper
-// ---------------------------------------------------------------------------
 
 // sliceSource builds a RowScanIterator from row maps.
 func sliceSource(rows []map[string]event.Value, batchSize int) pipeline.Iterator {
@@ -78,9 +76,7 @@ func drainWithBatchSize(t *testing.T, query string, rows []map[string]event.Valu
 	return result
 }
 
-// ---------------------------------------------------------------------------
 // Test data helpers
-// ---------------------------------------------------------------------------
 
 func intV(n int64) event.Value              { return event.IntValue(n) }
 func strV(s string) event.Value             { return event.StringValue(s) }
@@ -112,9 +108,7 @@ func timedRows() []map[string]event.Value {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Filter (where)
-// ---------------------------------------------------------------------------
 
 func TestBuild_Filter_Simple(t *testing.T) {
 	rows := sampleRows()
@@ -150,9 +144,7 @@ func TestBuild_Filter_And(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Extend (eval)
-// ---------------------------------------------------------------------------
 
 func TestBuild_Extend_Simple(t *testing.T) {
 	rows := sampleRows()
@@ -212,9 +204,7 @@ func TestBuild_Extend_NullPropagation(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Extend + Filter chain
-// ---------------------------------------------------------------------------
 
 func TestBuild_ExtendThenFilter(t *testing.T) {
 	rows := sampleRows()
@@ -224,9 +214,7 @@ func TestBuild_ExtendThenFilter(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Aggregate (stats)
-// ---------------------------------------------------------------------------
 
 func TestBuild_Stats_Count(t *testing.T) {
 	rows := sampleRows()
@@ -299,9 +287,7 @@ func TestBuild_Stats_ConditionalCount(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: TimeBin in stats
-// ---------------------------------------------------------------------------
 
 func TestBuild_Stats_TimeBin(t *testing.T) {
 	rows := timedRows()
@@ -318,9 +304,7 @@ func TestBuild_Stats_TimeBin(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: EventStats / StreamStats
-// ---------------------------------------------------------------------------
 
 func TestBuild_EventStats(t *testing.T) {
 	rows := sampleRows()
@@ -381,9 +365,7 @@ func TestBuild_StreamStats_Window(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Sort / Head / Tail / Dedup
-// ---------------------------------------------------------------------------
 
 func TestBuild_Sort(t *testing.T) {
 	rows := sampleRows()
@@ -450,9 +432,7 @@ func TestBuild_Dedup(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: TopK (sort + head fused)
-// ---------------------------------------------------------------------------
 
 func TestBuild_TopK(t *testing.T) {
 	rows := sampleRows()
@@ -468,9 +448,7 @@ func TestBuild_TopK(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Union
-// ---------------------------------------------------------------------------
 
 func TestBuild_Union(t *testing.T) {
 	// Union is created via the "union" stage in LynxFlow.
@@ -500,9 +478,7 @@ func TestBuild_Union(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Join (inner/left)
-// ---------------------------------------------------------------------------
 
 func TestBuild_Join_Inner(t *testing.T) {
 	left := &logical.Scan{OutputSchema: nil}
@@ -666,9 +642,7 @@ func TestBuild_Join_Outer(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Explode
-// ---------------------------------------------------------------------------
 
 func TestBuild_Explode(t *testing.T) {
 	rows := []map[string]event.Value{
@@ -682,9 +656,7 @@ func TestBuild_Explode(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Project (keep/drop/rename)
-// ---------------------------------------------------------------------------
 
 func TestBuild_Keep(t *testing.T) {
 	rows := sampleRows()
@@ -738,9 +710,7 @@ func TestBuild_Rename(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Describe
-// ---------------------------------------------------------------------------
 
 func TestBuild_Describe(t *testing.T) {
 	rows := sampleRows()
@@ -762,9 +732,7 @@ func TestBuild_Describe(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Parse (json from raw text)
-// ---------------------------------------------------------------------------
 
 func TestBuild_Parse_JSON(t *testing.T) {
 	rows := []map[string]event.Value{
@@ -782,9 +750,7 @@ func TestBuild_Parse_JSON(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Empty
-// ---------------------------------------------------------------------------
 
 func TestBuild_Empty(t *testing.T) {
 	plan := &logical.Plan{Root: &logical.Empty{}}
@@ -815,9 +781,7 @@ func TestBuild_NilPlan(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Error cases
-// ---------------------------------------------------------------------------
 
 func TestBuild_Materialize_NotYetImplemented(t *testing.T) {
 	plan := &logical.Plan{
@@ -913,9 +877,7 @@ func TestBuild_Tee_Enabled(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Full end-to-end via parser
-// ---------------------------------------------------------------------------
 
 func TestBuild_E2E_WhereExtendStats(t *testing.T) {
 	rows := sampleRows()
@@ -958,9 +920,7 @@ func TestBuild_E2E_DedupSortHead(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: CondProgram wiring on AggFunc (direct build, not via parser)
-// ---------------------------------------------------------------------------
 
 func TestBuild_CondProgram_AggFunc(t *testing.T) {
 	// Build plan manually to test CondProgram.
@@ -1008,9 +968,7 @@ func TestBuild_CondProgram_AggFunc(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Agg name mapping table coverage
-// ---------------------------------------------------------------------------
 
 func TestAggNameMapping(t *testing.T) {
 	expected := map[string]string{
@@ -1043,9 +1001,7 @@ func TestAggNameMapping(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: exprToDuration
-// ---------------------------------------------------------------------------
 
 func TestExprToDuration(t *testing.T) {
 	tests := []struct {
@@ -1069,9 +1025,7 @@ func TestExprToDuration(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Small batch sizes
-// ---------------------------------------------------------------------------
 
 func TestBuild_SmallBatchSize(t *testing.T) {
 	rows := sampleRows()
@@ -1081,9 +1035,7 @@ func TestBuild_SmallBatchSize(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: DescribeSummaryIterator directly
-// ---------------------------------------------------------------------------
 
 func TestDescribeSummaryIterator(t *testing.T) {
 	rows := sampleRows()
@@ -1125,9 +1077,7 @@ func TestDescribeSummaryIterator(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Schema on DescribeSummaryIterator
-// ---------------------------------------------------------------------------
 
 func TestDescribeSummaryIterator_Schema(t *testing.T) {
 	source := sliceSource(nil, 1024)
@@ -1147,9 +1097,7 @@ func TestDescribeSummaryIterator_Schema(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Memory governance and spill wiring
-// ---------------------------------------------------------------------------
 
 // TestBuild_SortSpillsUnderTinyBudget proves that when the physical builder is
 // wired with a coordinator and spill manager, a sort over data exceeding the
@@ -1389,9 +1337,7 @@ func TestBuild_CTEMaterializationRespectsContext(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: Materialize backstop returns NotYetImplementedError
-// ---------------------------------------------------------------------------
 
 func TestBuild_Materialize_Backstop(t *testing.T) {
 	// If a Materialize node somehow reaches physical.Build (should not happen
@@ -1409,9 +1355,7 @@ func TestBuild_Materialize_Backstop(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: IsMaterializeRoot correctly identifies Materialize nodes
-// ---------------------------------------------------------------------------
 
 func TestIsMaterializeRoot(t *testing.T) {
 	mat := &logical.Materialize{Name: "test_view"}
@@ -1431,9 +1375,7 @@ func TestIsMaterializeRoot(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: compare executes end-to-end through physical.Build
-// ---------------------------------------------------------------------------
 
 func TestBuild_Compare_EndToEnd(t *testing.T) {
 	rows := []map[string]event.Value{

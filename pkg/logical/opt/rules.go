@@ -8,9 +8,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
 )
 
-// ---------------------------------------------------------------------------
 // Literal constructors (used by all folding rules)
-// ---------------------------------------------------------------------------
 
 func litInt(v int64) *ast.Literal {
 	raw := strconv.FormatInt(v, 10)
@@ -70,9 +68,7 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Literal type helpers
-// ---------------------------------------------------------------------------
 
 func asInt(e ast.Expr) (int64, bool) {
 	lit, ok := e.(*ast.Literal)
@@ -137,9 +133,7 @@ func asNumber(e ast.Expr) (float64, bool) {
 	return asFloat(e)
 }
 
-// ---------------------------------------------------------------------------
 // Rule 7: paren-strip
-// ---------------------------------------------------------------------------
 
 // parenStrip removes ast.Paren wrappers. The formatter re-derives parens from
 // operator precedence; the IR does not need them.
@@ -150,9 +144,7 @@ func parenStrip(e ast.Expr) (ast.Expr, bool) {
 	return e, false
 }
 
-// ---------------------------------------------------------------------------
 // Rule 1: const-fold-arith
-// ---------------------------------------------------------------------------
 //
 // Folds literal op literal for arithmetic operators per RFC-002 §5.4:
 //   - int op int -> int (division truncates: 5/2=2)
@@ -363,9 +355,7 @@ func foldMod(b *ast.Binary) (ast.Expr, bool) {
 	return litInt(lv % rv), true
 }
 
-// ---------------------------------------------------------------------------
 // Rule 2: const-fold-compare
-// ---------------------------------------------------------------------------
 //
 // Folds literal cmp literal -> true/false for same-type comparisons:
 //   - string: lexical
@@ -519,9 +509,7 @@ func evalCmpString(op ast.BinaryOp, l, r string) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // Rule 3: bool-simplify (three-valued SOUND only)
-// ---------------------------------------------------------------------------
 //
 // Applies absorption/identity laws that are sound under three-valued (null)
 // logic per RFC-002 §5.2:
@@ -596,9 +584,7 @@ func boolSimplify(e ast.Expr) (ast.Expr, bool) {
 	return e, false
 }
 
-// ---------------------------------------------------------------------------
 // Rule 4: coalesce-fold
-// ---------------------------------------------------------------------------
 //
 // non-null-literal ?? X -> literal (the literal is known non-null)
 // null ?? X -> X
@@ -622,9 +608,7 @@ func coalesceFold(e ast.Expr) (ast.Expr, bool) {
 	return b.Left, true
 }
 
-// ---------------------------------------------------------------------------
 // Rule 5: if-fold
-// ---------------------------------------------------------------------------
 //
 // if(true,  a, b) -> a
 // if(false, a, b) -> b
@@ -651,9 +635,7 @@ func ifFold(e ast.Expr) (ast.Expr, bool) {
 	return e, false
 }
 
-// ---------------------------------------------------------------------------
 // Rule 6: cmp-normalize
-// ---------------------------------------------------------------------------
 //
 // Literal on the left of a comparison is flipped to field-on-left so later
 // pushdown rules see a canonical shape. Only fires when exactly one side is a

@@ -242,9 +242,7 @@ func IsMaterializeRoot(root logical.Node) (*logical.Materialize, bool) {
 	return m, ok
 }
 
-// ---------------------------------------------------------------------------
 // Scan
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildScan(nd *logical.Scan) (pipeline.Iterator, error) {
 	// CTE reference: return materialized rows.
@@ -263,9 +261,7 @@ func (b *builder) buildScan(nd *logical.Scan) (pipeline.Iterator, error) {
 	return b.opts.Source(nd)
 }
 
-// ---------------------------------------------------------------------------
 // Filter
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildFilter(nd *logical.Filter) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -279,9 +275,7 @@ func (b *builder) buildFilter(nd *logical.Filter) (pipeline.Iterator, error) {
 	return pipeline.NewFilterIterator(child, prog), nil
 }
 
-// ---------------------------------------------------------------------------
 // Extend (eval-style)
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildExtend(nd *logical.Extend) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -299,9 +293,7 @@ func (b *builder) buildExtend(nd *logical.Extend) (pipeline.Iterator, error) {
 	return pipeline.NewEvalIterator(child, assigns), nil
 }
 
-// ---------------------------------------------------------------------------
 // Project (keep/drop/rename)
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildProject(nd *logical.Project) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -379,9 +371,7 @@ func (b *builder) buildProject(nd *logical.Project) (pipeline.Iterator, error) {
 	return iter, nil
 }
 
-// ---------------------------------------------------------------------------
 // Aggregate
-// ---------------------------------------------------------------------------
 
 // aggNameMapping maps LynxFlow v2 aggregate function names (lowercase) to the
 // pipeline's internal aggregate name constants.
@@ -565,9 +555,7 @@ func aggAutoAlias(call *lfast.Call) string {
 	return call.Callee + "()"
 }
 
-// ---------------------------------------------------------------------------
 // TopK
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildTopK(nd *logical.TopK) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -585,9 +573,7 @@ func (b *builder) buildTopK(nd *logical.TopK) (pipeline.Iterator, error) {
 	return pipeline.NewTopNIterator(child, fields, int(nd.K), b.opts.batchSize()), nil
 }
 
-// ---------------------------------------------------------------------------
 // Sort
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildSort(nd *logical.Sort) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -608,9 +594,7 @@ func (b *builder) buildSort(nd *logical.Sort) (pipeline.Iterator, error) {
 	return pipeline.NewSortIteratorWithBudget(child, fields, b.opts.batchSize(), acct), nil
 }
 
-// ---------------------------------------------------------------------------
 // Limit (head/tail)
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildLimit(nd *logical.Limit) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -624,9 +608,7 @@ func (b *builder) buildLimit(nd *logical.Limit) (pipeline.Iterator, error) {
 	return pipeline.NewLimitIterator(child, int(nd.N)), nil
 }
 
-// ---------------------------------------------------------------------------
 // Dedup
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildDedup(nd *logical.Dedup) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -636,9 +618,7 @@ func (b *builder) buildDedup(nd *logical.Dedup) (pipeline.Iterator, error) {
 	return pipeline.NewDedupIterator(child, nd.Fields, int(nd.N)), nil
 }
 
-// ---------------------------------------------------------------------------
 // Join
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildJoin(nd *logical.Join) (pipeline.Iterator, error) {
 	left, err := b.buildChild(nd)
@@ -671,9 +651,7 @@ func (b *builder) buildJoin(nd *logical.Join) (pipeline.Iterator, error) {
 	return pipeline.NewJoinIteratorWithBudget(left, right, field, joinType, acct), nil
 }
 
-// ---------------------------------------------------------------------------
 // Union
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildUnion(nd *logical.Union) (pipeline.Iterator, error) {
 	iters := make([]pipeline.Iterator, len(nd.Inputs))
@@ -687,9 +665,7 @@ func (b *builder) buildUnion(nd *logical.Union) (pipeline.Iterator, error) {
 	return pipeline.NewUnionIterator(iters), nil
 }
 
-// ---------------------------------------------------------------------------
 // Explode
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildExplode(nd *logical.Explode) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -700,9 +676,7 @@ func (b *builder) buildExplode(nd *logical.Explode) (pipeline.Iterator, error) {
 	return pipeline.NewUnrollIterator(child, fields, b.opts.batchSize()), nil
 }
 
-// ---------------------------------------------------------------------------
 // Describe
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildDescribe(nd *logical.Describe) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -712,9 +686,7 @@ func (b *builder) buildDescribe(nd *logical.Describe) (pipeline.Iterator, error)
 	return NewDescribeSummaryIterator(child, b.opts.batchSize()), nil
 }
 
-// ---------------------------------------------------------------------------
 // Parse
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildParse(nd *logical.Parse) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)
@@ -770,9 +742,7 @@ func (b *builder) buildParse(nd *logical.Parse) (pipeline.Iterator, error) {
 	return pipeline.NewParseIterator(child, parsers, from, captures, nd.Prefix, onError), nil
 }
 
-// ---------------------------------------------------------------------------
 // Helper
-// ---------------------------------------------------------------------------
 
 // helperNotYetImplemented lists helper names that are not yet wirable.
 // Compare was removed: it is now expanded in the lowerer (lower.go) as a
@@ -982,9 +952,7 @@ func (b *builder) buildHelperSessionize(child pipeline.Iterator, nd *logical.Hel
 	return pipeline.NewSessionizeIterator(child, maxPause, groupBy, b.opts.batchSize()), nil
 }
 
-// ---------------------------------------------------------------------------
 // Tee
-// ---------------------------------------------------------------------------
 
 func (b *builder) buildTee(nd *logical.Tee) (pipeline.Iterator, error) {
 	if !b.opts.TeeEnabled {
@@ -1009,9 +977,7 @@ func (b *builder) buildTee(nd *logical.Tee) (pipeline.Iterator, error) {
 	return pipeline.NewTeeIterator(child, sink, pipeline.TeeFormatJSON), nil
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 // buildChild builds the single input child of a unary node.
 func (b *builder) buildChild(n logical.Node) (pipeline.Iterator, error) {
@@ -1073,9 +1039,7 @@ func exprToDuration(e lfast.Expr) (time.Duration, error) {
 	return 0, fmt.Errorf("cannot convert %q to duration", s)
 }
 
-// ---------------------------------------------------------------------------
 // emptyIterator
-// ---------------------------------------------------------------------------
 
 type emptyIterator struct{}
 

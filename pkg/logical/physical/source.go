@@ -171,9 +171,7 @@ func NewStorageSourceFromMapWithNow(events map[string][]*event.Event, defaultInd
 	return NewStorageSource(&mapAdapter{events: events}, defaultIndex, now, stats)
 }
 
-// ---------------------------------------------------------------------------
 // Ephemeral pushdown: in-memory filtering using Scan.Pushdown hints
-// ---------------------------------------------------------------------------
 
 // applyEphemeralPushdown filters events in-memory using the Scan's pushdown
 // hints. This implements the same semantic contracts as the disk-based path:
@@ -400,9 +398,7 @@ func isTokenChar(r rune) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // Event resolution
-// ---------------------------------------------------------------------------
 
 // resolveEvents collects events from the store based on the Scan's source patterns.
 func resolveEvents(store EphemeralStore, scan *logical.Scan, defaultIndex string) []*event.Event {
@@ -503,9 +499,7 @@ func eventsToRows(events []*event.Event) []map[string]event.Value {
 	return rows
 }
 
-// ---------------------------------------------------------------------------
 // Time bound resolution and filtering
-// ---------------------------------------------------------------------------
 
 // resolveTimeBoundsToAbsolute converts a logical.TimeBounds (which may contain
 // relative duration expressions like -1h) into absolute time.Time values.

@@ -30,9 +30,7 @@ type Expr interface {
 	String() string
 }
 
-// ---------------------------------------------------------------------------
 // Identifier
-// ---------------------------------------------------------------------------
 
 // Ident is a bare or backtick-quoted identifier.
 type Ident struct {
@@ -49,9 +47,7 @@ func (n *Ident) String() string {
 	return n.Name
 }
 
-// ---------------------------------------------------------------------------
 // Literals
-// ---------------------------------------------------------------------------
 
 // LitKind classifies the kind of a literal value.
 type LitKind uint8
@@ -137,9 +133,7 @@ func formatDuration(d time.Duration) string {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Composite literals
-// ---------------------------------------------------------------------------
 
 // Array is an array literal: [expr, expr, ...].
 type Array struct {
@@ -190,9 +184,7 @@ func (n *Object) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Operators
-// ---------------------------------------------------------------------------
 
 // UnaryOp identifies a unary operator.
 type UnaryOp uint8
@@ -274,9 +266,7 @@ func (n *Binary) String() string {
 	return "(" + n.Left.String() + " " + op + " " + n.Right.String() + ")"
 }
 
-// ---------------------------------------------------------------------------
 // In / Between
-// ---------------------------------------------------------------------------
 
 // In is an `expr in expr` expression. The RHS is typically an Array literal
 // but may be any expression.
@@ -304,9 +294,7 @@ func (n *Between) String() string {
 	return "(" + n.X.String() + " between " + n.Lo.String() + " and " + n.Hi.String() + ")"
 }
 
-// ---------------------------------------------------------------------------
 // Call
-// ---------------------------------------------------------------------------
 
 // Call is a function call: name(args...) or name!(args...) for strict casts.
 // When a call follows a member or safe-member access (method-call chains like
@@ -347,9 +335,7 @@ func (n *Call) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Member / SafeMember / Index
-// ---------------------------------------------------------------------------
 
 // Member is a dot-access expression: expr.ident.
 type Member struct {
@@ -387,9 +373,7 @@ func (n *Index) String() string {
 	return n.Object.String() + "[" + n.Idx.String() + "]"
 }
 
-// ---------------------------------------------------------------------------
 // Lambda
-// ---------------------------------------------------------------------------
 
 // Lambda is a lambda expression: param -> body.
 type Lambda struct {
@@ -403,9 +387,7 @@ func (n *Lambda) String() string {
 	return "(" + n.Param + " -> " + n.Body.String() + ")"
 }
 
-// ---------------------------------------------------------------------------
 // Paren
-// ---------------------------------------------------------------------------
 
 // Paren is a parenthesized expression. Kept in the AST for span fidelity
 // and formatter round-trip.
@@ -423,9 +405,7 @@ func (n *Paren) String() string {
 	return n.Inner.String()
 }
 
-// ---------------------------------------------------------------------------
 // ErrorExpr
-// ---------------------------------------------------------------------------
 
 // ErrorExpr is a placeholder node inserted when the parser encounters an
 // error and cannot produce a valid subtree. It carries the span of the
@@ -442,9 +422,7 @@ func (n *ErrorExpr) String() string {
 	return "<error>"
 }
 
-// ---------------------------------------------------------------------------
 // Walk / Inspect
-// ---------------------------------------------------------------------------
 
 // Visitor is called by Walk for each node in a depth-first traversal.
 // If the function returns false, children of that node are not visited.

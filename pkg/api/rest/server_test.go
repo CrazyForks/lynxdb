@@ -2161,13 +2161,11 @@ func TestJobStream_NotFound(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse error columns round-trip through the REST JSON response.
 //
 // Verifies finding [22b]: _error and _error_detail columns produced by
 // `parse json` with malformed rows serialize correctly through the REST
 // query response envelope.
-// ---------------------------------------------------------------------------
 
 func TestServer_ParseErrorColumns_RoundTrip(t *testing.T) {
 	srv, cleanup := startTestServer(t)

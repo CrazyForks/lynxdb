@@ -18,9 +18,7 @@ import (
 
 var update = flag.Bool("update", false, "update golden files")
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func mustParseDesugar(t *testing.T, input string) *ast.Query {
 	t.Helper()
@@ -66,9 +64,7 @@ func assertNoCode(t *testing.T, lints []Lint, code string) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 1. Registry invariants
-// ---------------------------------------------------------------------------
 
 func TestRegistryInvariants(t *testing.T) {
 	rules := Rules()
@@ -124,9 +120,7 @@ func TestRegistryInvariants(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 2. Per-rule positive + negative tests
-// ---------------------------------------------------------------------------
 
 func TestLF01_LeadingWildcard(t *testing.T) {
 	t.Run("positive_glob_star", func(t *testing.T) {
@@ -402,9 +396,7 @@ func TestLF08_HasUppercase(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Pre-desugar lint helpers
-// ---------------------------------------------------------------------------
 
 func mustParseNoDesugar(t *testing.T, input string) *ast.Query {
 	t.Helper()
@@ -516,9 +508,7 @@ func TestLF09_ShortcutAvailable(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // 3. Span sanity
-// ---------------------------------------------------------------------------
 
 func TestSpanSanity(t *testing.T) {
 	// Verify all lints have non-negative span values.
@@ -544,9 +534,7 @@ func TestSpanSanity(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 4. Corpus golden test
-// ---------------------------------------------------------------------------
 
 type corpusEntry struct {
 	ID       string   `json:"id"`
@@ -681,9 +669,7 @@ func dedupStrings(ss []string) []string {
 	return out
 }
 
-// ---------------------------------------------------------------------------
 // 5. Nil-safety
-// ---------------------------------------------------------------------------
 
 func TestRunNilQuery(t *testing.T) {
 	lints := Run(nil)
@@ -692,9 +678,7 @@ func TestRunNilQuery(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 6. Internal helper tests
-// ---------------------------------------------------------------------------
 
 func TestHasLiteralAnchor(t *testing.T) {
 	tests := []struct {

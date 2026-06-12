@@ -5,9 +5,7 @@ import {
   _isNumericLiteral as isNumericLiteral,
 } from "./filterQuery";
 
-// ---------------------------------------------------------------------------
 // quoteField (backtick logic)
-// ---------------------------------------------------------------------------
 
 describe("quoteField", () => {
   it("passes a plain identifier through", () => {
@@ -39,9 +37,7 @@ describe("quoteField", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // isNumericLiteral
-// ---------------------------------------------------------------------------
 
 describe("isNumericLiteral", () => {
   it("recognises integers", () => {
@@ -67,9 +63,7 @@ describe("isNumericLiteral", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
 // appendFilter — the primary export
-// ---------------------------------------------------------------------------
 
 describe("appendFilter", () => {
   it("creates a leading clause for an empty query", () => {

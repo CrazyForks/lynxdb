@@ -194,9 +194,7 @@ func Lex(input string) ([]Token, []Diag) {
 	return tokens, diags
 }
 
-// ---------------------------------------------------------------------------
 // Internal helpers
-// ---------------------------------------------------------------------------
 
 // skipWhitespaceAndComments advances past whitespace and comments.
 // Line comments: // to end-of-line.
@@ -490,9 +488,7 @@ func (l *Lexer) lexBacktickIdent() Token {
 		Text: "unterminated backtick-quoted identifier"}
 }
 
-// ---------------------------------------------------------------------------
 // Character classification
-// ---------------------------------------------------------------------------
 
 // isIdentStart reports whether b can start a bare identifier.
 // Only ASCII letters and underscore.

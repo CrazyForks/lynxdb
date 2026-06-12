@@ -17,9 +17,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/format"
 )
 
-// ---------------------------------------------------------------------------
 // ViewCatalog: interface for the optimizer to query MV metadata
-// ---------------------------------------------------------------------------
 
 // ViewInfo describes a materialized view for optimizer matching.
 type ViewInfo struct {
@@ -51,9 +49,7 @@ type MVAccel struct {
 	Speedup  string // e.g. "~400x"
 }
 
-// ---------------------------------------------------------------------------
 // Options and OptimizeWith entry point
-// ---------------------------------------------------------------------------
 
 // Options configures the optimizer with optional external catalogs.
 type Options struct {
@@ -84,9 +80,7 @@ func OptimizeWithViews(p *logical.Plan, o Options) (*logical.Plan, []Applied, *M
 	return p, applied, accel
 }
 
-// ---------------------------------------------------------------------------
 // MV rewrite logic
-// ---------------------------------------------------------------------------
 
 // tryMVRewrite attempts to rewrite the plan to scan a materialized view.
 // Returns the rewritten plan and acceleration metadata, or (original, nil)
@@ -411,9 +405,7 @@ func rewriteSubsetMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, qu
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 // aggMatch captures a query's aggregation function for matching.
 type aggMatch struct {

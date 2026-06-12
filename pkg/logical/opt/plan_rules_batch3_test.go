@@ -7,9 +7,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/logical"
 )
 
-// ---------------------------------------------------------------------------
 // Test: partial-agg
-// ---------------------------------------------------------------------------
 
 func TestPartialAgg(t *testing.T) {
 	tests := []struct {
@@ -122,9 +120,7 @@ func TestPartialAgg(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: topk-into-agg
-// ---------------------------------------------------------------------------
 
 func TestTopKIntoAgg(t *testing.T) {
 	tests := []struct {
@@ -191,9 +187,7 @@ func TestTopKIntoAgg(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: tail-scan
-// ---------------------------------------------------------------------------
 
 func TestTailScan(t *testing.T) {
 	tests := []struct {
@@ -295,9 +289,7 @@ func TestTailScan(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: limit-pushdown
-// ---------------------------------------------------------------------------
 
 func TestLimitPushdown(t *testing.T) {
 	tests := []struct {
@@ -398,9 +390,7 @@ func TestLimitPushdown(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Test: column-pruning
-// ---------------------------------------------------------------------------
 
 func TestColumnPruning(t *testing.T) {
 	tests := []struct {
@@ -495,9 +485,7 @@ func TestColumnPruning(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: batch-3 determinism
-// ---------------------------------------------------------------------------
 
 func TestBatch3Determinism(t *testing.T) {
 	queries := []string{
@@ -528,9 +516,7 @@ func TestBatch3Determinism(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: batch-3 purity (original plan unchanged)
-// ---------------------------------------------------------------------------
 
 func TestBatch3Purity(t *testing.T) {
 	queries := []string{
@@ -554,9 +540,7 @@ func TestBatch3Purity(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: Applied reporting includes batch-3 rules
-// ---------------------------------------------------------------------------
 
 func TestAppliedIncludesBatch3Rules(t *testing.T) {
 	// partial-agg should fire.
@@ -595,9 +579,7 @@ func findRule(t *testing.T, applied []Applied, name string) {
 	t.Errorf("expected rule %q in Applied, got %v", name, applied)
 }
 
-// ---------------------------------------------------------------------------
 // Test: Scan.Reverse in Dump
-// ---------------------------------------------------------------------------
 
 func TestScanReverseDump(t *testing.T) {
 	scan := &logical.Scan{
@@ -611,9 +593,7 @@ func TestScanReverseDump(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: Aggregate.TopK in Dump
-// ---------------------------------------------------------------------------
 
 func TestAggregateTopKDump(t *testing.T) {
 	dump := optimizedDump(t, "from main | stats count() as cnt by service | sort -cnt | head 5")
@@ -625,9 +605,7 @@ func TestAggregateTopKDump(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: Pushdown.Columns in Dump
-// ---------------------------------------------------------------------------
 
 func TestPushdownColumnsDump(t *testing.T) {
 	dump := optimizedDump(t, "from main | stats count() by service")

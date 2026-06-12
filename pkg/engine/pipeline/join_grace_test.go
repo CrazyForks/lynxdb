@@ -272,9 +272,7 @@ func TestJoinEmptyLeftSide(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tests: Full outer join
-// ---------------------------------------------------------------------------
 
 // hasNonNull reports whether the row carries a non-null value for the field.
 // Columnar batches pad missing columns with null values, so "absent" surfaces

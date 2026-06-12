@@ -17,9 +17,7 @@ import (
 
 var update = flag.Bool("update", false, "update golden files")
 
-// ---------------------------------------------------------------------------
 // Corpus + examples loading
-// ---------------------------------------------------------------------------
 
 type corpusEntry struct {
 	ID       string   `json:"id"`
@@ -89,9 +87,7 @@ func rfc002Examples() []struct {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 1. Fixpoint property: format(parse(format(parse(q)))) == format(parse(q))
-// ---------------------------------------------------------------------------
 
 func TestFixpoint_Corpus(t *testing.T) {
 	entries := loadCorpus(t)
@@ -140,9 +136,7 @@ func assertFixpoint(t *testing.T, input string) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 2. Expression fixpoint
-// ---------------------------------------------------------------------------
 
 func TestFixpoint_Expr(t *testing.T) {
 	exprs := []string{
@@ -183,9 +177,7 @@ func TestFixpoint_Expr(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 3. Golden AST dumps
-// ---------------------------------------------------------------------------
 
 func TestGoldenAST_Corpus(t *testing.T) {
 	entries := loadCorpus(t)
@@ -222,9 +214,7 @@ func TestGoldenAST_RFC002Examples(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 4. Golden rewrite dumps
-// ---------------------------------------------------------------------------
 
 func TestGoldenRewrites_Corpus(t *testing.T) {
 	entries := loadCorpus(t)
@@ -260,9 +250,7 @@ func TestGoldenRewrites_Corpus(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 5. Specific formatting tests
-// ---------------------------------------------------------------------------
 
 func TestFormat_MinimalParens(t *testing.T) {
 	tests := []struct {
@@ -406,9 +394,7 @@ func TestFormat_BacktickIdent(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Golden test helpers
-// ---------------------------------------------------------------------------
 
 func compareOrUpdate(t *testing.T, path, got string) {
 	t.Helper()

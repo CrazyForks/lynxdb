@@ -92,9 +92,7 @@ func Run(q *ast.Query) []Lint {
 	return all
 }
 
-// ---------------------------------------------------------------------------
 // LF01: leading wildcard in glob/regex pattern
-// ---------------------------------------------------------------------------
 
 func checkLeadingWildcard(q *ast.Query) []Lint {
 	var lints []Lint
@@ -167,9 +165,7 @@ func hasLeadingRegexWildcard(pat string) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // LF02: from * with no time range and no _time predicate (broad scope)
-// ---------------------------------------------------------------------------
 
 func checkBroadScopeStar(q *ast.Query) []Lint {
 	var lints []Lint
@@ -217,10 +213,8 @@ func checkBroadScopeStarPipeline(p ast.Pipeline) *Lint {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // LF03: unbounded time range (non-star source, no bracket range or _time
 // predicate). Suppressed when LF02 fires on the same pipeline.
-// ---------------------------------------------------------------------------
 
 func checkUnboundedTimeRange(q *ast.Query) []Lint {
 	var lints []Lint
@@ -266,9 +260,7 @@ func checkUnboundedPipeline(p ast.Pipeline) *Lint {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // LF04: regex without literal anchor
-// ---------------------------------------------------------------------------
 
 func checkRegexNoLiteral(q *ast.Query) []Lint {
 	var lints []Lint
@@ -376,9 +368,7 @@ func isRegexMetaclass(ch byte) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // LF05: materialize without strict parse on_error
-// ---------------------------------------------------------------------------
 
 func checkMaterializeStrictParse(q *ast.Query) []Lint {
 	var lints []Lint
@@ -428,9 +418,7 @@ func checkMaterializePipeline(p ast.Pipeline) *Lint {
 	return nil
 }
 
-// ---------------------------------------------------------------------------
 // LF06: head before sort (arbitrary then sorted)
-// ---------------------------------------------------------------------------
 
 func checkHeadBeforeSort(q *ast.Query) []Lint {
 	var lints []Lint
@@ -485,9 +473,7 @@ func isStatsLikeStage(name string) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // LF08: has() with uppercase term
-// ---------------------------------------------------------------------------
 
 func checkHasUppercase(q *ast.Query) []Lint {
 	var lints []Lint
@@ -528,9 +514,7 @@ func containsUpper(s string) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // AST walking helpers
-// ---------------------------------------------------------------------------
 
 // forEachExpr calls fn for every expression in the query's stages (including
 // CTE pipelines). It walks where predicates, extend values, stats aggs/by
@@ -635,9 +619,7 @@ func walkExprDeep(e ast.Expr, fn func(ast.Expr)) {
 	ast.Inspect(e, fn)
 }
 
-// ---------------------------------------------------------------------------
 // Shared helpers
-// ---------------------------------------------------------------------------
 
 // hasSourceStar returns true if the from stage contains a SourceStar atom.
 func hasSourceStar(f *ast.FromStage) bool {
@@ -694,9 +676,7 @@ func stringLitValue(e ast.Expr) (string, bool) {
 	return "", false
 }
 
-// ---------------------------------------------------------------------------
 // LF09: shortcut available (pre-desugar rule)
-// ---------------------------------------------------------------------------
 
 // checkShortcutAvailable detects long-form pipeline shapes that have a shorter
 // sugar equivalent. It runs on the PRE-desugar AST to avoid flagging users who

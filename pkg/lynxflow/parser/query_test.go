@@ -12,9 +12,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/format"
 )
 
-// ---------------------------------------------------------------------------
 // 1. Corpus gate: all 63 lynxflow values parse with ZERO diags
-// ---------------------------------------------------------------------------
 
 type corpusEntry struct {
 	ID       string   `json:"id"`
@@ -86,9 +84,7 @@ func TestCorpusParse(t *testing.T) {
 	t.Logf("corpus result: %d/%d passed", passed, len(entries))
 }
 
-// ---------------------------------------------------------------------------
 // 2. RFC-002 §13 "after" examples
-// ---------------------------------------------------------------------------
 
 func TestRFC002Examples(t *testing.T) {
 	examples := []string{
@@ -148,9 +144,7 @@ func TestRFC002Examples(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 3. Golden structure tests
-// ---------------------------------------------------------------------------
 
 func TestGoldenStructure(t *testing.T) {
 	tests := []struct {
@@ -254,9 +248,7 @@ func TestGoldenStructure(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 4. Error recovery tests
-// ---------------------------------------------------------------------------
 
 func TestErrorRecovery_MultiStageErrors(t *testing.T) {
 	// A 4-stage query with errors in stages 2 and 4.
@@ -387,9 +379,7 @@ func TestErrorRecovery_SortByDesc(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 5. Span assertions
-// ---------------------------------------------------------------------------
 
 func TestSpan_StageName(t *testing.T) {
 	tests := []struct {
@@ -440,9 +430,7 @@ func TestSpan_OptionValues(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // 6. Fuzz test
-// ---------------------------------------------------------------------------
 
 func FuzzParse(f *testing.F) {
 	// Seed with corpus entries.
@@ -557,9 +545,7 @@ func loadCorpusFuzz(f *testing.F) []corpusEntry {
 	return entries
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func diagMsgs(diags []Diag) []string {
 	msgs := make([]string, len(diags))
@@ -591,10 +577,8 @@ func hasErrorExpr(q *ast.Query) bool {
 // Unused but matches the test pattern from expr_test.go.
 var _ = ast.Span{}
 
-// ---------------------------------------------------------------------------
 // parse on_error modes: all four spec modes parse clean (including the hard
 // keyword "null"), unknown modes are rejected with a fix-it diagnostic.
-// ---------------------------------------------------------------------------
 
 func TestParseOnErrorModes(t *testing.T) {
 	for _, mode := range []string{"propagate", "null", "drop", "strict"} {
@@ -629,11 +613,9 @@ func TestParseOnErrorUnknownMode(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Search-sugar glob values may start with a metacharacter (§3.1 glob value):
 // msg=*user*, host=?eb-01, port=* must parse clean and round-trip through the
 // formatter.
-// ---------------------------------------------------------------------------
 
 func TestParseSearchGlobLeadingMeta(t *testing.T) {
 	for _, src := range []string{
@@ -677,11 +659,9 @@ func TestParseStarInStagePositionSuggests(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // count sugar stage (D36): `| count [()] [by <fields>]` parses clean,
 // round-trips through the formatter, and aggregate names in stage position
 // get a stats-pointing diagnostic.
-// ---------------------------------------------------------------------------
 
 func TestParseCountStage(t *testing.T) {
 	for src, want := range map[string]string{

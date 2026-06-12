@@ -5,9 +5,7 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
 // Test: predicate-pushdown — has_glob() -> TokenGlobs
-// ---------------------------------------------------------------------------
 
 func TestPredicatePushdown_TokenGlobs(t *testing.T) {
 	tests := []struct {

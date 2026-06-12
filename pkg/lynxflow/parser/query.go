@@ -9,9 +9,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/registry"
 )
 
-// ---------------------------------------------------------------------------
 // New diag codes for query-level parsing
-// ---------------------------------------------------------------------------
 
 const (
 	// CodeUnknownStage is emitted for an unrecognized stage name.
@@ -31,9 +29,7 @@ const (
 	CodeStageError DiagCode = "E014"
 )
 
-// ---------------------------------------------------------------------------
 // Parse entry point
-// ---------------------------------------------------------------------------
 
 // Parse parses a complete LynxFlow v2 query and returns the AST along with
 // any diagnostics. On success diags is empty. On error the returned Query
@@ -53,9 +49,7 @@ func Parse(input string) (*ast.Query, []Diag) {
 	return q, p.diags
 }
 
-// ---------------------------------------------------------------------------
 // Query-level parsing
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseQuery() *ast.Query {
 	start := p.cur.Start
@@ -180,9 +174,7 @@ func (p *parser) parsePipeline() ast.Pipeline {
 	return pip
 }
 
-// ---------------------------------------------------------------------------
 // From stage
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseFromStage() ast.FromStage {
 	start := p.cur.Start
@@ -393,9 +385,7 @@ func unescapeRun(s string) string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Time range parsing
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseTimeRange() ast.TimeRange {
 	start := p.cur.Start
@@ -480,9 +470,7 @@ func (p *parser) parseTimeRange() ast.TimeRange {
 	return tr
 }
 
-// ---------------------------------------------------------------------------
 // Search sugar parsing (§3.1)
-// ---------------------------------------------------------------------------
 
 func (p *parser) isSearchSugarStart() bool {
 	// Search sugar starts after sources/ranges, until | or EOF or ; or ].
@@ -831,9 +819,7 @@ func (p *parser) parseSearchValue() ast.Expr {
 	return e
 }
 
-// ---------------------------------------------------------------------------
 // Stage parsing
-// ---------------------------------------------------------------------------
 
 func (p *parser) isStageStart() bool {
 	k := p.cur.Kind
@@ -1057,9 +1043,7 @@ func (p *parser) parseStageBody(s *ast.Stage) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Individual stage body parsers
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseWhereBody(s *ast.Stage) {
 	expr := p.parseExprSafe()
@@ -2084,9 +2068,7 @@ func (p *parser) parseGenericOptionsBody(s *ast.Stage) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Aggregate list parsing (stats, eventstats, streamstats, every, impact, etc.)
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseAggList() []ast.AggExpr {
 	p.inAggList = true
@@ -2214,9 +2196,7 @@ func (p *parser) nextIsLParen() bool {
 	return pos < len(p.src) && p.src[pos] == '('
 }
 
-// ---------------------------------------------------------------------------
 // Assignment list parsing (extend)
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseAssignList() []ast.Assignment {
 	var assigns []ast.Assignment
@@ -2259,9 +2239,7 @@ func (p *parser) parseAssignment() ast.Assignment {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Field list parsing
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseFieldList() []ast.Expr {
 	var fields []ast.Expr
@@ -2292,9 +2270,7 @@ func (p *parser) parseGroupByList() []ast.Expr {
 	return keys
 }
 
-// ---------------------------------------------------------------------------
 // Value helpers
-// ---------------------------------------------------------------------------
 
 func (p *parser) parseIntValue() int64 {
 	if p.at(lexer.Int) {
@@ -2343,9 +2319,7 @@ func (p *parser) parseExprSafe() ast.Expr {
 	return p.parseExpr()
 }
 
-// ---------------------------------------------------------------------------
 // Stage resolution
-// ---------------------------------------------------------------------------
 
 func (p *parser) resolveStage() (string, bool) {
 	if p.cur.Kind == lexer.KwFrom {
@@ -2383,9 +2357,7 @@ func (p *parser) skipToNextStage() {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Killed spelling detection (RFC-001 -> v2 migration fix-its)
-// ---------------------------------------------------------------------------
 
 type killedFix struct {
 	message    string
@@ -2426,9 +2398,7 @@ func (p *parser) checkKilledSpelling() (killedFix, bool) {
 	return fix, ok
 }
 
-// ---------------------------------------------------------------------------
 // Edit distance and did-you-mean
-// ---------------------------------------------------------------------------
 
 func registryStageNames() []string {
 	ops := registry.Operators()

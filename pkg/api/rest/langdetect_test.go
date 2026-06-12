@@ -10,9 +10,7 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
 // Unit tests for detectQueryLanguage (post-RFC-002: always lynxflow)
-// ---------------------------------------------------------------------------
 
 func TestDetectQueryLanguage_ExplicitLynxFlow(t *testing.T) {
 	r := detectQueryLanguage("from main | stats count()", "lynxflow")
@@ -115,9 +113,7 @@ func TestValidateExplicitLanguage(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Integration tests: REST endpoints with language routing
-// ---------------------------------------------------------------------------
 
 func TestQuery_LynxFlowExplicit_ReturnsLanguageMeta(t *testing.T) {
 	srv, cleanup := startTestServer(t)

@@ -9,9 +9,7 @@
 
 import { authHeaders, handleAuthError } from "./auth";
 
-// ---------------------------------------------------------------------------
 // Types — mirrors the JSON shape from pkg/api/rest/catalog.go
-// ---------------------------------------------------------------------------
 
 export interface CatalogPositional {
   name: string;
@@ -74,9 +72,7 @@ export interface Catalog {
   parse_formats: string[];
 }
 
-// ---------------------------------------------------------------------------
 // Minimal fallback — operator names only, so completion works offline
-// ---------------------------------------------------------------------------
 
 const FALLBACK_OPERATOR_NAMES = [
   // Core (RFC-002 §8)
@@ -140,9 +136,7 @@ const FALLBACK_CATALOG: Catalog = {
   parse_formats: [],
 };
 
-// ---------------------------------------------------------------------------
 // Fetch with memoization
-// ---------------------------------------------------------------------------
 
 let cached: Catalog | null = null;
 let inflight: Promise<Catalog> | null = null;
@@ -188,9 +182,7 @@ export async function fetchCatalog(): Promise<Catalog> {
   return inflight;
 }
 
-// ---------------------------------------------------------------------------
 // Test helpers — allow tests to inject/reset the cache
-// ---------------------------------------------------------------------------
 
 /** @internal — for tests only */
 export function _resetCatalogCache(): void {

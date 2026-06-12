@@ -59,9 +59,7 @@ func Render(p *logical.Plan, info Info, stats map[logical.Node]*NodeStats) strin
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Spill capability classification
-// ---------------------------------------------------------------------------
 
 // spillCapable returns true for node types that can spill to disk.
 // Per RFC-002 §11: Sort, Aggregate, Join, Dedup, Tail (Limit with Tail=true).
@@ -82,9 +80,7 @@ func spillCapable(n logical.Node) bool {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Tree rendering
-// ---------------------------------------------------------------------------
 
 // renderNode renders a single node and its children recursively.
 // It returns the next counter value (for numbering).
@@ -163,9 +159,7 @@ func renderPushdown(b *strings.Builder, pd *logical.Pushdown, depth int, counter
 	return counter
 }
 
-// ---------------------------------------------------------------------------
 // One-liner per node type
-// ---------------------------------------------------------------------------
 
 func nodeOneLiner(n logical.Node) string {
 	switch nd := n.(type) {
@@ -259,9 +253,7 @@ func aggregateOneLiner(a *logical.Aggregate) string {
 	return a.String()
 }
 
-// ---------------------------------------------------------------------------
 // Annotations section
-// ---------------------------------------------------------------------------
 
 func renderAnnotations(b *strings.Builder, info Info) {
 	hasRewrites := len(info.Rewrites) > 0
@@ -291,9 +283,7 @@ func renderAnnotations(b *strings.Builder, info Info) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 // Type aliases for less verbose switch statements.
 type (

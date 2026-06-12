@@ -481,9 +481,7 @@ func (a *analyzer) checkArity(c *ast.Call, fn registry.Function) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func isNumeric(t FieldType) bool {
 	return t == TypeInt || t == TypeFloat

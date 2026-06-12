@@ -1240,9 +1240,7 @@ func autoDetectFromFirstFileForLang(query, filePath string, lang langdetect.Lang
 	return prependParseToQuery(query, parseCmd), nil
 }
 
-// ---------------------------------------------------------------------------
 // LynxFlow local execution (file/stdin modes)
-// ---------------------------------------------------------------------------
 
 // runLynxFlowLocal executes a LynxFlow query against the ephemeral event store
 // and prints results. Shared by file and stdin modes.

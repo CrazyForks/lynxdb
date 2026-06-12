@@ -30,9 +30,7 @@ import (
 	lfast "github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
 )
 
-// ---------------------------------------------------------------------------
 // Test helpers
-// ---------------------------------------------------------------------------
 
 // runLF compiles a LynxFlow expression and executes it against the given fields.
 func runLF(t *testing.T, expr lfast.Expr, fields map[string]event.Value) (event.Value, *WarningCounters) {
@@ -189,9 +187,7 @@ func inExpr(lhs lfast.Expr, rhs lfast.Expr) *lfast.In {
 	return &lfast.In{LHS: lhs, RHS: rhs}
 }
 
-// ---------------------------------------------------------------------------
 // §5.2 Three-Valued Logic Truth Table
-// ---------------------------------------------------------------------------
 
 func TestConformance_3VL_And(t *testing.T) {
 	// RFC-002 §5.2: null and false = false; null and true = null; null and null = null
@@ -293,9 +289,7 @@ func TestConformance_3VL_NotOnNonBool(t *testing.T) {
 	assertWarnings(t, warnings, "not_on_non_bool", 1, "not(42)")
 }
 
-// ---------------------------------------------------------------------------
 // §5.4 Arithmetic Rules
-// ---------------------------------------------------------------------------
 
 func TestConformance_Arithmetic_IntInt(t *testing.T) {
 	tests := []struct {
@@ -463,9 +457,7 @@ func TestConformance_Arithmetic_DurationAlgebra(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // §5.4 Strict Comparisons
-// ---------------------------------------------------------------------------
 
 func TestConformance_StrictComparison_SameType(t *testing.T) {
 	tests := []struct {
@@ -558,9 +550,7 @@ func TestConformance_StrictComparison_NullOperand(t *testing.T) {
 	assertNull(t, result2, "null<5")
 }
 
-// ---------------------------------------------------------------------------
 // §5.5 Case Sensitivity
-// ---------------------------------------------------------------------------
 
 func TestConformance_CaseSensitivity(t *testing.T) {
 	fields := map[string]event.Value{
@@ -615,9 +605,7 @@ func TestConformance_CaseSensitivity(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // ?? (coalesce) recovers null and missing
-// ---------------------------------------------------------------------------
 
 func TestConformance_Coalesce_RecoversMissing(t *testing.T) {
 	fields := map[string]event.Value{
@@ -644,9 +632,7 @@ func TestConformance_Coalesce_RecoversMissing(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // exists / is_null / is_missing trichotomy
-// ---------------------------------------------------------------------------
 
 func TestConformance_ExistsNullMissing_Trichotomy(t *testing.T) {
 	fields := map[string]event.Value{
@@ -717,9 +703,7 @@ func TestConformance_ExistsNullMissing_Trichotomy(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // substr 0-based
-// ---------------------------------------------------------------------------
 
 func TestConformance_Substr0Based(t *testing.T) {
 	tests := []struct {
@@ -751,9 +735,7 @@ func TestConformance_Substr0Based_NoLength(t *testing.T) {
 	assertString(t, result, "world", "substr no len")
 }
 
-// ---------------------------------------------------------------------------
 // Strict-cast bang error
-// ---------------------------------------------------------------------------
 
 func TestConformance_StrictCast_BangError(t *testing.T) {
 	// int!("not_a_number") should halt with ErrStrictCast
@@ -788,9 +770,7 @@ func TestConformance_StrictCast_SuccessPassesThrough(t *testing.T) {
 	assertInt(t, result, 42, "int!(42)")
 }
 
-// ---------------------------------------------------------------------------
 // OpLoadPath: flat-column first, then object walk
-// ---------------------------------------------------------------------------
 
 func TestConformance_LoadPath_FlatFirst(t *testing.T) {
 	// If a flat column "a.b" exists, use it
@@ -838,9 +818,7 @@ func TestConformance_LoadPath_NoRawFallback(t *testing.T) {
 	assertNull(t, result, "no _raw fallback")
 }
 
-// ---------------------------------------------------------------------------
 // Literals: array, object, duration, index
-// ---------------------------------------------------------------------------
 
 func TestConformance_ArrayLiteral(t *testing.T) {
 	expr := array(litInt(1), litStr("two"), litBool(true))
@@ -895,9 +873,7 @@ func TestConformance_DurationLiteral(t *testing.T) {
 	assertDuration(t, result, 5*time.Minute, "5m duration")
 }
 
-// ---------------------------------------------------------------------------
 // In / Between
-// ---------------------------------------------------------------------------
 
 func TestConformance_Between(t *testing.T) {
 	t.Run("in range", func(t *testing.T) {
@@ -945,9 +921,7 @@ func TestConformance_InList(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Functions: matches, extract, extract_all
-// ---------------------------------------------------------------------------
 
 func TestConformance_Matches(t *testing.T) {
 	expr := call("matches", litStr("hello123"), litStr(`\d+`))
@@ -980,9 +954,7 @@ func TestConformance_ExtractAll(t *testing.T) {
 	assertString(t, arr[2], "c", "extract_all[2]")
 }
 
-// ---------------------------------------------------------------------------
 // Functions: typeof
-// ---------------------------------------------------------------------------
 
 func TestConformance_TypeOf(t *testing.T) {
 	tests := []struct {
@@ -1005,9 +977,7 @@ func TestConformance_TypeOf(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Functions: len (RFC-002: rune count for strings, element count for arrays)
-// ---------------------------------------------------------------------------
 
 func TestConformance_Len(t *testing.T) {
 	t.Run("string rune count", func(t *testing.T) {
@@ -1024,9 +994,7 @@ func TestConformance_Len(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // SafeMember: null propagation
-// ---------------------------------------------------------------------------
 
 func TestConformance_SafeMember_NullPropagation(t *testing.T) {
 	fields := map[string]event.Value{
@@ -1043,9 +1011,7 @@ func TestConformance_SafeMember_NullPropagation(t *testing.T) {
 	assertNull(t, result2, "absent?.x")
 }
 
-// ---------------------------------------------------------------------------
 // Comparison: null operand → null
-// ---------------------------------------------------------------------------
 
 func TestConformance_Comparison_NullPropagation(t *testing.T) {
 	ops := []lfast.BinaryOp{lfast.OpEq, lfast.OpNotEq, lfast.OpLt, lfast.OpLtEq, lfast.OpGt, lfast.OpGtEq}
@@ -1061,9 +1027,7 @@ func TestConformance_Comparison_NullPropagation(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Hash functions
-// ---------------------------------------------------------------------------
 
 func TestConformance_HashFunctions(t *testing.T) {
 	t.Run("md5", func(t *testing.T) {
@@ -1080,9 +1044,7 @@ func TestConformance_HashFunctions(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Math functions
-// ---------------------------------------------------------------------------
 
 func TestConformance_MathFunctions(t *testing.T) {
 	t.Run("abs(-5)", func(t *testing.T) {
@@ -1111,9 +1073,7 @@ func TestConformance_MathFunctions(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // String functions
-// ---------------------------------------------------------------------------
 
 func TestConformance_StringFunctions(t *testing.T) {
 	t.Run("lower", func(t *testing.T) {
@@ -1138,9 +1098,7 @@ func TestConformance_StringFunctions(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Unary minus
-// ---------------------------------------------------------------------------
 
 func TestConformance_UnaryMinus(t *testing.T) {
 	t.Run("int", func(t *testing.T) {
@@ -1166,9 +1124,7 @@ func TestConformance_UnaryMinus(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Unknown function: did-you-mean
-// ---------------------------------------------------------------------------
 
 func TestConformance_UnknownFunction_DidYouMean(t *testing.T) {
 	expr := call("contians", litStr("a"), litStr("b")) // typo
@@ -1181,9 +1137,7 @@ func TestConformance_UnknownFunction_DidYouMean(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // if/case/coalesce/nullif
-// ---------------------------------------------------------------------------
 
 func TestConformance_If(t *testing.T) {
 	t.Run("true branch", func(t *testing.T) {
@@ -1233,9 +1187,7 @@ func TestConformance_NullIf(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // has() token-level matching
-// ---------------------------------------------------------------------------
 
 func TestConformance_Has_TokenMatch(t *testing.T) {
 	fields := map[string]event.Value{
@@ -1259,9 +1211,7 @@ func TestConformance_Has_TokenMatch(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // cidr_match
-// ---------------------------------------------------------------------------
 
 func TestConformance_CIDRMatch(t *testing.T) {
 	t.Run("match", func(t *testing.T) {
@@ -1274,9 +1224,7 @@ func TestConformance_CIDRMatch(t *testing.T) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // String + string concat via +
-// ---------------------------------------------------------------------------
 
 func TestConformance_StringConcatViaPlus(t *testing.T) {
 	expr := binOp(lfast.OpAdd, litStr("hello "), litStr("world"))
@@ -1284,9 +1232,7 @@ func TestConformance_StringConcatViaPlus(t *testing.T) {
 	assertString(t, result, "hello world", "string+string")
 }
 
-// ---------------------------------------------------------------------------
 // Duration literal
-// ---------------------------------------------------------------------------
 
 func TestConformance_DurationConstants(t *testing.T) {
 	tests := []struct {
@@ -1308,9 +1254,7 @@ func TestConformance_DurationConstants(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // split() -> real array
-// ---------------------------------------------------------------------------
 
 func TestConformance_Split_BasicArray(t *testing.T) {
 	// split("a,b,c", ",") -> ["a", "b", "c"]
@@ -1381,9 +1325,7 @@ func TestConformance_Split_RoundtripWithJoin(t *testing.T) {
 	assertString(t, result, "a-b-c", "join(split)")
 }
 
-// ---------------------------------------------------------------------------
 // time_of_day(ts) -> duration since midnight UTC
-// ---------------------------------------------------------------------------
 
 func TestConformance_TimeOfDay_MidDay(t *testing.T) {
 	// 2026-06-11T14:30:00Z -> 14h30m
@@ -1425,9 +1367,7 @@ func TestConformance_TimeOfDay_WithNanos(t *testing.T) {
 	assertDuration(t, result, expected, "time_of_day with nanos")
 }
 
-// ---------------------------------------------------------------------------
 // day_of_week(ts) -> int 0-6 (0=Sunday)
-// ---------------------------------------------------------------------------
 
 func TestConformance_DayOfWeek_Sunday(t *testing.T) {
 	// 2026-06-07 is a Sunday
@@ -1467,9 +1407,7 @@ func TestConformance_DayOfWeek_Saturday(t *testing.T) {
 	assertInt(t, result, 6, "day_of_week Saturday")
 }
 
-// ---------------------------------------------------------------------------
 // xxhash64(s) -> hex string
-// ---------------------------------------------------------------------------
 
 func TestConformance_XXHash64_Basic(t *testing.T) {
 	// xxhash64("hello")
@@ -1511,9 +1449,7 @@ func TestConformance_XXHash64_EmptyString(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Count: total number of assertions
-// ---------------------------------------------------------------------------
 // The tests above cover:
 // - §5.2 3VL truth table: 9 AND + 9 OR + 3 NOT + 1 not-on-non-bool = 22
 // - §5.4 arithmetic: 8 int/int + 4 int/float + 3 div-by-zero + 8 null-prop +
@@ -1540,11 +1476,9 @@ func TestConformance_XXHash64_EmptyString(t *testing.T) {
 // - xxhash64: 4 (basic + different + null + empty)
 // Total: ~195 + 13 + 5 + 5 + 4 = ~222
 
-// ---------------------------------------------------------------------------
 // glob(): patterns are not regexes — they live in a separate pool, and a
 // glob like "*user*" (an invalid regex) must evaluate correctly from the
 // first row instead of panicking ensureRegexCache (regression).
-// ---------------------------------------------------------------------------
 
 func TestLynxFlowGlobInvalidRegexPattern(t *testing.T) {
 	prog, err := CompileLynxFlow(call("glob", ident("msg"), litStr("*user*")))

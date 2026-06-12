@@ -8,9 +8,7 @@ import (
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
 // Table-driven tests: every token kind
-// ---------------------------------------------------------------------------
 
 func TestTokenKinds(t *testing.T) {
 	tests := []struct {
@@ -174,9 +172,7 @@ func TestTokenKinds(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Ambiguity tests
-// ---------------------------------------------------------------------------
 
 func TestAmbiguity_DurationVsIntIdent(t *testing.T) {
 	// 1h = duration; "1 h" = int then ident; 5m = duration; "5 m" = int ident
@@ -280,9 +276,7 @@ func TestAmbiguity_FloatNoTrailingDot(t *testing.T) {
 	assertKinds(t, "1.0", kinds(tokens2), want2)
 }
 
-// ---------------------------------------------------------------------------
 // Span correctness
-// ---------------------------------------------------------------------------
 
 func TestSpanCorrectness(t *testing.T) {
 	input := `from app[-1h] | where status >= 500`
@@ -347,9 +341,7 @@ func TestSpan_AllTokensCovered(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Comments
-// ---------------------------------------------------------------------------
 
 func TestLineComment(t *testing.T) {
 	tokens, diags := Lex("foo // this is a comment\nbar")
@@ -405,9 +397,7 @@ func TestUnterminatedBlockComment(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Error recovery
-// ---------------------------------------------------------------------------
 
 func TestErrorRecovery_MultipleErrors(t *testing.T) {
 	// Two bad characters and a single-quote, then valid tokens.
@@ -498,9 +488,7 @@ func TestErrorRecovery_SingleQuote(t *testing.T) {
 	_ = tokens
 }
 
-// ---------------------------------------------------------------------------
 // Keyword case insensitivity
-// ---------------------------------------------------------------------------
 
 func TestKeywordCaseInsensitivity(t *testing.T) {
 	variants := []string{"from", "FROM", "From", "fRoM"}
@@ -516,9 +504,7 @@ func TestKeywordCaseInsensitivity(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // LineCol helper
-// ---------------------------------------------------------------------------
 
 func TestLineCol(t *testing.T) {
 	src := "line1\nline2\nline3"
@@ -544,9 +530,7 @@ func TestLineCol(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Corpus test: lex all 63 lynxflow values, assert zero error tokens
-// ---------------------------------------------------------------------------
 
 type corpusEntry struct {
 	ID       string `json:"id"`
@@ -603,9 +587,7 @@ func TestCorpusLexesWithoutErrors(t *testing.T) {
 	t.Logf("successfully lexed %d corpus entries with zero errors", count)
 }
 
-// ---------------------------------------------------------------------------
 // Composite query tests
-// ---------------------------------------------------------------------------
 
 func TestCompositeQuery(t *testing.T) {
 	input := `let $errs = from app[-1h] | where level == "ERROR"; from $errs | stats count() by service`
@@ -687,9 +669,7 @@ func TestTimeRangeSnap(t *testing.T) {
 	assertKinds(t, "time range snap", kinds(tokens), want)
 }
 
-// ---------------------------------------------------------------------------
 // Edge cases
-// ---------------------------------------------------------------------------
 
 func TestEmptyInput(t *testing.T) {
 	tokens, diags := Lex("")
@@ -845,9 +825,7 @@ func TestIsKeyword(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Fuzz test
-// ---------------------------------------------------------------------------
 
 func FuzzLex(f *testing.F) {
 	// Seed with corpus queries.
@@ -936,9 +914,7 @@ func FuzzLex(f *testing.F) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func kinds(tokens []Token) []Kind {
 	out := make([]Kind, len(tokens))

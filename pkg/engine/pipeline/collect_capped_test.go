@@ -47,9 +47,7 @@ func collectAllCapped(t *testing.T, ctx context.Context, iter Iterator, maxRows 
 	return rows, nil
 }
 
-// ---------------------------------------------------------------------------
 // Verify the helper itself catches runaway iterators.
-// ---------------------------------------------------------------------------
 
 // infiniteIterator emits the same batch forever, simulating a re-emit-at-EOF bug.
 type infiniteIterator struct {

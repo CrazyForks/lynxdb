@@ -7,14 +7,12 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
-// ---------------------------------------------------------------------------
 // Regression: bare glob terms (us*r) must not falsely skip parts.
 //
 // Before TokenGlobs, `from main us*r` desugared to has(_raw, "us*r"), whose
 // literal was tokenized into ["us", "r"] and pushed as exact RawTerms — the
 // inverted index then "proved" no events matched and skipped every part even
 // though tokens like "user" matched the glob.
-// ---------------------------------------------------------------------------
 
 func TestPartSource_TokenGlobNoFalseSkip(t *testing.T) {
 	dir := t.TempDir()
@@ -99,9 +97,7 @@ func TestPartSource_TokenGlobVariations(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Ephemeral (pipe mode) pushdown for token globs.
-// ---------------------------------------------------------------------------
 
 func TestEphemeralPushdown_TokenGlobs(t *testing.T) {
 	events := map[string][]*event.Event{

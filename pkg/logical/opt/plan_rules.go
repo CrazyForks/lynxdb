@@ -46,9 +46,7 @@ func defaultPlanRules() []PlanRule {
 	return rules
 }
 
-// ---------------------------------------------------------------------------
 // Rule: filter-elim
-// ---------------------------------------------------------------------------
 //
 // Removes Filter(true) — a filter whose predicate is a true literal is a
 // no-op; the node is replaced by its input child.
@@ -65,9 +63,7 @@ func filterElim(root logical.Node) (logical.Node, bool) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Rule: filter-false-to-empty
-// ---------------------------------------------------------------------------
 //
 // Replaces Filter(false) and Filter(null) with an Empty node. Both are
 // provably unsatisfiable: false never matches, and null is falsy in boolean
@@ -87,9 +83,7 @@ func filterFalseToEmpty(root logical.Node) (logical.Node, bool) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Rule: filter-merge
-// ---------------------------------------------------------------------------
 //
 // Merges adjacent Filter nodes: Filter(a) whose input is Filter(b) becomes
 // Filter(a AND b) with b's input. This produces a single Filter with all
@@ -115,9 +109,7 @@ func filterMerge(root logical.Node) (logical.Node, bool) {
 	})
 }
 
-// ---------------------------------------------------------------------------
 // Rule: predicate-pushdown
-// ---------------------------------------------------------------------------
 //
 // Decomposes a Filter's predicate into storage-level hints on the Scan node
 // below it. The Filter must be DIRECTLY above a Scan (v1: no push through
@@ -268,9 +260,7 @@ func pushConjunct(scan *logical.Scan, expr ast.Expr) (pushed, consumed bool) {
 	return false, false
 }
 
-// ---------------------------------------------------------------------------
 // Time bound extraction
-// ---------------------------------------------------------------------------
 
 // extractTimeBound checks if expr is a comparison of _time against a
 // literal/duration expression. Returns a TimeBounds with either Start or End
@@ -358,9 +348,7 @@ func isTimeIdent(e ast.Expr) bool {
 	return ok && id.Name == "_time"
 }
 
-// ---------------------------------------------------------------------------
 // has(_raw, "lit") extraction
-// ---------------------------------------------------------------------------
 
 // extractHasRawTerms checks if expr is has(_raw, "literal") and returns
 // lowercased tokens from the literal argument per the tokenizer contract
@@ -414,9 +402,7 @@ func extractHasGlobPattern(expr ast.Expr) (string, bool) {
 	return strings.ToLower(s), true
 }
 
-// ---------------------------------------------------------------------------
 // Field comparison extraction
-// ---------------------------------------------------------------------------
 
 // isFieldCmpLiteral returns true if expr is a binary comparison of an
 // identifier against a scalar literal: field == "x", field >= 5, etc.
@@ -442,9 +428,7 @@ func isFieldCmpLiteral(expr ast.Expr) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // Bloom term extraction (contains/glob/matches)
-// ---------------------------------------------------------------------------
 
 // extractBloomTerms extracts required literal substrings from contains, glob,
 // and matches calls on _raw, tokenizes them, and returns tokens >= 3 chars
@@ -746,9 +730,7 @@ func isQuantifier(r rune) bool {
 	return r == '*' || r == '+' || r == '?' || r == '{'
 }
 
-// ---------------------------------------------------------------------------
 // Tokenizer (matches §6.1 contract)
-// ---------------------------------------------------------------------------
 
 // tokenize splits s into tokens per the tokenizer contract (§6.1):
 // tokens are runs of ASCII alphanumerics and Unicode letters/digits;
@@ -788,9 +770,7 @@ func isTokenChar(r rune) bool {
 	return false
 }
 
-// ---------------------------------------------------------------------------
 // AST helpers
-// ---------------------------------------------------------------------------
 
 // flattenAnd collects top-level AND conjuncts from an expression tree.
 func flattenAnd(expr ast.Expr) []ast.Expr {
@@ -828,9 +808,7 @@ func isNullLiteral(e ast.Expr) bool {
 	return ok && lit.Kind == ast.LitNull
 }
 
-// ---------------------------------------------------------------------------
 // Plan node helpers
-// ---------------------------------------------------------------------------
 
 // cloneScan creates a shallow copy of a Scan node with a deep copy of the
 // Pushdown struct so that modifications do not affect the original.

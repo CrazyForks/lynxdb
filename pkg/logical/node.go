@@ -9,9 +9,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/sema"
 )
 
-// ---------------------------------------------------------------------------
 // Node interface
-// ---------------------------------------------------------------------------
 
 // Node is a single operator in the logical plan tree.
 //
@@ -38,9 +36,7 @@ type Node interface {
 	String() string
 }
 
-// ---------------------------------------------------------------------------
 // Common base: stores a single input child.
-// ---------------------------------------------------------------------------
 
 // unaryNode is embedded by nodes with exactly one input child.
 type unaryNode struct {
@@ -69,9 +65,7 @@ func (u *unaryNode) inputSchema() []sema.Field {
 	return u.Input.Schema()
 }
 
-// ---------------------------------------------------------------------------
 // Scan
-// ---------------------------------------------------------------------------
 
 // SourcePattern is a single source reference in a Scan node.
 type SourcePattern struct {
@@ -177,9 +171,7 @@ func timeBoundsString(tb *TimeBounds) string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Empty
-// ---------------------------------------------------------------------------
 
 // Empty is a leaf node that produces zero rows. It is introduced by the
 // optimizer when a Filter is provably unsatisfiable (e.g. WHERE false or
@@ -196,9 +188,7 @@ func (n *Empty) SetChildren(cs []Node) { mustEmpty(cs) }
 func (n *Empty) Schema() []sema.Field  { return n.OutputSchema }
 func (n *Empty) String() string        { return "Empty()" }
 
-// ---------------------------------------------------------------------------
 // Filter
-// ---------------------------------------------------------------------------
 
 // Filter applies a boolean predicate to its input.
 type Filter struct {
@@ -211,9 +201,7 @@ func (n *Filter) String() string {
 	return "Filter(" + n.Expr.String() + ")"
 }
 
-// ---------------------------------------------------------------------------
 // Parse
-// ---------------------------------------------------------------------------
 
 // Capture is a typed capture field in a Parse node.
 type Capture struct {
@@ -271,9 +259,7 @@ func (n *Parse) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // Project (unified keep/drop/rename)
-// ---------------------------------------------------------------------------
 
 // ProjectAction classifies what a ProjectCol does.
 type ProjectAction uint8
@@ -326,9 +312,7 @@ func (n *Project) String() string {
 	return "Project(" + strings.Join(parts, ", ") + ")"
 }
 
-// ---------------------------------------------------------------------------
 // Extend
-// ---------------------------------------------------------------------------
 
 // Assignment is a name = expr pair.
 type Assignment struct {
@@ -364,9 +348,7 @@ func (n *Extend) String() string {
 	return "Extend(" + strings.Join(parts, ", ") + ")"
 }
 
-// ---------------------------------------------------------------------------
 // Aggregate
-// ---------------------------------------------------------------------------
 
 // Agg is a single aggregate expression.
 type Agg struct {
@@ -515,9 +497,7 @@ func (n *Aggregate) String() string {
 	return b.String()
 }
 
-// ---------------------------------------------------------------------------
 // TopK (fused sort + head)
-// ---------------------------------------------------------------------------
 
 // SortKey is a sort key with direction.
 type SortKey struct {
@@ -545,9 +525,7 @@ func (n *TopK) String() string {
 	return fmt.Sprintf("TopK(%d, %s)", n.K, strings.Join(keys, ", "))
 }
 
-// ---------------------------------------------------------------------------
 // Sort
-// ---------------------------------------------------------------------------
 
 // Sort orders its input by one or more keys.
 type Sort struct {
@@ -568,9 +546,7 @@ func (n *Sort) String() string {
 	return "Sort(" + strings.Join(keys, ", ") + ")"
 }
 
-// ---------------------------------------------------------------------------
 // Limit
-// ---------------------------------------------------------------------------
 
 // Limit returns the first (or last, if Tail) N rows.
 type Limit struct {
@@ -587,9 +563,7 @@ func (n *Limit) String() string {
 	return fmt.Sprintf("Limit(%d)", n.N)
 }
 
-// ---------------------------------------------------------------------------
 // Dedup
-// ---------------------------------------------------------------------------
 
 // Dedup keeps the first N rows per unique key combination.
 type Dedup struct {
@@ -603,9 +577,7 @@ func (n *Dedup) String() string {
 	return fmt.Sprintf("Dedup(%d, %s)", n.N, strings.Join(n.Fields, ", "))
 }
 
-// ---------------------------------------------------------------------------
 // Join
-// ---------------------------------------------------------------------------
 
 // Join combines the left input with a right sub-plan.
 type Join struct {
@@ -634,9 +606,7 @@ func (n *Join) String() string {
 	return fmt.Sprintf("Join(%s, on=[%s])", n.Type, strings.Join(n.On, ", "))
 }
 
-// ---------------------------------------------------------------------------
 // Union
-// ---------------------------------------------------------------------------
 
 // Union appends rows from N inputs. Schemas merge by name with null-padding.
 type Union struct {
@@ -671,9 +641,7 @@ func (n *Union) String() string {
 	return fmt.Sprintf("Union(%d inputs)", len(n.Inputs))
 }
 
-// ---------------------------------------------------------------------------
 // Explode
-// ---------------------------------------------------------------------------
 
 // Explode produces one row per array element.
 type Explode struct {
@@ -704,9 +672,7 @@ func (n *Explode) String() string {
 	return fmt.Sprintf("Explode(%s)", n.Field)
 }
 
-// ---------------------------------------------------------------------------
 // Describe
-// ---------------------------------------------------------------------------
 
 // Describe emits stream schema/coverage summary.
 type Describe struct {
@@ -725,9 +691,7 @@ func (n *Describe) Schema() []sema.Field {
 
 func (n *Describe) String() string { return "Describe()" }
 
-// ---------------------------------------------------------------------------
 // Helper (passthrough for investigation helpers)
-// ---------------------------------------------------------------------------
 
 // Helper is a passthrough node for investigation operators (patterns, compare,
 // outliers, sessionize, transaction, trace, topology, correlate, rollup,
@@ -758,9 +722,7 @@ func (n *Helper) String() string {
 	return "Helper(" + n.Name + ")"
 }
 
-// ---------------------------------------------------------------------------
 // Materialize
-// ---------------------------------------------------------------------------
 
 // Materialize creates a materialized view from its input.
 type Materialize struct {
@@ -775,9 +737,7 @@ func (n *Materialize) String() string {
 	return fmt.Sprintf("Materialize(%q)", n.Name)
 }
 
-// ---------------------------------------------------------------------------
 // Tee
-// ---------------------------------------------------------------------------
 
 // Tee sends a copy of the stream to a side sink.
 type Tee struct {
@@ -790,9 +750,7 @@ func (n *Tee) String() string {
 	return fmt.Sprintf("Tee(%q)", n.Sink)
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func mustEmpty(cs []Node) {
 	if len(cs) != 0 {
@@ -1019,14 +977,12 @@ func matchGlob(pattern, name string) bool {
 	return len(name) == 0
 }
 
-// ---------------------------------------------------------------------------
 // Lightweight expression type inference for Schema() computation.
 //
 // This is a best-effort inference that handles the statically-determinable
 // cases (literals, boolean/comparison/arithmetic ops, known functions). It
 // falls back to TypeAny for anything it cannot resolve -- this is safe because
 // TypeAny simply means "type not known at plan time".
-// ---------------------------------------------------------------------------
 
 // inferExprType infers the output type of an expression. schema is the
 // current input schema used to resolve field references.

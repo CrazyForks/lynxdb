@@ -35,9 +35,7 @@ func formatDiags(ds []parser.Diag) string {
 // (logical -> opt -> logical) prevents importing opt from this package's
 // internal tests.
 
-// ---------------------------------------------------------------------------
 // Fusion tests
-// ---------------------------------------------------------------------------
 
 func TestFusion_SortHead_TopK(t *testing.T) {
 	plan, diags := parseDesugarLower(t,
@@ -124,9 +122,7 @@ func TestFusion_TopSugar_SortHeadTopK(t *testing.T) {
 	assertNodeType[*TopK](t, plan.Root, "root should be TopK (fused from desugared top)")
 }
 
-// ---------------------------------------------------------------------------
 // CTE tests
-// ---------------------------------------------------------------------------
 
 func TestCTE_LetAndFromRef(t *testing.T) {
 	plan, diags := parseDesugarLower(t,
@@ -169,9 +165,7 @@ func TestCTE_JoinWithCTERef(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Round-trip safety: Lower is pure (input AST unchanged)
-// ---------------------------------------------------------------------------
 
 func TestLower_ASTUnchanged(t *testing.T) {
 	query := `from app[-1h] timeout status>=500 | where level == "ERROR" | stats count() by service, bin(_time, 5m) | sort -count | head 10`
@@ -191,9 +185,7 @@ func TestLower_ASTUnchanged(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Additional edge cases
-// ---------------------------------------------------------------------------
 
 func TestLower_NilQuery(t *testing.T) {
 	plan, diags := Lower(nil, Options{})
@@ -301,9 +293,7 @@ func TestLower_Tee(t *testing.T) {
 	assertNodeType[*Tee](t, plan.Root, "root should be Tee")
 }
 
-// ---------------------------------------------------------------------------
 // Plan.Dump basic sanity
-// ---------------------------------------------------------------------------
 
 func TestDump_BasicPipeline(t *testing.T) {
 	plan, _ := parseDesugarLower(t,
@@ -320,9 +310,7 @@ func TestDump_BasicPipeline(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Schema propagation
-// ---------------------------------------------------------------------------
 
 func TestSchema_StatsReplacesSchema(t *testing.T) {
 	plan, _ := parseDesugarLower(t,
@@ -350,9 +338,7 @@ func TestSchema_FilterPassesThrough(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func assertNoDiagErrors(t *testing.T, diags []Diag) {
 	t.Helper()
@@ -374,9 +360,7 @@ func assertNodeType[T Node](t *testing.T, n Node, msg string) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Compare lowering tests
-// ---------------------------------------------------------------------------
 
 func TestLower_Compare_WithoutAgg_EmitsDiagnostic(t *testing.T) {
 	q, pDiags := parser.Parse(`from main | compare previous 1h`)

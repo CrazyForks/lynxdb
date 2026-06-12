@@ -17,9 +17,7 @@ import (
 
 var update = flag.Bool("update", false, "update golden files")
 
-// ---------------------------------------------------------------------------
 // Permissive corpus catalog: types the fields the corpus uses.
-// ---------------------------------------------------------------------------
 
 var corpusCatalog = MapCatalog{
 	// Commonly used fields in the corpus.
@@ -84,9 +82,7 @@ var corpusCatalog = MapCatalog{
 	"failures": TypeInt,
 }
 
-// ---------------------------------------------------------------------------
 // Corpus test: parse+desugar+Analyze all 63 entries -> 0 error diags.
-// ---------------------------------------------------------------------------
 
 type corpusEntry struct {
 	ID       string   `json:"id"`
@@ -156,9 +152,7 @@ func TestCorpus_ZeroErrors(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Schema flow tests: verify OutputSchema per stage kind.
-// ---------------------------------------------------------------------------
 
 func parseAndAnalyze(t *testing.T, query string, cat Catalog) Result {
 	t.Helper()
@@ -417,9 +411,7 @@ func TestSchemaFlow_StatsBinTime(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Expression type inference tests.
-// ---------------------------------------------------------------------------
 
 func TestInfer_Literals(t *testing.T) {
 	tests := []struct {
@@ -564,9 +556,7 @@ func TestInfer_Ident_UnknownInOpenSchema(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Type error diagnostics.
-// ---------------------------------------------------------------------------
 
 func TestDiag_TypeMismatchComparison(t *testing.T) {
 	cat := MapCatalog{"status": TypeInt}
@@ -677,9 +667,7 @@ func TestDiag_NonBoolLogical(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Streaming safety tests.
-// ---------------------------------------------------------------------------
 
 func TestStreaming_WhereHead(t *testing.T) {
 	cat := MapCatalog{"status": TypeInt}
@@ -713,9 +701,7 @@ func TestStreaming_Dedup(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Golden error-message tests.
-// ---------------------------------------------------------------------------
 
 func TestGoldenErrors(t *testing.T) {
 	goldenDir := filepath.Join("..", "testdata", "golden", "errors")
@@ -831,9 +817,7 @@ func writeGoldenFile(t *testing.T, path, query, diags string) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Levenshtein tests.
-// ---------------------------------------------------------------------------
 
 func TestLevenshtein(t *testing.T) {
 	tests := []struct {
@@ -880,9 +864,7 @@ func TestDidYouMean(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Glob matching tests.
-// ---------------------------------------------------------------------------
 
 func TestGlobMatch(t *testing.T) {
 	tests := []struct {

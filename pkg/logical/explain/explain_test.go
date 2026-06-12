@@ -23,9 +23,7 @@ var update = flag.Bool("update", false, "update golden files")
 
 const goldenDir = "../testdata/golden/explain"
 
-// ---------------------------------------------------------------------------
 // Golden EXPLAIN tests — 8 representative queries
-// ---------------------------------------------------------------------------
 
 var explainCases = []struct {
 	Name  string
@@ -94,9 +92,7 @@ func TestExplainGolden(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // ANALYZE test — verify per-node row counts
-// ---------------------------------------------------------------------------
 
 func TestAnalyze_RowCounts(t *testing.T) {
 	// Build a 3-stage query: scan 10 rows -> filter ~5 rows -> limit 3
@@ -175,9 +171,7 @@ func TestAnalyze_RowCounts(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Render determinism — two renders must be identical
-// ---------------------------------------------------------------------------
 
 func TestRenderDeterminism(t *testing.T) {
 	query := `from nginx[-1h] timeout | stats count() by host`
@@ -190,9 +184,7 @@ func TestRenderDeterminism(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Nil/empty plan safety
-// ---------------------------------------------------------------------------
 
 func TestRenderNilPlan(t *testing.T) {
 	result := explain.Render(nil, explain.Info{}, nil)
@@ -210,9 +202,7 @@ func TestRenderEmptyRoot(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func preparePlan(t *testing.T, query string) (*logical.Plan, explain.Info) {
 	t.Helper()

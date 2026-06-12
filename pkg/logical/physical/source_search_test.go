@@ -18,9 +18,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/storage/segment"
 )
 
-// ---------------------------------------------------------------------------
 // Test helpers
-// ---------------------------------------------------------------------------
 
 // drainWithStats runs the full pipeline with scan stats collection.
 func drainWithStats(t *testing.T, query string, events map[string][]*event.Event) ([]map[string]event.Value, *ScanStats) {
@@ -164,9 +162,7 @@ func findPartFiles(t *testing.T, dir string) []string {
 	return files
 }
 
-// ---------------------------------------------------------------------------
 // Task 1: Ephemeral pushdown mapping verification
-// ---------------------------------------------------------------------------
 
 func TestEphemeralPushdown_RawTerms(t *testing.T) {
 	// has(_raw, "needle") should filter to only events containing the token "needle".
@@ -227,9 +223,7 @@ func TestEphemeralPushdown_FieldPredicates(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Task 2: Skip-effectiveness tests (Part-backed)
-// ---------------------------------------------------------------------------
 
 func TestPartSource_SkipEffectiveness(t *testing.T) {
 	// Create multiple parts with controlled content:
@@ -351,9 +345,7 @@ func TestPartSource_SkipEffectiveness_FullScan(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Task 3: Case-rule verification (end-to-end)
-// ---------------------------------------------------------------------------
 
 func TestCaseRule_HasIsCaseInsensitive(t *testing.T) {
 	// has() is CI: searching for "error" should match "ERROR", "Error", "error".
@@ -481,9 +473,7 @@ func TestCaseRule_GlobIsCaseSensitive(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Task 4: Verify-stays contract test
-// ---------------------------------------------------------------------------
 
 func TestVerifyStays_IndexCandidateNotInRow(t *testing.T) {
 	// A term that appears in a segment but NOT in every row of that segment.
@@ -565,9 +555,7 @@ func TestVerifyStays_PartBacked(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Benchmark: Task 5 — Search-tier benchmark
-// ---------------------------------------------------------------------------
 
 func BenchmarkSearchTier_Has(b *testing.B) {
 	events := generateBenchEvents(100_000)
@@ -659,9 +647,7 @@ func runBenchQuery(b *testing.B, query string, source func(*logical.Scan) (pipel
 	}
 }
 
-// ---------------------------------------------------------------------------
 // mkEvent / mkEventWithField helpers
-// ---------------------------------------------------------------------------
 
 func mkEvent(raw string) *event.Event {
 	ev := event.NewEvent(time.Now(), raw)

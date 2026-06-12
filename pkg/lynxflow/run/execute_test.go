@@ -9,9 +9,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 func makeRawEvents(rawLines ...string) map[string][]*event.Event {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
@@ -24,9 +22,7 @@ func makeRawEvents(rawLines ...string) map[string][]*event.Event {
 	return map[string][]*event.Event{"main": events}
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse json on_error=propagate (default)
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_MixedValidity_Propagate(t *testing.T) {
 	events := makeRawEvents(
@@ -65,9 +61,7 @@ func TestExecute_ParseJSON_MixedValidity_Propagate(t *testing.T) {
 	assertHasErrorDetail(t, rows[3], 3)
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse json on_error=propagate — _error string starts with "parse:json:"
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_Propagate_ErrorFormat(t *testing.T) {
 	events := makeRawEvents(`not json`)
@@ -94,10 +88,8 @@ func TestExecute_ParseJSON_Propagate_ErrorFormat(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse json on_error=propagate — _error_detail is an object with
 // stage, format, code, message keys per spec (RFC-002 7.3).
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_Propagate_ErrorDetailShape(t *testing.T) {
 	events := makeRawEvents(`not json at all`)
@@ -137,9 +129,7 @@ func TestExecute_ParseJSON_Propagate_ErrorDetailShape(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse json on_error=drop
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_MixedValidity_Drop(t *testing.T) {
 	events := makeRawEvents(
@@ -165,9 +155,7 @@ func TestExecute_ParseJSON_MixedValidity_Drop(t *testing.T) {
 	assertStringField(t, rows[1], "name", "bob", 1)
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse json on_error=null
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_MixedValidity_Null(t *testing.T) {
 	events := makeRawEvents(
@@ -206,9 +194,7 @@ func TestExecute_ParseJSON_MixedValidity_Null(t *testing.T) {
 	assertStringField(t, rows[2], "name", "bob", 2)
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse json on_error=strict
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_MixedValidity_Strict(t *testing.T) {
 	events := makeRawEvents(
@@ -229,9 +215,7 @@ func TestExecute_ParseJSON_MixedValidity_Strict(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse json with downstream where on _error
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseJSON_FilterOnError(t *testing.T) {
 	events := makeRawEvents(
@@ -261,9 +245,7 @@ func TestExecute_ParseJSON_FilterOnError(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: parse first_of(json, logfmt) on_error=propagate
-// ---------------------------------------------------------------------------
 
 func TestExecute_ParseFirstOf_MixedFormats(t *testing.T) {
 	events := makeRawEvents(
@@ -306,9 +288,7 @@ func TestExecute_ParseFirstOf_MixedFormats(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Assertion helpers
-// ---------------------------------------------------------------------------
 
 func assertNoError(t *testing.T, row map[string]event.Value, rowIdx int) {
 	t.Helper()
@@ -347,9 +327,7 @@ func assertStringField(t *testing.T, row map[string]event.Value, field, want str
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: materialize in ephemeral mode returns a clear error
-// ---------------------------------------------------------------------------
 
 func TestExecute_Materialize_EphemeralError(t *testing.T) {
 	events := makeRawEvents(`{"level":"error"}`, `{"level":"info"}`)
@@ -371,9 +349,7 @@ func TestExecute_Materialize_EphemeralError(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: compare requires aggregated pipeline
-// ---------------------------------------------------------------------------
 
 func TestExecute_Compare_RequiresAggregation(t *testing.T) {
 	events := makeRawEvents(`{"level":"error"}`)
@@ -389,9 +365,7 @@ func TestExecute_Compare_RequiresAggregation(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: compare with aggregation executes end-to-end
-// ---------------------------------------------------------------------------
 
 func TestExecute_Compare_WithAggregation(t *testing.T) {
 	// Create two windows of events:

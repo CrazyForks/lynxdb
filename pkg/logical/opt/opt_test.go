@@ -18,9 +18,7 @@ import (
 
 var update = flag.Bool("update", false, "update golden files")
 
-// ---------------------------------------------------------------------------
 // Helper: parse expression, optimize, format
-// ---------------------------------------------------------------------------
 
 func parseExpr(t *testing.T, input string) ast.Expr {
 	t.Helper()
@@ -73,9 +71,7 @@ func parseDesugarLower(t *testing.T, query string) *logical.Plan {
 	return plan
 }
 
-// ---------------------------------------------------------------------------
 // Test: const-fold-arith
-// ---------------------------------------------------------------------------
 
 func TestConstFoldArith(t *testing.T) {
 	tests := []struct {
@@ -152,9 +148,7 @@ func TestConstFoldArith(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: const-fold-compare
-// ---------------------------------------------------------------------------
 
 func TestConstFoldCompare(t *testing.T) {
 	tests := []struct {
@@ -217,9 +211,7 @@ func TestConstFoldCompare(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: bool-simplify
-// ---------------------------------------------------------------------------
 
 func TestBoolSimplify(t *testing.T) {
 	tests := []struct {
@@ -263,9 +255,7 @@ func TestBoolSimplify(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: coalesce-fold
-// ---------------------------------------------------------------------------
 
 func TestCoalesceFold(t *testing.T) {
 	tests := []struct {
@@ -290,9 +280,7 @@ func TestCoalesceFold(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: if-fold
-// ---------------------------------------------------------------------------
 
 func TestIfFold(t *testing.T) {
 	tests := []struct {
@@ -319,9 +307,7 @@ func TestIfFold(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: cmp-normalize
-// ---------------------------------------------------------------------------
 
 func TestCmpNormalize(t *testing.T) {
 	tests := []struct {
@@ -354,9 +340,7 @@ func TestCmpNormalize(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: paren-strip
-// ---------------------------------------------------------------------------
 
 func TestParenStrip(t *testing.T) {
 	tests := []struct {
@@ -380,9 +364,7 @@ func TestParenStrip(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: plan-level (full query pipeline)
-// ---------------------------------------------------------------------------
 
 func TestPlanLevel(t *testing.T) {
 	tests := []struct {
@@ -434,9 +416,7 @@ func TestPlanLevel(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: fixed-point convergence
-// ---------------------------------------------------------------------------
 
 func TestFixedPointConvergence(t *testing.T) {
 	// Expression that requires multiple passes:
@@ -460,9 +440,7 @@ func TestFixedPointMaxPasses(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: purity (original plan unchanged)
-// ---------------------------------------------------------------------------
 
 func TestPurityOriginalPlanUnchanged(t *testing.T) {
 	// Parse an expression, capture its string form, optimize in a plan, then
@@ -493,9 +471,7 @@ func TestPurityOriginalPlanUnchanged(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: determinism
-// ---------------------------------------------------------------------------
 
 func TestDeterminism(t *testing.T) {
 	query := "from main | where 2 + 3 == 5 and true or false"
@@ -522,9 +498,7 @@ func TestDeterminism(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: Applied reporting
-// ---------------------------------------------------------------------------
 
 func TestAppliedReporting(t *testing.T) {
 	_, applied := optimizeExprApplied(t, "2 + 3")
@@ -539,9 +513,7 @@ func TestAppliedReporting(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Test: walkExprs covers Aggregate, Sort, TopK, Helper nodes
-// ---------------------------------------------------------------------------
 
 func TestWalkExprsAggregate(t *testing.T) {
 	// Test bin duration folding inside Aggregate group key.
@@ -578,9 +550,7 @@ func TestWalkExprsSort(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Corpus golden plan tests (optimized plans)
-// ---------------------------------------------------------------------------
 
 type corpusEntry struct {
 	ID       string   `json:"id"`

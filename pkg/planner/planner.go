@@ -740,9 +740,7 @@ func detectNodeResultType(n logical.Node) string {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // ViewCatalog adapter: bridges planner.ViewCatalog to opt.ViewCatalog
-// ---------------------------------------------------------------------------
 
 // viewCatalogAdapter wraps a planner.ViewCatalog and produces opt.ViewInfo
 // by analyzing each view's query with AnalyzeLynxFlow.

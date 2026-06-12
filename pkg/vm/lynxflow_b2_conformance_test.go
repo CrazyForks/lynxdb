@@ -25,9 +25,7 @@ import (
 	lfast "github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
 )
 
-// ---------------------------------------------------------------------------
 // Helper: lambda constructor
-// ---------------------------------------------------------------------------
 
 func lambda(param string, body lfast.Expr) *lfast.Lambda {
 	return &lfast.Lambda{Param: param, Body: body}
@@ -54,9 +52,7 @@ func assertObject(t *testing.T, v event.Value, label string) map[string]event.Va
 	return v.AsObject()
 }
 
-// ---------------------------------------------------------------------------
 // Lambda: any()
-// ---------------------------------------------------------------------------
 
 func TestB2_Any_Basic(t *testing.T) {
 	// any([1, 2, 3], x -> x > 2) => true
@@ -98,9 +94,7 @@ func TestB2_Any_NullArray(t *testing.T) {
 	assertNull(t, result, "any(null, x->x>0)")
 }
 
-// ---------------------------------------------------------------------------
 // 3VL any/all matrices
-// ---------------------------------------------------------------------------
 
 func TestB2_Any_3VL_Matrix(t *testing.T) {
 	// any with null elements:
@@ -180,9 +174,7 @@ func TestB2_All_EmptyArray(t *testing.T) {
 	assertBool(t, result, true, "all([], x->x)")
 }
 
-// ---------------------------------------------------------------------------
 // Lambda: filter()
-// ---------------------------------------------------------------------------
 
 func TestB2_Filter_Basic(t *testing.T) {
 	// filter([1, 2, 3, 4, 5], x -> x > 3) => [4, 5]
@@ -241,9 +233,7 @@ func TestB2_Filter_ObjectsInArray(t *testing.T) {
 	assertString(t, obj["level"], "error", "filter objects[0].level")
 }
 
-// ---------------------------------------------------------------------------
 // Lambda: map()
-// ---------------------------------------------------------------------------
 
 func TestB2_Map_Basic(t *testing.T) {
 	// map([1, 2, 3], x -> x * 2) => [2, 4, 6]
@@ -293,9 +283,7 @@ func TestB2_Map_ExtractFromObjects(t *testing.T) {
 	assertInt(t, arr[1], 2, "map objects[1]")
 }
 
-// ---------------------------------------------------------------------------
 // Lambda: nested lambdas
-// ---------------------------------------------------------------------------
 
 func TestB2_Nested_Lambda_Any_Any(t *testing.T) {
 	// any(tags, t -> any(t.subtags, s -> s == "x"))
@@ -378,9 +366,7 @@ func TestB2_Nested_Lambda_Param_Shadowing(t *testing.T) {
 	assertInt(t, inner1[1], 120, "shadowing[1][1]")
 }
 
-// ---------------------------------------------------------------------------
 // Array functions: slice
-// ---------------------------------------------------------------------------
 
 func TestB2_Slice(t *testing.T) {
 	tests := []struct {
@@ -419,9 +405,7 @@ func TestB2_Slice(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Array functions: array_concat
-// ---------------------------------------------------------------------------
 
 func TestB2_ArrayConcat(t *testing.T) {
 	// array_concat([1, 2], [3, 4]) => [1, 2, 3, 4]
@@ -450,9 +434,7 @@ func TestB2_ArrayConcat_Three(t *testing.T) {
 	assertInt(t, arr[2], 3, "concat3[2]")
 }
 
-// ---------------------------------------------------------------------------
 // Array functions: array_distinct
-// ---------------------------------------------------------------------------
 
 func TestB2_ArrayDistinct_Ints(t *testing.T) {
 	// array_distinct([1, 2, 2, 3, 1]) => [1, 2, 3]
@@ -490,9 +472,7 @@ func TestB2_ArrayDistinct_Empty(t *testing.T) {
 	assertArray(t, result, 0, "distinct empty")
 }
 
-// ---------------------------------------------------------------------------
 // Array functions: array_sort
-// ---------------------------------------------------------------------------
 
 func TestB2_ArraySort_Ints(t *testing.T) {
 	// array_sort([3, 1, 2]) => [1, 2, 3]
@@ -536,9 +516,7 @@ func TestB2_ArraySort_Empty(t *testing.T) {
 	assertArray(t, result, 0, "sort empty")
 }
 
-// ---------------------------------------------------------------------------
 // Array functions: flatten
-// ---------------------------------------------------------------------------
 
 func TestB2_Flatten(t *testing.T) {
 	// flatten([[1, 2], [3], 4]) => [1, 2, 3, 4]
@@ -583,9 +561,7 @@ func TestB2_Flatten_Empty(t *testing.T) {
 	assertArray(t, result, 0, "flatten empty")
 }
 
-// ---------------------------------------------------------------------------
 // Object functions: keys
-// ---------------------------------------------------------------------------
 
 func TestB2_Keys(t *testing.T) {
 	// keys({b: 2, a: 1}) => ["a", "b"] (sorted)
@@ -604,9 +580,7 @@ func TestB2_Keys_Null(t *testing.T) {
 	assertNull(t, result, "keys(null)")
 }
 
-// ---------------------------------------------------------------------------
 // Object functions: values
-// ---------------------------------------------------------------------------
 
 func TestB2_Values(t *testing.T) {
 	// values({b: 2, a: 1}) => [1, 2] (key-sorted order)
@@ -619,9 +593,7 @@ func TestB2_Values(t *testing.T) {
 	assertInt(t, arr[1], 2, "values[1]")
 }
 
-// ---------------------------------------------------------------------------
 // Object functions: merge
-// ---------------------------------------------------------------------------
 
 func TestB2_Merge(t *testing.T) {
 	// merge({a: 1, b: 2}, {b: 3, c: 4}) => {a: 1, b: 3, c: 4}
@@ -645,9 +617,7 @@ func TestB2_Merge_Null(t *testing.T) {
 	assertNull(t, result, "merge with null")
 }
 
-// ---------------------------------------------------------------------------
 // Object functions: has_key
-// ---------------------------------------------------------------------------
 
 func TestB2_HasKey(t *testing.T) {
 	expr := call("has_key",
@@ -671,9 +641,7 @@ func TestB2_HasKey_Null(t *testing.T) {
 	assertNull(t, result, "has_key(null)")
 }
 
-// ---------------------------------------------------------------------------
 // url_parse goldens
-// ---------------------------------------------------------------------------
 
 func TestB2_URLParse(t *testing.T) {
 	expr := call("url_parse", litStr("https://example.com:8080/api/v1?key=val&foo=bar#section"))
@@ -705,9 +673,7 @@ func TestB2_URLParse_Null(t *testing.T) {
 	assertNull(t, result, "url_parse(null)")
 }
 
-// ---------------------------------------------------------------------------
 // ip_parse goldens
-// ---------------------------------------------------------------------------
 
 func TestB2_IPParse_V4Private(t *testing.T) {
 	expr := call("ip_parse", litStr("192.168.1.1"))
@@ -755,9 +721,7 @@ func TestB2_IPParse_Null(t *testing.T) {
 	assertNull(t, result, "ip_parse(null)")
 }
 
-// ---------------------------------------------------------------------------
 // from_json produces native nested values
-// ---------------------------------------------------------------------------
 
 func TestB2_FromJSON_Object(t *testing.T) {
 	expr := call("from_json", litStr(`{"name": "test", "count": 42}`))
@@ -840,9 +804,7 @@ func TestB2_FromJSON_Scalar(t *testing.T) {
 	assertString(t, result4, "hello", "from_json scalar string")
 }
 
-// ---------------------------------------------------------------------------
 // x in array-field
-// ---------------------------------------------------------------------------
 
 func TestB2_InArrayField(t *testing.T) {
 	// x in tags where tags is an array field
@@ -902,9 +864,7 @@ func TestB2_InArrayField_IntArray(t *testing.T) {
 	assertBool(t, result2, false, "302 in codes")
 }
 
-// ---------------------------------------------------------------------------
 // Lambda with field access from the row
-// ---------------------------------------------------------------------------
 
 func TestB2_Lambda_AccessesRowFields(t *testing.T) {
 	// filter([1, 2, 3, 4, 5], x -> x > threshold) where threshold is a field
@@ -921,9 +881,7 @@ func TestB2_Lambda_AccessesRowFields(t *testing.T) {
 	assertInt(t, arr[1], 5, "filter field[1]")
 }
 
-// ---------------------------------------------------------------------------
 // Lambda: non-lambda arg error
-// ---------------------------------------------------------------------------
 
 func TestB2_Lambda_NonLambdaArg_Error(t *testing.T) {
 	// any(arr, 42) should fail with a compile error
@@ -934,9 +892,7 @@ func TestB2_Lambda_NonLambdaArg_Error(t *testing.T) {
 	}
 }
 
-// ---------------------------------------------------------------------------
 // Assertion count summary
-// ---------------------------------------------------------------------------
 // TestB2_Any_Basic: 1
 // TestB2_Any_NoMatch: 1
 // TestB2_Any_EmptyArray: 1

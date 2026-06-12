@@ -3,11 +3,14 @@ package index
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"sort"
 
 	"github.com/RoaringBitmap/roaring"
 	"github.com/blevesearch/vellum"
+
+	"github.com/lynxbase/lynxdb/internal/glob"
 )
 
 const (
@@ -210,6 +213,84 @@ func (si *SerializedIndex) SearchField(field, value string) (*roaring.Bitmap, er
 	key := field + "\x00" + value
 
 	return si.Search(key)
+}
+
+// maxGlobTermExpansion bounds how many term-dictionary entries a single glob
+// pattern may expand to before SearchGlob gives up. Beyond this, OR-ing
+// posting lists costs more than scanning the segment, and the caller falls
+// back to row-level verification (ok=false).
+const maxGlobTermExpansion = 4096
+
+// SearchGlob returns event IDs whose _raw tokens match the given glob
+// pattern (lowercased; the index stores lowercased tokens). It expands the
+// pattern against the FST term dictionary — bounded by the pattern's literal
+// prefix — and ORs the posting lists of matching terms.
+//
+// ok=false means the index cannot answer (no FST, the pattern expanded past
+// maxGlobTermExpansion, or an iterator error): the caller must NOT prune and
+// should fall back to scanning. ok=true with an empty bitmap is a proof that
+// no event matches.
+func (si *SerializedIndex) SearchGlob(pattern string) (bm *roaring.Bitmap, ok bool, err error) {
+	if si.fst == nil {
+		// Empty index: no terms were indexed at all, so no token can match.
+		return roaring.New(), true, nil
+	}
+
+	re, err := glob.Compile(pattern, false)
+	if err != nil {
+		return nil, false, fmt.Errorf("index: glob pattern %q: %w", pattern, err)
+	}
+
+	// Bound the FST scan to keys sharing the pattern's literal prefix.
+	var start, end []byte
+	if prefix := glob.LiteralPrefix(pattern); prefix != "" {
+		start = []byte(prefix)
+		end = prefixSuccessor(prefix)
+	}
+
+	result := roaring.New()
+	matched := 0
+
+	it, iterErr := si.fst.Iterator(start, end)
+	for iterErr == nil {
+		key, offset := it.Current()
+		// Composite field\x00value keys are not _raw tokens; a glob's '*'
+		// could otherwise match across the separator and produce false
+		// postings.
+		if bytes.IndexByte(key, 0) < 0 && re.Match(key) {
+			matched++
+			if matched > maxGlobTermExpansion {
+				return nil, false, nil
+			}
+			posting, pErr := si.readPosting(offset)
+			if pErr != nil {
+				return nil, false, pErr
+			}
+			result.Or(posting)
+		}
+		iterErr = it.Next()
+	}
+	if !errors.Is(iterErr, vellum.ErrIteratorDone) {
+		return nil, false, fmt.Errorf("index: glob FST iteration: %w", iterErr)
+	}
+
+	return result, true, nil
+}
+
+// prefixSuccessor returns the smallest byte slice greater than every key with
+// the given prefix, for use as an exclusive iteration upper bound. Trailing
+// 0xFF bytes cannot be incremented and are trimmed; an all-0xFF prefix has no
+// successor (nil = unbounded).
+func prefixSuccessor(prefix string) []byte {
+	for i := len(prefix) - 1; i >= 0; i-- {
+		if prefix[i] != 0xFF {
+			succ := make([]byte, i+1)
+			copy(succ, prefix[:i+1])
+			succ[i]++
+			return succ
+		}
+	}
+	return nil
 }
 
 // Contains returns true if the given term exists in the index.

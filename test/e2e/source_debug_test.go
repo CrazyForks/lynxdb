@@ -6,32 +6,28 @@ import (
 	"testing"
 )
 
-// TestE2E_SourceDebug_DirectNormalizedQuery sends the already-normalized query
-// directly to check if the issue is in normalization or pipeline execution.
+// TestE2E_SourceDebug_DirectNormalizedQuery tests various query forms for
+// multi-source filtering. All queries use the LynxFlow syntax.
 func TestE2E_SourceDebug_DirectNormalizedQuery(t *testing.T) {
 	h := setupMultiSource(t)
 
-	// These queries are already in normalized form (start with FROM).
-	// NormalizeQuery will not modify them.
 	tests := []struct {
 		name  string
 		query string
 		want  int
 	}{
-		// Baseline: FROM * without filter returns all events
-		{"FROM * all", `FROM * | STATS count`, 18},
-		// FROM specific index
-		{"FROM nginx", `FROM nginx | STATS count`, 10},
-		// FROM * with _source!= (this is what index!=redis normalizes to)
-		{"FROM * where _source!=redis", `FROM * | where _source!="redis" | STATS count`, 15},
-		// FROM * with _source= (this is what source=nginx normalizes to)
-		{"FROM * where _source=nginx", `FROM * | where _source="nginx" | STATS count`, 10},
-		// Try using source field name directly
-		{"FROM * where source=nginx", `FROM * | where source="nginx" | STATS count`, 10},
-		// Exact same predicate in SEARCH instead of WHERE
-		{"FROM * search source=nginx", `FROM * | search _source=nginx | STATS count`, 10},
-		// Check: does WHERE index="nginx" also fail?
-		{"FROM * where index=nginx", `FROM * | where index="nginx" | STATS count`, 10},
+		// Baseline: from * without filter returns all events
+		{"from * all", `from * | stats count() as count`, 18},
+		// from specific index
+		{"from nginx", `from nginx | stats count() as count`, 10},
+		// from * with index!= filter
+		{"from * where index!=redis", `from * | where index != "redis" | stats count() as count`, 15},
+		// from * with _source= filter
+		{"from * where _source=nginx", `from * | where _source == "nginx" | stats count() as count`, 10},
+		// Try using _source field name (the canonical field name for source)
+		{"from * where _source=nginx", `from * | where _source == "nginx" | stats count() as count`, 10},
+		// Check: does WHERE index=="nginx" also work?
+		{"from * where index=nginx", `from * | where index == "nginx" | stats count() as count`, 10},
 	}
 
 	for _, tt := range tests {

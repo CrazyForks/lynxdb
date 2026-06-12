@@ -15,7 +15,7 @@ func TestE2E_Views_CRUD(t *testing.T) {
 
 	view, err := h.Client().CreateView(ctx, client.ViewInput{
 		Name: "mv_test_hosts",
-		Q:    `FROM main | stats count by host`,
+		Q:    `from main | stats count() by host`,
 	})
 	if err != nil {
 		t.Fatalf("CreateView: %v", err)
@@ -79,7 +79,7 @@ func TestE2E_Views_CreateDuplicate_ReturnsAlreadyExists(t *testing.T) {
 
 	input := client.ViewInput{
 		Name: "mv_dup_test",
-		Q:    `FROM main | stats count`,
+		Q:    `from main | stats count() as count`,
 	}
 
 	_, err := h.Client().CreateView(ctx, input)

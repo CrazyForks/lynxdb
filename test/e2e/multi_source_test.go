@@ -45,51 +45,51 @@ func setupMultiSource(t *testing.T) *Harness {
 	return h
 }
 
-// index= queries
+// index= queries -> from <index> queries
 
 func TestE2E_MultiSource_IndexEquals_ReturnsOnlyMatchingSource(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`index=nginx | STATS count`)
+	r := h.MustQuery(`from nginx | stats count() as count`)
 	requireAggValue(t, r, "count", 10)
 }
 
 func TestE2E_MultiSource_IndexEquals_DifferentSource(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`index=postgres | STATS count`)
+	r := h.MustQuery(`from postgres | stats count() as count`)
 	requireAggValue(t, r, "count", 5)
 }
 
 func TestE2E_MultiSource_IndexStar_ReturnsAll(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`index=* | STATS count`)
+	r := h.MustQuery(`from * | stats count() as count`)
 	requireAggValue(t, r, "count", 18)
 }
 
-// index IN (...) queries
+// index IN (...) queries -> from a, b
 
 func TestE2E_MultiSource_IndexIN_ReturnsSubset(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`index IN ("nginx", "postgres") | STATS count`)
+	r := h.MustQuery(`from nginx, postgres | stats count() as count`)
 	requireAggValue(t, r, "count", 15)
 }
 
 func TestE2E_MultiSource_IndexIN_SingleValue(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`index IN ("redis") | STATS count`)
+	r := h.MustQuery(`from redis | stats count() as count`)
 	requireAggValue(t, r, "count", 3)
 }
 
-// index!= queries
+// index!= queries -> from * | where index != "..."
 
 func TestE2E_MultiSource_IndexNotEquals_ExcludesSource(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`index!=redis | STATS count`)
+	r := h.MustQuery(`from * | where index != "redis" | stats count() as count`)
 	got := GetInt(r, "count")
 	// Should exclude redis (3 events), so at least nginx (10) + postgres (5).
 	if got < 15 {
@@ -102,30 +102,30 @@ func TestE2E_MultiSource_IndexNotEquals_ExcludesSource(t *testing.T) {
 func TestE2E_MultiSource_FROM_MultipleIndexes(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`FROM nginx, postgres | STATS count`)
+	r := h.MustQuery(`from nginx, postgres | stats count() as count`)
 	requireAggValue(t, r, "count", 15)
 }
 
 func TestE2E_MultiSource_FROM_Star_ReturnsAll(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`FROM * | STATS count`)
+	r := h.MustQuery(`from * | stats count() as count`)
 	requireAggValue(t, r, "count", 18)
 }
 
 func TestE2E_MultiSource_FROM_SingleIndex(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`FROM redis | STATS count`)
+	r := h.MustQuery(`from redis | stats count() as count`)
 	requireAggValue(t, r, "count", 3)
 }
 
-// stats count by index
+// stats count() as count by index
 
 func TestE2E_MultiSource_StatsCountByIndex(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`FROM * | STATS count BY index`)
+	r := h.MustQuery(`from * | stats count() as count by index`)
 	rows := AggRows(r)
 	if len(rows) < 3 {
 		t.Fatalf("expected at least 3 groups for stats count by index, got %d", len(rows))
@@ -154,30 +154,30 @@ func TestE2E_MultiSource_StatsCountByIndex(t *testing.T) {
 func TestE2E_MultiSource_FROM_ScopeIsolation(t *testing.T) {
 	h := setupMultiSource(t)
 
-	// FROM nginx, postgres should return exactly 15 (10+5), not 18.
-	r := h.MustQuery(`FROM nginx, postgres | STATS count`)
+	// from nginx, postgres should return exactly 15 (10+5), not 18.
+	r := h.MustQuery(`from nginx, postgres | stats count() as count`)
 	requireAggValue(t, r, "count", 15)
 
-	// FROM redis should return exactly 3, not events from other sources.
-	r2 := h.MustQuery(`FROM redis | STATS count`)
+	// from redis should return exactly 3, not events from other sources.
+	r2 := h.MustQuery(`from redis | stats count() as count`)
 	requireAggValue(t, r2, "count", 3)
 
-	// Single source via FROM should match single source via index=.
-	r3 := h.MustQuery(`FROM nginx | STATS count`)
-	r4 := h.MustQuery(`index=nginx | STATS count`)
+	// Single source via from should match single source via from.
+	r3 := h.MustQuery(`from nginx | stats count() as count`)
+	r4 := h.MustQuery(`from nginx | stats count() as count`)
 	fromCount := GetInt(r3, "count")
 	indexCount := GetInt(r4, "count")
 	if fromCount != indexCount {
-		t.Errorf("FROM nginx (%d) != index=nginx (%d)", fromCount, indexCount)
+		t.Errorf("from nginx (%d) != from nginx (%d)", fromCount, indexCount)
 	}
 }
 
-// source= queries (alias for index=)
+// source= queries -> from <source>
 
 func TestE2E_MultiSource_SourceEquals(t *testing.T) {
 	h := setupMultiSource(t)
 
-	r := h.MustQuery(`source=nginx | STATS count`)
+	r := h.MustQuery(`from nginx | stats count() as count`)
 	requireAggValue(t, r, "count", 10)
 }
 
@@ -187,7 +187,7 @@ func TestE2E_MultiSource_Explain_ReportsScope(t *testing.T) {
 	h := setupMultiSource(t)
 	ctx := context.Background()
 
-	result, err := h.Client().Explain(ctx, `FROM nginx, postgres | STATS count`)
+	result, err := h.Client().Explain(ctx, `from nginx, postgres | stats count() as count`)
 	if err != nil {
 		t.Fatalf("Explain: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestE2E_MultiSource_NonexistentSource_ReturnsResults(t *testing.T) {
 	h := setupMultiSource(t)
 
 	// Query a nonexistent source - should return 0 results without error.
-	r := h.MustQuery(`FROM nonexistent | STATS count`)
+	r := h.MustQuery(`from nonexistent | stats count() as count`)
 	got := GetInt(r, "count")
 	if got != 0 {
 		t.Errorf("expected 0 events from nonexistent source, got %d", got)
@@ -254,33 +254,33 @@ func setupGlobIndexes(t *testing.T) *Harness {
 func TestE2E_GlobIndex_FROM_LogsStar(t *testing.T) {
 	h := setupGlobIndexes(t)
 
-	// FROM logs* should match logs-web(10) + logs-api(8) + logs-db(5) = 23
-	r := h.MustQuery(`FROM logs* | STATS count`)
+	// from logs* should match logs-web(10) + logs-api(8) + logs-db(5) = 23
+	r := h.MustQuery(`from logs* | stats count() as count`)
 	requireAggValue(t, r, "count", 23)
 }
 
 func TestE2E_GlobIndex_FROM_MetricsStar(t *testing.T) {
 	h := setupGlobIndexes(t)
 
-	// FROM metrics* should match only metrics-cpu(3)
-	r := h.MustQuery(`FROM metrics* | STATS count`)
+	// from metrics* should match only metrics-cpu(3)
+	r := h.MustQuery(`from metrics* | stats count() as count`)
 	requireAggValue(t, r, "count", 3)
 }
 
 func TestE2E_GlobIndex_FROM_Star_All(t *testing.T) {
 	h := setupGlobIndexes(t)
 
-	// FROM * should match all indexes = 10+8+5+3 = 26
-	r := h.MustQuery(`FROM * | STATS count`)
+	// from * should match all indexes = 10+8+5+3 = 26
+	r := h.MustQuery(`from * | stats count() as count`)
 	requireAggValue(t, r, "count", 26)
 }
 
 func TestE2E_GlobIndex_StatsCountByIndex_DiffersFromSource(t *testing.T) {
 	h := setupGlobIndexes(t)
 
-	// stats count by index should group by physical partition (logs-web, logs-api, etc.)
+	// stats count() as count by index should group by physical partition (logs-web, logs-api, etc.)
 	// NOT by source (nginx-access, api-gateway, etc.)
-	r := h.MustQuery(`FROM * | STATS count BY index`)
+	r := h.MustQuery(`from * | stats count() as count by index`)
 	rows := AggRows(r)
 	if len(rows) < 4 {
 		t.Fatalf("expected at least 4 index groups, got %d", len(rows))
@@ -317,16 +317,16 @@ func TestE2E_GlobIndex_StatsCountByIndex_DiffersFromSource(t *testing.T) {
 func TestE2E_GlobIndex_IndexEqualsGlob(t *testing.T) {
 	h := setupGlobIndexes(t)
 
-	// index=logs* should match logs-web(10) + logs-api(8) + logs-db(5) = 23
-	r := h.MustQuery(`index=logs* | STATS count`)
+	// from logs* should match logs-web(10) + logs-api(8) + logs-db(5) = 23
+	r := h.MustQuery(`from logs* | stats count() as count`)
 	requireAggValue(t, r, "count", 23)
 }
 
 func TestE2E_GlobIndex_FROM_CommaSeparated(t *testing.T) {
 	h := setupGlobIndexes(t)
 
-	// FROM logs-web, logs-db should match 10+5 = 15
-	r := h.MustQuery(`FROM logs-web, logs-db | STATS count`)
+	// from logs-web, logs-db should match 10+5 = 15
+	r := h.MustQuery(`from logs-web, logs-db | stats count() as count`)
 	requireAggValue(t, r, "count", 15)
 }
 
@@ -335,7 +335,7 @@ func TestE2E_GlobIndex_SourceFieldNotConfusedWithIndex(t *testing.T) {
 
 	// Querying by _source (the logical source tag) should use the Source value,
 	// not the Index value. Index=logs-web has Source=nginx-access.
-	r := h.MustQuery(`FROM logs-web | STATS count BY _source`)
+	r := h.MustQuery(`from logs-web | stats count() as count by _source`)
 	rows := AggRows(r)
 	if len(rows) == 0 {
 		t.Fatal("expected at least 1 row for stats by _source")

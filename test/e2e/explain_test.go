@@ -11,7 +11,7 @@ func TestE2E_Explain_ValidQuery_IsValid(t *testing.T) {
 	h := NewHarness(t)
 	ctx := context.Background()
 
-	result, err := h.Client().Explain(ctx, `FROM main | stats count`)
+	result, err := h.Client().Explain(ctx, `from main | stats count()`)
 	if err != nil {
 		t.Fatalf("Explain: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestE2E_Explain_ComplexQuery_HasPipeline(t *testing.T) {
 	h := NewHarness(t)
 	ctx := context.Background()
 
-	result, err := h.Client().Explain(ctx, `FROM main | WHERE host="web-01" | stats count by host | sort -count | head 3`)
+	result, err := h.Client().Explain(ctx, `from main | where host == "web-01" | stats count() by host | sort -count | head 3`)
 	if err != nil {
 		t.Fatalf("Explain: %v", err)
 	}

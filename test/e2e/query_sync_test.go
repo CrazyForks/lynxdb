@@ -14,7 +14,7 @@ func TestE2E_QuerySync_SimpleCount(t *testing.T) {
 	h := NewHarness(t)
 	h.IngestFile("idx_ssh", "testdata/logs/OpenSSH_2k.log")
 
-	result := h.MustQuery(`FROM idx_ssh | STATS count`)
+	result := h.MustQuery(`from idx_ssh | stats count() as count`)
 	requireAggValue(t, result, "count", 2000)
 }
 
@@ -22,7 +22,7 @@ func TestE2E_QuerySync_EventsResult(t *testing.T) {
 	h := NewHarness(t)
 	h.IngestFile("idx_ssh", "testdata/logs/OpenSSH_2k.log")
 
-	result := h.MustQuery(`FROM idx_ssh | HEAD 5`)
+	result := h.MustQuery(`from idx_ssh | head 5`)
 	if result.Type != client.ResultTypeEvents {
 		t.Errorf("expected result type=%s, got %s", client.ResultTypeEvents, result.Type)
 	}
@@ -38,9 +38,9 @@ func TestE2E_QuerySync_AggregateResult(t *testing.T) {
 	h := NewHarness(t)
 	h.IngestFile("idx_ssh", "testdata/logs/OpenSSH_2k.log")
 
-	// Use BIN + STATS BY — does not depend on REX (which is broken, see bugs-e2e.md)
-	// and does not end with HEAD (which changes the result type to "events").
-	result := h.MustQuery(`FROM idx_ssh | BIN _time span=1h AS hour | STATS count BY hour`)
+	// Use extend + bin function + stats by — does not depend on REX (which is broken, see bugs-e2e.md)
+	// and does not end with head (which changes the result type to "events").
+	result := h.MustQuery(`from idx_ssh | extend hour = bin(_time, 1h) | stats count() as count by hour`)
 	if result.Type != client.ResultTypeAggregate {
 		t.Errorf("expected result type=%s, got %s", client.ResultTypeAggregate, result.Type)
 	}
@@ -70,7 +70,7 @@ func TestE2E_QueryGet_ReturnsResults(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	result, err := h.Client().QueryGet(ctx, `FROM idx_ssh | STATS count`, "", "", 100)
+	result, err := h.Client().QueryGet(ctx, `from idx_ssh | stats count() as count`, "", "", 100)
 	if err != nil {
 		t.Fatalf("QueryGet: %v", err)
 	}
@@ -89,22 +89,22 @@ func TestE2E_QuerySync_InvalidSPL_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 	_, err := h.Client().QuerySync(ctx, `THIS IS NOT VALID SPL !!!`, "", "")
 	if err == nil {
-		t.Fatal("expected error for invalid SPL, got nil")
+		t.Fatal("expected error for invalid query, got nil")
 	}
-	t.Logf("invalid SPL correctly returned error: %v", err)
+	t.Logf("invalid query correctly returned error: %v", err)
 }
 
 func TestE2E_QuerySync_NonexistentIndex_ReturnsEmptyOrError(t *testing.T) {
 	h := NewHarness(t)
 
-	result := h.MustQuery(`FROM nonexistent_idx_12345 | STATS count`)
+	result := h.MustQuery(`from nonexistent_idx_12345 | stats count() as count`)
 	total := GetInt(result, "count")
 	if total != 0 {
 		t.Errorf("expected 0 events in nonexistent index, got %d", total)
 	}
 }
 
-// TestE2E_QuerySync_CountAlias verifies that STATS count AS <alias>
+// TestE2E_QuerySync_CountAlias verifies that stats count() as <alias>
 // correctly applies the alias to the output column.
 func TestE2E_QuerySync_CountAlias_Bug(t *testing.T) {
 	// Previously broken: bare "count" did not respect AS alias.
@@ -118,7 +118,7 @@ func TestE2E_QuerySync_CountAlias_Bug(t *testing.T) {
 	}
 	_, _ = h.Client().IngestEvents(ctx, events)
 
-	result := h.MustQuery(`FROM main | STATS count AS total`)
+	result := h.MustQuery(`from main | stats count() as total`)
 	if result.Aggregate == nil {
 		t.Fatal("expected aggregate result")
 	}
@@ -135,10 +135,10 @@ func TestE2E_QuerySync_CountAlias_Bug(t *testing.T) {
 	}
 
 	if !hasTotal {
-		t.Errorf("'STATS count AS total' should produce column 'total'; got columns: %v", result.Aggregate.Columns)
+		t.Errorf("'stats count() as total' should produce column 'total'; got columns: %v", result.Aggregate.Columns)
 	}
 	if hasCount {
-		t.Errorf("'STATS count AS total' should not produce column 'count'; got columns: %v", result.Aggregate.Columns)
+		t.Errorf("'stats count() as total' should not produce column 'count'; got columns: %v", result.Aggregate.Columns)
 	}
 }
 
@@ -151,35 +151,35 @@ func TestE2E_QuerySync_TailN(t *testing.T) {
 	h.IngestFile("idx_ssh", "testdata/logs/OpenSSH_2k.log")
 
 	// tail 50 on 2000 events should return exactly 50.
-	result := h.MustQuery(`FROM idx_ssh | tail 50`)
+	result := h.MustQuery(`from idx_ssh | tail 50`)
 	got := EventCount(result)
 	if got != 50 {
 		t.Fatalf("tail 50: expected 50 events, got %d", got)
 	}
 
-	// tail (default, no number) should return exactly 10.
-	result2 := h.MustQuery(`FROM idx_ssh | tail`)
+	// tail 10 (explicit default) should return exactly 10.
+	result2 := h.MustQuery(`from idx_ssh | tail 10`)
 	got2 := EventCount(result2)
 	if got2 != 10 {
-		t.Fatalf("tail (default): expected 10 events, got %d", got2)
+		t.Fatalf("tail 10: expected 10 events, got %d", got2)
 	}
 
 	// tail 5 should return exactly 5.
-	result3 := h.MustQuery(`FROM idx_ssh | tail 5`)
+	result3 := h.MustQuery(`from idx_ssh | tail 5`)
 	got3 := EventCount(result3)
 	if got3 != 5 {
 		t.Fatalf("tail 5: expected 5 events, got %d", got3)
 	}
 
 	// tail 100 should return exactly 100.
-	result4 := h.MustQuery(`FROM idx_ssh | tail 100`)
+	result4 := h.MustQuery(`from idx_ssh | tail 100`)
 	got4 := EventCount(result4)
 	if got4 != 100 {
 		t.Fatalf("tail 100: expected 100 events, got %d", got4)
 	}
 
 	// tail 5000 on 2000 events should return all 2000.
-	result5 := h.MustQuery(`FROM idx_ssh | tail 5000`)
+	result5 := h.MustQuery(`from idx_ssh | tail 5000`)
 	got5 := EventCount(result5)
 	if got5 != 2000 {
 		t.Fatalf("tail 5000 on 2000 events: expected 2000 events, got %d", got5)

@@ -30,9 +30,9 @@ func ingestJSONEvents(t *testing.T, h *Harness, index string, events []string) {
 	}
 }
 
-// TestE2E_UnpackJSON_WhereStatsCount ingests JSON logs, extracts with unpack_json,
+// TestE2E_ParseJSON_WhereStatsCount ingests JSON logs, extracts with parse json,
 // filters, and aggregates.
-func TestE2E_UnpackJSON_WhereStatsCount(t *testing.T) {
+func TestE2E_ParseJSON_WhereStatsCount(t *testing.T) {
 	h := NewHarness(t)
 
 	events := []string{
@@ -44,12 +44,12 @@ func TestE2E_UnpackJSON_WhereStatsCount(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "jsonlogs", events)
 
-	r := h.MustQuery(`FROM jsonlogs | unpack_json | where level="error" | STATS count`)
+	r := h.MustQuery(`from jsonlogs | parse json | where level == "error" | stats count() as count`)
 	requireAggValue(t, r, "count", 3)
 }
 
-// TestE2E_UnpackJSON_StatsByService verifies group-by works on extracted fields.
-func TestE2E_UnpackJSON_StatsByService(t *testing.T) {
+// TestE2E_ParseJSON_StatsByService verifies group-by works on extracted fields.
+func TestE2E_ParseJSON_StatsByService(t *testing.T) {
 	h := NewHarness(t)
 
 	events := []string{
@@ -59,7 +59,7 @@ func TestE2E_UnpackJSON_StatsByService(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "svclog", events)
 
-	r := h.MustQuery(`FROM svclog | unpack_json | where level="error" | STATS count by service | sort -count`)
+	r := h.MustQuery(`from svclog | parse json | where level == "error" | stats count() as count by service | sort -count`)
 	rows := AggRows(r)
 	if len(rows) < 2 {
 		t.Fatalf("expected >= 2 rows, got %d", len(rows))
@@ -71,8 +71,8 @@ func TestE2E_UnpackJSON_StatsByService(t *testing.T) {
 	}
 }
 
-// TestE2E_UnpackLogfmt verifies logfmt extraction works end-to-end.
-func TestE2E_UnpackLogfmt_Filter(t *testing.T) {
+// TestE2E_ParseLogfmt verifies logfmt extraction works end-to-end.
+func TestE2E_ParseLogfmt_Filter(t *testing.T) {
 	h := NewHarness(t)
 
 	events := []string{
@@ -82,12 +82,12 @@ func TestE2E_UnpackLogfmt_Filter(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "logfmt_idx", events)
 
-	r := h.MustQuery(`FROM logfmt_idx | unpack_logfmt | where level="error" | STATS count`)
+	r := h.MustQuery(`from logfmt_idx | parse logfmt | where level == "error" | stats count() as count`)
 	requireAggValue(t, r, "count", 2)
 }
 
-// TestE2E_UnpackCombined verifies combined access log parsing.
-func TestE2E_UnpackCombined_StatusFilter(t *testing.T) {
+// TestE2E_ParseCombined verifies combined access log parsing.
+func TestE2E_ParseCombined_StatusFilter(t *testing.T) {
 	h := NewHarness(t)
 
 	events := []string{
@@ -97,12 +97,12 @@ func TestE2E_UnpackCombined_StatusFilter(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "access_idx", events)
 
-	r := h.MustQuery(`FROM access_idx | unpack_combined | where status >= 500 | STATS count`)
+	r := h.MustQuery(`from access_idx | parse combined | where status >= 500 | stats count() as count`)
 	requireAggValue(t, r, "count", 2)
 }
 
-// TestE2E_JsonCmd_SelectivePaths verifies | json with specific paths.
-func TestE2E_JsonCmd_SelectivePaths(t *testing.T) {
+// TestE2E_ParseJSON_SelectivePaths verifies parse json with object access for specific paths.
+func TestE2E_ParseJSON_SelectivePaths(t *testing.T) {
 	h := NewHarness(t)
 
 	events := []string{
@@ -111,15 +111,16 @@ func TestE2E_JsonCmd_SelectivePaths(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "json_paths", events)
 
-	r := h.MustQuery(`FROM json_paths | json path="user.id" AS uid | STATS count by uid`)
+	// Parse json extracts all fields; then use object access for nested paths.
+	r := h.MustQuery(`from json_paths | parse json | extend uid = user.id | stats count() by uid`)
 	rows := AggRows(r)
 	if len(rows) != 2 {
 		t.Fatalf("expected 2 rows (uid=1 and uid=2), got %d", len(rows))
 	}
 }
 
-// TestE2E_Unroll verifies array explosion with unroll.
-func TestE2E_Unroll_StatsCount(t *testing.T) {
+// TestE2E_Explode verifies array explosion with explode.
+func TestE2E_Explode_StatsCount(t *testing.T) {
 	h := NewHarness(t)
 
 	events := []string{
@@ -128,13 +129,13 @@ func TestE2E_Unroll_StatsCount(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "unroll_idx", events)
 
-	r := h.MustQuery(`FROM unroll_idx | unpack_json | unroll field=items | STATS count`)
+	r := h.MustQuery(`from unroll_idx | parse json | explode items | stats count() as count`)
 	// 2 items from order A + 1 from order B = 3 rows.
 	requireAggValue(t, r, "count", 3)
 }
 
-// TestE2E_PackJson verifies field assembly into a JSON string.
-func TestE2E_PackJson_RoundTrip(t *testing.T) {
+// TestE2E_ToJson verifies field assembly into a JSON string using to_json.
+func TestE2E_ToJson_RoundTrip(t *testing.T) {
 	h := NewHarness(t)
 
 	ctx := context.Background()
@@ -158,7 +159,7 @@ func TestE2E_PackJson_RoundTrip(t *testing.T) {
 		t.Fatalf("expected 2 accepted, got %d", result.Accepted)
 	}
 
-	r := h.MustQuery(`FROM main | pack_json level, service into output | STATS count`)
+	r := h.MustQuery(`from main | extend output = to_json({level: level, service: service}) | stats count() as count`)
 	requireAggValue(t, r, "count", 2)
 }
 
@@ -173,8 +174,8 @@ func TestE2E_JsonFunctions(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "json_fn_idx", events)
 
-	// Count events where _raw is valid JSON.
-	r := h.MustQuery(`FROM json_fn_idx | eval valid=json_valid(_raw) | where valid=true | STATS count`)
+	// Count events where _raw is valid JSON (from_json returns null for invalid JSON).
+	r := h.MustQuery(`from json_fn_idx | extend parsed = from_json(_raw) | where exists(parsed) | stats count() as count`)
 	requireAggValue(t, r, "count", 2)
 }
 
@@ -189,6 +190,6 @@ func TestE2E_DotNotation_InlineWhere(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "dot_idx", events)
 
-	r := h.MustQuery(fmt.Sprintf(`FROM dot_idx | unpack_json | where request.method="POST" | STATS count`))
+	r := h.MustQuery(fmt.Sprintf(`from dot_idx | parse json | where request.method == "POST" | stats count() as count`))
 	requireAggValue(t, r, "count", 1)
 }

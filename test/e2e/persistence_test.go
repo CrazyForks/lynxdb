@@ -25,21 +25,21 @@ func TestE2E_Persistence_DataSurvivesRestart(t *testing.T) {
 		query string
 	}
 	queries := []queryCase{
-		{"SSH_Count", `FROM idx_ssh | STATS count`},
-		{"OpenStack_Count", `FROM idx_openstack | STATS count`},
-		{"SSH_TopIPs", `FROM idx_ssh | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | STATS count BY ip | SORT - count | HEAD 3`},
-		{"OpenStack_StatusCounts", `FROM idx_openstack | REX "status: (?<status>\d+)" | WHERE isnotnull(status) | STATS count BY status | SORT status`},
-		{"SSH_HourlyBuckets", `FROM idx_ssh | BIN _time span=1h AS hour | STATS count BY hour | SORT hour`},
-		{"SSH_FailedCount", `FROM idx_ssh | EVAL has_failed = IF(match(_raw, "Failed password"), 1, 0) | STATS sum(has_failed) AS failed_count`},
+		{"SSH_Count", `from idx_ssh | stats count() as count`},
+		{"OpenStack_Count", `from idx_openstack | stats count() as count`},
+		{"SSH_TopIPs", `from idx_ssh | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | where exists(ip) | stats count() as count by ip | sort -count | head 3`},
+		{"OpenStack_StatusCounts", `from idx_openstack | parse regex r"status: (?<status>\d+)" | where exists(status) | stats count() as count by status | sort status`},
+		{"SSH_HourlyBuckets", `from idx_ssh | extend hour = bin(_time, 1h) | stats count() as count by hour | sort hour`},
+		{"SSH_FailedCount", `from idx_ssh | extend has_failed = if(matches(_raw, r"Failed password"), 1, 0) | stats sum(has_failed) as failed_count`},
 		// count AS attempts in compound STATS (with BY) uses single-agg path where alias is broken.
 		// We use count BY user directly.
-		{"SSH_TopAttackers", `FROM idx_ssh | REX "Failed password for (?:invalid user )?(?<user>\w+) from (?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(user) | STATS count BY user | SORT - count user | HEAD 3`},
-		{"SSH_UniqueIPs", `FROM idx_ssh | REX "(?<ip>\d+\.\d+\.\d+\.\d+)" | WHERE isnotnull(ip) | DEDUP ip | STATS count`},
-		{"OpenStack_APILatency", `FROM idx_openstack | REX "\"(?<method>GET|POST|DELETE) (?<url_path>/[^\s]+) HTTP" | REX "status: (?<status>\d+) len: (?<resp_len>\d+) time: (?<resp_time>[0-9.]+)" | WHERE isnotnull(method) | EVAL resp_ms = round(tonumber(resp_time) * 1000, 2) | STATS count AS requests, avg(resp_ms) AS avg_latency BY method | SORT method`},
+		{"SSH_TopAttackers", `from idx_ssh | parse regex r"Failed password for (?:invalid user )?(?<user>\w+) from (?<ip>\d+\.\d+\.\d+\.\d+)" | where exists(user) | stats count() as count by user | sort -count, user | head 3`},
+		{"SSH_UniqueIPs", `from idx_ssh | parse regex r"(?<ip>\d+\.\d+\.\d+\.\d+)" | where exists(ip) | dedup ip | stats count() as count`},
+		{"OpenStack_APILatency", `from idx_openstack | parse regex r"(?<method>GET|POST|DELETE) (?<url_path>/[^\s]+) HTTP" | parse regex r"status: (?<status>\d+) len: (?<resp_len>\d+) time: (?<resp_time>[0-9.]+)" | where exists(method) | extend resp_ms = round(float(resp_time) * 1000, 2) | stats count() as requests, avg(resp_ms) as avg_latency by method | sort method`},
 		// Wildcard persistence — validates bloom filter tokenization after flush.
-		{"Wildcard_InvalidUserFrom", `FROM idx_ssh | search "Invalid user*from" | STATS count`},
-		{"Wildcard_Password", `FROM idx_ssh | search "*password*" | STATS count`},
-		{"Wildcard_FailedFromPort", `FROM idx_ssh | search "Failed*from*port" | STATS count`},
+		{"Wildcard_InvalidUserFrom", `from idx_ssh | where matches(_raw, r"Invalid user.*from") | stats count() as count`},
+		{"Wildcard_Password", `from idx_ssh | where contains(_raw, "password") | stats count() as count`},
+		{"Wildcard_FailedFromPort", `from idx_ssh | where matches(_raw, r"Failed.*from.*port") | stats count() as count`},
 	}
 
 	preResults := make(map[string]*client.QueryResult, len(queries))
@@ -60,7 +60,7 @@ func TestE2E_Persistence_DataSurvivesRestart(t *testing.T) {
 
 	// Additional: verify both indexes are still queryable.
 	t.Run("BothIndexes_Queryable", func(t *testing.T) {
-		requireAggValue(t, h.MustQuery(`FROM idx_ssh | STATS count`), "count", 2000)
-		requireAggValue(t, h.MustQuery(`FROM idx_openstack | STATS count`), "count", 2000)
+		requireAggValue(t, h.MustQuery(`from idx_ssh | stats count() as count`), "count", 2000)
+		requireAggValue(t, h.MustQuery(`from idx_openstack | stats count() as count`), "count", 2000)
 	})
 }

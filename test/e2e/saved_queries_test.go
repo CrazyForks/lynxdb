@@ -19,7 +19,7 @@ func TestE2E_SavedQueries_CRUD(t *testing.T) {
 	// Create (works because server's SavedQueryInput accepts both "q" and "query").
 	input := client.SavedQueryInput{
 		Name: "test-saved-query",
-		Q:    `FROM main | stats count by host`,
+		Q:    `from main | stats count() by host`,
 		From: "-1h",
 	}
 	sq, err := h.Client().CreateSavedQuery(ctx, input)

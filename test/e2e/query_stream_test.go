@@ -20,7 +20,7 @@ func TestE2E_QueryStream_NDJSON_DeliversEvents(t *testing.T) {
 
 	var count int
 	meta, err := h.Client().QueryStream(ctx, client.QueryRequest{
-		Q:     `FROM idx_ssh | HEAD 10`,
+		Q:     `from idx_ssh | head 10`,
 		Limit: 10,
 	}, func(msg json.RawMessage) error {
 		count++
@@ -45,7 +45,7 @@ func TestE2E_QueryStream_EmptyResult_ZeroTotal(t *testing.T) {
 
 	var count int
 	meta, err := h.Client().QueryStream(ctx, client.QueryRequest{
-		Q: `FROM nonexistent_stream_idx | HEAD 10`,
+		Q: `from nonexistent_stream_idx | head 10`,
 	}, func(msg json.RawMessage) error {
 		count++
 		return nil

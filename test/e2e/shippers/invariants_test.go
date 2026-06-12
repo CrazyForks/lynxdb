@@ -18,7 +18,7 @@ func waitForSourceCount(t *testing.T, rig *TestRig, source string, want int, log
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	query := `FROM * | STATS count AS total BY index, _source`
+	query := `from * | stats count() as total by index, _source`
 
 	ticker := time.NewTicker(100 * time.Millisecond)
 	defer ticker.Stop()
@@ -105,7 +105,7 @@ func sourceSummary(t *testing.T, rig *TestRig) string {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	result, err := rig.Client.QuerySync(ctx, `FROM * | STATS count AS total BY index, _source`, "", "")
+	result, err := rig.Client.QuerySync(ctx, `from * | stats count() as total by index, _source`, "", "")
 	if err != nil {
 		return err.Error()
 	}

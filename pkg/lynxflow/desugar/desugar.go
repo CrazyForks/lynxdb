@@ -315,6 +315,8 @@ func (d *desugarer) expandSugar(s ast.Stage, pip ast.Pipeline, stageIdx int) []a
 		return d.expandTopRare(s, true)
 	case "rare":
 		return d.expandTopRare(s, false)
+	case "count":
+		return d.expandCount(s)
 	case "every":
 		return d.expandEvery(s)
 	case "rate":
@@ -344,6 +346,38 @@ func (d *desugarer) expandSugar(s ast.Stage, pip ast.Pipeline, stageIdx int) []a
 // ---------------------------------------------------------------------------
 // top / rare
 // ---------------------------------------------------------------------------
+
+// expandCount rewrites `count [by <fields>]` into
+// `stats count() as count [by <fields>]` (D36).
+func (d *desugarer) expandCount(s ast.Stage) []ast.Stage {
+	if s.Count == nil {
+		return []ast.Stage{d.cloneStage(s)}
+	}
+
+	by := make([]ast.Expr, len(s.Count.By))
+	for i, e := range s.Count.By {
+		by[i] = cloneExpr(e)
+	}
+
+	statsStage := ast.Stage{
+		Name:    "stats",
+		NamePos: s.NamePos,
+		Stats: &ast.StatsPayload{
+			Aggs: []ast.AggExpr{{
+				Func:  &ast.Call{Callee: "count", Pos: s.Pos},
+				Alias: "count",
+				Pos:   s.Pos,
+			}},
+			By: by,
+		},
+		Pos: s.Pos,
+	}
+
+	result := []ast.Stage{statsStage}
+	d.addRewrite(s.String(), renderStages(result), "sugar:count", s.Pos)
+
+	return result
+}
 
 func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 	var payload *ast.TopRarePayload

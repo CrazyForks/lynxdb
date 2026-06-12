@@ -807,6 +807,12 @@ func (p *parser) parseStage() ast.Stage {
 			if suggestion != "" {
 				msg += fmt.Sprintf(", did you mean %q?", suggestion)
 			}
+			// Aggregate name in stage position (| sum(bytes), | avg latency):
+			// the user wants stats. This beats edit-distance suggestions.
+			if _, isAgg := registry.LookupAggregate(strings.ToLower(n)); isAgg {
+				suggestion = fmt.Sprintf("stats %s(...)", strings.ToLower(n))
+				msg = fmt.Sprintf("unknown stage %q; aggregations run inside stats", n)
+			}
 			p.diags = append(p.diags, Diag{
 				Code:       CodeUnknownStage,
 				Message:    msg,
@@ -932,6 +938,8 @@ func (p *parser) parseStageBody(s *ast.Stage) {
 		p.parseTopRareBody(s, true)
 	case "rare":
 		p.parseTopRareBody(s, false)
+	case "count":
+		p.parseCountBody(s)
 	case "every":
 		p.parseEveryBody(s)
 	case "rate":
@@ -1550,6 +1558,24 @@ func (p *parser) parseTopRareBody(s *ast.Stage, isTop bool) {
 	} else {
 		s.Rare = payload
 	}
+}
+
+// parseCountBody parses `count [()] [by <fields>]`. Empty parens are
+// tolerated (aggregate muscle memory: `| count()`); the canonical form has
+// none and the formatter drops them.
+func (p *parser) parseCountBody(s *ast.Stage) {
+	payload := &ast.CountPayload{}
+
+	if p.at(lexer.LParen) {
+		p.advance()
+		p.expect(lexer.RParen)
+	}
+
+	if p.consume(lexer.KwBy) {
+		payload.By = p.parseGroupByList()
+	}
+
+	s.Count = payload
 }
 
 func (p *parser) parseEveryBody(s *ast.Stage) {

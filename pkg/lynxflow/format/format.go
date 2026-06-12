@@ -691,6 +691,16 @@ func formatStage(b *strings.Builder, s *ast.Stage) {
 	case s.Rare != nil:
 		b.WriteByte(' ')
 		formatTopRarePayload(b, s.Rare)
+	case s.Count != nil:
+		if len(s.Count.By) > 0 {
+			b.WriteString(" by ")
+			for i, e := range s.Count.By {
+				if i > 0 {
+					b.WriteString(", ")
+				}
+				formatExpr(b, e, precTop)
+			}
+		}
 	case s.Every != nil:
 		b.WriteByte(' ')
 		formatEveryPayload(b, s.Every)

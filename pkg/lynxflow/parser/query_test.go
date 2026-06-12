@@ -676,3 +676,58 @@ func TestParseStarInStagePositionSuggests(t *testing.T) {
 		t.Fatalf("star-in-stage-position diagnostic should carry a suggestion; got %v", diagMsgs(diags))
 	}
 }
+
+// ---------------------------------------------------------------------------
+// count sugar stage (D36): `| count [()] [by <fields>]` parses clean,
+// round-trips through the formatter, and aggregate names in stage position
+// get a stats-pointing diagnostic.
+// ---------------------------------------------------------------------------
+
+func TestParseCountStage(t *testing.T) {
+	for src, want := range map[string]string{
+		`from main | count`:                       "from main\n| count",
+		`from main | count()`:                     "from main\n| count",
+		`from main | count by host`:               "from main\n| count by host",
+		`from main | count by host, level`:        "from main\n| count by host, level",
+		`from main user | count | head 5`:         "",
+		`from main | count by host | sort -count`: "",
+	} {
+		q, diags := Parse(src)
+		if len(diags) != 0 {
+			t.Errorf("%s: unexpected diags: %v", src, diagMsgs(diags))
+			continue
+		}
+		formatted := format.Query(q)
+		if want != "" && formatted != want {
+			t.Errorf("%s: formatted = %q, want %q", src, formatted, want)
+		}
+		q2, diags2 := Parse(formatted)
+		if len(diags2) != 0 {
+			t.Errorf("%s: formatted %q does not reparse: %v", src, formatted, diagMsgs(diags2))
+			continue
+		}
+		if again := format.Query(q2); again != formatted {
+			t.Errorf("%s: formatter not a fixpoint: %q -> %q", src, formatted, again)
+		}
+	}
+}
+
+func TestParseAggregateInStagePositionSuggestsStats(t *testing.T) {
+	for _, src := range []string{
+		`from main | sum(bytes)`,
+		`from main | avg latency`,
+		`from main | p95 latency`,
+	} {
+		_, diags := Parse(src)
+		found := false
+		for _, d := range diags {
+			if strings.Contains(d.Message, "aggregations run inside stats") &&
+				strings.Contains(d.Suggestion, "stats ") {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("%s: expected a stats-pointing diagnostic, got %v", src, diagMsgs(diags))
+		}
+	}
+}

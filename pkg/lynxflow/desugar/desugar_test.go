@@ -222,6 +222,24 @@ func TestGoldenExpansions(t *testing.T) {
 			wantReason: "sugar:rare",
 		},
 		{
+			name:       "count_bare",
+			input:      `from app | count`,
+			wantPipe:   `from app | stats count() as count`,
+			wantReason: "sugar:count",
+		},
+		{
+			name:       "count_parens",
+			input:      `from app | count()`,
+			wantPipe:   `from app | stats count() as count`,
+			wantReason: "sugar:count",
+		},
+		{
+			name:       "count_by",
+			input:      `from app | count by host, level`,
+			wantPipe:   `from app | stats count() as count by host, level`,
+			wantReason: "sugar:count",
+		},
+		{
 			name:       "every_simple",
 			input:      `from app | every 5m stats count()`,
 			wantPipe:   `from app | stats count() by bin(_time, 5m)`,

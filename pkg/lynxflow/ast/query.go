@@ -332,6 +332,7 @@ type Stage struct {
 	Parse       *ParsePayload
 	Top         *TopRarePayload
 	Rare        *TopRarePayload
+	Count       *CountPayload
 	Every       *EveryPayload
 	Rate        *RatePayload
 	Latency     *LatencyPayload
@@ -377,6 +378,9 @@ func (s *Stage) String() string {
 	case s.Stats != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Stats.String())
+	case s.Count != nil && len(s.Count.By) > 0:
+		b.WriteByte(' ')
+		b.WriteString(s.Count.String())
 	case s.Eventstats != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Eventstats.String())
@@ -884,6 +888,23 @@ func (c *CaptureField) String() string {
 		return c.Name + " as " + c.Type
 	}
 	return c.Name
+}
+
+// CountPayload is the typed payload for the count sugar stage:
+// `count [by <fields>]` desugars to `stats count() as count [by <fields>]`.
+type CountPayload struct {
+	By []Expr
+}
+
+func (c *CountPayload) String() string {
+	if len(c.By) == 0 {
+		return ""
+	}
+	parts := make([]string, len(c.By))
+	for i, e := range c.By {
+		parts[i] = e.String()
+	}
+	return "by " + strings.Join(parts, ", ")
 }
 
 // TopRarePayload is the typed payload for top/rare.

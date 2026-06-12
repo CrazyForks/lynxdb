@@ -160,6 +160,13 @@ var operators = []Operator{
 		Examples:   []string{`rare 3 service`},
 	},
 	{
+		Name: "count", Class: ClassSugar, Streaming: StreamingAcc,
+		Options:    []Option{{Name: "by", Type: ArgFieldList}},
+		DesugarsTo: "stats count() as count [by <fields>]",
+		Doc:        "Row count, optionally per group.",
+		Examples:   []string{`count`, `count by host`},
+	},
+	{
 		Name: "every", Class: ClassSugar, Streaming: StreamingAcc,
 		Positionals: []Positional{
 			{Name: "span", Type: ArgDuration, Required: true},

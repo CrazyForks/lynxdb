@@ -35,6 +35,7 @@ stage       ::= baseline_stage
               | changes_stage
               | compare_stage
               | correlate_stage
+              | count_stage
               | dedup_stage
               | describe_stage
               | drop_stage
@@ -81,6 +82,7 @@ baseline_stage   ::= 'baseline' field ['window' '=' number] ['by' '=' field_list
 changes_stage    ::= 'changes' field ['by' '=' field_list] ;
 compare_stage    ::= 'compare' duration ;
 correlate_stage  ::= 'correlate' field field ['method' '=' ident] ;
+count_stage      ::= 'count' ['by' '=' field_list] ;
 dedup_stage      ::= 'dedup' [number] field_list ;
 describe_stage   ::= 'describe' ;
 drop_stage       ::= 'drop' field_patterns ;

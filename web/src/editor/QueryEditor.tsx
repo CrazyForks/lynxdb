@@ -133,7 +133,7 @@ export function QueryEditor({
         // Actual diagnostics are dispatched via setDiagnostics from the parent.
         linter(() => [], { delay: 0 }),
         placeholder(
-          'from main | where level="error" | group by _source compute count()',
+          'from main | where level == "error" | stats count() by _source',
         ),
         // Dynamic line numbers via Compartment: starts with no line numbers (single line)
         lineNumberCompartment.of([]),

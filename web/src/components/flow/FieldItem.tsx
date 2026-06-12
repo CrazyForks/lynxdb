@@ -26,7 +26,7 @@ export function FieldItem({
 
   const handleNameClick = useCallback(() => {
     if (onInsertCommand) {
-      onInsertCommand(`| where ${name}!=""`);
+      onInsertCommand(`| where exists(${name})`);
     }
   }, [onInsertCommand, name]);
 
@@ -53,7 +53,7 @@ export function FieldItem({
           type="button"
           className="flex-1 text-[0.8125rem] text-foreground overflow-hidden text-ellipsis whitespace-nowrap font-mono border-none bg-transparent cursor-pointer p-0 text-left hover:text-primary focus-visible:outline-2 focus-visible:outline-ring"
           onClick={handleNameClick}
-          title={`Filter: ${name}!=""`}
+          title={`Filter: exists(${name})`}
         >
           {name}
         </button>

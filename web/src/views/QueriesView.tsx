@@ -260,7 +260,7 @@ export default function QueriesView() {
               <Label htmlFor="sq-query">Query</Label>
               <Input
                 id="sq-query"
-                placeholder='e.g. level=error | stats count by service'
+                placeholder='e.g. from main | where level == "error" | stats count() by service'
                 className="font-mono text-xs"
                 value={createQuery}
                 onInput={(e) =>

@@ -20,24 +20,24 @@ function getCommands(field: string, fieldType?: string): CommandEntry[] {
 
   if (isNumeric) {
     return [
-      { label: `where ${f}>0`, template: `| where ${f}>0` },
+      { label: `where ${f} > 0`, template: `| where ${f} > 0` },
       { label: `stats avg(${f})`, template: `| stats avg(${f})` },
       { label: `stats sum(${f})`, template: `| stats sum(${f})` },
       { label: `stats max(${f})`, template: `| stats max(${f})` },
       { label: `sort -${f}`, template: `| sort -${f}` },
-      { label: `bin ${f}`, template: `| bin ${f}` },
-      { label: `table ${f}`, template: `| table ${f}` },
+      { label: `extend bucket = bin(${f}, 1h)`, template: `| extend bucket = bin(${f}, 1h)` },
+      { label: `keep ${f}`, template: `| keep ${f}` },
     ];
   }
 
   return [
-    { label: `where ${f}="..."`, template: `| where ${f}=""` },
-    { label: `stats count by ${f}`, template: `| stats count by ${f}` },
+    { label: `where ${f} == "..."`, template: `| where ${f} == ""` },
+    { label: `stats count() by ${f}`, template: `| stats count() by ${f}` },
     { label: `top ${f}`, template: `| top ${f}` },
-    { label: `rex field=${f}`, template: `| rex field=${f} "(?P<val>\\S+)"` },
+    { label: `parse regex from ${f}`, template: `| parse regex from ${f} r"(?<val>\\S+)"` },
     { label: `dedup ${f}`, template: `| dedup ${f}` },
     { label: `sort ${f}`, template: `| sort ${f}` },
-    { label: `table ${f}`, template: `| table ${f}` },
+    { label: `keep ${f}`, template: `| keep ${f}` },
   ];
 }
 

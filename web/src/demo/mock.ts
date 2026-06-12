@@ -88,9 +88,11 @@ export function fieldCatalog() {
 }
 
 function matches(e: Ev, q: string): boolean {
-  const filters = q.match(/(\w+)\s*(>=|<=|!=|=|>|<)\s*"?([^"|\s]+)"?/g) ?? [];
+  // Match LynxFlow comparisons: field == "val", field != val, field >= 500 etc.
+  // Also tolerates legacy single-= for backward compat with demo data.
+  const filters = q.match(/(\w+)\s*(==|>=|<=|!=|=|>|<)\s*"?([^"|\s]+)"?/g) ?? [];
   for (const f of filters) {
-    const m = f.match(/(\w+)\s*(>=|<=|!=|=|>|<)\s*"?([^"|\s]+)"?/);
+    const m = f.match(/(\w+)\s*(==|>=|<=|!=|=|>|<)\s*"?([^"|\s]+)"?/);
     if (!m) continue;
     const [, k, op, v] = m;
     if (!k || !op || v === undefined || !(k in e)) continue;
@@ -98,15 +100,17 @@ function matches(e: Ev, q: string): boolean {
     const nv = Number(v);
     const ne = Number(ev);
     const num = !isNaN(nv) && !isNaN(ne);
-    if (op === "=" && String(ev) !== v) return false;
+    if ((op === "==" || op === "=") && String(ev) !== v) return false;
     if (op === "!=" && String(ev) === v) return false;
     if (op === ">=" && num && ne < nv) return false;
     if (op === "<=" && num && ne > nv) return false;
     if (op === ">" && num && ne <= nv) return false;
     if (op === "<" && num && ne >= nv) return false;
   }
-  const text = q.match(/search\s+"([^"]+)"|^"([^"]+)"/);
-  const term = text?.[1] ?? text?.[2];
+  // Match LynxFlow text search: has(_raw, "term") or contains(_raw, "term")
+  // Also tolerates legacy search "term" for backward compat.
+  const text = q.match(/(?:has|contains)\s*\(\s*_raw\s*,\s*"([^"]+)"\s*\)|search\s+"([^"]+)"|^"([^"]+)"/);
+  const term = text?.[1] ?? text?.[2] ?? text?.[3];
   if (term && !String(e._raw).toLowerCase().includes(term.toLowerCase()))
     return false;
   return true;
@@ -254,7 +258,7 @@ export function explain(q: string) {
     is_valid: true,
     parsed: {
       pipeline: [
-        { command: "search", description: q || "match all" },
+        { command: "from", description: q || "match all" },
         { command: "where", description: "level filter" },
         { command: "stats", description: "aggregate" },
       ],
@@ -275,14 +279,14 @@ export const SAVED_QUERIES = [
   {
     id: "sq_errors",
     name: "Errors by service",
-    q: 'level=error | stats count by _source',
+    q: 'from main | where level == "error" | stats count() by _source',
     created_at: new Date(NOW - 86400_000).toISOString(),
     updated_at: new Date(NOW - 86400_000).toISOString(),
   },
   {
     id: "sq_slow",
     name: "Slow requests",
-    q: "duration_ms>1000 | sort -duration_ms | head 50",
+    q: "from main | where duration_ms > 1000 | sort -duration_ms | head 50",
     created_at: new Date(NOW - 3600_000).toISOString(),
     updated_at: new Date(NOW - 3600_000).toISOString(),
   },
@@ -306,8 +310,8 @@ export const INDEXES = [
 ];
 
 export const VIEWS = [
-  { name: "mv_errors_5m", status: "active", query: "level=error | stats count by _source", type: "materialized" },
-  { name: "mv_5xx_hourly", status: "active", query: "status>=500 | timechart count", type: "materialized" },
+  { name: "mv_errors_5m", status: "active", query: 'from main | where level == "error" | stats count() by _source', type: "materialized" },
+  { name: "mv_5xx_hourly", status: "active", query: "from main | where status >= 500 | every 1h stats count()", type: "materialized" },
 ];
 
 export function tailEvent(): Ev {

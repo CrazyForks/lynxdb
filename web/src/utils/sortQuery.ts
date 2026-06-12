@@ -1,5 +1,5 @@
 /**
- * Utilities for manipulating `| sort` clauses in SPL2 query text.
+ * Utilities for manipulating `| sort` clauses in LynxFlow query text.
  *
  * Used by ResultsTable to implement click-to-sort on column headers.
  * Clicking a header toggles through: asc -> desc -> remove.
@@ -51,7 +51,7 @@ export function parseSortFromQuery(
  * - If direction is "asc", appends ` | sort field`.
  * - If direction is "desc", appends ` | sort -field`.
  *
- * @param query     Current SPL2 query text
+ * @param query     Current LynxFlow query text
  * @param field     Column name to sort by
  * @param direction Sort direction, or null to remove sort
  * @returns         Modified query string

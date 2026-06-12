@@ -328,6 +328,7 @@ func buildStreamHints(hints *model.QueryHints, bitmapThreshold float64) *enginep
 		IndexName:                  hints.IndexName,
 		TimeBounds:                 hints.TimeBounds,
 		SearchTerms:                hints.SearchTerms,
+		TokenGlobs:                 hints.TokenGlobs,
 		SearchTermTree:             hints.SearchTermTree,
 		RequiredCols:               hints.RequiredCols,
 		Limit:                      hints.Limit,
@@ -958,6 +959,47 @@ type segReadStats struct {
 	bytesRead int64
 }
 
+// applyTokenGlobs ANDs the FST glob-expansion bitmap of each token-glob
+// pattern into searchBitmap. Token globs cannot use the bloom filter or exact
+// FST lookup (their literal runs are token fragments, not whole tokens), so
+// the term dictionary is expanded instead. Patterns the index cannot answer
+// (no FST, oversized expansion) are skipped — the row-level filter still
+// verifies every pattern, so skipping only costs pruning, never correctness.
+// provenEmpty is true when the index proves no event in the segment matches.
+func applyTokenGlobs(
+	seg *segmentHandle,
+	hints *model.QueryHints,
+	searchBitmap *roaring.Bitmap,
+	logger *slog.Logger,
+) (bm *roaring.Bitmap, provenEmpty, usedIndex bool) {
+	if len(hints.TokenGlobs) == 0 || seg.invertedIdx == nil {
+		return searchBitmap, false, false
+	}
+	for _, pattern := range hints.TokenGlobs {
+		globBM, ok, err := seg.invertedIdx.SearchGlob(pattern)
+		if err != nil {
+			logger.Warn("inverted index glob search error",
+				"segment", seg.meta.ID, "pattern", pattern, "error", err)
+
+			continue
+		}
+		if !ok {
+			continue // expansion exceeded cap — this pattern cannot prune
+		}
+		usedIndex = true
+		if searchBitmap == nil {
+			searchBitmap = globBM
+		} else {
+			searchBitmap.And(globBM)
+		}
+		if searchBitmap.GetCardinality() == 0 {
+			return searchBitmap, true, usedIndex
+		}
+	}
+
+	return searchBitmap, false, usedIndex
+}
+
 // shouldOverrideBitmap returns true if the bitmap selectivity exceeds the threshold.
 // When the bitmap covers more than threshold fraction of total rows, per-row roaring
 // bitmap lookups are more expensive than a sequential scan with column projection.
@@ -1011,6 +1053,21 @@ func readSegmentEvents(
 			}
 		}
 		if searchBitmap != nil && searchBitmap.GetCardinality() == 0 {
+			rs.readDurationNS = time.Since(readStart).Nanoseconds()
+			rs.rowsAfterFilter = 0
+
+			return nil, rs, nil
+		}
+	}
+
+	// Token globs → bitmap via FST term-dictionary expansion.
+	{
+		var provenEmpty, usedIdx bool
+		searchBitmap, provenEmpty, usedIdx = applyTokenGlobs(seg, hints, searchBitmap, logger)
+		if usedIdx {
+			rs.usedInvertedIndex = true
+		}
+		if provenEmpty {
 			rs.readDurationNS = time.Since(readStart).Nanoseconds()
 			rs.rowsAfterFilter = 0
 
@@ -1560,6 +1617,21 @@ func readSegmentColumnar(
 			}
 		}
 		if searchBitmap != nil && searchBitmap.GetCardinality() == 0 {
+			rs.readDurationNS = time.Since(readStart).Nanoseconds()
+			rs.rowsAfterFilter = 0
+
+			return nil, rs, nil
+		}
+	}
+
+	// Token globs → bitmap via FST term-dictionary expansion.
+	{
+		var provenEmpty, usedIdx bool
+		searchBitmap, provenEmpty, usedIdx = applyTokenGlobs(seg, hints, searchBitmap, logger)
+		if usedIdx {
+			rs.usedInvertedIndex = true
+		}
+		if provenEmpty {
 			rs.readDurationNS = time.Since(readStart).Nanoseconds()
 			rs.rowsAfterFilter = 0
 

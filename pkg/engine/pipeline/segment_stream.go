@@ -51,6 +51,7 @@ type SegmentStreamHints struct {
 	IndexName                  string
 	TimeBounds                 *model.TimeBounds
 	SearchTerms                []string
+	TokenGlobs                 []string              // lowercased token-glob patterns (has_glob); FST expansion, never bloom
 	SearchTermTree             *model.SearchTermTree // structured boolean tree for inverted index OR/AND
 	FieldPreds                 []model.FieldPredicate
 	RangePreds                 []model.RangePredicate
@@ -1010,6 +1011,37 @@ func (s *SegmentStreamIterator) computeSegmentBitmap(seg *SegmentSource) *roarin
 			}
 		}
 		if bm != nil {
+			s.streamStats.BitmapHits += int64(bm.GetCardinality())
+		}
+	}
+
+	// Token globs: expand each pattern against the FST term dictionary and
+	// AND the result in. Patterns the index cannot answer (oversized
+	// expansion, ok=false) contribute no constraint — the filter above the
+	// scan re-verifies every pattern against row data.
+	if len(s.hints.TokenGlobs) > 0 && seg.InvertedIdx != nil {
+		preGlob := bm
+		for _, pattern := range s.hints.TokenGlobs {
+			globBM, ok, err := seg.InvertedIdx.SearchGlob(pattern)
+			if err != nil {
+				s.streamStats.BitmapTermErrors++
+				continue
+			}
+			if !ok {
+				continue
+			}
+			if bm == nil {
+				bm = globBM
+			} else {
+				bm.And(globBM)
+			}
+			if bm.GetCardinality() == 0 {
+				return bm
+			}
+		}
+		// Count hits only when globs created the bitmap; terms already
+		// counted theirs above.
+		if preGlob == nil && bm != nil {
 			s.streamStats.BitmapHits += int64(bm.GetCardinality())
 		}
 	}

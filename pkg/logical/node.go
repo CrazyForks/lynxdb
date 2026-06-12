@@ -96,6 +96,11 @@ type Pushdown struct {
 	FieldPredicates []ast.Expr
 	BloomTerms      []string
 	RawTerms        []string
+	// TokenGlobs holds lowercased glob patterns from has_glob(_raw, pattern).
+	// Each pattern must match at least one whole token of an event's _raw
+	// text. Served by FST term-dictionary expansion in the inverted index;
+	// they are candidate filters (the conjunct stays in the Filter).
+	TokenGlobs []string
 	// Columns is the sorted set of column names required by the query.
 	// Set by the column-pruning optimizer rule. nil means "all columns"
 	// (pruning could not be determined or was conservatively disabled).

@@ -92,14 +92,15 @@ func (s *QueryService) Explain(_ context.Context, req ExplainRequest) (*ExplainR
 
 	// Account for external time bounds when evaluating cost.
 	hasTimeBounds := plan.Hints.TimeBounds != nil || plan.ExternalTimeBounds != nil
+	hasSearchHints := len(plan.Hints.SearchTerms) > 0 || len(plan.Hints.TokenGlobs) > 0
 	cost := "low"
-	if !hasTimeBounds && len(plan.Hints.SearchTerms) == 0 {
+	if !hasTimeBounds && !hasSearchHints {
 		cost = "high"
-	} else if !hasTimeBounds || len(plan.Hints.SearchTerms) == 0 {
+	} else if !hasTimeBounds || !hasSearchHints {
 		cost = "medium"
 	}
 
-	usesFullScan := !hasTimeBounds && len(plan.Hints.SearchTerms) == 0
+	usesFullScan := !hasTimeBounds && !hasSearchHints
 
 	// Build physical plan from optimizer annotations on the AST.
 	physPlan := extractPhysicalPlan(plan.Program)

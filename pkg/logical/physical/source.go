@@ -12,6 +12,9 @@
 //     - BloomTerms: applied in-memory via substring containment check (bloom
 //     terms are literal substrings extracted from contains/glob/matches; in
 //     the absence of a bloom filter, we check _raw directly).
+//     - TokenGlobs: applied in-memory via whole-token glob matching (mirrors
+//     has_glob semantics; disk path expands them against the FST term
+//     dictionary).
 //     - Columns: NOT mapped (ephemeral returns full events; ProjectIterator
 //     handles pruning). No segment-level column projection API.
 //     - TimeBounds: enforced in-memory by filterByTimeBounds. Both
@@ -48,6 +51,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/lynxbase/lynxdb/internal/glob"
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/logical"
@@ -187,9 +191,10 @@ func applyEphemeralPushdown(events []*event.Event, scan *logical.Scan) []*event.
 	pd := scan.Pushdown
 	hasRaw := len(pd.RawTerms) > 0
 	hasBloom := len(pd.BloomTerms) > 0
+	hasGlobs := len(pd.TokenGlobs) > 0
 	hasFP := len(pd.FieldPredicates) > 0
 
-	if !hasRaw && !hasBloom && !hasFP {
+	if !hasRaw && !hasBloom && !hasGlobs && !hasFP {
 		return events
 	}
 
@@ -199,6 +204,9 @@ func applyEphemeralPushdown(events []*event.Event, scan *logical.Scan) []*event.
 			continue
 		}
 		if hasBloom && !matchBloomTerms(ev.Raw, pd.BloomTerms) {
+			continue
+		}
+		if hasGlobs && !matchTokenGlobs(ev.Raw, pd.TokenGlobs) {
 			continue
 		}
 		if hasFP && !matchFieldPredicates(ev, pd.FieldPredicates) {
@@ -226,6 +234,29 @@ func matchRawTerms(raw string, terms []string) bool {
 	for _, term := range terms {
 		// Terms are already lowercased by the optimizer's extractHasRawTerms.
 		if _, ok := set[term]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+// matchTokenGlobs checks that every glob pattern matches at least one whole
+// token of the raw string (case-insensitive; patterns are lowercased by the
+// optimizer). This mirrors has_glob(_raw, "pattern") semantics.
+func matchTokenGlobs(raw string, patterns []string) bool {
+	if raw == "" {
+		return false
+	}
+	tokens := tokenizeString(strings.ToLower(raw))
+	for _, pattern := range patterns {
+		matched := false
+		for _, tok := range tokens {
+			if glob.MatchCached(pattern, tok, false) {
+				matched = true
+				break
+			}
+		}
+		if !matched {
 			return false
 		}
 	}

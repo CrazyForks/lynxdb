@@ -7,6 +7,7 @@ package model
 // during RFC-002 Phase 10 to decouple storage access from the query parser.
 type QueryHints struct {
 	SearchTerms             []string                 // tokenized search terms (lowercased)
+	TokenGlobs              []string                 // lowercased glob patterns matched against whole _raw tokens (FST expansion; candidate filter only — must never feed bloom MayContainAll)
 	SearchTermTree          *SearchTermTree          // structured boolean tree for inverted index OR/AND
 	IndexName               string                   // from Source.Index or SearchCommand.Index
 	SourceIndices           []string                 // multiple source names from FROM a, b, c

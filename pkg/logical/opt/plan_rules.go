@@ -138,6 +138,10 @@ func filterMerge(root logical.Node) (logical.Node, bool) {
 //     Filter because term-index lookup is a candidate filter (false positives
 //     possible at segment level; row-level verification required).
 //
+//   - has_glob(_raw, "us*r") -> lowercase the pattern, append to
+//     Scan.Pushdown.TokenGlobs (FST term-dictionary expansion). KEPT in the
+//     Filter.
+//
 //   - field == literal, field != literal, field < literal, etc. on scalar
 //     literals -> append the expression to Scan.Pushdown.FieldPredicates.
 //     KEPT in Filter (RG-level skipping is a hint, row verification stays).
@@ -238,6 +242,17 @@ func pushConjunct(scan *logical.Scan, expr ast.Expr) (pushed, consumed bool) {
 		return true, false // KEEP in filter
 	}
 
+	// 2b. has_glob(_raw, "us*r") -> TokenGlobs. The pattern is matched
+	// against the inverted index's term dictionary (FST expansion); it cannot
+	// go to RawTerms or BloomTerms because its literal runs are token
+	// FRAGMENTS, not whole tokens — an exact-term or bloom lookup would
+	// falsely prune segments (e.g. "us*r" must match the token "user", but
+	// neither "us" nor "r" exists as a whole token).
+	if pattern, ok := extractHasGlobPattern(expr); ok {
+		scan.Pushdown.TokenGlobs = append(scan.Pushdown.TokenGlobs, pattern)
+		return true, false // KEEP in filter
+	}
+
 	// 3. field cmp literal -> FieldPredicates.
 	if isFieldCmpLiteral(expr) {
 		scan.Pushdown.FieldPredicates = append(scan.Pushdown.FieldPredicates, expr)
@@ -334,7 +349,8 @@ func scanHasPushdown(s *logical.Scan) bool {
 	return pd.TimeBounds != nil ||
 		len(pd.FieldPredicates) > 0 ||
 		len(pd.BloomTerms) > 0 ||
-		len(pd.RawTerms) > 0
+		len(pd.RawTerms) > 0 ||
+		len(pd.TokenGlobs) > 0
 }
 
 func isTimeIdent(e ast.Expr) bool {
@@ -373,6 +389,29 @@ func extractHasRawTerms(expr ast.Expr) ([]string, bool) {
 		return nil, false
 	}
 	return tokens, true
+}
+
+// extractHasGlobPattern checks if expr is has_glob(_raw, "pattern") and
+// returns the lowercased glob pattern (the inverted index stores lowercased
+// tokens, and has_glob is case-insensitive by contract).
+func extractHasGlobPattern(expr ast.Expr) (string, bool) {
+	c, ok := expr.(*ast.Call)
+	if !ok || c.Callee != "has_glob" || len(c.Args) != 2 {
+		return "", false
+	}
+	id, ok := c.Args[0].(*ast.Ident)
+	if !ok || id.Name != "_raw" {
+		return "", false
+	}
+	lit, ok := c.Args[1].(*ast.Literal)
+	if !ok || (lit.Kind != ast.LitString && lit.Kind != ast.LitRawString) {
+		return "", false
+	}
+	s, ok := lit.Value.(string)
+	if !ok || s == "" {
+		return "", false
+	}
+	return strings.ToLower(s), true
 }
 
 // ---------------------------------------------------------------------------
@@ -805,6 +844,7 @@ func cloneScan(s *logical.Scan) *logical.Scan {
 			FieldPredicates: cloneExprs(s.Pushdown.FieldPredicates),
 			BloomTerms:      cloneStrings(s.Pushdown.BloomTerms),
 			RawTerms:        cloneStrings(s.Pushdown.RawTerms),
+			TokenGlobs:      cloneStrings(s.Pushdown.TokenGlobs),
 			Columns:         cloneStrings(s.Pushdown.Columns),
 		},
 	}

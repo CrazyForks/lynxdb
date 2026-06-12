@@ -379,6 +379,13 @@ func hintsFromPlan(plan *logical.Plan) *model.QueryHints {
 	// tokenizer behavior (the tokenizer lowercases all indexed tokens).
 	hints.SearchTerms = mergeAndLowerTerms(scan.Pushdown.BloomTerms, scan.Pushdown.RawTerms)
 
+	// --- Token globs ---
+	// Already lowercased by the optimizer (extractHasGlobPattern). They are
+	// served by FST term-dictionary expansion and MUST stay out of
+	// SearchTerms: bloom filters and exact FST lookups on a glob pattern
+	// would falsely prune segments.
+	hints.TokenGlobs = append([]string(nil), scan.Pushdown.TokenGlobs...)
+
 	// --- Required columns ---
 	// nil means "all columns" — preserve nil explicitly.
 	if scan.Pushdown.Columns != nil {

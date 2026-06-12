@@ -145,6 +145,30 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 				}
 			}
 
+			// Token globs: expand each pattern against the FST term
+			// dictionary. Patterns the index cannot answer (oversized
+			// expansion) are skipped — the Filter verifies rows anyway.
+			if !skipped && len(pd.TokenGlobs) > 0 && p.InvertedIdx != nil {
+				for _, pattern := range pd.TokenGlobs {
+					bm, ok, err := p.InvertedIdx.SearchGlob(pattern)
+					if err != nil || !ok {
+						continue // degrade gracefully
+					}
+					if searchBitmap == nil {
+						searchBitmap = bm
+					} else {
+						searchBitmap.And(bm)
+					}
+					if searchBitmap.GetCardinality() == 0 {
+						skipped = true
+						if stats != nil {
+							stats.PartsSkipped.Add(1)
+						}
+						break
+					}
+				}
+			}
+
 			if skipped {
 				continue
 			}

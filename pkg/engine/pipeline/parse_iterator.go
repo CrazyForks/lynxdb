@@ -94,10 +94,11 @@ type ParseIterator struct {
 	noOverwriteCount int64
 
 	// Per-call state used by the emit callback to avoid closure allocation.
-	curBatch   *Batch
-	curRowIdx  int
-	curEmitErr error    // set if emit detects a short-circuit need
-	curEmitted []string // tracks which fields were emitted for this row
+	curBatch    *Batch
+	curRowIdx   int
+	curEmitErr  error    // set if emit detects a short-circuit need
+	curEmitted  []string // tracks which fields were written for this row (undo set)
+	curProduced int      // fields the parser produced for this row, including no-overwrite skips
 }
 
 // NewParseIterator creates an RFC-002 parse operator.
@@ -294,6 +295,7 @@ func (p *ParseIterator) tryParseRow(batch *Batch, rowIdx int, input string) (boo
 // parseSingleFormat parses with a single format parser.
 func (p *ParseIterator) parseSingleFormat(batch *Batch, rowIdx int, input string) error {
 	p.curEmitted = p.curEmitted[:0]
+	p.curProduced = 0
 	p.curEmitErr = nil
 	p.curRowIdx = rowIdx
 	p.curBatch = batch
@@ -306,7 +308,7 @@ func (p *ParseIterator) parseSingleFormat(batch *Batch, rowIdx int, input string
 	// Check if parse "succeeded" — the parser returned nil error AND at least
 	// one field was emitted. Many parsers (like JSON) return nil even on
 	// malformed input (they just emit nothing).
-	if parseErr == nil && len(p.curEmitted) > 0 {
+	if parseErr == nil && p.curProduced > 0 {
 		// Success: apply typed captures coercion.
 		return p.applyCaptures(batch, rowIdx)
 	}
@@ -318,6 +320,7 @@ func (p *ParseIterator) parseSingleFormat(batch *Batch, rowIdx int, input string
 // trySingleFormat is like parseSingleFormat but returns (success, error).
 func (p *ParseIterator) trySingleFormat(batch *Batch, rowIdx int, input string) (bool, error) {
 	p.curEmitted = p.curEmitted[:0]
+	p.curProduced = 0
 	p.curEmitErr = nil
 	p.curRowIdx = rowIdx
 	p.curBatch = batch
@@ -327,7 +330,7 @@ func (p *ParseIterator) trySingleFormat(batch *Batch, rowIdx int, input string) 
 		return false, p.curEmitErr
 	}
 
-	if parseErr == nil && len(p.curEmitted) > 0 {
+	if parseErr == nil && p.curProduced > 0 {
 		if err := p.applyCaptures(batch, rowIdx); err != nil {
 			return false, err
 		}
@@ -344,6 +347,7 @@ func (p *ParseIterator) parseFirstOf(batch *Batch, rowIdx int, input string) err
 
 	for i, parser := range p.parsers {
 		p.curEmitted = p.curEmitted[:0]
+		p.curProduced = 0
 		p.curEmitErr = nil
 		p.curRowIdx = rowIdx
 		p.curBatch = batch
@@ -353,7 +357,7 @@ func (p *ParseIterator) parseFirstOf(batch *Batch, rowIdx int, input string) err
 			return p.curEmitErr
 		}
 
-		if parseErr == nil && len(p.curEmitted) > 0 {
+		if parseErr == nil && p.curProduced > 0 {
 			// Success with this format.
 			return p.applyCaptures(batch, rowIdx)
 		}
@@ -393,6 +397,7 @@ func (p *ParseIterator) parseFirstOf(batch *Batch, rowIdx int, input string) err
 func (p *ParseIterator) tryFirstOf(batch *Batch, rowIdx int, input string) (bool, error) {
 	for _, parser := range p.parsers {
 		p.curEmitted = p.curEmitted[:0]
+		p.curProduced = 0
 		p.curEmitErr = nil
 		p.curRowIdx = rowIdx
 		p.curBatch = batch
@@ -402,7 +407,7 @@ func (p *ParseIterator) tryFirstOf(batch *Batch, rowIdx int, input string) (bool
 			return false, p.curEmitErr
 		}
 
-		if parseErr == nil && len(p.curEmitted) > 0 {
+		if parseErr == nil && p.curProduced > 0 {
 			if err := p.applyCaptures(batch, rowIdx); err != nil {
 				return false, err
 			}
@@ -510,6 +515,12 @@ func (p *ParseIterator) emitField(key string, val event.Value) bool {
 			return true // skip, continue parsing
 		}
 	}
+
+	// The parser produced a field the query cares about — count it before the
+	// no-overwrite check. Success of a parse is judged on produced fields, not
+	// written ones: re-parsing rows whose fields already exist must not be
+	// reported as "no fields extracted".
+	p.curProduced++
 
 	outKey := p.prefixedKey(key)
 

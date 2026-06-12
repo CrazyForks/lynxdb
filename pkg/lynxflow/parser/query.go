@@ -1462,9 +1462,22 @@ func (p *parser) parseParseBody(s *ast.Stage) {
 				continue
 			case "on_error":
 				p.advance()
-				if n2, ok2 := p.identLike(); ok2 {
+				// "null" is a hard keyword, so identLike alone would reject
+				// the spec-mandated `on_error null` mode.
+				if p.at(lexer.Null) {
+					payload.OnError = "null"
+					p.advance()
+				} else if n2, ok2 := p.identLike(); ok2 {
 					payload.OnError = n2
 					p.advance()
+				}
+				switch payload.OnError {
+				case "propagate", "null", "drop", "strict":
+				default:
+					p.errorf(p.cur, CodeUnexpectedToken,
+						[]string{"propagate", "null", "drop", "strict"},
+						"on_error accepts: propagate, null, drop, strict",
+						"unknown on_error mode %q", payload.OnError)
 				}
 				continue
 			}

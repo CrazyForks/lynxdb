@@ -590,3 +590,41 @@ func hasErrorExpr(q *ast.Query) bool {
 
 // Unused but matches the test pattern from expr_test.go.
 var _ = ast.Span{}
+
+// ---------------------------------------------------------------------------
+// parse on_error modes: all four spec modes parse clean (including the hard
+// keyword "null"), unknown modes are rejected with a fix-it diagnostic.
+// ---------------------------------------------------------------------------
+
+func TestParseOnErrorModes(t *testing.T) {
+	for _, mode := range []string{"propagate", "null", "drop", "strict"} {
+		src := "from main | parse json on_error " + mode
+		q, diags := Parse(src)
+		if len(diags) != 0 {
+			t.Errorf("on_error %s: unexpected diags: %v", mode, diagMsgs(diags))
+			continue
+		}
+		if got := q.String(); !strings.Contains(got, "on_error "+mode) {
+			t.Errorf("on_error %s: formatter lost the mode, got %q", mode, got)
+		}
+	}
+}
+
+func TestParseOnErrorUnknownMode(t *testing.T) {
+	_, diags := Parse(`from main | parse json on_error bogus`)
+	if len(diags) == 0 {
+		t.Fatal("expected a diagnostic for unknown on_error mode, got none")
+	}
+	found := false
+	for _, d := range diags {
+		if strings.Contains(d.Message, "on_error") && strings.Contains(d.Message, "bogus") {
+			found = true
+			if d.Suggestion == "" {
+				t.Error("unknown on_error diagnostic should carry a suggestion")
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("no diagnostic mentions the unknown mode; got: %v", diagMsgs(diags))
+	}
+}

@@ -212,7 +212,7 @@ const (
 	// LYNXDB_QUERY_MAX_CONCURRENT is the max concurrent async queries.
 	// YAML key: query.max_concurrent. Default: 10.
 	LYNXDB_QUERY_MAX_CONCURRENT = "LYNXDB_QUERY_MAX_CONCURRENT"
-	// LYNXDB_QUERY_MAX_QUERY_LENGTH is the max SPL2 query source length in bytes.
+	// LYNXDB_QUERY_MAX_QUERY_LENGTH is the max query source length in bytes.
 	// YAML key: query.max_query_length. Default: 1048576.
 	LYNXDB_QUERY_MAX_QUERY_LENGTH = "LYNXDB_QUERY_MAX_QUERY_LENGTH"
 	// LYNXDB_QUERY_MAX_QUERY_MEMORY_BYTES is the per-query memory budget.

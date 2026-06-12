@@ -64,7 +64,7 @@ type Engine struct {
 	// after new data always miss the cache (E3: cache invalidation on ingest).
 	ingestGen atomic.Int64
 
-	// External IndexStore for full SPL2 queries (CTEs, multi-index, etc.)
+	// External IndexStore for full queries (CTEs, multi-index, etc.)
 	indexStore *model.IndexStore
 
 	// Query result cache.
@@ -597,7 +597,7 @@ func waitForBackgroundLoop(name string, cancel context.CancelFunc, wg *sync.Wait
 	}
 }
 
-// SetIndexStore sets an external IndexStore for full SPL2 queries.
+// SetIndexStore sets an external IndexStore for full queries.
 func (e *Engine) SetIndexStore(store *model.IndexStore) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

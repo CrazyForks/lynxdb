@@ -161,7 +161,7 @@ func (e *Engine) CreateView(name, query, retention string) error {
 }
 
 // launchBackfill starts an asynchronous backfill goroutine for the named view.
-// The goroutine executes the view's SPL2 query through the full query engine,
+// The goroutine executes the view's query through the full query engine,
 // converts result rows to events, and injects them into the view's storage.
 //
 // The goroutine is tracked by e.backfillWG and rooted in e.backfillCtx so that
@@ -200,7 +200,7 @@ func (e *Engine) launchBackfill(viewName string) {
 	}()
 }
 
-// RunQueryBackfill executes the view's SPL2 query through the normal query engine
+// RunQueryBackfill executes the view's query through the normal query engine
 // and stores the results in the view's segment storage. This reuses the entire
 // pipeline (optimizer, VM, partial aggregation) with zero new scan infrastructure.
 //

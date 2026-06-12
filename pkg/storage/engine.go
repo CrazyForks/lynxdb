@@ -298,9 +298,9 @@ func (e *Engine) EventCount() int {
 	return total
 }
 
-// Query parses and executes an SPL2 query against ingested events.
+// Query parses and executes a LynxFlow query against ingested events.
 // Returns the result, query statistics, and any error.
-func (e *Engine) Query(ctx context.Context, spl2Query string, opts QueryOpts) (*QueryResult, *stats.QueryStats, error) {
+func (e *Engine) Query(ctx context.Context, query string, opts QueryOpts) (*QueryResult, *stats.QueryStats, error) {
 	st := &stats.QueryStats{
 		Ephemeral: true,
 		ScanType:  "ephemeral",
@@ -308,7 +308,7 @@ func (e *Engine) Query(ctx context.Context, spl2Query string, opts QueryOpts) (*
 
 	parseStart := time.Now()
 
-	prog, err := parseLFQuery(spl2Query)
+	prog, err := parseLFQuery(query)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse: %w", err)
 	}
@@ -385,8 +385,8 @@ func extractMatchedRows(st *stats.QueryStats) {
 // IngestReaderFiltered reads from r with query-aware predicate pushdown.
 // Lines that cannot match the query's search keywords are skipped before
 // Event allocation.
-func (e *Engine) IngestReaderFiltered(ctx context.Context, r io.Reader, spl2Query string, opts IngestOpts) (int, error) {
-	prog, err := parseLFQuery(spl2Query)
+func (e *Engine) IngestReaderFiltered(ctx context.Context, r io.Reader, query string, opts IngestOpts) (int, error) {
+	prog, err := parseLFQuery(query)
 	if err != nil {
 		return 0, fmt.Errorf("parse: %w", err)
 	}
@@ -461,11 +461,11 @@ func cleanupSpiller(s *SegmentSpiller) {
 // escalates from in-memory accumulation to on-disk segment spill.
 const DefaultSpillThreshold = 256 * 1024 * 1024
 
-// QueryReader parses the SPL2 query first, then reads from r with predicate
+// QueryReader parses the query first, then reads from r with predicate
 // pushdown. For large inputs (>DefaultSpillThreshold), events are spilled to
 // temporary .lsg segment files on disk.
 // Returns the result, query statistics, and any error.
-func (e *Engine) QueryReader(ctx context.Context, r io.Reader, spl2Query string, opts IngestOpts, qopts QueryOpts) (*QueryResult, *stats.QueryStats, error) {
+func (e *Engine) QueryReader(ctx context.Context, r io.Reader, query string, opts IngestOpts, qopts QueryOpts) (*QueryResult, *stats.QueryStats, error) {
 	st := &stats.QueryStats{
 		Ephemeral: true,
 		ScanType:  "ephemeral",
@@ -473,7 +473,7 @@ func (e *Engine) QueryReader(ctx context.Context, r io.Reader, spl2Query string,
 
 	parseStart := time.Now()
 
-	prog, err := parseLFQuery(spl2Query)
+	prog, err := parseLFQuery(query)
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse: %w", err)
 	}

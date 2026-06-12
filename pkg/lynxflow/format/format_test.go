@@ -109,27 +109,22 @@ func TestFixpoint_RFC002Examples(t *testing.T) {
 func assertFixpoint(t *testing.T, input string) {
 	t.Helper()
 
-	// Step 1: parse the original
 	q1, diags1 := parser.Parse(input)
 	if len(diags1) > 0 {
 		t.Skipf("input has parse diags (not a fixpoint candidate): %v", diagStrings(diags1))
 		return
 	}
 
-	// Step 2: format
 	formatted1 := Query(q1)
 
-	// Step 3: re-parse the formatted output
 	q2, diags2 := parser.Parse(formatted1)
 	if len(diags2) > 0 {
 		t.Fatalf("format output re-parses with diags:\n  input:     %q\n  formatted: %q\n  diags: %v",
 			input, formatted1, diagStrings(diags2))
 	}
 
-	// Step 4: format again
 	formatted2 := Query(q2)
 
-	// Step 5: the two formatted outputs must be identical (fixpoint)
 	if formatted1 != formatted2 {
 		t.Errorf("fixpoint violated:\n  input:      %q\n  format(1):  %q\n  format(2):  %q",
 			input, formatted1, formatted2)

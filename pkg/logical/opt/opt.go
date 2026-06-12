@@ -50,7 +50,7 @@ func Optimize(p *logical.Plan) (*logical.Plan, []Applied) {
 	for pass := 0; pass < maxPasses; pass++ {
 		anyChanged := false
 
-		// Phase 1: Expression rules.
+		// Expression rules run before plan rules on each pass.
 		for ri, rule := range exprRules {
 			ruleApply := rule.Apply
 			nodeChanged := walkPlanExprs(p, func(e ast.Expr) (ast.Expr, bool) {
@@ -62,8 +62,7 @@ func Optimize(p *logical.Plan) (*logical.Plan, []Applied) {
 			}
 		}
 
-		// Phase 2: Plan rules (run after expression rules each pass so
-		// they see simplified expressions, e.g. const-folded true/false).
+		// Plan rules see simplified expressions, e.g. const-folded true/false.
 		for ri, rule := range planRules {
 			planChanged := applyPlanRule(p, rule)
 			if planChanged {

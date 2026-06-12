@@ -1,6 +1,6 @@
-// Package sema implements semantic analysis for LynxFlow v2 queries (RFC-002
-// Phase 3). It operates on DESUGARED queries (core + helper + management
-// stages only) and performs:
+// Package sema implements semantic analysis for LynxFlow v2 queries. It
+// operates on DESUGARED queries (core + helper + management stages only) and
+// performs:
 //
 //   - Flow-typed schema tracking across pipeline stages
 //   - Expression type inference with did-you-mean suggestions

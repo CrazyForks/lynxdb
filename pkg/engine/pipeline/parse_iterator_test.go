@@ -686,7 +686,6 @@ func TestParseIterator_RFC002_Ex15_ErrorDebugging(t *testing.T) {
 		Len: 5,
 	}
 
-	// Step 1: parse json (with propagate).
 	parseIter := NewParseIterator(
 		&staticIterator{batches: []*Batch{batch}},
 		[]unpack.FormatParser{mustParser(t, "json")},

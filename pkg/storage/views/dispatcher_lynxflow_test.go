@@ -222,13 +222,13 @@ func TestDispatcher_MigratedView_Continuity(t *testing.T) {
 	// is preserved across migration.
 	//
 	// Originally this tested SPL2 -> LynxFlow migration, but SPL2 is removed
-	// (RFC-002). Phase 1 now uses LynxFlow with count() as count (aliased
-	// output = "count"). Phase 2 re-queries with count() (natural output =
-	// "count()"). The AggSpec from Phase 1 (Alias="count") is preserved,
-	// so both phases serialize to the same _pa_count_count columns.
+	// (RFC-002). The first view uses LynxFlow with count() as count (aliased
+	// output = "count"). The migrated view re-queries with count() (natural
+	// output = "count()"). The original AggSpec (Alias="count") is preserved,
+	// so both paths serialize to the same _pa_count_count columns.
 	d, reg, _ := setupDispatcher(t)
 
-	// Phase 1: Create a LynxFlow view with explicit alias matching old SPL2 convention.
+	// Create a LynxFlow view with explicit alias matching old SPL2 convention.
 	spl2Def := createLynxFlowAggView(t, reg, "mv_migrate", `from main | stats count() as count by host`)
 	d.ActivateView(spl2Def)
 
@@ -252,7 +252,7 @@ func TestDispatcher_MigratedView_Continuity(t *testing.T) {
 		t.Fatalf("pre-migration counts wrong: %v", preByHost)
 	}
 
-	// Phase 2: Simulate migration — deactivate, update definition to LynxFlow.
+	// Simulate migration by deactivating the view and updating its definition.
 	d.DeactivateView("mv_migrate")
 	migratedDef, err := reg.Get("mv_migrate")
 	if err != nil {
@@ -282,14 +282,14 @@ func TestDispatcher_MigratedView_Continuity(t *testing.T) {
 		t.Fatalf("ActivateView (LynxFlow): %v", err)
 	}
 
-	// Phase 3: Ingest MORE data through the LynxFlow path.
+	// Ingest more data through the LynxFlow path.
 	batch2 := []*event.Event{
 		makeTestEventWithHost("main", "web1"),
 		makeTestEventWithHost("main", "web3"),
 	}
 	d.Dispatch(batch2)
 
-	// Phase 4: ViewAllEvents must merge SPL2-written and LynxFlow-written partial state.
+	// ViewAllEvents must merge SPL2-written and LynxFlow-written partial state.
 	// Since we kept the SPL2 AggSpec (Alias="count"), both paths serialize
 	// to _pa_count_count, so merge works.
 	all, err := d.ViewAllEvents("mv_migrate")

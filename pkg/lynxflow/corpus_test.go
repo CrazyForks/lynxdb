@@ -1,6 +1,4 @@
-// Package lynxflow will hold the v2 language frontend (RFC-002). Until the
-// parser lands (Phase 2), this package only validates the Phase 0 acceptance
-// corpus shape.
+// Package lynxflow holds the v2 language frontend corpus shape from RFC-002.
 package lynxflow
 
 import (

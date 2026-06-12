@@ -162,7 +162,7 @@ func findPartFiles(t *testing.T, dir string) []string {
 	return files
 }
 
-// Task 1: Ephemeral pushdown mapping verification
+// Ephemeral pushdown mapping verification
 
 func TestEphemeralPushdown_RawTerms(t *testing.T) {
 	// has(_raw, "needle") should filter to only events containing the token "needle".
@@ -223,7 +223,7 @@ func TestEphemeralPushdown_FieldPredicates(t *testing.T) {
 	}
 }
 
-// Task 2: Skip-effectiveness tests (Part-backed)
+// Part-backed skip-effectiveness tests
 
 func TestPartSource_SkipEffectiveness(t *testing.T) {
 	// Part 1: events with "needle" term
@@ -344,7 +344,7 @@ func TestPartSource_SkipEffectiveness_FullScan(t *testing.T) {
 	}
 }
 
-// Task 3: Case-rule verification (end-to-end)
+// End-to-end case-rule verification
 
 func TestCaseRule_HasIsCaseInsensitive(t *testing.T) {
 	// has() is CI: searching for "error" should match "ERROR", "Error", "error".
@@ -472,7 +472,7 @@ func TestCaseRule_GlobIsCaseSensitive(t *testing.T) {
 	}
 }
 
-// Task 4: Verify-stays contract test
+// Index candidates must still be verified per row
 
 func TestVerifyStays_IndexCandidateNotInRow(t *testing.T) {
 	// A term that appears in a segment but NOT in every row of that segment.

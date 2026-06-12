@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -693,7 +695,10 @@ func lfEmitReplace(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	pattern := lfExprToString(call.Args[1])
-	regIdx := c.prog.AddRegex(pattern)
+	regIdx, err := addValidatedRegex(c, "replace", pattern)
+	if err != nil {
+		return err
+	}
 	if err := c.compile(call.Args[2]); err != nil {
 		return err
 	}
@@ -723,14 +728,26 @@ func lfEmitPrintf(c *lfCompiler, call *lfast.Call) error {
 	return nil
 }
 
+// addValidatedRegex validates a regex pattern at compile time so a bad
+// pattern surfaces as a query compile error instead of a per-row VM panic.
+func addValidatedRegex(c *lfCompiler, fn, pattern string) (int, error) {
+	if _, err := regexp.Compile(pattern); err != nil {
+		return 0, fmt.Errorf("%s: invalid regex %q: %v", fn, pattern, err)
+	}
+	return c.prog.AddRegex(pattern), nil
+}
+
 func lfEmitGlob(c *lfCompiler, call *lfast.Call) error {
 	// glob(field, pattern) — case-sensitive, uses filepath.Match
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
 	}
 	pattern := lfExprToString(call.Args[1])
-	regIdx := c.prog.AddRegex(pattern)
-	c.prog.EmitOp(OpGlobMatch, regIdx)
+	if _, err := filepath.Match(pattern, ""); err != nil {
+		return fmt.Errorf("glob: invalid pattern %q: %w", pattern, err)
+	}
+	globIdx := c.prog.AddGlob(pattern)
+	c.prog.EmitOp(OpGlobMatch, globIdx)
 	return nil
 }
 
@@ -740,7 +757,10 @@ func lfEmitMatches(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	pattern := lfExprToString(call.Args[1])
-	regIdx := c.prog.AddRegex(pattern)
+	regIdx, err := addValidatedRegex(c, "matches", pattern)
+	if err != nil {
+		return err
+	}
 	c.prog.EmitOp(OpStrMatch, regIdx)
 	return nil
 }
@@ -751,7 +771,10 @@ func lfEmitExtract(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	pattern := lfExprToString(call.Args[1])
-	regIdx := c.prog.AddRegex(pattern)
+	regIdx, err := addValidatedRegex(c, "extract", pattern)
+	if err != nil {
+		return err
+	}
 	c.prog.EmitOp(OpExtract, regIdx)
 	return nil
 }
@@ -762,7 +785,10 @@ func lfEmitExtractAll(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	pattern := lfExprToString(call.Args[1])
-	regIdx := c.prog.AddRegex(pattern)
+	regIdx, err := addValidatedRegex(c, "extract_all", pattern)
+	if err != nil {
+		return err
+	}
 	c.prog.EmitOp(OpExtractAll, regIdx)
 	return nil
 }

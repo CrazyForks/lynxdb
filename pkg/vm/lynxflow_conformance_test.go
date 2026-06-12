@@ -1539,3 +1539,82 @@ func TestConformance_XXHash64_EmptyString(t *testing.T) {
 // - day_of_week: 5 (sunday + wednesday + null + non-ts + saturday)
 // - xxhash64: 4 (basic + different + null + empty)
 // Total: ~195 + 13 + 5 + 5 + 4 = ~222
+
+// ---------------------------------------------------------------------------
+// glob(): patterns are not regexes — they live in a separate pool, and a
+// glob like "*user*" (an invalid regex) must evaluate correctly from the
+// first row instead of panicking ensureRegexCache (regression).
+// ---------------------------------------------------------------------------
+
+func TestLynxFlowGlobInvalidRegexPattern(t *testing.T) {
+	prog, err := CompileLynxFlow(call("glob", ident("msg"), litStr("*user*")))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	vm := &VM{Warnings: &WarningCounters{}}
+
+	cases := []struct {
+		msg  string
+		want bool
+	}{
+		{"user login ok", true}, // first row used to panic→null via ensureRegexCache
+		{"username taken", true},
+		{"disk full", false},
+	}
+	for i, tc := range cases {
+		got, execErr := vm.Execute(prog, map[string]event.Value{"msg": event.StringValue(tc.msg)})
+		if execErr != nil {
+			t.Fatalf("row %d: %v", i, execErr)
+		}
+		b, ok := got.TryAsBool()
+		if !ok || b != tc.want {
+			t.Errorf("row %d (%q): got %v, want %v", i, tc.msg, got, tc.want)
+		}
+	}
+}
+
+func TestLynxFlowGlobThenMatchesSharedProgram(t *testing.T) {
+	// A program mixing glob (raw pattern) and matches (regex) keeps the two
+	// pools independent: the glob pattern must not poison the regex cache.
+	prog, err := CompileLynxFlow(binOp(lfast.OpOr,
+		call("glob", ident("msg"), litStr("*user*")),
+		call("matches", ident("msg"), litStr("disk")),
+	))
+	if err != nil {
+		t.Fatalf("compile: %v", err)
+	}
+	vm := &VM{Warnings: &WarningCounters{}}
+	for i, tc := range []struct {
+		msg  string
+		want bool
+	}{
+		{"user login ok", true},
+		{"disk full", true},
+		{"all quiet", false},
+	} {
+		got, execErr := vm.Execute(prog, map[string]event.Value{"msg": event.StringValue(tc.msg)})
+		if execErr != nil {
+			t.Fatalf("row %d: %v", i, execErr)
+		}
+		if b, ok := got.TryAsBool(); !ok || b != tc.want {
+			t.Errorf("row %d (%q): got %v, want %v", i, tc.msg, got, tc.want)
+		}
+	}
+}
+
+func TestLynxFlowInvalidRegexIsCompileError(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		expr lfast.Expr
+	}{
+		{"matches", call("matches", ident("msg"), litStr("("))},
+		{"replace", call("replace", ident("msg"), litStr("["), litStr("x"))},
+		{"extract", call("extract", ident("msg"), litStr("("))},
+		{"extract_all", call("extract_all", ident("msg"), litStr("("))},
+		{"glob", call("glob", ident("msg"), litStr("["))},
+	} {
+		if _, err := CompileLynxFlow(tc.expr); err == nil {
+			t.Errorf("%s: expected compile error for invalid pattern, got nil", tc.name)
+		}
+	}
+}

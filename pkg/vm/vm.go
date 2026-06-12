@@ -49,12 +49,13 @@ var ErrVMTypeMismatch = errors.New("vm: type mismatch (possible compiler bug)")
 // benchmark for no safety benefit. If a type mismatch occurs here, it indicates a
 // compiler bug — a panic is the correct response.
 type VM struct {
-	stack        [StackSize]event.Value
-	sp           int
-	regexCache   []*regexp.Regexp
-	replaceHints []func(s, replacement string) string // per-regex fast-path; nil = use regex
-	matchHints   []func(string) bool                  // per-regex fast-path; nil = use regex
-	cidrNets     []*net.IPNet                         // lazy-copied from Program.CIDRNets
+	stack         [StackSize]event.Value
+	sp            int
+	regexCache    []*regexp.Regexp
+	regexPatterns []string                             // source patterns for regexCache error messages
+	replaceHints  []func(s, replacement string) string // per-regex fast-path; nil = use regex
+	matchHints    []func(string) bool                  // per-regex fast-path; nil = use regex
+	cidrNets      []*net.IPNet                         // lazy-copied from Program.CIDRNets
 
 	// jsonCache is a single-entry cache for JSON dot-notation lookups.
 	// When a query accesses multiple paths from the same root (e.g.
@@ -339,6 +340,9 @@ func (vm *VM) execStrMatch(ins []byte, ip int) (int, error) {
 			vm.stack[vm.sp-1] = event.BoolValue(fastFn(s))
 		} else {
 			re := vm.regexCache[idx]
+			if re == nil {
+				return 0, fmt.Errorf("regex match: invalid pattern %q", vm.lastProgRegexPattern(idx))
+			}
 			vm.stack[vm.sp-1] = event.BoolValue(re.MatchString(s))
 		}
 	}
@@ -348,7 +352,7 @@ func (vm *VM) execStrMatch(ins []byte, ip int) (int, error) {
 
 // execGlobMatch performs glob matching with bounds checking.
 func (vm *VM) execGlobMatch(prog *Program, ins []byte, ip int) (int, error) {
-	idx, err := readIndexSafe(ins, ip, len(prog.RegexPatterns), "pattern")
+	idx, err := readIndexSafe(ins, ip, len(prog.GlobPatterns), "pattern")
 	if err != nil {
 		return 0, err
 	}
@@ -357,7 +361,7 @@ func (vm *VM) execGlobMatch(prog *Program, ins []byte, ip int) (int, error) {
 	if a.IsNull() {
 		vm.stack[vm.sp-1] = event.BoolValue(false)
 	} else {
-		pattern := prog.RegexPatterns[idx]
+		pattern := prog.GlobPatterns[idx]
 		matched, matchErr := filepath.Match(pattern, valueToString(a))
 		if matchErr != nil {
 			return 0, fmt.Errorf("glob match: invalid pattern %q: %w", pattern, matchErr)
@@ -416,6 +420,9 @@ func (vm *VM) execReplace(ins []byte, ip int) (int, error) {
 			vm.stack[vm.sp-1] = event.StringValue(fastFn(s, r))
 		} else {
 			re := vm.regexCache[idx]
+			if re == nil {
+				return 0, fmt.Errorf("replace: invalid pattern %q", vm.lastProgRegexPattern(idx))
+			}
 			vm.stack[vm.sp-1] = event.StringValue(re.ReplaceAllString(s, r))
 		}
 	}
@@ -1687,6 +1694,8 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			if a.IsNull() {
 				vm.stack[vm.sp-1] = event.NullValue()
+			} else if vm.regexCache[regIdx] == nil {
+				return event.NullValue(), fmt.Errorf("extract: invalid pattern %q", vm.lastProgRegexPattern(regIdx))
 			} else {
 				vm.stack[vm.sp-1] = extractFirst(vm.regexCache[regIdx], valueToString(a))
 			}
@@ -1700,6 +1709,8 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			if a.IsNull() {
 				vm.stack[vm.sp-1] = event.NullValue()
+			} else if vm.regexCache[regIdx] == nil {
+				return event.NullValue(), fmt.Errorf("extract_all: invalid pattern %q", vm.lastProgRegexPattern(regIdx))
 			} else {
 				vm.stack[vm.sp-1] = extractAllMatches(vm.regexCache[regIdx], valueToString(a))
 			}
@@ -1893,16 +1904,36 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 	return event.NullValue(), nil
 }
 
+// lastProgRegexPattern reports the source pattern for a regex-cache index, for
+// error messages when a pattern failed to compile. The cache parallels the
+// last program's RegexPatterns pool.
+func (vm *VM) lastProgRegexPattern(idx int) string {
+	if idx >= 0 && idx < len(vm.regexPatterns) {
+		return vm.regexPatterns[idx]
+	}
+	return "<unknown>"
+}
+
 func (vm *VM) ensureRegexCache(prog *Program) {
-	if len(vm.regexCache) == len(prog.RegexPatterns) {
+	n := len(prog.RegexPatterns)
+	if len(vm.regexCache) == n &&
+		(n == 0 || (len(vm.regexPatterns) == n && &vm.regexPatterns[0] == &prog.RegexPatterns[0])) {
 		return
 	}
-	n := len(prog.RegexPatterns)
 	vm.regexCache = make([]*regexp.Regexp, n)
+	vm.regexPatterns = prog.RegexPatterns
 	vm.replaceHints = make([]func(s, replacement string) string, n)
 	vm.matchHints = make([]func(string) bool, n)
 	for i, p := range prog.RegexPatterns {
-		vm.regexCache[i] = regexp.MustCompile(p)
+		// Patterns are validated at compile time (addValidatedRegex); a nil
+		// entry here would mean a non-regex slipped into the pool. Compile
+		// instead of MustCompile so one bad pattern cannot panic the row and
+		// leave the cache half-built with nils for every later index.
+		re, err := regexp.Compile(p)
+		if err != nil {
+			continue
+		}
+		vm.regexCache[i] = re
 		vm.replaceHints[i] = analyzeReplacePattern(p)
 		vm.matchHints[i] = analyzeMatchPattern(p)
 	}

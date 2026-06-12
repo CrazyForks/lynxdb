@@ -13,7 +13,11 @@ type Program struct {
 	Constants     []event.Value
 	FieldNames    []string
 	RegexPatterns []string
-	CIDRNets      []*net.IPNet // compiled CIDR networks for cidrmatch()
+	// GlobPatterns holds raw glob patterns for OpGlobMatch. They are NOT
+	// regexes and must stay out of RegexPatterns: ensureRegexCache compiles
+	// that pool, and a glob like "*user*" is an invalid regex.
+	GlobPatterns []string
+	CIDRNets     []*net.IPNet // compiled CIDR networks for cidrmatch()
 
 	// SubPrograms stores compiled lambda bodies. OpArrayAny/All/Filter/Map
 	// reference sub-programs by index. Sub-programs share the parent's
@@ -60,6 +64,18 @@ func (p *Program) AddRegex(pattern string) int {
 	p.RegexPatterns = append(p.RegexPatterns, pattern)
 
 	return len(p.RegexPatterns) - 1
+}
+
+// AddGlob appends a glob pattern (deduplicating) and returns its index.
+func (p *Program) AddGlob(pattern string) int {
+	for i, g := range p.GlobPatterns {
+		if g == pattern {
+			return i
+		}
+	}
+	p.GlobPatterns = append(p.GlobPatterns, pattern)
+
+	return len(p.GlobPatterns) - 1
 }
 
 // AddCIDR parses a CIDR string, deduplicates, and returns its pool index.

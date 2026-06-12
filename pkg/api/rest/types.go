@@ -5,9 +5,9 @@ type QueryLanguage string
 
 const (
 	// LangLynxFlow selects the LynxFlow v2 parser and execution path.
+	// This is the only supported language post-RFC-002; "spl2" is rejected
+	// with migration guidance at the API layer.
 	LangLynxFlow QueryLanguage = "lynxflow"
-	// LangSPL2 selects the legacy SPL2 parser and execution path.
-	LangSPL2 QueryLanguage = "spl2"
 )
 
 // QueryRequest is the request body for POST /api/v1/query.
@@ -28,7 +28,7 @@ type QueryRequest struct {
 	LintLimit   int               `json:"lint_limit,omitempty"`  // max lints to return; default 5
 	LintFull    bool              `json:"lint_full,omitempty"`   // true returns all advisory lints
 	Variables   map[string]string `json:"variables,omitempty"`   // template variable substitution
-	Language    string            `json:"language,omitempty"`    // "lynxflow" or "spl2"; absent = auto-detect
+	Language    string            `json:"language,omitempty"`    // "lynxflow" (the only supported language; "spl2" is rejected with migration guidance)
 }
 
 func (r *QueryRequest) effectiveQuery() string {

@@ -28,10 +28,10 @@ func newTailCmd() *cobra.Command {
 		Use:     "tail [filter]",
 		Aliases: []string{"t"},
 		Short:   "Live tail logs from server (SSE stream)",
-		Long:    `Stream live log events from the server using Server-Sent Events. Optionally filter with an SPL2 expression.`,
+		Long:    `Stream live log events from the server using Server-Sent Events. Optionally filter with a LynxFlow expression.`,
 		Example: `  lynxdb tail                                   Stream all events
-  lynxdb tail 'level=error'                     Stream errors only
-  lynxdb tail '_source=nginx status>=500'        Stream 5xx from nginx
+  lynxdb tail 'level == "error"'                Stream errors only
+  lynxdb tail 'source == "nginx" and status >= 500'  Stream 5xx from nginx
   lynxdb tail --count 50 --from -1h             Last 50 events + live`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			filter := ""

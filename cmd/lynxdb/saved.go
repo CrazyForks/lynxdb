@@ -78,8 +78,8 @@ func newSavedCmd() *cobra.Command {
 	var updateExisting bool
 	importCmd := &cobra.Command{
 		Use:   "import <path>",
-		Short: "Import one SPL2 query per line as saved queries",
-		Long: `Import one SPL2 query per non-empty line as saved queries.
+		Short: "Import one LynxFlow query per line as saved queries",
+		Long: `Import one LynxFlow query per non-empty line as saved queries.
 
 The optional manifest is rsigma metadata JSON. When present, rule_id becomes
 the saved query name and rule metadata is attached to the saved query.`,

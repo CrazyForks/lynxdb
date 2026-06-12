@@ -110,21 +110,12 @@ func (s *Server) executeQuery(w http.ResponseWriter, r *http.Request, req QueryR
 	// Validate explicit language parameter.
 	if msg := validateExplicitLanguage(req.Language); msg != "" {
 		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,
-			WithSuggestion(`use language="lynxflow" or language="spl2"`))
+			WithSuggestion(`set language="lynxflow" or omit it; SPL2 was removed — see https://lynxdb.dev/docs/migration`))
 		return
 	}
 
-	// Language routing: detect or use explicit language.
+	// Language routing: post-RFC-002, always LynxFlow.
 	lang := detectQueryLanguage(query, req.Language)
-
-	// RFC-002 Phase 10: SPL2 path removed. All queries execute via LynxFlow.
-	if lang.Language == LangSPL2 && lang.Explicit {
-		respondError(w, ErrCodeValidationError, http.StatusBadRequest,
-			"SPL2 query language has been removed; please migrate to LynxFlow",
-			WithSuggestion("remove language=spl2 or set language=lynxflow; see https://lynxdb.dev/docs/migration"))
-		return
-	}
-	lang.Language = LangLynxFlow
 
 	s.executeLynxFlowQuery(w, r, req, lang)
 }

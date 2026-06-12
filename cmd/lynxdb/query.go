@@ -25,7 +25,6 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/desugar"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/run"
-	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/sigmaqueries"
 	"github.com/lynxbase/lynxdb/pkg/stats"
 	"github.com/lynxbase/lynxdb/pkg/storage"
@@ -71,19 +70,19 @@ func newQueryCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:     "query [SPL2 query]",
+		Use:     "query [LynxFlow query]",
 		Aliases: []string{"q"},
-		Short:   "Execute an SPL2 query",
-		Long:    `Execute an SPL2 query against a running LynxDB server or local files.`,
-		Example: `  lynxdb query 'level=error'                           Search errors
-  lynxdb query 'level=error | stats count by source'   Aggregate by source
-  lynxdb query 'status>=500 | top 10 uri' --since 1h   Top failing URIs
-  lynxdb query --file app.log '| stats count by level'  Query local file
-  cat app.log | lynxdb query '| where dur > 1000'       Pipe from stdin`,
+		Short:   "Execute a LynxFlow query",
+		Long:    `Execute a LynxFlow query against a running LynxDB server or local files.`,
+		Example: `  lynxdb query 'from main | where level == "error"'                   Search errors
+  lynxdb query 'from main | where level == "error" | stats count() by source'
+  lynxdb query 'from main | where status >= 500 | top 10 uri' --since 1h
+  lynxdb query --file app.log '| stats count() by level'              Query local file
+  cat app.log | lynxdb query '| where duration_ms > 1000'             Pipe from stdin`,
 		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if queriesFile == "" && len(args) == 0 {
-				return fmt.Errorf("requires an SPL2 query or --queries-file")
+				return fmt.Errorf("requires a LynxFlow query or --queries-file")
 			}
 			if queriesFile != "" && len(args) > 0 {
 				return fmt.Errorf("--queries-file cannot be used with a positional query")
@@ -166,7 +165,7 @@ func newQueryCmd() *cobra.Command {
 	f.StringVar(&timeout, "timeout", "", "Query timeout (e.g., 10s, 5m)")
 	f.StringVar(&analyze, "analyze", "", "Profile query execution (basic, full, trace)")
 	f.StringVar(&maxMemory, "max-memory", "", "Max memory for ephemeral query (e.g., 512mb, 1gb)")
-	f.StringVar(&queriesFile, "queries-file", "", "Run one SPL2 query per non-empty line from a file, or '-' for stdin")
+	f.StringVar(&queriesFile, "queries-file", "", "Run one LynxFlow query per non-empty line from a file, or '-' for stdin")
 	f.BoolVar(&failEmpty, "fail-on-empty", false, "Exit with code 6 if no results")
 	f.BoolVar(&copyFlag, "copy", false, "Copy results to clipboard as TSV")
 	f.BoolVar(&explain, "explain", false, "Show query plan without executing")
@@ -174,7 +173,7 @@ func newQueryCmd() *cobra.Command {
 	f.BoolVar(&noLint, "no-lint", false, "Disable advisory query lints in server mode")
 	f.BoolVar(&noSuggestions, "no-suggestions", false, "Disable advisory query suggestions in server mode")
 	f.BoolVar(&showRewritten, "show-rewritten", false, "Show normalized query rewrites")
-	f.StringVar(&language, "language", "", "Query language: lynxflow, spl2 (default: auto-detect)")
+	f.StringVar(&language, "language", "", "Query language: lynxflow (default; spl2 was removed)")
 	f.StringArrayVarP(&queryParams, "param", "D", nil, "Set query parameter: --param name=value")
 
 	// Allow bare --analyze (no value) to default to "basic".
@@ -440,13 +439,12 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 		return noFilesMatchingError{pattern: file}
 	}
 
-	var memLimit int64
+	// maxMemory is parsed for validation but not yet wired to the LynxFlow
+	// ephemeral engine (governor plumbing is a tracked follow-up).
 	if maxMemory != "" {
-		b, err := config.ParseByteSize(maxMemory)
-		if err != nil {
+		if _, err := config.ParseByteSize(maxMemory); err != nil {
 			return fmt.Errorf("invalid --max-memory: %w", err)
 		}
-		memLimit = int64(b)
 	}
 
 	eng := storage.NewEphemeralEngine()
@@ -454,62 +452,16 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 	start := time.Now()
 	totalEvents := 0
 
-	// Language detection FIRST: must happen before auto-detect so the injected
-	// parse command uses the correct syntax for the target language. CLI file
-	// mode uses DetectStrict (spl2 default for ambiguous queries) to preserve
-	// backward compatibility with golden tests.
-	lang := langdetect.DetectStrict(query, language)
-
 	// Auto-detect format from first file unless --raw is set.
-	// Use language-appropriate parse command syntax.
 	if !rawMode {
-		detectedQuery, detectErr := autoDetectFromFirstFileForLang(query, matches[0], lang.Language)
+		detectedQuery, detectErr := autoDetectFromFirstFileForLang(query, matches[0], langdetect.LangLynxFlow)
 		if detectErr == nil && detectedQuery != query {
 			query = detectedQuery
 		}
 	}
 
-	if lang.Language == langdetect.LangLynxFlow {
-		// LynxFlow file-mode execution path.
-		// Ingest all files into the ephemeral engine first (reuse existing ingest).
-		ctx := context.Background()
-		for _, path := range matches {
-			src := source
-			if src == "" {
-				src = path
-			}
-			f, err := os.Open(path)
-			if err != nil {
-				return fmt.Errorf("open %s: %w", path, err)
-			}
-			n, err := eng.IngestReader(ctx, f, storage.IngestOpts{
-				Source:     src,
-				SourceType: sourcetype,
-			})
-			if closeErr := f.Close(); closeErr != nil {
-				if err != nil {
-					return fmt.Errorf("ingest %s: %w (also failed to close: %v)", path, err, closeErr)
-				}
-				return fmt.Errorf("close %s: %w", path, closeErr)
-			}
-			if err != nil {
-				return fmt.Errorf("ingest %s: %w", path, err)
-			}
-			totalEvents += n
-		}
-
-		return runLynxFlowLocal(query, eng.Events(), outputFile, failEmpty, analyze, showRewritten, start, totalEvents)
-	}
-
-	// SPL2 file-mode execution path (existing behavior).
-	normalizedQuery := query
-	var rewrites []model.QueryRewrite
-	printSPL2QueryRewrites(showRewritten, rewrites)
-
-	// RFC-002: dead code removed.
-
-	// RFC-002: spl2 compat hints removed.
-
+	// LynxFlow file-mode execution path.
+	// Ingest all files into the ephemeral engine first (reuse existing ingest).
 	ctx := context.Background()
 	for _, path := range matches {
 		src := source
@@ -520,7 +472,7 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 		if err != nil {
 			return fmt.Errorf("open %s: %w", path, err)
 		}
-		n, err := eng.IngestReaderFiltered(ctx, f, normalizedQuery, storage.IngestOpts{
+		n, err := eng.IngestReader(ctx, f, storage.IngestOpts{
 			Source:     src,
 			SourceType: sourcetype,
 		})
@@ -528,7 +480,6 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 			if err != nil {
 				return fmt.Errorf("ingest %s: %w (also failed to close: %v)", path, err, closeErr)
 			}
-
 			return fmt.Errorf("close %s: %w", path, closeErr)
 		}
 		if err != nil {
@@ -537,35 +488,16 @@ func runQueryFile(query, file, source, sourcetype, outputFile string, failEmpty 
 		totalEvents += n
 	}
 
-	result, qstats, err := eng.Query(ctx, normalizedQuery, storage.QueryOpts{MaxMemory: memLimit})
-	if err != nil {
-		return fmt.Errorf("%s", err)
-	}
-
-	qstats.TotalDuration = time.Since(start)
-	qstats.ScannedRows = int64(totalEvents)
-
-	if len(result.Rows) == 0 {
-		if failEmpty {
-			printMeta("No results found.")
-
-			return noResultsError{}
-		}
-
-		printHint("No results. Try: lynxdb query --file <file> '| stats count' to verify data loads.")
-	}
-
-	return printLocalResults(result.Rows, qstats, outputFile, analyze)
+	return runLynxFlowLocal(query, eng.Events(), outputFile, failEmpty, analyze, showRewritten, start, totalEvents)
 }
 
 func runQueryStdin(query, source, sourcetype, outputFile string, failEmpty bool, analyze, maxMemory string, rawMode, showRewritten bool, language string) error {
-	var memLimit int64
+	// maxMemory is parsed for validation but not yet wired to the LynxFlow
+	// ephemeral engine (governor plumbing is a tracked follow-up).
 	if maxMemory != "" {
-		b, err := config.ParseByteSize(maxMemory)
-		if err != nil {
+		if _, err := config.ParseByteSize(maxMemory); err != nil {
 			return fmt.Errorf("invalid --max-memory: %w", err)
 		}
-		memLimit = int64(b)
 	}
 
 	eng := storage.NewEphemeralEngine()
@@ -577,66 +509,27 @@ func runQueryStdin(query, source, sourcetype, outputFile string, failEmpty bool,
 		src = "stdin"
 	}
 
-	// Language detection FIRST: must happen before auto-detect so the injected
-	// parse command uses the correct syntax for the target language.
-	lang := langdetect.DetectStrict(query, language)
-
 	// Auto-detect format unless --raw is set.
 	var reader io.Reader = os.Stdin
 	if !rawMode {
-		detectedQuery, combinedReader, detectErr := autoDetectAndRewriteForLang(query, os.Stdin, lang.Language)
+		detectedQuery, combinedReader, detectErr := autoDetectAndRewriteForLang(query, os.Stdin, langdetect.LangLynxFlow)
 		if detectErr == nil && combinedReader != nil {
 			query = detectedQuery
 			reader = combinedReader
 		}
 	}
 
-	if lang.Language == langdetect.LangLynxFlow {
-		// LynxFlow stdin-mode execution path.
-		ctx := context.Background()
-		n, err := eng.IngestReader(ctx, reader, storage.IngestOpts{
-			Source:     src,
-			SourceType: sourcetype,
-		})
-		if err != nil {
-			return fmt.Errorf("ingest stdin: %w", err)
-		}
-
-		return runLynxFlowLocal(query, eng.Events(), outputFile, failEmpty, analyze, showRewritten, start, n)
-	}
-
-	// SPL2 stdin-mode execution path (existing behavior).
-	normalizedQuery := query
-	var rewrites []model.QueryRewrite
-	printSPL2QueryRewrites(showRewritten, rewrites)
-
-	// RFC-002: dead code removed.
-
-	// RFC-002: spl2 compat hints removed.
-
+	// LynxFlow stdin-mode execution path.
 	ctx := context.Background()
-	result, qstats, err := eng.QueryReader(ctx, reader, normalizedQuery, storage.IngestOpts{
+	n, err := eng.IngestReader(ctx, reader, storage.IngestOpts{
 		Source:     src,
 		SourceType: sourcetype,
-	}, storage.QueryOpts{MaxMemory: memLimit})
+	})
 	if err != nil {
-		return fmt.Errorf("%s", err)
+		return fmt.Errorf("ingest stdin: %w", err)
 	}
 
-	qstats.TotalDuration = time.Since(start)
-
-	if len(result.Rows) == 0 {
-		if failEmpty {
-			printMeta("No results found.")
-
-			return noResultsError{}
-		}
-
-		printHint("No results. Check your filter or try a broader query.")
-		printHint("%s", suggestGlimpse(normalizedQuery))
-	}
-
-	return printLocalResults(result.Rows, qstats, outputFile, analyze)
+	return runLynxFlowLocal(query, eng.Events(), outputFile, failEmpty, analyze, showRewritten, start, n)
 }
 
 func printLocalResults(rows []map[string]interface{}, st *stats.QueryStats, outputFile, analyze string) error {
@@ -701,15 +594,6 @@ func runQueryServer(query, since, from, to, timeout string, failEmpty bool, anal
 		return err
 	}
 
-	// Skip client-side parse validation when language is explicitly set to
-	// lynxflow, since the SPL2 parser would reject valid LynxFlow queries.
-	lang := langdetect.DetectStrict(query, language)
-	if lang.Language != langdetect.LangLynxFlow {
-		if err := validateQueryBeforeServer(query); err != nil {
-			return err
-		}
-	}
-
 	ctx := context.Background()
 	if timeout != "" {
 		dur, err := time.ParseDuration(timeout)
@@ -761,14 +645,6 @@ func stripVerticalQuerySuffix(query string) (string, bool) {
 
 	stripped := strings.TrimRight(strings.TrimSuffix(trimmed, `\G`), " \t\r\n;")
 	return stripped, true
-}
-
-func validateQueryBeforeServer(query string) error {
-	// RFC-002: dead code removed.
-
-	// RFC-002: dead code removed.
-
-	return nil
 }
 
 func doQueryPlain(ctx context.Context, query, since, earliest, latest string, failEmpty bool, analyze string, noLint, noSuggestions, showRewritten bool, language string) error {
@@ -1191,17 +1067,6 @@ func printQueryRewrites(show bool, rewrites []client.QueryRewrite) {
 	}
 }
 
-func printSPL2QueryRewrites(show bool, rewrites []model.QueryRewrite) {
-	if globalQuiet || !show || len(rewrites) == 0 {
-		return
-	}
-
-	fmt.Fprintln(os.Stderr)
-	for _, rewrite := range rewrites {
-		printQueryRewrite(rewrite.Before, rewrite.After, rewrite.Reason)
-	}
-}
-
 const maxRewritePreviewBytes = 4 * 1024
 
 func printQueryRewrite(before, after, reason string) {
@@ -1450,12 +1315,11 @@ func printLynxFlowRewrites(show bool, rewrites []desugar.Rewrite) {
 }
 
 // runExplainWithLanguage dispatches to the appropriate explain path based on language.
+// runExplainWithLanguage renders the LynxFlow EXPLAIN tree locally.
+// Post-RFC-002, LynxFlow is the only language; the language parameter is
+// validated but always resolves to LynxFlow.
 func runExplainWithLanguage(query, language string) error {
-	lang := langdetect.DetectStrict(query, language)
-	if lang.Language == langdetect.LangLynxFlow {
-		return runExplainLynxFlow(query)
-	}
-	return runExplainLang(query, "spl2")
+	return runExplainLynxFlow(query)
 }
 
 // runExplainLynxFlow renders the LynxFlow EXPLAIN tree locally (no server needed).

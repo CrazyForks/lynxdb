@@ -3,6 +3,7 @@ package rest
 import (
 	"net/http"
 
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/run"
 	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
@@ -25,16 +26,11 @@ func (s *Server) handleQueryExplain(w http.ResponseWriter, r *http.Request) {
 	langParam := r.URL.Query().Get("language")
 	if msg := validateExplicitLanguage(langParam); msg != "" {
 		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,
-			WithSuggestion(`use language=lynxflow or language=spl2`))
+			WithSuggestion(`set language="lynxflow" or omit it; SPL2 was removed — see https://lynxdb.dev/docs/migration`))
 		return
 	}
 
-	// Language routing for explain.
 	lang := detectQueryLanguage(q, langParam)
-	if lang.Language == LangLynxFlow {
-		s.executeLynxFlowExplain(w, q, lang)
-		return
-	}
 
 	// EXPLAIN ANALYZE: execute the query with profiling and return plan + stats.
 	if r.URL.Query().Get("analyze") == "true" {
@@ -43,6 +39,9 @@ func (s *Server) handleQueryExplain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rich EXPLAIN: parse, optimize, and return a structured envelope with
+	// the text plan, parsed pipeline summary, optimizer details, and MV
+	// acceleration info.
 	result, err := s.queryService.Explain(r.Context(), usecases.ExplainRequest{
 		Query: q,
 		From:  r.URL.Query().Get("from"),
@@ -54,7 +53,17 @@ func (s *Server) handleQueryExplain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondExplainResult(w, result)
+	if !result.IsValid {
+		respondExplainResult(w, result, "", lang)
+
+		return
+	}
+
+	// Also generate the text plan for backward compatibility (the previous
+	// endpoint returned only {is_valid, lynxflow_plan, errors}).
+	textPlan, _ := run.ExecuteExplain(q, run.Options{DefaultSource: "main"})
+
+	respondExplainResult(w, result, textPlan, lang)
 }
 
 // handleExplainAnalyze runs both EXPLAIN and actual execution with profiling,
@@ -72,7 +81,7 @@ func (s *Server) handleExplainAnalyze(w http.ResponseWriter, r *http.Request, q 
 		return
 	}
 	if !explainResult.IsValid {
-		respondExplainResult(w, explainResult)
+		respondExplainResult(w, explainResult, "", langDetectResult{Language: LangLynxFlow})
 
 		return
 	}
@@ -99,13 +108,14 @@ func (s *Server) handleExplainAnalyze(w http.ResponseWriter, r *http.Request, q 
 	}
 
 	// Build the combined response: plan + actual execution stats.
-	resp := buildExplainResponse(explainResult)
+	textPlan, _ := run.ExecuteExplain(q, run.Options{DefaultSource: "main"})
+	resp := buildExplainResponse(explainResult, textPlan)
 	if submitResult.Done {
 		ms := searchStatsToMeta(&submitResult.Stats)
 		resp["execution"] = ms
 	}
 
-	respondData(w, http.StatusOK, resp)
+	respondData(w, http.StatusOK, resp, WithLanguage(string(LangLynxFlow)))
 }
 
 func applyAnalyzedRangePredicates(result *usecases.ExplainResult, preds []model.RangePredicate) {
@@ -132,7 +142,7 @@ func applyAnalyzedRangePredicates(result *usecases.ExplainResult, preds []model.
 }
 
 // respondExplainResult writes the standard explain response.
-func respondExplainResult(w http.ResponseWriter, result *usecases.ExplainResult) {
+func respondExplainResult(w http.ResponseWriter, result *usecases.ExplainResult, textPlan string, lang langDetectResult) {
 	if !result.IsValid {
 		errs := make([]map[string]interface{}, len(result.Errors))
 		for i, e := range result.Errors {
@@ -148,16 +158,18 @@ func respondExplainResult(w http.ResponseWriter, result *usecases.ExplainResult)
 		if len(result.Rewrites) > 0 {
 			body["rewrites"] = result.Rewrites
 		}
-		respondData(w, http.StatusOK, body)
+		respondData(w, http.StatusOK, body, WithLanguage(string(lang.Language)))
 
 		return
 	}
 
-	respondData(w, http.StatusOK, buildExplainResponse(result))
+	respondData(w, http.StatusOK, buildExplainResponse(result, textPlan), WithLanguage(string(lang.Language)))
 }
 
 // buildExplainResponse constructs the explain JSON response from an ExplainResult.
-func buildExplainResponse(result *usecases.ExplainResult) map[string]interface{} {
+// The textPlan is the human-readable EXPLAIN tree; it is included as
+// "lynxflow_plan" for backward compatibility with existing consumers.
+func buildExplainResponse(result *usecases.ExplainResult, textPlan string) map[string]interface{} {
 	stages := make([]map[string]interface{}, len(result.Parsed.Pipeline))
 	for i, s := range result.Parsed.Pipeline {
 		stageObj := map[string]interface{}{
@@ -270,6 +282,11 @@ func buildExplainResponse(result *usecases.ExplainResult) map[string]interface{}
 		"acceleration": map[string]interface{}{
 			"available": result.HasMVAccel,
 		},
+	}
+	// Backward compatibility: include the text plan so existing consumers
+	// that read "lynxflow_plan" continue to work.
+	if textPlan != "" {
+		resp["lynxflow_plan"] = textPlan
 	}
 	if len(result.Rewrites) > 0 {
 		resp["rewrites"] = result.Rewrites

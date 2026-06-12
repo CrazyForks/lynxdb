@@ -2,14 +2,11 @@ package rest
 
 import (
 	"encoding/json"
-	"log/slog"
 	"net/http"
-	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/api/apicontracts"
 	"github.com/lynxbase/lynxdb/pkg/auth"
 	"github.com/lynxbase/lynxdb/pkg/event"
-	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
 
 type queryStreamRequest struct {
@@ -107,95 +104,13 @@ func (s *Server) handleQueryStream(w http.ResponseWriter, r *http.Request) {
 	// Validate explicit language parameter.
 	if msg := validateExplicitLanguage(rawReq.Language); msg != "" {
 		respondError(w, ErrCodeValidationError, http.StatusBadRequest, msg,
-			WithSuggestion(`use language="lynxflow" or language="spl2"`))
+			WithSuggestion(`set language="lynxflow" or omit it; SPL2 was removed — see https://lynxdb.dev/docs/migration`))
 		return
 	}
 
-	// Language routing.
+	// Post-RFC-002: all queries route through LynxFlow.
 	lang := detectQueryLanguage(query, rawReq.Language)
-	if lang.Language == LangLynxFlow {
-		s.executeLynxFlowStream(w, r, query, req, lang)
-		return
-	}
-
-	// RFC-002: spl2.CheckUnsupportedCommands removed.
-
-	start := time.Now()
-
-	iter, stats, err := s.queryService.Stream(r.Context(), usecases.StreamRequest{
-		Query: query,
-		From:  req.effectiveFrom(),
-		To:    req.effectiveTo(),
-	})
-	if err != nil {
-		handlePlanError(w, err)
-
-		return
-	}
-	defer iter.Close()
-
-	// Set streaming headers before first write.
-	w.Header().Set("Content-Type", "application/x-ndjson")
-	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.WriteHeader(http.StatusOK)
-
-	flusher, _ := w.(http.Flusher)
-	enc := json.NewEncoder(w)
-	total := 0
-
-	for {
-		if err := r.Context().Err(); err != nil {
-			return // client disconnected
-		}
-
-		batch, err := iter.Next(r.Context())
-		if err != nil {
-			// Write error as last line.
-			if encErr := enc.Encode(map[string]interface{}{
-				"__error": map[string]interface{}{
-					"code":    "STREAM_ERROR",
-					"message": err.Error(),
-				},
-			}); encErr != nil {
-				slog.Warn("rest: stream json encode failed", "error", encErr)
-			}
-			if flusher != nil {
-				flusher.Flush()
-			}
-
-			return
-		}
-		if batch == nil {
-			break
-		}
-
-		for i := 0; i < batch.Len; i++ {
-			row := batch.Row(i)
-			out := rowToInterface(row)
-			if encErr := enc.Encode(out); encErr != nil {
-				slog.Warn("rest: stream json encode failed", "error", encErr)
-			}
-			total++
-		}
-		if flusher != nil {
-			flusher.Flush()
-		}
-	}
-
-	// Write meta line.
-	elapsed := time.Since(start)
-	if encErr := enc.Encode(map[string]interface{}{
-		"__meta": map[string]interface{}{
-			"total":   total,
-			"scanned": stats.RowsScanned,
-			"took_ms": elapsed.Milliseconds(),
-		},
-	}); encErr != nil {
-		slog.Warn("rest: stream json encode failed", "error", encErr)
-	}
-	if flusher != nil {
-		flusher.Flush()
-	}
+	s.executeLynxFlowStream(w, r, query, req, lang)
 }
 
 // rowToInterface converts an event.Value map to a plain map for JSON serialization.

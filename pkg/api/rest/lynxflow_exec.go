@@ -8,11 +8,7 @@ import (
 	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
-	"github.com/lynxbase/lynxdb/pkg/lynxflow/lint"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
-	"github.com/lynxbase/lynxdb/pkg/lynxflow/run"
-	"github.com/lynxbase/lynxdb/pkg/lynxflow/sema"
-	"github.com/lynxbase/lynxdb/pkg/model"
 	"github.com/lynxbase/lynxdb/pkg/planner"
 	"github.com/lynxbase/lynxdb/pkg/usecases"
 )
@@ -65,41 +61,13 @@ func (s *Server) executeLynxFlowQuery(w http.ResponseWriter, r *http.Request, re
 			return
 		}
 
-		// Append LF_DETECT detection-notice lint when language was auto-detected.
-		lints := result.Lints
-		if !lang.Explicit && lang.DetectNotice != "" {
-			detectLint := model.QueryLint{
-				Code:    "LF_DETECT",
-				Message: lang.DetectNotice,
-			}
-			lints = appendLintIfAbsent(lints, detectLint)
-		}
-
 		lintsEnabled := req.Lint == nil || *req.Lint
 		writeSyncResultFromUsecase(w, result, limit, req.Offset, query, queryCfg,
 			lintsEnabled, req.LintLimit, req.LintFull,
-			langOpt, WithLints(lints))
+			langOpt)
 	} else {
-		// Append LF_DETECT to the job handle lints.
-		if !lang.Explicit && lang.DetectNotice != "" {
-			detectLint := model.QueryLint{
-				Code:    "LF_DETECT",
-				Message: lang.DetectNotice,
-			}
-			result.Lints = appendLintIfAbsent(result.Lints, detectLint)
-		}
 		writeJobHandleFromUsecase(w, result, langOpt)
 	}
-}
-
-// appendLintIfAbsent appends a lint to the slice if its code is not already present.
-func appendLintIfAbsent(lints []model.QueryLint, lint model.QueryLint) []model.QueryLint {
-	for _, l := range lints {
-		if l.Code == lint.Code {
-			return lints
-		}
-	}
-	return append(lints, lint)
 }
 
 // executeLynxFlowStream runs a LynxFlow query as a streaming NDJSON response
@@ -196,35 +164,6 @@ func (s *Server) executeLynxFlowStream(w http.ResponseWriter, r *http.Request, q
 	}
 }
 
-// executeLynxFlowExplain returns the EXPLAIN output for a LynxFlow query.
-func (s *Server) executeLynxFlowExplain(w http.ResponseWriter, query string, lang langDetectResult) {
-	explainText, err := run.ExecuteExplain(query, run.Options{DefaultSource: "main"})
-	if err != nil {
-		// Match the SPL2 explain behavior: return 200 with is_valid=false
-		// and the error in the errors array, not a 400 error response.
-		resp := map[string]interface{}{
-			"is_valid": false,
-			"errors": []interface{}{
-				map[string]interface{}{
-					"message": err.Error(),
-				},
-			},
-		}
-		respondData(w, http.StatusOK, resp, WithLanguage(string(lang.Language)))
-		return
-	}
-
-	// Build a response compatible with the existing explain shape, with an
-	// additive lynxflow_plan field.
-	resp := map[string]interface{}{
-		"is_valid":      true,
-		"lynxflow_plan": explainText,
-		"errors":        []interface{}{},
-	}
-
-	respondData(w, http.StatusOK, resp, WithLanguage(string(lang.Language)))
-}
-
 // respondLynxFlowParseError maps a LynxFlow parser.Diag to the structured
 // error contract: {code, message, position{start,end}, expected, suggestion}.
 //
@@ -251,42 +190,4 @@ func respondLynxFlowParseError(w http.ResponseWriter, d parser.Diag) {
 	}
 
 	respondJSON(w, http.StatusBadRequest, map[string]interface{}{"error": errObj})
-}
-
-// convertLynxFlowLints converts LF lints and sema warnings to the model.QueryLint
-// type for the shared response envelope. Retained for the LF_DETECT detection-
-// notice logic; the primary lint path now runs inside the planner/queryService.
-func convertLynxFlowLints(lfLints []lint.Lint, semaResult sema.Result, lang langDetectResult) []model.QueryLint {
-	var out []model.QueryLint
-
-	// Detection notice as a lint.
-	if !lang.Explicit && lang.DetectNotice != "" {
-		out = append(out, model.QueryLint{
-			Code:    "LF_DETECT",
-			Message: lang.DetectNotice,
-		})
-	}
-
-	// LynxFlow lint rules.
-	for _, l := range lfLints {
-		out = append(out, model.QueryLint{
-			Code:     l.Code,
-			Message:  l.Message,
-			Reason:   l.Reason,
-			Position: l.Span.Start,
-		})
-	}
-
-	// Sema warnings.
-	for _, d := range semaResult.Diags {
-		if d.Severity == parser.SeverityWarning {
-			out = append(out, model.QueryLint{
-				Code:     string(d.Code),
-				Message:  d.Message,
-				Position: d.Span.Start,
-			})
-		}
-	}
-
-	return out
 }

@@ -22,9 +22,6 @@ func TestDetectQueryLanguage_ExplicitLynxFlow(t *testing.T) {
 	if !r.Explicit {
 		t.Fatal("expected explicit=true")
 	}
-	if r.DetectNotice != "" {
-		t.Fatalf("unexpected notice: %s", r.DetectNotice)
-	}
 }
 
 func TestDetectQueryLanguage_ExplicitSPL2_ReturnsLynxFlow(t *testing.T) {
@@ -226,6 +223,46 @@ func TestExplain_LynxFlow_ReturnsValidPlan(t *testing.T) {
 	plan, _ := data["lynxflow_plan"].(string)
 	if plan == "" {
 		t.Fatal("missing lynxflow_plan")
+	}
+	// Rich explain: parsed field should contain the structured pipeline.
+	parsed, _ := data["parsed"].(map[string]interface{})
+	if parsed == nil {
+		t.Fatal("missing parsed (rich explain)")
+	}
+	pipelineStages, _ := parsed["pipeline"].([]interface{})
+	if len(pipelineStages) == 0 {
+		t.Fatal("parsed.pipeline is empty")
+	}
+}
+
+func TestExplain_AnalyzeTrue_ReturnsExecution(t *testing.T) {
+	srv, cleanup := startTestServer(t)
+	defer cleanup()
+
+	ingestTestEvents(t, srv.Addr(), 5, 1)
+
+	u := fmt.Sprintf("http://%s/api/v1/query/explain?q=%s&analyze=true", srv.Addr(),
+		url.QueryEscape(`FROM main | stats count()`))
+	resp, err := http.Get(u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		b, _ := io.ReadAll(resp.Body)
+		t.Fatalf("status: %d, body: %s", resp.StatusCode, b)
+	}
+
+	var envelope map[string]interface{}
+	json.NewDecoder(resp.Body).Decode(&envelope)
+	data := envelope["data"].(map[string]interface{})
+	if data["is_valid"] != true {
+		t.Fatalf("is_valid = %v, want true", data["is_valid"])
+	}
+	// analyze=true should include an execution stats section.
+	if _, ok := data["execution"]; !ok {
+		t.Fatal("missing execution stats in analyze=true response")
 	}
 }
 

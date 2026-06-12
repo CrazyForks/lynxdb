@@ -7,13 +7,10 @@ import (
 
 // langDetectResult holds the outcome of language detection.
 type langDetectResult struct {
-	// Language is the resolved language ("lynxflow" or "spl2").
+	// Language is the resolved language ("lynxflow" only post-RFC-002).
 	Language QueryLanguage
 	// Explicit is true when the caller specified the language explicitly.
 	Explicit bool
-	// DetectNotice is non-empty when detection was used (not explicit) and
-	// provides a human-readable notice about the detection result.
-	DetectNotice string
 }
 
 // detectQueryLanguage resolves the language for a query.
@@ -22,9 +19,8 @@ type langDetectResult struct {
 func detectQueryLanguage(query string, explicitLang string) langDetectResult {
 	r := langdetect.Detect(query, explicitLang)
 	return langDetectResult{
-		Language:     QueryLanguage(r.Language),
-		Explicit:     r.Explicit,
-		DetectNotice: r.DetectNotice,
+		Language: QueryLanguage(r.Language),
+		Explicit: r.Explicit,
 	}
 }
 

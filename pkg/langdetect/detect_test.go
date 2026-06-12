@@ -39,23 +39,18 @@ func TestDetect_DefaultsToLynxFlow(t *testing.T) {
 	}
 }
 
-func TestDetectStrict_DefaultsToLynxFlow(t *testing.T) {
-	// Post-RFC-002: DetectStrict also defaults to lynxflow.
-	r := DetectStrict("from main | stats count()", "")
-	if r.Language != LangLynxFlow {
-		t.Fatalf("language: got %s, want lynxflow (strict mode)", r.Language)
-	}
-}
-
-func TestDetectStrict_LynxFlowOnlyRoutes(t *testing.T) {
-	r := DetectStrict("let $x = from main | stats count(); from $x", "")
+func TestDetect_EmptyExplicit(t *testing.T) {
+	r := Detect("from main | stats count()", "")
 	if r.Language != LangLynxFlow {
 		t.Fatalf("language: got %s, want lynxflow", r.Language)
 	}
+	if r.Explicit {
+		t.Fatal("expected explicit=false for auto-detect")
+	}
 }
 
-func TestDetectStrict_ExplicitLynxFlow(t *testing.T) {
-	r := DetectStrict("from main | stats count()", "lynxflow")
+func TestDetect_ExplicitCaseInsensitive(t *testing.T) {
+	r := Detect("from main", "LynxFlow")
 	if r.Language != LangLynxFlow {
 		t.Fatalf("language: got %s, want lynxflow", r.Language)
 	}

@@ -25,8 +25,8 @@ func newShellCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "shell",
 		Aliases: []string{"sh", "repl", "console"},
-		Short:   "Start an interactive SPL2 shell (REPL)",
-		Long: `Starts an interactive shell for running SPL2 queries.
+		Short:   "Start an interactive LynxFlow shell (REPL)",
+		Long: `Starts an interactive shell for running LynxFlow queries.
 
 Supports query history (arrow keys), slash commands (/help, /quit),
 autocomplete (Tab), and both server and file modes.

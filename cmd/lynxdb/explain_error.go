@@ -149,7 +149,7 @@ var errorExplanations = map[string]errorExplanation{
 	},
 	"LF-E301": {
 		Title:       "Syntax error",
-		Description: "The query doesn't follow SPL2 syntax rules.",
+		Description: "The query doesn't follow LynxFlow syntax rules.",
 		Causes: []string{
 			"Invalid operator or expression",
 			"Missing required clause (e.g., 'by' after 'stats')",

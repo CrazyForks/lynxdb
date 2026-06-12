@@ -53,7 +53,7 @@ var (
 var rootCmd = &cobra.Command{
 	Use:           "lynxdb",
 	Short:         "LynxDB - log analytics in a single binary",
-	Long:          `LynxDB is a columnar log storage and search engine with SPL2 query language.`,
+	Long:          `LynxDB is a columnar log storage and search engine with LynxFlow query language.`,
 	RunE:          runRootCommand,
 	SilenceUsage:  true,
 	SilenceErrors: true,

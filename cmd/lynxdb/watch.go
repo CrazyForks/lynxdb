@@ -26,12 +26,12 @@ func newWatchCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "watch [SPL2 query]",
+		Use:   "watch [LynxFlow query]",
 		Short: "Re-run a query at regular intervals",
 		Long:  `Periodically executes a query and refreshes the output. Optionally shows deltas from the previous run.`,
-		Example: `  lynxdb watch 'level=error | stats count by source'
-  lynxdb watch 'level=error | stats count' --interval 10s
-  lynxdb watch '| stats count by level' --since 1h --diff`,
+		Example: `  lynxdb watch 'from main | where level == "error" | stats count() by source'
+  lynxdb watch 'from main | where level == "error" | stats count()' --interval 10s
+  lynxdb watch 'from main | stats count() by level' --since 1h --diff`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")

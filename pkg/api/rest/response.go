@@ -96,7 +96,7 @@ type metaFields struct {
 	TookMS          *float64                `json:"took_ms,omitempty"`
 	Scanned         *int64                  `json:"scanned,omitempty"`
 	QueryID         string                  `json:"query_id,omitempty"`
-	Language        string                  `json:"language,omitempty"`         // "lynxflow" or "spl2" — always present on query responses
+	Language        string                  `json:"language,omitempty"`         // "lynxflow" (the only supported language; "spl2" is rejected with migration guidance)
 	SegmentsErrored *int                    `json:"segments_errored,omitempty"` // E7: surface segment read errors
 	SearchStats     *metaStats              `json:"stats,omitempty"`            // rich query stats for CLI display
 	Warnings        []string                `json:"warnings,omitempty"`         // user-facing warnings about the query

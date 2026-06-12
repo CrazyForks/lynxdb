@@ -25,12 +25,12 @@ func newExplainCmd() *cobra.Command {
 	var language string
 
 	cmd := &cobra.Command{
-		Use:   "explain [SPL2 query]",
+		Use:   "explain [LynxFlow query]",
 		Short: "Show query execution plan without running",
 		Long:  `Parses and optimizes the query, then prints the execution plan, optimizer rules applied, and estimated cost.`,
-		Example: `  lynxdb explain 'level=error | stats count by source'
-  lynxdb explain 'status>=500 | top 10 uri' --format json
-  lynxdb explain --analyze 'level=error | stats count'`,
+		Example: `  lynxdb explain 'from main | where level == "error" | stats count() by source'
+  lynxdb explain 'from main | where status >= 500 | top 10 uri' --format json
+  lynxdb explain --analyze 'from main | where level == "error" | stats count()'`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if analyze {
@@ -45,7 +45,7 @@ func newExplainCmd() *cobra.Command {
 	}
 
 	cmd.Flags().BoolVar(&analyze, "analyze", false, "Execute query and show plan with actual execution stats")
-	cmd.Flags().StringVar(&language, "language", "", "Query language: lynxflow, spl2 (default: auto-detect)")
+	cmd.Flags().StringVar(&language, "language", "", "Query language: lynxflow (default; spl2 was removed)")
 
 	return cmd
 }

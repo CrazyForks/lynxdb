@@ -22,12 +22,12 @@ func newDiffCmd() *cobra.Command {
 	var period string
 
 	cmd := &cobra.Command{
-		Use:   "diff [SPL2 query]",
+		Use:   "diff [LynxFlow query]",
 		Short: "Compare query results across two time periods",
 		Long:  `Runs the same query for two consecutive time periods and shows the difference. Useful for spotting trends and anomalies.`,
-		Example: `  lynxdb diff 'level=error | stats count by source'
-  lynxdb diff 'level=error | stats count by source' --period 1h
-  lynxdb diff 'status>=500 | stats count by uri' --period 24h`,
+		Example: `  lynxdb diff 'from main | where level == "error" | stats count() by source'
+  lynxdb diff 'from main | where level == "error" | stats count() by source' --period 1h
+  lynxdb diff 'from main | where status >= 500 | stats count() by uri' --period 24h`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			query := strings.Join(args, " ")

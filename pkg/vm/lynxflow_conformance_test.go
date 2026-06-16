@@ -350,6 +350,22 @@ func TestLynxFlowBase64Functions(t *testing.T) {
 	}
 }
 
+func TestLynxFlowURLUtilityFunctions(t *testing.T) {
+	rawURL := litStr("https://example.com/search?q=lynx&page=2#section")
+
+	result, _ := runLF(t, call("url_param", rawURL, litStr("q")), nil)
+	assertString(t, result, "lynx", "url_param")
+
+	result, _ = runLF(t, call("url_param", rawURL, litStr("missing")), nil)
+	assertNull(t, result, "url_param missing")
+
+	result, _ = runLF(t, call("url_strip_query", rawURL), nil)
+	assertString(t, result, "https://example.com/search#section", "url_strip_query")
+
+	result, _ = runLF(t, call("url_strip_query", rawURL, litBool(true)), nil)
+	assertString(t, result, "https://example.com/search", "url_strip_query fragment")
+}
+
 // §5.2 Three-Valued Logic Truth Table
 
 func TestConformance_3VL_And(t *testing.T) {

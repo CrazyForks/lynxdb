@@ -119,6 +119,8 @@ const (
 	OpMvJoin   Opcode = 0xA1
 	OpMvDedup  Opcode = 0xA2
 	OpMvCount  Opcode = 0xA3
+	OpURLParam Opcode = 0xA4
+	OpURLStrip Opcode = 0xA5
 
 	// Null Handling.
 	OpCoalesce  Opcode = 0xB0
@@ -376,6 +378,8 @@ var definitions = map[Opcode]*Definition{
 	OpMvJoin:   {"OpMvJoin", nil},
 	OpMvDedup:  {"OpMvDedup", nil},
 	OpMvCount:  {"OpMvCount", nil},
+	OpURLParam: {"OpURLParam", nil},
+	OpURLStrip: {"OpURLStrip", nil},
 
 	OpCoalesce:  {"OpCoalesce", []int{2}},
 	OpIsNull:    {"OpIsNull", nil},

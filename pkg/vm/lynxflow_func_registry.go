@@ -359,6 +359,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "url_domain", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("host")},
 		{name: "url_path", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("path")},
 		{name: "url_protocol", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("scheme")},
+		{name: "url_param", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpURLParam)},
+		{name: "url_strip_query", minArgs: 1, maxArgs: 2, emit: lfEmitURLStripQuery},
 		{name: "path_normalize", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpPathNormalize)},
 		{name: "useragent_parse", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpUserAgentParse)},
 
@@ -867,6 +869,21 @@ func lfEmitBar(c *lfCompiler, call *lfast.Call) error {
 		c.prog.EmitOp(OpConstInt, idx)
 	}
 	c.prog.EmitOp(OpBar)
+	return nil
+}
+
+func lfEmitURLStripQuery(c *lfCompiler, call *lfast.Call) error {
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	if len(call.Args) == 2 {
+		if err := c.compile(call.Args[1]); err != nil {
+			return err
+		}
+	} else {
+		c.prog.EmitOp(OpConstFalse)
+	}
+	c.prog.EmitOp(OpURLStrip)
 	return nil
 }
 

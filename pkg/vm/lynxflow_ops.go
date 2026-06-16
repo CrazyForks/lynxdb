@@ -1099,6 +1099,44 @@ func execURLParse(v event.Value) event.Value {
 	return event.ObjectValue(result)
 }
 
+func execURLParam(rawURL, name event.Value) event.Value {
+	if rawURL.IsNull() || name.IsNull() ||
+		rawURL.Type() != event.FieldTypeString ||
+		name.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	u, err := url.Parse(rawURL.AsString())
+	if err != nil {
+		return event.NullValue()
+	}
+	vals, ok := u.Query()[name.AsString()]
+	if !ok || len(vals) == 0 {
+		return event.NullValue()
+	}
+
+	return event.StringValue(vals[0])
+}
+
+func execURLStripQuery(rawURL, fragment event.Value) event.Value {
+	if rawURL.IsNull() || fragment.IsNull() ||
+		rawURL.Type() != event.FieldTypeString ||
+		fragment.Type() != event.FieldTypeBool {
+		return event.NullValue()
+	}
+	u, err := url.Parse(rawURL.AsString())
+	if err != nil {
+		return event.NullValue()
+	}
+	u.RawQuery = ""
+	u.ForceQuery = false
+	if fragment.AsBool() {
+		u.Fragment = ""
+		u.RawFragment = ""
+	}
+
+	return event.StringValue(u.String())
+}
+
 // execIPParse parses an IP address into an object.
 func execIPParse(v event.Value) event.Value {
 	if v.IsNull() {

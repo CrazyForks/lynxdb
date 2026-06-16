@@ -43,6 +43,8 @@ var functions = []Function{
 	{Name: "url_domain", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its host."},
 	{Name: "url_path", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its path."},
 	{Name: "url_protocol", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its scheme/protocol."},
+	{Name: "url_param", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "name", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Return the first URL query parameter value by name."},
+	{Name: "url_strip_query", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "fragment", Type: TBool, Optional: true}}, Result: TString, Fallibility: NullOnFailure, Doc: "Remove the URL query string; optionally remove fragment too."},
 	{Name: "path_normalize", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "useragent_parse", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TObject, Fallibility: NullOnFailure, Doc: "Optional build."},
 

@@ -54,6 +54,11 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `base64_decode` | (s: string) | `string` | null_on_failure | `base64_decode!` | Decode standard base64; null on invalid input. |
 | `base64_encode` | (s: string) | `string` | null_on_failure | - | Encode a string as standard base64. |
 | `url_parse` | (s: string) | `object` | null_on_failure | - | Parse a URL into &#123;scheme, host, port, path, query, fragment&#125;. |
+| `url_domain` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its host. |
+| `url_path` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its path. |
+| `url_protocol` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its scheme/protocol. |
+| `url_param` | (s: string, name: string) | `string` | null_on_failure | - | Return the first URL query parameter value by name. |
+| `url_strip_query` | (s: string, fragment: bool?) | `string` | null_on_failure | - | Remove the URL query string; optionally remove fragment too. |
 | `path_normalize` | (s: string) | `string` | null_on_failure | - | - |
 | `useragent_parse` | (s: string) | `object` | null_on_failure | - | Optional build. |
 

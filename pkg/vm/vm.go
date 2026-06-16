@@ -1231,6 +1231,18 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execBase64Encode(v)
 
+		case OpURLParam:
+			name := vm.stack[vm.sp-1]
+			rawURL := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execURLParam(rawURL, name)
+
+		case OpURLStrip:
+			fragment := vm.stack[vm.sp-1]
+			rawURL := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execURLStripQuery(rawURL, fragment)
+
 		case OpMD5:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = hashValue(a, "md5")

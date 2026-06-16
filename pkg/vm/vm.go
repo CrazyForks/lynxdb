@@ -1544,6 +1544,20 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = jsonTypeValue(field, path)
 
+		case OpJsonValue:
+			// Stack: [..., field, path] → [..., scalar]
+			path := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = jsonValueValue(field, path)
+
+		case OpJsonQuery:
+			// Stack: [..., field, path] → [..., raw_json]
+			path := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = jsonQueryValue(field, path)
+
 		case OpJsonSet:
 			// Stack: [..., field, path, value] → [..., modified_json]
 			value := vm.stack[vm.sp-1]

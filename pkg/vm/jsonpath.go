@@ -39,6 +39,68 @@ func jsonExtractByPath(input string, path string) event.Value {
 	return walkJSONPath([]byte(s), parts)
 }
 
+func jsonValue(input, path string) event.Value {
+	raw := jsonRawByPath(input, path)
+	if raw == nil {
+		return event.NullValue()
+	}
+	trimmed := strings.TrimSpace(string(raw))
+	if len(trimmed) == 0 || trimmed[0] == '{' || trimmed[0] == '[' {
+		return event.NullValue()
+	}
+
+	return jsonFragmentToValue(raw)
+}
+
+func jsonQuery(input, path string) event.Value {
+	raw := jsonRawByPath(input, path)
+	if raw == nil {
+		return event.NullValue()
+	}
+
+	return event.StringValue(strings.TrimSpace(string(raw)))
+}
+
+func jsonRawByPath(input, path string) []byte {
+	s := strings.TrimSpace(input)
+	if len(s) == 0 {
+		return nil
+	}
+
+	parts, isRoot, ok := jsonPathParts(path)
+	if !ok {
+		return nil
+	}
+	if isRoot {
+		if !json.Valid([]byte(s)) {
+			return nil
+		}
+		return []byte(s)
+	}
+	if s[0] != '{' {
+		return nil
+	}
+
+	return walkJSONPathRaw([]byte(s), parts)
+}
+
+func jsonPathParts(path string) ([]string, bool, bool) {
+	p := strings.TrimSpace(path)
+	if p == "" || p == "$" {
+		return nil, true, true
+	}
+	if strings.HasPrefix(p, "$.") {
+		p = p[2:]
+	} else if strings.HasPrefix(p, "$") {
+		return nil, false, false
+	}
+	if p == "" {
+		return nil, false, false
+	}
+
+	return strings.Split(p, "."), false, true
+}
+
 // arrayAccess holds the parsed result of a path segment that may contain
 // bracket notation for array indexing: "items[0]", "items[-1]", "items[*]".
 type arrayAccess struct {

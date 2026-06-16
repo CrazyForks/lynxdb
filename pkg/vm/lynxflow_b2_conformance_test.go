@@ -854,6 +854,28 @@ func TestLynxFlowIsJSONFunction(t *testing.T) {
 	assertBool(t, result, false, "is_json null")
 }
 
+func TestLynxFlowJSONPathFunctions(t *testing.T) {
+	payload := litStr(`{"user":{"id":42,"name":"alice"},"items":[{"sku":"a"},{"sku":"b"}],"ok":true}`)
+
+	result, _ := runLF(t, call("json_value", payload, litStr("$.user.id")), nil)
+	assertInt(t, result, 42, "json_value int")
+
+	result, _ = runLF(t, call("json_value", payload, litStr("ok")), nil)
+	assertBool(t, result, true, "json_value bool")
+
+	result, _ = runLF(t, call("json_value", payload, litStr("$.items")), nil)
+	assertNull(t, result, "json_value non-scalar")
+
+	result, _ = runLF(t, call("json_query", payload, litStr("$.items[1]")), nil)
+	assertString(t, result, `{"sku":"b"}`, "json_query object")
+
+	result, _ = runLF(t, call("json_query", payload, litStr("$.missing")), nil)
+	assertNull(t, result, "json_query missing")
+
+	result, _ = runLF(t, call("json_value", litInt(42), litStr("$")), nil)
+	assertNull(t, result, "json_value non-string")
+}
+
 func TestB2_FromJSON_Null(t *testing.T) {
 	expr := call("from_json", litNull())
 	result, _ := runLF(t, expr, nil)

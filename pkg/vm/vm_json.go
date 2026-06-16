@@ -113,6 +113,24 @@ func jsonTypeValue(field, path event.Value) event.Value {
 	return jsonType(field.String(), p)
 }
 
+func jsonValueValue(field, path event.Value) event.Value {
+	if field.IsNull() || path.IsNull() ||
+		field.Type() != event.FieldTypeString || path.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+
+	return jsonValue(field.AsString(), path.AsString())
+}
+
+func jsonQueryValue(field, path event.Value) event.Value {
+	if field.IsNull() || path.IsNull() ||
+		field.Type() != event.FieldTypeString || path.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+
+	return jsonQuery(field.AsString(), path.AsString())
+}
+
 // jsonSetValue implements the OpJsonSet opcode.
 // Pops three values: value (top), path, field (bottom).
 // Sets the value at the given dot-path in the JSON field.

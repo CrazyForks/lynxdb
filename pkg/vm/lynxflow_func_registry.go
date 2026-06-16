@@ -493,6 +493,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 			emit:       lfEmitFromJSONNative,
 			emitStrict: lfStrictFromJSONNative},
 		{name: "is_json", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpIsJSON)},
+		{name: "json_value", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpJsonValue)},
+		{name: "json_query", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpJsonQuery)},
 	}
 }
 

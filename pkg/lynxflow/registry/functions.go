@@ -156,4 +156,6 @@ var functions = []Function{
 	{Name: "to_json", Category: "object", Params: []Param{{Name: "x", Type: TAny}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "from_json", Category: "object", Params: []Param{{Name: "s", Type: TString}}, Result: TAny, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Null on invalid JSON, never the original string."},
 	{Name: "is_json", Category: "object", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible, Doc: "True when a string contains valid JSON."},
+	{Name: "json_value", Category: "object", Params: []Param{{Name: "s", Type: TString}, {Name: "path", Type: TString}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Extract a scalar JSON value by path."},
+	{Name: "json_query", Category: "object", Params: []Param{{Name: "s", Type: TString}, {Name: "path", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Extract a raw JSON fragment by path."},
 }

@@ -282,6 +282,8 @@ const (
 	OpJsonSet      Opcode = 0xD7 // pop value, pop path, pop field, push modified JSON
 	OpJsonRemove   Opcode = 0xD8 // pop path, pop field, push modified JSON
 	OpJsonMerge    Opcode = 0xD9 // pop json2, pop json1, push merged JSON
+	OpJsonValue    Opcode = 0xDA // pop field and path; push scalar JSON value or null
+	OpJsonQuery    Opcode = 0xDB // pop field and path; push raw JSON fragment or null
 
 	OpReturn Opcode = 0xFF
 )
@@ -482,6 +484,8 @@ var definitions = map[Opcode]*Definition{
 	OpJsonSet:      {"OpJsonSet", nil},
 	OpJsonRemove:   {"OpJsonRemove", nil},
 	OpJsonMerge:    {"OpJsonMerge", nil},
+	OpJsonValue:    {"OpJsonValue", nil},
+	OpJsonQuery:    {"OpJsonQuery", nil},
 
 	// RFC-002 b2 lambda + array/object
 	OpArrayAny:        {"OpArrayAny", []int{2}},

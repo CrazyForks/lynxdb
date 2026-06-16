@@ -121,6 +121,10 @@ const (
 	OpMvCount  Opcode = 0xA3
 	OpURLParam Opcode = 0xA4
 	OpURLStrip Opcode = 0xA5
+	OpArraySum Opcode = 0xA6
+	OpArrayAvg Opcode = 0xA7
+	OpArrayMin Opcode = 0xA8
+	OpArrayMax Opcode = 0xA9
 
 	// Null Handling.
 	OpCoalesce  Opcode = 0xB0
@@ -409,6 +413,10 @@ var definitions = map[Opcode]*Definition{
 	OpMvCount:  {"OpMvCount", nil},
 	OpURLParam: {"OpURLParam", nil},
 	OpURLStrip: {"OpURLStrip", nil},
+	OpArraySum: {"OpArraySum", nil},
+	OpArrayAvg: {"OpArrayAvg", nil},
+	OpArrayMin: {"OpArrayMin", nil},
+	OpArrayMax: {"OpArrayMax", nil},
 
 	OpCoalesce:  {"OpCoalesce", []int{2}},
 	OpIsNull:    {"OpIsNull", nil},

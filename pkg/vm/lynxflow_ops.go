@@ -912,6 +912,84 @@ func execArraySort(v event.Value) event.Value {
 	return event.ArrayValue(sorted)
 }
 
+func execArraySum(v event.Value) event.Value {
+	arr, ok := numericArray(v)
+	if !ok {
+		return event.NullValue()
+	}
+	if len(arr) == 0 {
+		return event.IntValue(0)
+	}
+
+	var sumInt int64
+	var sumFloat float64
+	hasFloat := false
+	for _, elem := range arr {
+		switch elem.Type() {
+		case event.FieldTypeInt:
+			if hasFloat {
+				sumFloat += float64(elem.AsInt())
+			} else {
+				sumInt += elem.AsInt()
+			}
+		case event.FieldTypeFloat:
+			if !hasFloat {
+				sumFloat = float64(sumInt)
+				hasFloat = true
+			}
+			sumFloat += elem.AsFloat()
+		}
+	}
+	if hasFloat {
+		return event.FloatValue(sumFloat)
+	}
+	return event.IntValue(sumInt)
+}
+
+func execArrayAvg(v event.Value) event.Value {
+	arr, ok := numericArray(v)
+	if !ok || len(arr) == 0 {
+		return event.NullValue()
+	}
+
+	var sum float64
+	for _, elem := range arr {
+		if elem.Type() == event.FieldTypeInt {
+			sum += float64(elem.AsInt())
+		} else {
+			sum += elem.AsFloat()
+		}
+	}
+	return event.FloatValue(sum / float64(len(arr)))
+}
+
+func execArrayExtrema(v event.Value, greatest bool, warnings *WarningCounters) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := v.AsArray()
+	if len(arr) == 0 {
+		return event.NullValue()
+	}
+
+	return scalarExtremaValue(arr, greatest, warnings)
+}
+
+func numericArray(v event.Value) ([]event.Value, bool) {
+	if v.IsNull() || v.Type() != event.FieldTypeArray {
+		return nil, false
+	}
+	arr := v.AsArray()
+	for _, elem := range arr {
+		switch elem.Type() {
+		case event.FieldTypeInt, event.FieldTypeFloat:
+		default:
+			return nil, false
+		}
+	}
+	return arr, true
+}
+
 func execArrayHasAny(a, b event.Value) event.Value {
 	aArr, bArr, ok := arrayPair(a, b)
 	if !ok {

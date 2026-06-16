@@ -2185,6 +2185,22 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execArraySort(a)
 
+		case OpArraySum:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArraySum(a)
+
+		case OpArrayAvg:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayAvg(a)
+
+		case OpArrayMin:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayExtrema(a, false, vm.Warnings)
+
+		case OpArrayMax:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayExtrema(a, true, vm.Warnings)
+
 		case OpArrayHasAny:
 			b := vm.stack[vm.sp-1]
 			a := vm.stack[vm.sp-2]

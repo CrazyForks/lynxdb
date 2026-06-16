@@ -516,6 +516,32 @@ func TestB2_ArraySort_Empty(t *testing.T) {
 	assertArray(t, result, 0, "sort empty")
 }
 
+func TestB2_ArrayReducers(t *testing.T) {
+	result, _ := runLF(t, call("array_sum", array(litInt(1), litInt(2), litInt(3))), nil)
+	assertInt(t, result, 6, "array_sum ints")
+
+	result, _ = runLF(t, call("array_sum", array(litInt(1), litFloat(2.5))), nil)
+	assertFloat(t, result, 3.5, "array_sum mixed")
+
+	result, _ = runLF(t, call("array_avg", array(litInt(1), litInt(2), litInt(3))), nil)
+	assertFloat(t, result, 2, "array_avg")
+
+	result, _ = runLF(t, call("array_min", array(litStr("beta"), litStr("alpha"))), nil)
+	assertString(t, result, "alpha", "array_min strings")
+
+	result, _ = runLF(t, call("array_max", array(litInt(1), litFloat(3.5), litInt(2))), nil)
+	assertFloat(t, result, 3.5, "array_max mixed")
+
+	result, _ = runLF(t, call("array_avg", array()), nil)
+	assertNull(t, result, "array_avg empty")
+
+	result, _ = runLF(t, call("array_sum", array(litInt(1), litStr("2"))), nil)
+	assertNull(t, result, "array_sum non-numeric")
+
+	result, _ = runLF(t, call("array_min", array(litInt(1), litStr("1"))), nil)
+	assertNull(t, result, "array_min incompatible")
+}
+
 func TestB2_ArrayCount(t *testing.T) {
 	expr := call("array_count",
 		array(litInt(1), litInt(2), litInt(3), litInt(4)),

@@ -348,6 +348,10 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "split", minArgs: 2, maxArgs: 2, emit: lfEmitSplit},
 		{name: "split_part", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpSplitPart)},
 		{name: "index_of", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIndexOf)},
+		{name: "lpad", minArgs: 2, maxArgs: 3, emit: lfEmitPad(OpLPad)},
+		{name: "rpad", minArgs: 2, maxArgs: 3, emit: lfEmitPad(OpRPad)},
+		{name: "repeat", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpRepeat)},
+		{name: "translate", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpTranslate)},
 		{name: "join", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpJoinArr)},
 		{name: "starts_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpStartsWith)},
 		{name: "ends_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpEndsWith)},
@@ -870,6 +874,27 @@ func lfEmitBar(c *lfCompiler, call *lfast.Call) error {
 	}
 	c.prog.EmitOp(OpBar)
 	return nil
+}
+
+func lfEmitPad(op Opcode) func(*lfCompiler, *lfast.Call) error {
+	return func(c *lfCompiler, call *lfast.Call) error {
+		if err := c.compile(call.Args[0]); err != nil {
+			return err
+		}
+		if err := c.compile(call.Args[1]); err != nil {
+			return err
+		}
+		if len(call.Args) == 3 {
+			if err := c.compile(call.Args[2]); err != nil {
+				return err
+			}
+		} else {
+			idx := c.prog.AddConstant(event.StringValue(" "))
+			c.prog.EmitOp(OpConstStr, idx)
+		}
+		c.prog.EmitOp(op)
+		return nil
+	}
 }
 
 func lfEmitURLStripQuery(c *lfCompiler, call *lfast.Call) error {

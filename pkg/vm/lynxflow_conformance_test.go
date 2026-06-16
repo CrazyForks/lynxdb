@@ -334,6 +334,29 @@ func TestLynxFlowStringAccessorFunctions(t *testing.T) {
 	})
 }
 
+func TestLynxFlowStringPadRepeatTranslateFunctions(t *testing.T) {
+	result, _ := runLF(t, call("lpad", litStr("42"), litInt(5), litStr("0")), nil)
+	assertString(t, result, "00042", "lpad")
+
+	result, _ = runLF(t, call("rpad", litStr("go"), litInt(5)), nil)
+	assertString(t, result, "go   ", "rpad default")
+
+	result, _ = runLF(t, call("lpad", litStr("é"), litInt(3), litStr("ab")), nil)
+	assertString(t, result, "abé", "lpad rune width")
+
+	result, _ = runLF(t, call("repeat", litStr("ab"), litInt(3)), nil)
+	assertString(t, result, "ababab", "repeat")
+
+	result, _ = runLF(t, call("repeat", litStr("ab"), litInt(-1)), nil)
+	assertNull(t, result, "repeat negative count")
+
+	result, _ = runLF(t, call("translate", litStr("a.b/c"), litStr("./"), litStr("__")), nil)
+	assertString(t, result, "a_b_c", "translate")
+
+	result, _ = runLF(t, call("translate", litStr("abc"), litStr("ac"), litStr("x")), nil)
+	assertString(t, result, "xb", "translate deletes missing replacements")
+}
+
 func TestLynxFlowBase64Functions(t *testing.T) {
 	result, _ := runLF(t, call("base64_encode", litStr("hello")), nil)
 	assertString(t, result, "aGVsbG8=", "base64_encode")

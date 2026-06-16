@@ -238,11 +238,15 @@ const (
 	OpHumanizeBytes   Opcode = 0x45 // pop number; push human-readable binary byte string
 	OpHumanizeCount   Opcode = 0x46 // pop number; push human-readable SI count string
 	OpHumanizeDur     Opcode = 0x47 // pop duration; push human-readable duration string
+	OpLPad            Opcode = 0x64 // pop string, target width, pad string; push left-padded string
+	OpRPad            Opcode = 0x65 // pop string, target width, pad string; push right-padded string
+	OpTranslate       Opcode = 0x66 // pop string, from, to; push translated string
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
 	OpBase64Decode    Opcode = 0x1D // pop string; push standard base64 decoded string or null
 	OpBase64Encode    Opcode = 0x1E // pop string; push standard base64 encoded string
+	OpRepeat          Opcode = 0x1F // pop string, count; push repeated string
 
 	// JSON Functions.
 	OpJsonExtract  Opcode = 0xD0 // pop path, pop field, push extracted value
@@ -495,6 +499,10 @@ var definitions = map[Opcode]*Definition{
 	OpSplitPart:       {"OpSplitPart", nil},
 	OpBase64Decode:    {"OpBase64Decode", nil},
 	OpBase64Encode:    {"OpBase64Encode", nil},
+	OpRepeat:          {"OpRepeat", nil},
+	OpLPad:            {"OpLPad", nil},
+	OpRPad:            {"OpRPad", nil},
+	OpTranslate:       {"OpTranslate", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

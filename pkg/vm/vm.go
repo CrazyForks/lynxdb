@@ -1231,6 +1231,33 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execBase64Encode(v)
 
+		case OpRepeat:
+			count := vm.stack[vm.sp-1]
+			s := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execRepeat(s, count)
+
+		case OpLPad:
+			pad := vm.stack[vm.sp-1]
+			width := vm.stack[vm.sp-2]
+			s := vm.stack[vm.sp-3]
+			vm.sp -= 2
+			vm.stack[vm.sp-1] = execPad(s, width, pad, true)
+
+		case OpRPad:
+			pad := vm.stack[vm.sp-1]
+			width := vm.stack[vm.sp-2]
+			s := vm.stack[vm.sp-3]
+			vm.sp -= 2
+			vm.stack[vm.sp-1] = execPad(s, width, pad, false)
+
+		case OpTranslate:
+			to := vm.stack[vm.sp-1]
+			from := vm.stack[vm.sp-2]
+			s := vm.stack[vm.sp-3]
+			vm.sp -= 2
+			vm.stack[vm.sp-1] = execTranslate(s, from, to)
+
 		case OpURLParam:
 			name := vm.stack[vm.sp-1]
 			rawURL := vm.stack[vm.sp-2]

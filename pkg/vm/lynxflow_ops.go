@@ -1395,6 +1395,116 @@ func execBase64Encode(v event.Value) event.Value {
 	return event.StringValue(base64.StdEncoding.EncodeToString([]byte(v.AsString())))
 }
 
+const maxStringFunctionOutputRunes = 1_000_000
+
+func execRepeat(s, count event.Value) event.Value {
+	if s.IsNull() || count.IsNull() ||
+		s.Type() != event.FieldTypeString ||
+		count.Type() != event.FieldTypeInt {
+		return event.NullValue()
+	}
+	n := count.AsInt()
+	if n < 0 {
+		return event.NullValue()
+	}
+	text := s.AsString()
+	if n == 0 || text == "" {
+		return event.StringValue("")
+	}
+	runeLen := utf8.RuneCountInString(text)
+	if runeLen > 0 && n > maxStringFunctionOutputRunes/int64(runeLen) {
+		return event.NullValue()
+	}
+
+	return event.StringValue(strings.Repeat(text, int(n)))
+}
+
+func execPad(s, width, pad event.Value, left bool) event.Value {
+	if s.IsNull() || width.IsNull() || pad.IsNull() ||
+		s.Type() != event.FieldTypeString ||
+		width.Type() != event.FieldTypeInt ||
+		pad.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	target := width.AsInt()
+	if target < 0 || target > maxStringFunctionOutputRunes {
+		return event.NullValue()
+	}
+	text := s.AsString()
+	textWidth := int64(utf8.RuneCountInString(text))
+	if textWidth >= target {
+		return event.StringValue(text)
+	}
+	padRunes := []rune(pad.AsString())
+	if len(padRunes) == 0 {
+		return event.NullValue()
+	}
+	fill := buildPadString(padRunes, int(target-textWidth))
+	if left {
+		return event.StringValue(fill + text)
+	}
+
+	return event.StringValue(text + fill)
+}
+
+func buildPadString(pad []rune, needed int) string {
+	var b strings.Builder
+	b.Grow(needed)
+	written := 0
+	for written < needed {
+		for _, r := range pad {
+			if written == needed {
+				break
+			}
+			b.WriteRune(r)
+			written++
+		}
+	}
+
+	return b.String()
+}
+
+type translateReplacement struct {
+	r    rune
+	drop bool
+}
+
+func execTranslate(s, from, to event.Value) event.Value {
+	if s.IsNull() || from.IsNull() || to.IsNull() ||
+		s.Type() != event.FieldTypeString ||
+		from.Type() != event.FieldTypeString ||
+		to.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	fromRunes := []rune(from.AsString())
+	toRunes := []rune(to.AsString())
+	replacements := make(map[rune]translateReplacement, len(fromRunes))
+	for i, r := range fromRunes {
+		if _, exists := replacements[r]; exists {
+			continue
+		}
+		if i >= len(toRunes) {
+			replacements[r] = translateReplacement{drop: true}
+			continue
+		}
+		replacements[r] = translateReplacement{r: toRunes[i]}
+	}
+
+	var b strings.Builder
+	for _, r := range s.AsString() {
+		replacement, ok := replacements[r]
+		if !ok {
+			b.WriteRune(r)
+			continue
+		}
+		if !replacement.drop {
+			b.WriteRune(replacement.r)
+		}
+	}
+
+	return event.StringValue(b.String())
+}
+
 func formatScaledNumber(n, base float64, units []string, sep string) string {
 	sign := ""
 	if n < 0 {

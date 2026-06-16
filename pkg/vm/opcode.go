@@ -231,6 +231,8 @@ const (
 	OpUserAgentParse  Opcode = 0x2D // pop string; push object {name, version, raw}
 	OpArrayHasAny     Opcode = 0x2E // pop 2 arrays (a, b); true if any element of b is in a
 	OpArrayHasAll     Opcode = 0x2F // pop 2 arrays (a, b); true if every element of b is in a
+	OpArrayIntersect  Opcode = 0x43 // pop 2 arrays (a, b); push elements from a that are in b
+	OpArrayExcept     Opcode = 0x44 // pop 2 arrays (a, b); push elements from a that are not in b
 
 	// JSON Functions.
 	OpJsonExtract  Opcode = 0xD0 // pop path, pop field, push extracted value
@@ -471,6 +473,8 @@ var definitions = map[Opcode]*Definition{
 	OpUserAgentParse:  {"OpUserAgentParse", nil},
 	OpArrayHasAny:     {"OpArrayHasAny", nil},
 	OpArrayHasAll:     {"OpArrayHasAll", nil},
+	OpArrayIntersect:  {"OpArrayIntersect", nil},
+	OpArrayExcept:     {"OpArrayExcept", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

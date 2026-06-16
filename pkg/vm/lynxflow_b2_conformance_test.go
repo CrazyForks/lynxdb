@@ -559,6 +559,30 @@ func TestB2_ArrayHasAnyAll(t *testing.T) {
 	})
 }
 
+func TestB2_ArrayIntersectExcept(t *testing.T) {
+	t.Run("intersect", func(t *testing.T) {
+		expr := call("array_intersect",
+			array(litStr("pii"), litStr("secret"), litStr("audit")),
+			array(litStr("secret"), litStr("debug"), litStr("pii")),
+		)
+		result, _ := runLF(t, expr, nil)
+		arr := assertArray(t, result, 2, "array_intersect")
+		assertString(t, arr[0], "pii", "array_intersect[0]")
+		assertString(t, arr[1], "secret", "array_intersect[1]")
+	})
+
+	t.Run("except", func(t *testing.T) {
+		expr := call("array_except",
+			array(litStr("pii"), litStr("secret"), litStr("audit")),
+			array(litStr("secret"), litStr("debug")),
+		)
+		result, _ := runLF(t, expr, nil)
+		arr := assertArray(t, result, 2, "array_except")
+		assertString(t, arr[0], "pii", "array_except[0]")
+		assertString(t, arr[1], "audit", "array_except[1]")
+	})
+}
+
 // Array functions: flatten
 
 func TestB2_Flatten(t *testing.T) {

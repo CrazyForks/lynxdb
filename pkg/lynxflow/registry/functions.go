@@ -107,6 +107,8 @@ var functions = []Function{
 	{Name: "array_count", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Count elements matching a predicate."},
 	{Name: "array_has_any", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "array_has_all", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},
+	{Name: "array_intersect", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Elements from a that also appear in b, preserving a order."},
+	{Name: "array_except", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Elements from a that do not appear in b, preserving a order."},
 
 	// object
 	{Name: "keys", Category: "object", Params: []Param{{Name: "obj", Type: TObject}}, Result: TArray, Fallibility: NullOnFailure},

@@ -407,6 +407,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "array_count", minArgs: 2, maxArgs: 2, emit: lfEmitArrayCount},
 		{name: "array_has_any", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAny)},
 		{name: "array_has_all", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAll)},
+		{name: "array_intersect", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayIntersect)},
+		{name: "array_except", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayExcept)},
 
 		// ---- Object (§10) ----
 		{name: "keys", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpKeys)},

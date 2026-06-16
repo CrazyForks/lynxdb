@@ -907,6 +907,36 @@ func execArrayHasAll(a, b event.Value) event.Value {
 	return event.BoolValue(true)
 }
 
+func execArrayIntersect(a, b event.Value) event.Value {
+	aArr, bArr, ok := arrayPair(a, b)
+	if !ok {
+		return event.NullValue()
+	}
+	result := make([]event.Value, 0, len(aArr))
+	for _, item := range aArr {
+		if arrayContains(bArr, item) {
+			result = append(result, item)
+		}
+	}
+
+	return event.ArrayValue(result)
+}
+
+func execArrayExcept(a, b event.Value) event.Value {
+	aArr, bArr, ok := arrayPair(a, b)
+	if !ok {
+		return event.NullValue()
+	}
+	result := make([]event.Value, 0, len(aArr))
+	for _, item := range aArr {
+		if !arrayContains(bArr, item) {
+			result = append(result, item)
+		}
+	}
+
+	return event.ArrayValue(result)
+}
+
 func arrayPair(a, b event.Value) ([]event.Value, []event.Value, bool) {
 	if a.IsNull() || b.IsNull() || a.Type() != event.FieldTypeArray || b.Type() != event.FieldTypeArray {
 		return nil, nil, false

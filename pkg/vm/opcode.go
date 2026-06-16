@@ -134,6 +134,7 @@ const (
 	OpTypeOf   Opcode = 0xB6
 	OpIsArray  Opcode = 0xB7
 	OpIsObject Opcode = 0xB8
+	OpRemap    Opcode = 0xB9 // 2-byte count; pop x, from, to[, default]; push remapped value or null
 
 	// Time Functions.
 	OpStrftime  Opcode = 0xC0
@@ -547,6 +548,7 @@ var definitions = map[Opcode]*Definition{
 	OpIsJSON:          {"OpIsJSON", nil},
 	OpGreatest:        {"OpGreatest", []int{2}},
 	OpLeast:           {"OpLeast", []int{2}},
+	OpRemap:           {"OpRemap", []int{2}},
 
 	OpReturn: {"OpReturn", nil},
 }

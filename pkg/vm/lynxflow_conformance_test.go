@@ -1494,6 +1494,57 @@ func TestConformance_Case(t *testing.T) {
 	assertString(t, result, "b", "case second match")
 }
 
+func TestConformance_Remap(t *testing.T) {
+	t.Run("match", func(t *testing.T) {
+		expr := call("remap",
+			litInt(404),
+			array(litInt(200), litInt(301), litInt(404)),
+			array(litStr("ok"), litStr("redirect"), litStr("miss")),
+			litStr("other"),
+		)
+		result, _ := runLF(t, expr, nil)
+		assertString(t, result, "miss", "remap match")
+	})
+	t.Run("default", func(t *testing.T) {
+		expr := call("remap",
+			litInt(500),
+			array(litInt(200), litInt(404)),
+			array(litStr("ok"), litStr("miss")),
+			litStr("other"),
+		)
+		result, _ := runLF(t, expr, nil)
+		assertString(t, result, "other", "remap default")
+	})
+	t.Run("no default", func(t *testing.T) {
+		expr := call("remap",
+			litInt(500),
+			array(litInt(200), litInt(404)),
+			array(litStr("ok"), litStr("miss")),
+		)
+		result, _ := runLF(t, expr, nil)
+		assertNull(t, result, "remap no default")
+	})
+	t.Run("mismatched arrays", func(t *testing.T) {
+		expr := call("remap",
+			litInt(200),
+			array(litInt(200)),
+			array(litStr("ok"), litStr("miss")),
+			litStr("other"),
+		)
+		result, _ := runLF(t, expr, nil)
+		assertNull(t, result, "remap mismatched arrays")
+	})
+	t.Run("numeric key equality", func(t *testing.T) {
+		expr := call("remap",
+			litFloat(1),
+			array(litInt(1)),
+			array(litStr("one")),
+		)
+		result, _ := runLF(t, expr, nil)
+		assertString(t, result, "one", "remap numeric key equality")
+	})
+}
+
 func TestConformance_Coalesce(t *testing.T) {
 	expr := call("coalesce", litNull(), litNull(), litInt(42), litInt(99))
 	result, _ := runLF(t, expr, nil)

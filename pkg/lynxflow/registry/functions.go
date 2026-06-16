@@ -13,6 +13,7 @@ var functions = []Function{
 	// conditional / null
 	{Name: "if", Category: "conditional", Params: []Param{{Name: "cond", Type: TBool}, {Name: "then", Type: TAny}, {Name: "else", Type: TAny}}, Result: TAny, Fallibility: Infallible, Doc: "Null condition yields null."},
 	{Name: "case", Category: "conditional", Params: []Param{{Name: "pairs", Type: TAny, Variadic: true}}, Result: TAny, Fallibility: Infallible, Doc: "case(cond1, v1, cond2, v2, ...[, default]); trailing odd argument is the default."},
+	{Name: "remap", Category: "conditional", Params: []Param{{Name: "x", Type: TAny}, {Name: "from", Type: TArray}, {Name: "to", Type: TArray}, {Name: "default", Type: TAny, Optional: true}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Map x through parallel from/to arrays; default is null."},
 	{Name: "coalesce", Category: "conditional", Params: []Param{{Name: "values", Type: TAny, Variadic: true}}, Result: TAny, Fallibility: Infallible, Doc: "First non-null, non-missing argument."},
 	{Name: "nullif", Category: "conditional", Params: []Param{{Name: "a", Type: TAny}, {Name: "b", Type: TAny}}, Result: TAny, Fallibility: Infallible, Doc: "Null when a == b, else a."},
 	{Name: "exists", Category: "conditional", Params: []Param{{Name: "field", Type: TAny}}, Result: TBool, Fallibility: Infallible, Doc: "True when the field is present with a non-null value."},

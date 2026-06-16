@@ -24,6 +24,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 |----------|--------|--------|-------------|--------|-------------|
 | `if` | (cond: bool, then: any, else: any) | `any` | infallible | - | Null condition yields null. |
 | `case` | (pairs: any...) | `any` | infallible | - | case(cond1, v1, cond2, v2, ...[, default]); trailing odd argument is the default. |
+| `remap` | (x: any, from: array, to: array, default: any?) | `any` | null_on_failure | - | Map x through parallel from/to arrays; default is null. |
 | `coalesce` | (values: any...) | `any` | infallible | - | First non-null, non-missing argument. |
 | `nullif` | (a: any, b: any) | `any` | infallible | - | Null when a == b, else a. |
 | `exists` | (field: any) | `bool` | infallible | - | True when the field is present with a non-null value. |

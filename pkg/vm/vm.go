@@ -1152,6 +1152,21 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.stack[vm.sp] = result
 			vm.sp++
 
+		case OpRemap:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if (count != 3 && count != 4) || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: remap count %d invalid for stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			args := vm.stack[vm.sp-int(count) : vm.sp]
+			result := remapValue(args)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
 		case OpRandom:
 			vm.stack[vm.sp] = event.IntValue(int64(rand.Int31()))
 			vm.sp++
@@ -3280,6 +3295,29 @@ func scalarExtremaValue(values []event.Value, greatest bool, warnings *WarningCo
 	}
 
 	return result
+}
+
+func remapValue(args []event.Value) event.Value {
+	if len(args) != 3 && len(args) != 4 {
+		return event.NullValue()
+	}
+	from, ok := args[1].TryAsArray()
+	if !ok {
+		return event.NullValue()
+	}
+	to, ok := args[2].TryAsArray()
+	if !ok || len(from) != len(to) {
+		return event.NullValue()
+	}
+	for i, candidate := range from {
+		if valuesEqual(args[0], candidate) {
+			return to[i]
+		}
+	}
+	if len(args) == 4 {
+		return args[3]
+	}
+	return event.NullValue()
 }
 
 func maxMinValue(values []event.Value, isMax bool) (event.Value, error) {

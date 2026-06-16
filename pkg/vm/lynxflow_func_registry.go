@@ -144,6 +144,10 @@ func lfEmitBinaryMath(fn int) func(*lfCompiler, *lfast.Call) error {
 }
 
 func lfEmitScalarExtrema(op Opcode) func(*lfCompiler, *lfast.Call) error {
+	return lfEmitVariadicOp(op)
+}
+
+func lfEmitVariadicOp(op Opcode) func(*lfCompiler, *lfast.Call) error {
 	return func(c *lfCompiler, call *lfast.Call) error {
 		for _, arg := range call.Args {
 			if err := c.compile(arg); err != nil {
@@ -341,6 +345,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		// ---- Conditional / null (§10) ----
 		{name: "if", minArgs: 3, maxArgs: 3, emit: lfEmitIf},
 		{name: "case", minArgs: 0, maxArgs: -1, emit: lfEmitCase},
+		{name: "remap", minArgs: 3, maxArgs: 4, emit: lfEmitVariadicOp(OpRemap)},
 		{name: "coalesce", minArgs: 1, maxArgs: -1, emit: lfEmitCoalesce},
 		{name: "nullif", minArgs: 2, maxArgs: 2, emit: lfEmitNullIf},
 		{name: "exists", minArgs: 1, maxArgs: 1, emit: lfEmitExists},

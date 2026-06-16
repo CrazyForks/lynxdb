@@ -811,6 +811,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = urlDecodeValue(a)
 
+		case OpURLEncode:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = urlEncodeValue(a)
+
+		case OpRegexEscape:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = regexEscapeValue(a)
+
 		case OpEq:
 			b := vm.stack[vm.sp-1]
 			a := vm.stack[vm.sp-2]
@@ -2787,6 +2795,22 @@ func urlDecodeValue(v event.Value) event.Value {
 	}
 
 	return event.StringValue(decoded)
+}
+
+func urlEncodeValue(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+
+	return event.StringValue(url.QueryEscape(v.AsString()))
+}
+
+func regexEscapeValue(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+
+	return event.StringValue(regexp.QuoteMeta(v.AsString()))
 }
 
 func roundValue(num, decimals event.Value) event.Value {

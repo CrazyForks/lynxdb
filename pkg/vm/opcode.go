@@ -245,6 +245,8 @@ const (
 	OpIsNaN           Opcode = 0x68 // pop number; push true when NaN
 	OpHex             Opcode = 0x69 // pop string; push lowercase hex encoding
 	OpUnhex           Opcode = 0x6A // pop string; push decoded hex string or null
+	OpURLEncode       Opcode = 0x6B // pop string; push URL query escaped string
+	OpRegexEscape     Opcode = 0x6C // pop string; push regexp literal escape
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
@@ -511,6 +513,8 @@ var definitions = map[Opcode]*Definition{
 	OpIsNaN:           {"OpIsNaN", nil},
 	OpHex:             {"OpHex", nil},
 	OpUnhex:           {"OpUnhex", nil},
+	OpURLEncode:       {"OpURLEncode", nil},
+	OpRegexEscape:     {"OpRegexEscape", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

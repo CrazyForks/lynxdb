@@ -389,6 +389,17 @@ func TestLynxFlowHexFunctions(t *testing.T) {
 	}
 }
 
+func TestLynxFlowStringEscapeFunctions(t *testing.T) {
+	result, _ := runLF(t, call("urlencode", litStr("a b+c")), nil)
+	assertString(t, result, "a+b%2Bc", "urlencode")
+
+	result, _ = runLF(t, call("urldecode", litStr("a+b%2Bc")), nil)
+	assertString(t, result, "a b+c", "urldecode")
+
+	result, _ = runLF(t, call("regex_escape", litStr(`a.b+(c)`)), nil)
+	assertString(t, result, `a\.b\+\(c\)`, "regex_escape")
+}
+
 func TestLynxFlowURLUtilityFunctions(t *testing.T) {
 	rawURL := litStr("https://example.com/search?q=lynx&page=2#section")
 

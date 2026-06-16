@@ -55,6 +55,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `ends_with` | (s: string, suffix: string) | `bool` | null_on_failure | - | - |
 | `printf` | (format: string, args: any...) | `string` | null_on_failure | - | - |
 | `urldecode` | (s: string) | `string` | null_on_failure | - | - |
+| `urlencode` | (s: string) | `string` | null_on_failure | - | Encode a string for URL query components. |
+| `regex_escape` | (s: string) | `string` | null_on_failure | - | Escape a string for literal use in a regex pattern. |
 | `base64_decode` | (s: string) | `string` | null_on_failure | `base64_decode!` | Decode standard base64; null on invalid input. |
 | `base64_encode` | (s: string) | `string` | null_on_failure | - | Encode a string as standard base64. |
 | `hex` | (s: string) | `string` | null_on_failure | - | Encode a string as lowercase hexadecimal. |

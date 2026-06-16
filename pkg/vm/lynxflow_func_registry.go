@@ -357,6 +357,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "ends_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpEndsWith)},
 		{name: "printf", minArgs: 1, maxArgs: -1, emit: lfEmitPrintf},
 		{name: "urldecode", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpURLDecode)},
+		{name: "urlencode", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpURLEncode)},
+		{name: "regex_escape", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpRegexEscape)},
 		{name: "base64_decode", minArgs: 1, maxArgs: 1, strict: true, emit: lfEmitUnary(OpBase64Decode),
 			emitStrict: lfStrictCast("base64_decode", OpBase64Decode)},
 		{name: "base64_encode", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpBase64Encode)},

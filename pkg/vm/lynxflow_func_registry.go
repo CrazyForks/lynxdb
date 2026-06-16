@@ -392,6 +392,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "unhex", minArgs: 1, maxArgs: 1, strict: true, emit: lfEmitUnary(OpUnhex),
 			emitStrict: lfStrictCast("unhex", OpUnhex)},
 		{name: "url_domain", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("host")},
+		{name: "url_etld1", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpURLETLD1)},
+		{name: "url_tld", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpURLTLD)},
 		{name: "url_path", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("path")},
 		{name: "url_protocol", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("scheme")},
 		{name: "url_param", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpURLParam)},

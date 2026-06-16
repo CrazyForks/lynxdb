@@ -99,6 +99,8 @@ const (
 	OpToFloat  Opcode = 0x81
 	OpToString Opcode = 0x82
 	OpToBool   Opcode = 0x83
+	OpURLETLD1 Opcode = 0x85
+	OpURLTLD   Opcode = 0x86
 
 	// Math Functions.
 	OpRound      Opcode = 0x90
@@ -418,6 +420,8 @@ var definitions = map[Opcode]*Definition{
 	OpToFloat:  {"OpToFloat", nil},
 	OpToString: {"OpToString", nil},
 	OpToBool:   {"OpToBool", nil},
+	OpURLETLD1: {"OpURLETLD1", nil},
+	OpURLTLD:   {"OpURLTLD", nil},
 
 	OpRound:      {"OpRound", nil},
 	OpLn:         {"OpLn", nil},

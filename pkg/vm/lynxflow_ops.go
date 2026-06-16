@@ -25,6 +25,8 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"golang.org/x/net/publicsuffix"
+
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
 
@@ -1488,6 +1490,58 @@ func execURLStripQuery(rawURL, fragment event.Value) event.Value {
 	}
 
 	return event.StringValue(u.String())
+}
+
+func execURLETLD1(rawURL event.Value) event.Value {
+	host, ok := hostOrDomain(rawURL)
+	if !ok {
+		return event.NullValue()
+	}
+	registrable, err := publicsuffix.EffectiveTLDPlusOne(host)
+	if err != nil {
+		return event.NullValue()
+	}
+	return event.StringValue(registrable)
+}
+
+func execURLTLD(rawURL event.Value) event.Value {
+	host, ok := hostOrDomain(rawURL)
+	if !ok {
+		return event.NullValue()
+	}
+	suffix, _ := publicsuffix.PublicSuffix(host)
+	if suffix == "" || (suffix == host && !strings.Contains(host, ".")) {
+		return event.NullValue()
+	}
+	return event.StringValue(suffix)
+}
+
+func hostOrDomain(v event.Value) (string, bool) {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return "", false
+	}
+	raw := strings.TrimSpace(v.AsString())
+	if raw == "" {
+		return "", false
+	}
+	if u, err := url.Parse(raw); err == nil && u.Hostname() != "" {
+		return normalizeDomainHost(u.Hostname())
+	}
+	if strings.Contains(raw, "/") {
+		return "", false
+	}
+	if host, _, err := net.SplitHostPort(raw); err == nil {
+		raw = host
+	}
+	return normalizeDomainHost(raw)
+}
+
+func normalizeDomainHost(host string) (string, bool) {
+	host = strings.ToLower(strings.TrimSuffix(strings.Trim(host, "[]"), "."))
+	if host == "" || net.ParseIP(host) != nil {
+		return "", false
+	}
+	return host, true
 }
 
 // execIPParse parses an IP address into an object.

@@ -59,6 +59,8 @@ var functions = []Function{
 	{Name: "unhex", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Decode hexadecimal bytes; null on invalid input."},
 	{Name: "url_parse", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TObject, Fallibility: NullOnFailure, Doc: "Parse a URL into {scheme, host, port, path, query, fragment}."},
 	{Name: "url_domain", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its host."},
+	{Name: "url_etld1", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Return the registrable domain using the public suffix list."},
+	{Name: "url_tld", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Return the public suffix using the public suffix list."},
 	{Name: "url_path", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its path."},
 	{Name: "url_protocol", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its scheme/protocol."},
 	{Name: "url_param", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "name", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Return the first URL query parameter value by name."},

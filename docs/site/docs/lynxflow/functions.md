@@ -73,6 +73,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `unhex` | (s: string) | `string` | null_on_failure | `unhex!` | Decode hexadecimal bytes; null on invalid input. |
 | `url_parse` | (s: string) | `object` | null_on_failure | - | Parse a URL into &#123;scheme, host, port, path, query, fragment&#125;. |
 | `url_domain` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its host. |
+| `url_etld1` | (s: string) | `string` | null_on_failure | - | Return the registrable domain using the public suffix list. |
+| `url_tld` | (s: string) | `string` | null_on_failure | - | Return the public suffix using the public suffix list. |
 | `url_path` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its path. |
 | `url_protocol` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its scheme/protocol. |
 | `url_param` | (s: string, name: string) | `string` | null_on_failure | - | Return the first URL query parameter value by name. |

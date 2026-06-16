@@ -226,6 +226,18 @@ func TestLynxFlowFrozenScalarParityFunctions(t *testing.T) {
 		result, _ := runLF(t, call("url_domain", rawURL), nil)
 		assertString(t, result, "example.com", "url_domain")
 
+		result, _ = runLF(t, call("url_etld1", litStr("https://a.b.example.co.uk/path")), nil)
+		assertString(t, result, "example.co.uk", "url_etld1 url")
+
+		result, _ = runLF(t, call("url_etld1", litStr("cdn.shop.example.com")), nil)
+		assertString(t, result, "example.com", "url_etld1 domain")
+
+		result, _ = runLF(t, call("url_tld", litStr("https://a.b.example.co.uk/path")), nil)
+		assertString(t, result, "co.uk", "url_tld")
+
+		result, _ = runLF(t, call("url_etld1", litStr("127.0.0.1")), nil)
+		assertNull(t, result, "url_etld1 ip")
+
 		result, _ = runLF(t, call("url_path", rawURL), nil)
 		assertString(t, result, "/api/v1/users", "url_path")
 

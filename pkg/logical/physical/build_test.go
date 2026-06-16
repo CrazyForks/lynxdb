@@ -365,6 +365,25 @@ func TestBuild_StreamStats_Window(t *testing.T) {
 	}
 }
 
+func TestBuild_StreamStats_CurrentFalse(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"val": intV(1)},
+		{"val": intV(2)},
+		{"val": intV(3)},
+	}
+	result := drain(t, `from * | streamstats current=false sum(val) as previous_sum`, rows)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(result))
+	}
+	expected := []float64{0, 1, 3}
+	for i, r := range result {
+		got, _ := r["previous_sum"].TryAsFloat()
+		if math.Abs(got-expected[i]) > 0.01 {
+			t.Errorf("row %d: expected previous_sum=%f, got %f", i, expected[i], got)
+		}
+	}
+}
+
 // Tests: Sort / Head / Tail / Dedup
 
 func TestBuild_Sort(t *testing.T) {

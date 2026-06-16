@@ -169,10 +169,10 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 			rowBytes = EstimateRowBytes(row)
 		}
 
-		// Determine which row is being evicted (if window is full).
-		var evictedRow map[string]event.Value
-		var evictedBytes int64
 		if s.current {
+			// Determine which row is being evicted (if window is full).
+			var evictedRow map[string]event.Value
+			var evictedBytes int64
 			if s.storeRows && rb.capacity > 0 && rb.count >= rb.capacity {
 				// Window is full: the oldest entry will be overwritten.
 				evictedRow = rb.oldest()
@@ -189,30 +189,20 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 			if s.storeRows && evictedBytes > rowBytes {
 				s.acct.Shrink(evictedBytes - rowBytes)
 			}
-		}
+			// Current window: add before computing.
+			for j, agg := range s.aggs {
+				if evictedRow != nil {
+					removeValueFromRunning(states[j], agg, evictedRow)
+				}
+				addValueToRunning(states[j], agg, row)
+				s.writeAggValue(batch, row, i, states[j], agg, rb)
+			}
+		} else {
+			// Trailing window: compute first, then add the current row.
+			for j, agg := range s.aggs {
+				s.writeAggValue(batch, row, i, states[j], agg, rb)
+			}
 
-		// Incremental aggregate update: add new row, evict old if applicable.
-		for j, agg := range s.aggs {
-			if evictedRow != nil {
-				removeValueFromRunning(states[j], agg, evictedRow)
-			}
-			addValueToRunning(states[j], agg, row)
-			var val event.Value
-			if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
-				// Values/list aggregates require full scan for order-sensitive output.
-				val = s.computeAgg(agg, rb.items())
-			} else {
-				val = readRunningAgg(states[j], agg, rb)
-			}
-			row[agg.Alias] = val
-			if _, exists := batch.Columns[agg.Alias]; !exists {
-				batch.Columns[agg.Alias] = make([]event.Value, batch.Len)
-			}
-			batch.Columns[agg.Alias][i] = val
-		}
-
-		if !s.current {
-			// Trailing window: add after computing.
 			var willEvict map[string]event.Value
 			var willEvictBytes int64
 			if s.storeRows && rb.capacity > 0 && rb.count >= rb.capacity {
@@ -240,6 +230,28 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 	}
 
 	return batch, nil
+}
+
+func (s *StreamStatsIterator) writeAggValue(
+	batch *Batch,
+	row map[string]event.Value,
+	rowIndex int,
+	st *runningAggState,
+	agg AggFunc,
+	rb *ringBuffer,
+) {
+	var val event.Value
+	if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
+		// Values/list aggregates require full scan for order-sensitive output.
+		val = s.computeAgg(agg, rb.items())
+	} else {
+		val = readRunningAgg(st, agg, rb)
+	}
+	row[agg.Alias] = val
+	if _, exists := batch.Columns[agg.Alias]; !exists {
+		batch.Columns[agg.Alias] = make([]event.Value, batch.Len)
+	}
+	batch.Columns[agg.Alias][rowIndex] = val
 }
 
 func streamStatsNeedsRows(aggs []AggFunc, window int) bool {

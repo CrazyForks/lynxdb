@@ -386,6 +386,8 @@ func (s *StreamStatsIterator) materializedAggValue(
 		return materializedSum(rows, indexes[:groupPos+1], agg.Field)
 	case aggMovAvg:
 		return materializedMovingAvg(rows, indexes, groupPos, agg)
+	case aggDelta:
+		return materializedDelta(rows, indexes, groupPos, agg.Field)
 	default:
 		return s.computeAgg(agg, windowRows)
 	}
@@ -435,6 +437,30 @@ func materializedMovingAvg(
 	return event.FloatValue(sum / float64(count))
 }
 
+func materializedDelta(rows []map[string]event.Value, indexes []int, groupPos int, field string) event.Value {
+	if groupPos == 0 {
+		return event.NullValue()
+	}
+	current, ok := rows[indexes[groupPos]][field]
+	if !ok {
+		return event.NullValue()
+	}
+	currentNum, ok := vm.ValueToFloat(current)
+	if !ok {
+		return event.NullValue()
+	}
+	previous, ok := rows[indexes[groupPos-1]][field]
+	if !ok {
+		return event.NullValue()
+	}
+	previousNum, ok := vm.ValueToFloat(previous)
+	if !ok {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(currentNum - previousNum)
+}
+
 func (s *StreamStatsIterator) writeAggValue(
 	batch *Batch,
 	row map[string]event.Value,
@@ -458,6 +484,8 @@ func (s *StreamStatsIterator) writeAggValue(
 		val = s.readLag(agg, rb)
 	case aggMovAvg:
 		val = s.readMovingAvg(agg, rb)
+	case aggDelta:
+		val = s.readDelta(row, agg, rb)
 	default:
 		val = readRunningAgg(st, agg, rb)
 	}
@@ -520,13 +548,42 @@ func (s *StreamStatsIterator) readMovingAvg(agg AggFunc, rb *ringBuffer) event.V
 	return event.FloatValue(sum / float64(count))
 }
 
+func (s *StreamStatsIterator) readDelta(row map[string]event.Value, agg AggFunc, rb *ringBuffer) event.Value {
+	current, ok := row[agg.Field]
+	if !ok {
+		return event.NullValue()
+	}
+	currentNum, ok := vm.ValueToFloat(current)
+	if !ok {
+		return event.NullValue()
+	}
+	items := rb.items()
+	idx := len(items) - 1
+	if s.current {
+		idx--
+	}
+	if idx < 0 || idx >= len(items) {
+		return event.NullValue()
+	}
+	previous, ok := items[idx][agg.Field]
+	if !ok {
+		return event.NullValue()
+	}
+	previousNum, ok := vm.ValueToFloat(previous)
+	if !ok {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(currentNum - previousNum)
+}
+
 func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 	if window < math.MaxInt32/2 {
 		return true
 	}
 	for _, agg := range aggs {
 		switch strings.ToLower(agg.Name) {
-		case aggValues, aggList, aggLag, aggLead, aggMovAvg:
+		case aggValues, aggList, aggLag, aggLead, aggMovAvg, aggDelta:
 			return true
 		}
 	}

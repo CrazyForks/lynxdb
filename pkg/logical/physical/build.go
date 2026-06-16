@@ -421,6 +421,7 @@ var aggNameMapping = map[string]string{
 	"row_number":    "row_number",
 	"running_sum":   "running_sum",
 	"moving_avg":    "moving_avg",
+	"delta":         "delta",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {

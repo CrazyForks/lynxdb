@@ -34,4 +34,5 @@ var aggregates = []Aggregate{
 	{Name: "row_number", WindowOnly: true, Result: TInt, Doc: "1-based row index within the group."},
 	{Name: "running_sum", Params: []Param{{Name: "x", Type: TNumber}}, WindowOnly: true, Result: TNumber},
 	{Name: "moving_avg", Params: []Param{{Name: "x", Type: TNumber}, {Name: "n", Type: TInt}}, WindowOnly: true, Result: TFloat},
+	{Name: "delta", Params: []Param{{Name: "x", Type: TNumber}}, WindowOnly: true, Result: TFloat, Doc: "Difference between the current value and previous group value."},
 }

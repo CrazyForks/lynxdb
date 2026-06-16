@@ -87,6 +87,7 @@ func nullV() event.Value                    { return event.NullValue() }
 func tsV(t time.Time) event.Value           { return event.TimestampValue(t) }
 func arrV(elems ...event.Value) event.Value { return event.ArrayValue(elems) }
 func intPtr(n int64) *int64                 { return &n }
+func floatPtr(n float64) *float64           { return &n }
 
 func assertOptionalIntField(t *testing.T, row map[string]event.Value, field string, want *int64, rowIndex int) {
 	t.Helper()
@@ -98,6 +99,18 @@ func assertOptionalIntField(t *testing.T, row map[string]event.Value, field stri
 		return
 	}
 	assertIntField(t, row, field, *want, rowIndex)
+}
+
+func assertOptionalFloatField(t *testing.T, row map[string]event.Value, field string, want *float64, rowIndex int) {
+	t.Helper()
+	got := row[field]
+	if want == nil {
+		if !got.IsNull() {
+			t.Errorf("row %d field %s: expected null, got %s", rowIndex, field, got.String())
+		}
+		return
+	}
+	assertFloatField(t, row, field, *want, rowIndex)
 }
 
 func assertIntField(t *testing.T, row map[string]event.Value, field string, want int64, rowIndex int) {
@@ -422,7 +435,7 @@ func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
 		{"host": strV("a"), "val": intV(30)},
 		{"host": strV("b"), "val": intV(7)},
 	}
-	result := drain(t, `from * | streamstats lag(val) as prev, lead(val) as next, row_number() as rn, running_sum(val) as total, moving_avg(val, 2) as avg2 by host`, rows)
+	result := drain(t, `from * | streamstats lag(val) as prev, lead(val) as next, row_number() as rn, running_sum(val) as total, moving_avg(val, 2) as avg2, delta(val) as d by host`, rows)
 	if len(result) != 5 {
 		t.Fatalf("expected 5 rows, got %d", len(result))
 	}
@@ -433,12 +446,13 @@ func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
 		rn    int64
 		total float64
 		avg2  float64
+		d     *float64
 	}{
-		{prev: nil, next: intPtr(20), rn: 1, total: 10, avg2: 10},
-		{prev: intPtr(10), next: intPtr(30), rn: 2, total: 30, avg2: 15},
-		{prev: nil, next: intPtr(7), rn: 1, total: 5, avg2: 5},
-		{prev: intPtr(20), next: nil, rn: 3, total: 60, avg2: 25},
-		{prev: intPtr(5), next: nil, rn: 2, total: 12, avg2: 6},
+		{prev: nil, next: intPtr(20), rn: 1, total: 10, avg2: 10, d: nil},
+		{prev: intPtr(10), next: intPtr(30), rn: 2, total: 30, avg2: 15, d: floatPtr(10)},
+		{prev: nil, next: intPtr(7), rn: 1, total: 5, avg2: 5, d: nil},
+		{prev: intPtr(20), next: nil, rn: 3, total: 60, avg2: 25, d: floatPtr(10)},
+		{prev: intPtr(5), next: nil, rn: 2, total: 12, avg2: 6, d: floatPtr(2)},
 	}
 	for i, r := range result {
 		assertOptionalIntField(t, r, "prev", expected[i].prev, i)
@@ -446,6 +460,26 @@ func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
 		assertIntField(t, r, "rn", expected[i].rn, i)
 		assertFloatField(t, r, "total", expected[i].total, i)
 		assertFloatField(t, r, "avg2", expected[i].avg2, i)
+		assertOptionalFloatField(t, r, "d", expected[i].d, i)
+	}
+}
+
+func TestBuild_StreamStatsDelta(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"host": strV("a"), "val": intV(10)},
+		{"host": strV("a"), "val": intV(15)},
+		{"host": strV("b"), "val": intV(3)},
+		{"host": strV("a"), "val": intV(12)},
+		{"host": strV("b"), "val": intV(8)},
+	}
+	result := drain(t, `from * | streamstats delta(val) as d by host`, rows)
+	if len(result) != 5 {
+		t.Fatalf("expected 5 rows, got %d", len(result))
+	}
+
+	expected := []*float64{nil, floatPtr(5), nil, floatPtr(-3), floatPtr(5)}
+	for i, r := range result {
+		assertOptionalFloatField(t, r, "d", expected[i], i)
 	}
 }
 

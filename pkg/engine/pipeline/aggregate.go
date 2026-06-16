@@ -107,6 +107,7 @@ const (
 	aggRowNum = "row_number"
 	aggRunSum = "running_sum"
 	aggMovAvg = "moving_avg"
+	aggDelta  = "delta"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -322,7 +323,7 @@ func aggResultType(name string) string {
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
 		aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
-		aggRunSum, aggMovAvg:
+		aggRunSum, aggMovAvg, aggDelta:
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"

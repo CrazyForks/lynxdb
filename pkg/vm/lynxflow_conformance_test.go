@@ -1588,6 +1588,37 @@ func TestConformance_Has_TokenMatch(t *testing.T) {
 	})
 }
 
+func TestConformance_BatchSearchFunctions(t *testing.T) {
+	msg := litStr("Error: connection refused by SQLMap client")
+
+	result, _ := runLF(t, call("has_any", msg, array(litStr("nikto"), litStr("sqlmap"))), nil)
+	assertBool(t, result, true, "has_any")
+
+	result, _ = runLF(t, call("has_all", msg, array(litStr("connection"), litStr("refused"))), nil)
+	assertBool(t, result, true, "has_all")
+
+	result, _ = runLF(t, call("has_all", msg, array()), nil)
+	assertBool(t, result, true, "has_all empty")
+
+	result, _ = runLF(t, call("contains_phrase", msg, litStr("CONNECTION refused")), nil)
+	assertBool(t, result, true, "contains_phrase")
+
+	result, _ = runLF(t, call("contains_any", msg, array(litStr("python"), litStr("sqlmap"))), nil)
+	assertBool(t, result, true, "contains_any")
+
+	result, _ = runLF(t, call("contains_any_cs", msg, array(litStr("sqlmap"))), nil)
+	assertBool(t, result, false, "contains_any_cs")
+
+	result, _ = runLF(t, call("matches_any", msg, array(litStr(`SQL\w+`), litStr(`nikto`))), nil)
+	assertBool(t, result, true, "matches_any")
+
+	result, _ = runLF(t, call("matches_any", msg, array(litStr(`[`))), nil)
+	assertNull(t, result, "matches_any invalid regex")
+
+	result, _ = runLF(t, call("has_any", msg, array(litInt(1))), nil)
+	assertNull(t, result, "has_any non-string term")
+}
+
 func TestLynxFlowTokensFunction(t *testing.T) {
 	result, _ := runLF(t, call("tokens", litStr("ERROR timeout_42 café")), nil)
 	arr := assertArray(t, result, 4, "tokens")

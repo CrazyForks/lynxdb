@@ -82,6 +82,12 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `has` | (field: string, term: string) | `bool` | null_on_failure | - | Whole-token match, always case-insensitive; FST term index. Fast. |
 | `contains` | (field: string, sub: string) | `bool` | null_on_failure | - | Substring, case-insensitive; bloom-assisted scan. Moderate. |
 | `contains_cs` | (field: string, sub: string) | `bool` | null_on_failure | - | Case-sensitive substring. |
+| `has_any` | (field: string, terms: array) | `bool` | null_on_failure | - | True when any term is present as a whole token. |
+| `has_all` | (field: string, terms: array) | `bool` | null_on_failure | - | True when all terms are present as whole tokens. |
+| `contains_phrase` | (field: string, phrase: string) | `bool` | null_on_failure | - | Case-insensitive phrase substring match. |
+| `contains_any` | (field: string, subs: array) | `bool` | null_on_failure | - | Case-insensitive match for any substring. |
+| `contains_any_cs` | (field: string, subs: array) | `bool` | null_on_failure | - | Case-sensitive match for any substring. |
+| `matches_any` | (s: string, patterns: array) | `bool` | null_on_failure | - | True when any regex pattern matches. |
 | `glob` | (field: string, pattern: string) | `bool` | null_on_failure | - | Glob match, case-sensitive; literal-prefix extraction when possible. |
 | `has_glob` | (field: string, pattern: string) | `bool` | null_on_failure | - | Whole-token glob match (*, ?, \-escapes), always case-insensitive; FST term-dictionary expansion. Moderate. |
 | `tokens` | (s: string) | `array` | null_on_failure | - | Return lowercase tokenizer-contract tokens. |

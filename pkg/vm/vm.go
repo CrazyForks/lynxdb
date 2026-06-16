@@ -2044,6 +2044,42 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 				)
 			}
 
+		case OpHasAny:
+			terms := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execHasAny(field, terms, false)
+
+		case OpHasAll:
+			terms := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execHasAny(field, terms, true)
+
+		case OpContainsPhrase:
+			phrase := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execContainsPhrase(field, phrase)
+
+		case OpContainsAny:
+			subs := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execContainsAny(field, subs, false)
+
+		case OpContainsAnyCS:
+			subs := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execContainsAny(field, subs, true)
+
+		case OpMatchesAny:
+			patterns := vm.stack[vm.sp-1]
+			field := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execMatchesAny(field, patterns)
+
 		case OpExtract:
 			regIdx, reErr := readIndexSafe(ins, ip, len(vm.regexCache), "regex")
 			if reErr != nil {

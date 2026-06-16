@@ -409,6 +409,110 @@ func hasToken(field, term string) bool {
 	return true
 }
 
+func execHasAny(field, terms event.Value, requireAll bool) event.Value {
+	if field.IsNull() || terms.IsNull() {
+		return event.NullValue()
+	}
+	items, ok := stringArray(terms)
+	if !ok {
+		return event.NullValue()
+	}
+	if len(items) == 0 {
+		return event.BoolValue(requireAll)
+	}
+
+	s := valueToString(field)
+	for _, term := range items {
+		matched := hasToken(s, term)
+		if requireAll && !matched {
+			return event.BoolValue(false)
+		}
+		if !requireAll && matched {
+			return event.BoolValue(true)
+		}
+	}
+	return event.BoolValue(requireAll)
+}
+
+func execContainsPhrase(field, phrase event.Value) event.Value {
+	if field.IsNull() || phrase.IsNull() {
+		return event.NullValue()
+	}
+	if phrase.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	p := strings.ToLower(phrase.AsString())
+	if p == "" {
+		return event.BoolValue(false)
+	}
+	return event.BoolValue(strings.Contains(strings.ToLower(valueToString(field)), p))
+}
+
+func execContainsAny(field, subs event.Value, caseSensitive bool) event.Value {
+	if field.IsNull() || subs.IsNull() {
+		return event.NullValue()
+	}
+	items, ok := stringArray(subs)
+	if !ok {
+		return event.NullValue()
+	}
+
+	haystack := valueToString(field)
+	if !caseSensitive {
+		haystack = strings.ToLower(haystack)
+	}
+	for _, sub := range items {
+		if sub == "" {
+			continue
+		}
+		needle := sub
+		if !caseSensitive {
+			needle = strings.ToLower(needle)
+		}
+		if strings.Contains(haystack, needle) {
+			return event.BoolValue(true)
+		}
+	}
+	return event.BoolValue(false)
+}
+
+func execMatchesAny(field, patterns event.Value) event.Value {
+	if field.IsNull() || patterns.IsNull() {
+		return event.NullValue()
+	}
+	items, ok := stringArray(patterns)
+	if !ok {
+		return event.NullValue()
+	}
+
+	s := valueToString(field)
+	for _, pattern := range items {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return event.NullValue()
+		}
+		if re.MatchString(s) {
+			return event.BoolValue(true)
+		}
+	}
+	return event.BoolValue(false)
+}
+
+func stringArray(v event.Value) ([]string, bool) {
+	if v.Type() != event.FieldTypeArray {
+		return nil, false
+	}
+	arr := v.AsArray()
+	out := make([]string, len(arr))
+	for i, elem := range arr {
+		if elem.IsNull() || elem.Type() != event.FieldTypeString {
+			return nil, false
+		}
+		out[i] = elem.AsString()
+	}
+	return out, true
+}
+
 // tokenize splits a string into tokens per the tokenizer contract (§6.1):
 // runs of ASCII alphanumerics and Unicode letters/digits.
 func tokenize(s string) []string {

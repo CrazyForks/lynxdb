@@ -138,13 +138,19 @@ const (
 	OpIsNotNull Opcode = 0xB2
 
 	// Type Checks (pop 1, push bool).
-	OpIsNum    Opcode = 0xB3
-	OpIsInt    Opcode = 0xB4
-	OpIsBool   Opcode = 0xB5
-	OpTypeOf   Opcode = 0xB6
-	OpIsArray  Opcode = 0xB7
-	OpIsObject Opcode = 0xB8
-	OpRemap    Opcode = 0xB9 // 2-byte count; pop x, from, to[, default]; push remapped value or null
+	OpIsNum          Opcode = 0xB3
+	OpIsInt          Opcode = 0xB4
+	OpIsBool         Opcode = 0xB5
+	OpTypeOf         Opcode = 0xB6
+	OpIsArray        Opcode = 0xB7
+	OpIsObject       Opcode = 0xB8
+	OpRemap          Opcode = 0xB9 // 2-byte count; pop x, from, to[, default]; push remapped value or null
+	OpHasAny         Opcode = 0xBA
+	OpHasAll         Opcode = 0xBB
+	OpContainsPhrase Opcode = 0xBC
+	OpContainsAny    Opcode = 0xBD
+	OpContainsAnyCS  Opcode = 0xBE
+	OpMatchesAny     Opcode = 0xBF
 
 	// Time Functions.
 	OpStrftime  Opcode = 0xC0
@@ -435,15 +441,21 @@ var definitions = map[Opcode]*Definition{
 	OpEntries:      {"OpEntries", nil},
 	OpFromEntries:  {"OpFromEntries", nil},
 
-	OpCoalesce:  {"OpCoalesce", []int{2}},
-	OpIsNull:    {"OpIsNull", nil},
-	OpIsNotNull: {"OpIsNotNull", nil},
-	OpIsNum:     {"OpIsNum", nil},
-	OpIsInt:     {"OpIsInt", nil},
-	OpIsBool:    {"OpIsBool", nil},
-	OpTypeOf:    {"OpTypeOf", nil},
-	OpIsArray:   {"OpIsArray", nil},
-	OpIsObject:  {"OpIsObject", nil},
+	OpCoalesce:       {"OpCoalesce", []int{2}},
+	OpIsNull:         {"OpIsNull", nil},
+	OpIsNotNull:      {"OpIsNotNull", nil},
+	OpIsNum:          {"OpIsNum", nil},
+	OpIsInt:          {"OpIsInt", nil},
+	OpIsBool:         {"OpIsBool", nil},
+	OpTypeOf:         {"OpTypeOf", nil},
+	OpIsArray:        {"OpIsArray", nil},
+	OpIsObject:       {"OpIsObject", nil},
+	OpHasAny:         {"OpHasAny", nil},
+	OpHasAll:         {"OpHasAll", nil},
+	OpContainsPhrase: {"OpContainsPhrase", nil},
+	OpContainsAny:    {"OpContainsAny", nil},
+	OpContainsAnyCS:  {"OpContainsAnyCS", nil},
+	OpMatchesAny:     {"OpMatchesAny", nil},
 
 	OpStrftime:    {"OpStrftime", nil},
 	OpURLDecode:   {"OpURLDecode", nil},

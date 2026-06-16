@@ -233,6 +233,9 @@ const (
 	OpArrayHasAll     Opcode = 0x2F // pop 2 arrays (a, b); true if every element of b is in a
 	OpArrayIntersect  Opcode = 0x43 // pop 2 arrays (a, b); push elements from a that are in b
 	OpArrayExcept     Opcode = 0x44 // pop 2 arrays (a, b); push elements from a that are not in b
+	OpHumanizeBytes   Opcode = 0x45 // pop number; push human-readable binary byte string
+	OpHumanizeCount   Opcode = 0x46 // pop number; push human-readable SI count string
+	OpHumanizeDur     Opcode = 0x47 // pop duration; push human-readable duration string
 
 	// JSON Functions.
 	OpJsonExtract  Opcode = 0xD0 // pop path, pop field, push extracted value
@@ -475,6 +478,9 @@ var definitions = map[Opcode]*Definition{
 	OpArrayHasAll:     {"OpArrayHasAll", nil},
 	OpArrayIntersect:  {"OpArrayIntersect", nil},
 	OpArrayExcept:     {"OpArrayExcept", nil},
+	OpHumanizeBytes:   {"OpHumanizeBytes", nil},
+	OpHumanizeCount:   {"OpHumanizeCount", nil},
+	OpHumanizeDur:     {"OpHumanizeDur", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

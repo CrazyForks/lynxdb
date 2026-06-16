@@ -251,6 +251,40 @@ func TestLynxFlowFrozenScalarParityFunctions(t *testing.T) {
 	})
 }
 
+func TestLynxFlowHumanizeFunctions(t *testing.T) {
+	t.Run("bytes", func(t *testing.T) {
+		result, _ := runLF(t, call("humanize_bytes", litInt(1536)), nil)
+		assertString(t, result, "1.5 KiB", "humanize_bytes")
+
+		result, _ = runLF(t, call("humanize_bytes", litInt(1048576)), nil)
+		assertString(t, result, "1 MiB", "humanize_bytes whole unit")
+	})
+
+	t.Run("count", func(t *testing.T) {
+		result, _ := runLF(t, call("humanize_count", litInt(1500)), nil)
+		assertString(t, result, "1.5K", "humanize_count")
+
+		result, _ = runLF(t, call("humanize_count", litInt(2500000)), nil)
+		assertString(t, result, "2.5M", "humanize_count millions")
+	})
+
+	t.Run("duration", func(t *testing.T) {
+		result, _ := runLF(t, call("humanize_duration", litDur(90*time.Second)), nil)
+		assertString(t, result, "1 minute, 30 seconds", "humanize_duration")
+
+		result, _ = runLF(t, call("humanize_duration", litDur(51*time.Hour)), nil)
+		assertString(t, result, "2 days, 3 hours", "humanize_duration days")
+	})
+
+	t.Run("invalid", func(t *testing.T) {
+		result, _ := runLF(t, call("humanize_bytes", litStr("not a number")), nil)
+		assertNull(t, result, "humanize_bytes invalid")
+
+		result, _ = runLF(t, call("humanize_duration", litInt(42)), nil)
+		assertNull(t, result, "humanize_duration invalid")
+	})
+}
+
 // §5.2 Three-Valued Logic Truth Table
 
 func TestConformance_3VL_And(t *testing.T) {

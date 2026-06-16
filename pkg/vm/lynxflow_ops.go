@@ -1197,6 +1197,101 @@ func parseUserAgentProduct(raw string) (string, string) {
 	return name, version
 }
 
+func execHumanizeBytes(v event.Value) event.Value {
+	n, ok := ValueToFloat(v)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return event.NullValue()
+	}
+
+	return event.StringValue(formatScaledNumber(n, 1024, []string{"B", "KiB", "MiB", "GiB", "TiB", "PiB"}, " "))
+}
+
+func execHumanizeCount(v event.Value) event.Value {
+	n, ok := ValueToFloat(v)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return event.NullValue()
+	}
+
+	return event.StringValue(formatScaledNumber(n, 1000, []string{"", "K", "M", "B", "T", "Q"}, ""))
+}
+
+func execHumanizeDuration(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeDuration {
+		return event.NullValue()
+	}
+	d := v.AsDuration()
+	if d == 0 {
+		return event.StringValue("0 seconds")
+	}
+	sign := ""
+	if d < 0 {
+		sign = "-"
+		d = -d
+	}
+	type durationUnit struct {
+		name string
+		dur  time.Duration
+	}
+	units := []durationUnit{
+		{name: "day", dur: 24 * time.Hour},
+		{name: "hour", dur: time.Hour},
+		{name: "minute", dur: time.Minute},
+		{name: "second", dur: time.Second},
+		{name: "millisecond", dur: time.Millisecond},
+		{name: "microsecond", dur: time.Microsecond},
+		{name: "nanosecond", dur: time.Nanosecond},
+	}
+	parts := make([]string, 0, 2)
+	for _, unit := range units {
+		if d < unit.dur {
+			continue
+		}
+		n := d / unit.dur
+		d -= n * unit.dur
+		parts = append(parts, formatDurationPart(n, unit.name))
+		if len(parts) == 2 {
+			break
+		}
+	}
+
+	return event.StringValue(sign + strings.Join(parts, ", "))
+}
+
+func formatScaledNumber(n, base float64, units []string, sep string) string {
+	sign := ""
+	if n < 0 {
+		sign = "-"
+		n = -n
+	}
+	unit := units[0]
+	for i := 1; i < len(units) && n >= base; i++ {
+		n /= base
+		unit = units[i]
+	}
+	if unit == "" {
+		return sign + formatScaledMagnitude(n)
+	}
+
+	return sign + formatScaledMagnitude(n) + sep + unit
+}
+
+func formatScaledMagnitude(n float64) string {
+	rounded := math.Round(n*10) / 10
+	if math.Abs(rounded-math.Round(rounded)) < 1e-9 {
+		return strconv.FormatInt(int64(math.Round(rounded)), 10)
+	}
+
+	return strconv.FormatFloat(rounded, 'f', 1, 64)
+}
+
+func formatDurationPart(n time.Duration, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+
+	return strconv.FormatInt(int64(n), 10) + " " + unit + "s"
+}
+
 // isPrivateIP checks if an IP address is in a private range (RFC 1918 / RFC 4193).
 func isPrivateIP(ip net.IP) bool {
 	privateRanges := []struct {

@@ -1190,6 +1190,18 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = xxhash64Value(v)
 
+		case OpHumanizeBytes:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execHumanizeBytes(v)
+
+		case OpHumanizeCount:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execHumanizeCount(v)
+
+		case OpHumanizeDur:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execHumanizeDuration(v)
+
 		case OpMD5:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = hashValue(a, "md5")

@@ -94,6 +94,14 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `atan` | (x: number) | `float` | null_on_failure | - | - |
 | `atan2` | (y: number, x: number) | `float` | null_on_failure | - | - |
 
+## Humanize
+
+| Function | Params | Result | Fallibility | Strict | Description |
+|----------|--------|--------|-------------|--------|-------------|
+| `humanize_bytes` | (n: number) | `string` | null_on_failure | - | Format bytes with binary units (KiB, MiB, ...). |
+| `humanize_count` | (n: number) | `string` | null_on_failure | - | Format counts with SI suffixes (K, M, ...). |
+| `humanize_duration` | (d: duration) | `string` | null_on_failure | - | Format a duration in readable units. |
+
 ## Time
 
 | Function | Params | Result | Fallibility | Strict | Description |

@@ -373,6 +373,11 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "atan", minArgs: 1, maxArgs: 1, emit: lfEmitUnaryMath(mathFnAtan)},
 		{name: "atan2", minArgs: 2, maxArgs: 2, emit: lfEmitBinaryMath(mathFnAtan2)},
 
+		// ---- Humanize (W2) ----
+		{name: "humanize_bytes", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeBytes)},
+		{name: "humanize_count", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeCount)},
+		{name: "humanize_duration", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeDur)},
+
 		// ---- Time (§10) ----
 		{name: "now", minArgs: 0, maxArgs: 0, emit: lfEmitNow},
 		{name: "bin", minArgs: 2, maxArgs: 2, emit: lfEmitBin},

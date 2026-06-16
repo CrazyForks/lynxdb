@@ -74,6 +74,11 @@ var functions = []Function{
 	{Name: "atan", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TFloat, Fallibility: NullOnFailure},
 	{Name: "atan2", Category: "math", Params: []Param{{Name: "y", Type: TNumber}, {Name: "x", Type: TNumber}}, Result: TFloat, Fallibility: NullOnFailure},
 
+	// humanize
+	{Name: "humanize_bytes", Category: "humanize", Params: []Param{{Name: "n", Type: TNumber}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format bytes with binary units (KiB, MiB, ...)."},
+	{Name: "humanize_count", Category: "humanize", Params: []Param{{Name: "n", Type: TNumber}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format counts with SI suffixes (K, M, ...)."},
+	{Name: "humanize_duration", Category: "humanize", Params: []Param{{Name: "d", Type: TDuration}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format a duration in readable units."},
+
 	// time
 	{Name: "now", Category: "time", Result: TTimestamp, Fallibility: Infallible, Doc: "Query start time (stable within one query)."},
 	{Name: "bin", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "span", Type: TDuration}}, Result: TTimestamp, Fallibility: NullOnFailure, Doc: "Snap to span boundary; in stats by-lists the binned key emits as _time."},

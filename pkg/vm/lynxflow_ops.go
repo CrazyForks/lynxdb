@@ -1257,6 +1257,39 @@ func execHumanizeDuration(v event.Value) event.Value {
 	return event.StringValue(sign + strings.Join(parts, ", "))
 }
 
+func execBar(x, lo, hi, width event.Value) event.Value {
+	xNum, ok := ValueToFloat(x)
+	if !ok || math.IsNaN(xNum) || math.IsInf(xNum, 0) {
+		return event.NullValue()
+	}
+	loNum, ok := ValueToFloat(lo)
+	if !ok || math.IsNaN(loNum) || math.IsInf(loNum, 0) {
+		return event.NullValue()
+	}
+	hiNum, ok := ValueToFloat(hi)
+	if !ok || math.IsNaN(hiNum) || math.IsInf(hiNum, 0) || hiNum <= loNum {
+		return event.NullValue()
+	}
+	widthNum, ok := ValueToFloat(width)
+	if !ok || math.IsNaN(widthNum) || math.IsInf(widthNum, 0) {
+		return event.NullValue()
+	}
+	w := int(math.Round(widthNum))
+	if w <= 0 || w > 1000 {
+		return event.NullValue()
+	}
+	frac := (xNum - loNum) / (hiNum - loNum)
+	if frac < 0 {
+		frac = 0
+	}
+	if frac > 1 {
+		frac = 1
+	}
+	filled := int(math.Round(frac * float64(w)))
+
+	return event.StringValue(strings.Repeat("#", filled) + strings.Repeat(".", w-filled))
+}
+
 func formatScaledNumber(n, base float64, units []string, sep string) string {
 	sign := ""
 	if n < 0 {

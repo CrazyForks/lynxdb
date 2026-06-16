@@ -377,6 +377,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "humanize_bytes", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeBytes)},
 		{name: "humanize_count", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeCount)},
 		{name: "humanize_duration", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeDur)},
+		{name: "bar", minArgs: 3, maxArgs: 4, emit: lfEmitBar},
 
 		// ---- Time (§10) ----
 		{name: "now", minArgs: 0, maxArgs: 0, emit: lfEmitNow},
@@ -823,6 +824,28 @@ func lfEmitExtractAll(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	c.prog.EmitOp(OpExtractAll, regIdx)
+	return nil
+}
+
+func lfEmitBar(c *lfCompiler, call *lfast.Call) error {
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	if err := c.compile(call.Args[1]); err != nil {
+		return err
+	}
+	if err := c.compile(call.Args[2]); err != nil {
+		return err
+	}
+	if len(call.Args) == 4 {
+		if err := c.compile(call.Args[3]); err != nil {
+			return err
+		}
+	} else {
+		idx := c.prog.AddConstant(event.IntValue(40))
+		c.prog.EmitOp(OpConstInt, idx)
+	}
+	c.prog.EmitOp(OpBar)
 	return nil
 }
 

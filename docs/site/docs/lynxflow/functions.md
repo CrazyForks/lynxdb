@@ -101,6 +101,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `humanize_bytes` | (n: number) | `string` | null_on_failure | - | Format bytes with binary units (KiB, MiB, ...). |
 | `humanize_count` | (n: number) | `string` | null_on_failure | - | Format counts with SI suffixes (K, M, ...). |
 | `humanize_duration` | (d: duration) | `string` | null_on_failure | - | Format a duration in readable units. |
+| `bar` | (x: number, lo: number, hi: number, width: int?) | `string` | null_on_failure | - | Render a fixed-width ASCII bar for x in [lo, hi]. |
 
 ## Time
 

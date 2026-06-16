@@ -78,6 +78,7 @@ var functions = []Function{
 	{Name: "humanize_bytes", Category: "humanize", Params: []Param{{Name: "n", Type: TNumber}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format bytes with binary units (KiB, MiB, ...)."},
 	{Name: "humanize_count", Category: "humanize", Params: []Param{{Name: "n", Type: TNumber}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format counts with SI suffixes (K, M, ...)."},
 	{Name: "humanize_duration", Category: "humanize", Params: []Param{{Name: "d", Type: TDuration}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format a duration in readable units."},
+	{Name: "bar", Category: "humanize", Params: []Param{{Name: "x", Type: TNumber}, {Name: "lo", Type: TNumber}, {Name: "hi", Type: TNumber}, {Name: "width", Type: TInt, Optional: true}}, Result: TString, Fallibility: NullOnFailure, Doc: "Render a fixed-width ASCII bar for x in [lo, hi]."},
 
 	// time
 	{Name: "now", Category: "time", Result: TTimestamp, Fallibility: Infallible, Doc: "Query start time (stable within one query)."},

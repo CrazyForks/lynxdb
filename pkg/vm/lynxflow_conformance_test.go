@@ -285,6 +285,23 @@ func TestLynxFlowHumanizeFunctions(t *testing.T) {
 	})
 }
 
+func TestLynxFlowBarFunction(t *testing.T) {
+	result, _ := runLF(t, call("bar", litInt(5), litInt(0), litInt(10), litInt(10)), nil)
+	assertString(t, result, "#####.....", "bar half")
+
+	result, _ = runLF(t, call("bar", litInt(15), litInt(0), litInt(10), litInt(10)), nil)
+	assertString(t, result, "##########", "bar clamps high")
+
+	result, _ = runLF(t, call("bar", litInt(-5), litInt(0), litInt(10), litInt(10)), nil)
+	assertString(t, result, "..........", "bar clamps low")
+
+	result, _ = runLF(t, call("bar", litInt(1), litInt(0), litInt(4)), nil)
+	assertString(t, result, "##########..............................", "bar default width")
+
+	result, _ = runLF(t, call("bar", litInt(1), litInt(10), litInt(0), litInt(10)), nil)
+	assertNull(t, result, "bar invalid bounds")
+}
+
 // §5.2 Three-Valued Logic Truth Table
 
 func TestConformance_3VL_And(t *testing.T) {

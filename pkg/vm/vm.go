@@ -1202,6 +1202,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execHumanizeDuration(v)
 
+		case OpBar:
+			width := vm.stack[vm.sp-1]
+			hi := vm.stack[vm.sp-2]
+			lo := vm.stack[vm.sp-3]
+			x := vm.stack[vm.sp-4]
+			vm.sp -= 3
+			vm.stack[vm.sp-1] = execBar(x, lo, hi, width)
+
 		case OpMD5:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = hashValue(a, "md5")

@@ -256,7 +256,8 @@ func TestExecute_ArgAggregates(t *testing.T) {
 		`arg_max(uri, duration_ms * 2) as worst_uri, ` +
 		`arg_min(uri, duration_ms + 0) as best_uri, ` +
 		`any_value(team) as some_team, ` +
-		`top_k(team, 2) as teams by service`
+		`top_k(team, 2) as teams, ` +
+		`value_counts(team) as team_counts by service`
 
 	rows, err := Execute(
 		context.Background(),
@@ -283,10 +284,13 @@ func TestExecute_ArgAggregates(t *testing.T) {
 	}
 	assertTopKEntry(t, byService["api"], "teams", 0, "core", 2)
 	assertTopKEntry(t, byService["api"], "teams", 1, "edge", 1)
+	assertTopKEntry(t, byService["api"], "team_counts", 0, "core", 2)
+	assertTopKEntry(t, byService["api"], "team_counts", 1, "edge", 1)
 	assertStringField(t, byService["web"], "worst_uri", "/home", 0)
 	assertStringField(t, byService["web"], "best_uri", "/home", 0)
 	assertStringField(t, byService["web"], "some_team", "web", 0)
 	assertTopKEntry(t, byService["web"], "teams", 0, "web", 1)
+	assertTopKEntry(t, byService["web"], "team_counts", 0, "web", 1)
 }
 
 func assertTopKEntry(t *testing.T, row map[string]event.Value, field string, idx int, value string, count int64) {

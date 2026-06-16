@@ -507,7 +507,7 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal event.Value) 
 			}
 			s.mode[val.String()]++
 		}
-	case aggTopK:
+	case aggTopK, aggValCnt:
 		updateTopKState(s, val, 1)
 	case aggAnyVal:
 		if !val.IsNull() && !s.hasFirst {
@@ -522,8 +522,11 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal event.Value) 
 }
 
 func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
-	if strings.ToLower(agg.Name) == aggTopK {
+	switch strings.ToLower(agg.Name) {
+	case aggTopK:
 		return finalizeTopK(s, agg.Limit)
+	case aggValCnt:
+		return finalizeTopK(s, 0)
 	}
 	return finalizeAggState(s, agg.Name)
 }

@@ -115,6 +115,7 @@ const (
 	aggArgMin = "arg_min"
 	aggAnyVal = "any_value"
 	aggTopK   = "top_k"
+	aggValCnt = "value_counts"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -340,7 +341,7 @@ func aggResultType(name string) string {
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
-	case aggTopK:
+	case aggTopK, aggValCnt:
 		return "array"
 	default:
 		return "any"
@@ -750,7 +751,7 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal ev
 			}
 			s.mode[val.String()]++
 		}
-	case aggTopK:
+	case aggTopK, aggValCnt:
 		updateTopKState(s, val, 1)
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
@@ -1176,7 +1177,7 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeListFromRow(&group.states[j], row, agg.Alias)
 		case aggMode:
 			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
-		case aggTopK:
+		case aggTopK, aggValCnt:
 			a.mergeTopKFromRow(&group.states[j], row, agg.Alias)
 		case "earliest":
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
@@ -1709,8 +1710,11 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 }
 
 func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
-	if strings.ToLower(agg.Name) == aggTopK {
+	switch strings.ToLower(agg.Name) {
+	case aggTopK:
 		return finalizeTopK(s, agg.Limit)
+	case aggValCnt:
+		return finalizeTopK(s, 0)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

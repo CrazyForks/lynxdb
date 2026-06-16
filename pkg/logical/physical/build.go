@@ -426,6 +426,7 @@ var aggNameMapping = map[string]string{
 	"arg_min":       "arg_min",
 	"any_value":     "any_value",
 	"top_k":         "top_k",
+	"value_counts":  "value_counts",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {

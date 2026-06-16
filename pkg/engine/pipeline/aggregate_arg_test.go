@@ -40,6 +40,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "arg_min", Field: "value", OrderField: "score", Alias: "min_value"},
 		{Name: "any_value", Field: "team", Alias: "some_team"},
 		{Name: "top_k", Field: "route", Limit: 2, Alias: "top_routes"},
+		{Name: "value_counts", Field: "route", Alias: "route_counts"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -72,6 +73,9 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		}
 		assertEventTopKEntry(t, row["top_routes"], 0, "route-0", 17, group+" top 0")
 		assertEventTopKEntry(t, row["top_routes"], 1, "route-1", 17, group+" top 1")
+		assertEventTopKEntry(t, row["route_counts"], 0, "route-0", 17, group+" counts 0")
+		assertEventTopKEntry(t, row["route_counts"], 1, "route-1", 17, group+" counts 1")
+		assertEventTopKEntry(t, row["route_counts"], 2, "route-2", 16, group+" counts 2")
 	}
 }
 

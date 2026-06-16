@@ -44,6 +44,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "top_k", Field: "route", Limit: 2, Alias: "top_routes"},
 		{Name: "value_counts", Field: "route", Alias: "route_counts"},
 		{Name: "avg_weighted", Field: "score", WeightField: "weight", Alias: "weighted_score"},
+		{Name: "entropy", Field: "route", Alias: "route_entropy"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -80,6 +81,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventTopKEntry(t, row["route_counts"], 1, "route-1", 17, group+" counts 1")
 		assertEventTopKEntry(t, row["route_counts"], 2, "route-2", 16, group+" counts 2")
 		assertEventFloat(t, row["weighted_score"], weightedScoreWant(), group+" weighted")
+		assertEventFloat(t, row["route_entropy"], routeEntropyWant(), group+" entropy")
 	}
 }
 
@@ -91,6 +93,16 @@ func weightedScoreWant() float64 {
 		weightSum += weight
 	}
 	return sum / weightSum
+}
+
+func routeEntropyWant() float64 {
+	counts := []float64{17, 17, 16}
+	var entropy float64
+	for _, count := range counts {
+		p := count / 50
+		entropy -= p * math.Log2(p)
+	}
+	return entropy
 }
 
 func assertEventString(t *testing.T, v event.Value, expected string, label string) {

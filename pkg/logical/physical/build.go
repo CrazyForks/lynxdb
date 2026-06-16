@@ -428,6 +428,7 @@ var aggNameMapping = map[string]string{
 	"top_k":         "top_k",
 	"value_counts":  "value_counts",
 	"avg_weighted":  "avg_weighted",
+	"entropy":       "entropy",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {

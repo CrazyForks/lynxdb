@@ -527,7 +527,7 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal ev
 			}
 			s.mode[val.String()]++
 		}
-	case aggTopK, aggValCnt:
+	case aggTopK, aggValCnt, aggEntropy:
 		updateTopKState(s, val, 1)
 	case aggAnyVal:
 		if !val.IsNull() && !s.hasFirst {
@@ -547,6 +547,8 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeTopK(s, agg.Limit)
 	case aggValCnt:
 		return finalizeTopK(s, 0)
+	case aggEntropy:
+		return finalizeEntropy(s)
 	}
 	return finalizeAggState(s, agg.Name)
 }

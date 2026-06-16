@@ -78,47 +78,48 @@ const (
 
 // Aggregation function name constants.
 const (
-	aggCount  = "count"
-	aggSum    = "sum"
-	aggSumSq  = "sumsq"
-	aggAvg    = "avg"
-	aggMin    = "min"
-	aggMax    = "max"
-	aggRange  = "range"
-	aggValues = "values"
-	aggList   = "list"
-	aggMode   = "mode"
-	aggPerSec = "per_second"
-	aggPerMin = "per_minute"
-	aggPerHr  = "per_hour"
-	aggPerDay = "per_day"
-	aggEarT   = "earliest_time"
-	aggLatT   = "latest_time"
-	aggRate   = "rate"
-	aggDC     = "dc"
-	aggEstDCE = "estdc_error"
-	aggStdev  = "stdev"
-	aggStdevP = "stdevp"
-	aggVar    = "var"
-	aggVarP   = "varp"
-	aggPerc25 = "perc25"
-	aggPerc50 = "perc50"
-	aggPerc75 = "perc75"
-	aggPerc90 = "perc90"
-	aggPerc95 = "perc95"
-	aggPerc99 = "perc99"
-	aggLag    = "lag"
-	aggLead   = "lead"
-	aggRowNum = "row_number"
-	aggRunSum = "running_sum"
-	aggMovAvg = "moving_avg"
-	aggDelta  = "delta"
-	aggArgMax = "arg_max"
-	aggArgMin = "arg_min"
-	aggAnyVal = "any_value"
-	aggTopK   = "top_k"
-	aggValCnt = "value_counts"
-	aggAvgW   = "avg_weighted"
+	aggCount   = "count"
+	aggSum     = "sum"
+	aggSumSq   = "sumsq"
+	aggAvg     = "avg"
+	aggMin     = "min"
+	aggMax     = "max"
+	aggRange   = "range"
+	aggValues  = "values"
+	aggList    = "list"
+	aggMode    = "mode"
+	aggPerSec  = "per_second"
+	aggPerMin  = "per_minute"
+	aggPerHr   = "per_hour"
+	aggPerDay  = "per_day"
+	aggEarT    = "earliest_time"
+	aggLatT    = "latest_time"
+	aggRate    = "rate"
+	aggDC      = "dc"
+	aggEstDCE  = "estdc_error"
+	aggStdev   = "stdev"
+	aggStdevP  = "stdevp"
+	aggVar     = "var"
+	aggVarP    = "varp"
+	aggPerc25  = "perc25"
+	aggPerc50  = "perc50"
+	aggPerc75  = "perc75"
+	aggPerc90  = "perc90"
+	aggPerc95  = "perc95"
+	aggPerc99  = "perc99"
+	aggLag     = "lag"
+	aggLead    = "lead"
+	aggRowNum  = "row_number"
+	aggRunSum  = "running_sum"
+	aggMovAvg  = "moving_avg"
+	aggDelta   = "delta"
+	aggArgMax  = "arg_max"
+	aggArgMin  = "arg_min"
+	aggAnyVal  = "any_value"
+	aggTopK    = "top_k"
+	aggValCnt  = "value_counts"
+	aggAvgW    = "avg_weighted"
+	aggEntropy = "entropy"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -341,7 +342,7 @@ func aggResultType(name string) string {
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
 		aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
-		aggRunSum, aggMovAvg, aggDelta, aggAvgW:
+		aggRunSum, aggMovAvg, aggDelta, aggAvgW, aggEntropy:
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
@@ -775,7 +776,7 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 			}
 			s.mode[val.String()]++
 		}
-	case aggTopK, aggValCnt:
+	case aggTopK, aggValCnt, aggEntropy:
 		updateTopKState(s, val, 1)
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
@@ -917,6 +918,22 @@ func updateWeightedAvgState(s *aggState, val, weightVal event.Value) {
 	}
 	s.sum += x * weight
 	s.weightSum += weight
+}
+
+func finalizeEntropy(s *aggState) event.Value {
+	var total int64
+	for _, item := range s.topK {
+		total += item.Count
+	}
+	if total == 0 {
+		return event.NullValue()
+	}
+	var entropy float64
+	for _, item := range s.topK {
+		p := float64(item.Count) / float64(total)
+		entropy -= p * math.Log2(p)
+	}
+	return event.FloatValue(entropy)
 }
 
 func (a *AggregateIterator) updateChronoState(s *aggState, val event.Value, row map[string]event.Value, earliest bool) {
@@ -1216,7 +1233,7 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeListFromRow(&group.states[j], row, agg.Alias)
 		case aggMode:
 			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
-		case aggTopK, aggValCnt:
+		case aggTopK, aggValCnt, aggEntropy:
 			a.mergeTopKFromRow(&group.states[j], row, agg.Alias)
 		case "earliest":
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
@@ -1768,6 +1785,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeTopK(s, agg.Limit)
 	case aggValCnt:
 		return finalizeTopK(s, 0)
+	case aggEntropy:
+		return finalizeEntropy(s)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

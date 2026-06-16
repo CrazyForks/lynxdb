@@ -259,7 +259,8 @@ func TestExecute_ArgAggregates(t *testing.T) {
 		`any_value(team) as some_team, ` +
 		`top_k(team, 2) as teams, ` +
 		`value_counts(team) as team_counts, ` +
-		`avg_weighted(duration_ms, samples) as weighted_ms by service`
+		`avg_weighted(duration_ms, samples) as weighted_ms, ` +
+		`entropy(team) as team_entropy by service`
 
 	rows, err := Execute(
 		context.Background(),
@@ -289,12 +290,14 @@ func TestExecute_ArgAggregates(t *testing.T) {
 	assertTopKEntry(t, byService["api"], "team_counts", 0, "core", 2)
 	assertTopKEntry(t, byService["api"], "team_counts", 1, "edge", 1)
 	assertFloatField(t, byService["api"], "weighted_ms", 106.25)
+	assertFloatField(t, byService["api"], "team_entropy", 0.9182958340544896)
 	assertStringField(t, byService["web"], "worst_uri", "/home", 0)
 	assertStringField(t, byService["web"], "best_uri", "/home", 0)
 	assertStringField(t, byService["web"], "some_team", "web", 0)
 	assertTopKEntry(t, byService["web"], "teams", 0, "web", 1)
 	assertTopKEntry(t, byService["web"], "team_counts", 0, "web", 1)
 	assertFloatField(t, byService["web"], "weighted_ms", 30)
+	assertFloatField(t, byService["web"], "team_entropy", 0)
 }
 
 func assertTopKEntry(t *testing.T, row map[string]event.Value, field string, idx int, value string, count int64) {

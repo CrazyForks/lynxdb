@@ -409,6 +409,11 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "atan2", minArgs: 2, maxArgs: 2, emit: lfEmitBinaryMath(mathFnAtan2)},
 		{name: "is_finite", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpIsFinite)},
 		{name: "is_nan", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpIsNaN)},
+		{name: "bit_and", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitAnd)},
+		{name: "bit_or", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitOr)},
+		{name: "bit_xor", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitXor)},
+		{name: "bit_shl", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitShl)},
+		{name: "bit_shr", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitShr)},
 
 		// ---- Humanize (W2) ----
 		{name: "humanize_bytes", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeBytes)},

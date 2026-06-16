@@ -1356,6 +1356,31 @@ func TestConformance_MathFunctions(t *testing.T) {
 		result, _ = runLF(t, call("is_nan", litFloat(math.Inf(1))), nil)
 		assertBool(t, result, false, "is_nan inf")
 	})
+	t.Run("bit_functions", func(t *testing.T) {
+		tests := []struct {
+			name string
+			expr lfast.Expr
+			want int64
+		}{
+			{name: "and", expr: call("bit_and", litInt(6), litInt(3)), want: 2},
+			{name: "or", expr: call("bit_or", litInt(4), litInt(1)), want: 5},
+			{name: "xor", expr: call("bit_xor", litInt(7), litInt(3)), want: 4},
+			{name: "shift left", expr: call("bit_shl", litInt(1), litInt(5)), want: 32},
+			{name: "shift right", expr: call("bit_shr", litInt(32), litInt(3)), want: 4},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				result, _ := runLF(t, tt.expr, nil)
+				assertInt(t, result, tt.want, tt.name)
+			})
+		}
+
+		result, _ := runLF(t, call("bit_shl", litInt(1), litInt(64)), nil)
+		assertNull(t, result, "bit_shl shift out of range")
+
+		result, _ = runLF(t, call("bit_and", litFloat(1), litInt(1)), nil)
+		assertNull(t, result, "bit_and non-int")
+	})
 }
 
 // String functions

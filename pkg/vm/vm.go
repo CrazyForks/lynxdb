@@ -1075,6 +1075,36 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = isNaNValue(a)
 
+		case OpBitAnd:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = bitBinaryValue(a, b, bitOpAnd)
+
+		case OpBitOr:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = bitBinaryValue(a, b, bitOpOr)
+
+		case OpBitXor:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = bitBinaryValue(a, b, bitOpXor)
+
+		case OpBitShl:
+			count := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = bitShiftValue(a, count, true)
+
+		case OpBitShr:
+			count := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = bitShiftValue(a, count, false)
+
 		case OpRandom:
 			vm.stack[vm.sp] = event.IntValue(int64(rand.Int31()))
 			vm.sp++
@@ -3108,6 +3138,51 @@ func isNaNValue(v event.Value) event.Value {
 	}
 
 	return event.BoolValue(math.IsNaN(f))
+}
+
+type bitOp int
+
+const (
+	bitOpAnd bitOp = iota
+	bitOpOr
+	bitOpXor
+)
+
+func bitBinaryValue(a, b event.Value, op bitOp) event.Value {
+	if a.IsNull() || b.IsNull() ||
+		a.Type() != event.FieldTypeInt ||
+		b.Type() != event.FieldTypeInt {
+		return event.NullValue()
+	}
+	av := a.AsInt()
+	bv := b.AsInt()
+	switch op {
+	case bitOpAnd:
+		return event.IntValue(av & bv)
+	case bitOpOr:
+		return event.IntValue(av | bv)
+	case bitOpXor:
+		return event.IntValue(av ^ bv)
+	default:
+		return event.NullValue()
+	}
+}
+
+func bitShiftValue(a, count event.Value, left bool) event.Value {
+	if a.IsNull() || count.IsNull() ||
+		a.Type() != event.FieldTypeInt ||
+		count.Type() != event.FieldTypeInt {
+		return event.NullValue()
+	}
+	n := count.AsInt()
+	if n < 0 || n > 63 {
+		return event.NullValue()
+	}
+	if left {
+		return event.IntValue(a.AsInt() << uint(n))
+	}
+
+	return event.IntValue(a.AsInt() >> uint(n))
 }
 
 func maxMinValue(values []event.Value, isMax bool) (event.Value, error) {

@@ -115,6 +115,11 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `atan2` | (y: number, x: number) | `float` | null_on_failure | - | - |
 | `is_finite` | (x: number) | `bool` | null_on_failure | - | True for numeric values that are neither NaN nor infinite. |
 | `is_nan` | (x: number) | `bool` | null_on_failure | - | True for numeric NaN values. |
+| `bit_and` | (a: int, b: int) | `int` | null_on_failure | - | Bitwise AND for integers. |
+| `bit_or` | (a: int, b: int) | `int` | null_on_failure | - | Bitwise OR for integers. |
+| `bit_xor` | (a: int, b: int) | `int` | null_on_failure | - | Bitwise XOR for integers. |
+| `bit_shl` | (a: int, n: int) | `int` | null_on_failure | - | Shift an integer left by n bits. |
+| `bit_shr` | (a: int, n: int) | `int` | null_on_failure | - | Shift an integer right by n bits. |
 
 ## Humanize
 

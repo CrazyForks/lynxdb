@@ -92,6 +92,11 @@ var functions = []Function{
 	{Name: "atan2", Category: "math", Params: []Param{{Name: "y", Type: TNumber}, {Name: "x", Type: TNumber}}, Result: TFloat, Fallibility: NullOnFailure},
 	{Name: "is_finite", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TBool, Fallibility: NullOnFailure, Doc: "True for numeric values that are neither NaN nor infinite."},
 	{Name: "is_nan", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TBool, Fallibility: NullOnFailure, Doc: "True for numeric NaN values."},
+	{Name: "bit_and", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "b", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Bitwise AND for integers."},
+	{Name: "bit_or", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "b", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Bitwise OR for integers."},
+	{Name: "bit_xor", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "b", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Bitwise XOR for integers."},
+	{Name: "bit_shl", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "n", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Shift an integer left by n bits."},
+	{Name: "bit_shr", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "n", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Shift an integer right by n bits."},
 
 	// humanize
 	{Name: "humanize_bytes", Category: "humanize", Params: []Param{{Name: "n", Type: TNumber}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format bytes with binary units (KiB, MiB, ...)."},

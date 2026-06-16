@@ -249,9 +249,14 @@ const (
 	OpRegexEscape     Opcode = 0x6C // pop string; push regexp literal escape
 	OpCountSubstr     Opcode = 0x6D // pop string, substring; push occurrence count
 	OpCountMatches    Opcode = 0x6E // 2-byte regex index; pop string; push match count
+	OpBitAnd          Opcode = 0x6F // pop two ints; push bitwise AND
 	OpIPToInt         Opcode = 0x73 // pop IPv4 string; push uint32 as int
 	OpIPFromInt       Opcode = 0x74 // pop uint32 int; push IPv4 string
 	OpReplaceFirst    Opcode = 0x75 // 2-byte regex index; pop string and replacement; replace first match
+	OpBitOr           Opcode = 0x76 // pop two ints; push bitwise OR
+	OpBitXor          Opcode = 0x77 // pop two ints; push bitwise XOR
+	OpBitShl          Opcode = 0x78 // pop int and shift count; push shifted int
+	OpBitShr          Opcode = 0x79 // pop int and shift count; push shifted int
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
@@ -522,9 +527,14 @@ var definitions = map[Opcode]*Definition{
 	OpRegexEscape:     {"OpRegexEscape", nil},
 	OpCountSubstr:     {"OpCountSubstr", nil},
 	OpCountMatches:    {"OpCountMatches", []int{2}},
+	OpBitAnd:          {"OpBitAnd", nil},
 	OpIPToInt:         {"OpIPToInt", nil},
 	OpIPFromInt:       {"OpIPFromInt", nil},
 	OpReplaceFirst:    {"OpReplaceFirst", []int{2}},
+	OpBitOr:           {"OpBitOr", nil},
+	OpBitXor:          {"OpBitXor", nil},
+	OpBitShl:          {"OpBitShl", nil},
+	OpBitShr:          {"OpBitShr", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

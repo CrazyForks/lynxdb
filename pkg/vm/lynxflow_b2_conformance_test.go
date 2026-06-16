@@ -843,6 +843,17 @@ func TestB2_FromJSON_InvalidJSON(t *testing.T) {
 	assertNull(t, result, "from_json invalid")
 }
 
+func TestLynxFlowIsJSONFunction(t *testing.T) {
+	result, _ := runLF(t, call("is_json", litStr(`{"ok": true}`)), nil)
+	assertBool(t, result, true, "is_json object")
+
+	result, _ = runLF(t, call("is_json", litStr(`{invalid}`)), nil)
+	assertBool(t, result, false, "is_json invalid")
+
+	result, _ = runLF(t, call("is_json", litNull()), nil)
+	assertBool(t, result, false, "is_json null")
+}
+
 func TestB2_FromJSON_Null(t *testing.T) {
 	expr := call("from_json", litNull())
 	result, _ := runLF(t, expr, nil)

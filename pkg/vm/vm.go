@@ -2196,6 +2196,10 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execFromJSONNative(a)
 
+		case OpIsJSON:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execIsJSON(a)
+
 		case OpReturn:
 			if vm.sp > 0 {
 				return vm.stack[vm.sp-1], nil

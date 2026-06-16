@@ -1656,6 +1656,14 @@ func execFromJSONNative(v event.Value) event.Value {
 	return parseJSONToValue([]byte(s))
 }
 
+func execIsJSON(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.BoolValue(false)
+	}
+
+	return event.BoolValue(json.Valid([]byte(v.AsString())))
+}
+
 // parseJSONToValue recursively converts JSON bytes to event.Value.
 func parseJSONToValue(data []byte) event.Value {
 	data = bytes.TrimSpace(data)

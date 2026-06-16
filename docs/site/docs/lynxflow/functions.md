@@ -190,6 +190,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `has_key` | (obj: object, key: string) | `bool` | null_on_failure | - | - |
 | `to_json` | (x: any) | `string` | null_on_failure | - | - |
 | `from_json` | (s: string) | `any` | null_on_failure | `from_json!` | Null on invalid JSON, never the original string. |
+| `is_json` | (s: string) | `bool` | infallible | - | True when a string contains valid JSON. |
 
 ---
 

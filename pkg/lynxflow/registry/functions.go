@@ -152,4 +152,5 @@ var functions = []Function{
 	{Name: "has_key", Category: "object", Params: []Param{{Name: "obj", Type: TObject}, {Name: "key", Type: TString}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "to_json", Category: "object", Params: []Param{{Name: "x", Type: TAny}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "from_json", Category: "object", Params: []Param{{Name: "s", Type: TString}}, Result: TAny, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Null on invalid JSON, never the original string."},
+	{Name: "is_json", Category: "object", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible, Doc: "True when a string contains valid JSON."},
 }

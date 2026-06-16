@@ -24,6 +24,7 @@ type EventStatsIterator struct {
 	aggs      []AggFunc
 	groupBy   []string
 	rows      []map[string]event.Value // in-memory rows (before spill or if small enough)
+	vmInst    vm.VM
 	emitted   bool
 	batchSize int
 	offset    int
@@ -258,7 +259,8 @@ func (e *EventStatsIterator) materialize(ctx context.Context) error {
 			}
 			for j, agg := range e.aggs {
 				val := e.extractValue(agg, row)
-				updateAggState(&group.states[j], agg.Name, val)
+				orderVal := e.extractOrderValue(agg, row)
+				updateAggStateWithOrder(&group.states[j], agg.Name, val, orderVal)
 			}
 		}
 	}
@@ -434,7 +436,28 @@ func (e *EventStatsIterator) extractValue(agg AggFunc, row map[string]event.Valu
 	return event.NullValue()
 }
 
+func (e *EventStatsIterator) extractOrderValue(agg AggFunc, row map[string]event.Value) event.Value {
+	if agg.OrderProgram != nil {
+		result, err := e.vmInst.Execute(agg.OrderProgram, row)
+		if err != nil {
+			return event.NullValue()
+		}
+		return result
+	}
+	if agg.OrderField != "" {
+		if v, ok := row[agg.OrderField]; ok {
+			return v
+		}
+		return event.NullValue()
+	}
+	return event.NullValue()
+}
+
 func updateAggState(s *aggState, fn string, val event.Value) {
+	updateAggStateWithOrder(s, fn, val, event.NullValue())
+}
+
+func updateAggStateWithOrder(s *aggState, fn string, val, orderVal event.Value) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		if !val.IsNull() {
@@ -484,6 +507,15 @@ func updateAggState(s *aggState, fn string, val event.Value) {
 			}
 			s.mode[val.String()]++
 		}
+	case aggAnyVal:
+		if !val.IsNull() && !s.hasFirst {
+			s.first = val
+			s.hasFirst = true
+		}
+	case aggArgMax:
+		updateArgState(s, val, orderVal, true)
+	case aggArgMin:
+		updateArgState(s, val, orderVal, false)
 	}
 }
 
@@ -518,6 +550,8 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 		return event.StringValue(strings.Join(strs, "|||"))
 	case aggMode:
 		return modeFromCounts(s.mode)
+	case aggAnyVal, aggArgMax, aggArgMin:
+		return s.first
 	}
 
 	return event.NullValue()

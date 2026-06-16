@@ -245,6 +245,46 @@ func TestExecute_ParseJSON_FilterOnError(t *testing.T) {
 	}
 }
 
+func TestExecute_ArgAggregates(t *testing.T) {
+	events := makeRawEvents(
+		`{"service":"api","uri":"/fast","duration_ms":25,"team":"core"}`,
+		`{"service":"api","uri":"/slow","duration_ms":250,"team":"edge"}`,
+		`{"service":"api","uri":"/medium","duration_ms":125,"team":"core"}`,
+		`{"service":"web","uri":"/home","duration_ms":30,"team":"web"}`,
+	)
+	query := `from main | parse json | stats ` +
+		`arg_max(uri, duration_ms * 2) as worst_uri, ` +
+		`arg_min(uri, duration_ms + 0) as best_uri, ` +
+		`any_value(team) as some_team by service`
+
+	rows, err := Execute(
+		context.Background(),
+		query,
+		events,
+		Options{},
+	)
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+
+	byService := map[string]map[string]event.Value{}
+	for _, row := range rows {
+		byService[row["service"].AsString()] = row
+	}
+
+	assertStringField(t, byService["api"], "worst_uri", "/slow", 0)
+	assertStringField(t, byService["api"], "best_uri", "/fast", 0)
+	if byService["api"]["some_team"].IsNull() {
+		t.Fatal("api some_team should be non-null")
+	}
+	assertStringField(t, byService["web"], "worst_uri", "/home", 0)
+	assertStringField(t, byService["web"], "best_uri", "/home", 0)
+	assertStringField(t, byService["web"], "some_team", "web", 0)
+}
+
 // Test: parse first_of(json, logfmt) on_error=propagate
 
 func TestExecute_ParseFirstOf_MixedFormats(t *testing.T) {

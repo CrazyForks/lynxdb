@@ -24,12 +24,14 @@ import (
 
 // AggFunc describes an aggregation function.
 type AggFunc struct {
-	Name    string      // "count", "sum", "avg", "min", "max", "dc", "values", "first", "last"
-	Field   string      // field to aggregate (empty for count)
-	Alias   string      // output field name
-	Program *vm.Program // optional compiled expression for nested eval
-	Scale   float64     // optional multiplier applied at finalize time
-	Window  int         // optional per-function row window/offset for streamstats functions
+	Name         string      // "count", "sum", "avg", "min", "max", "dc", "values", "first", "last"
+	Field        string      // field to aggregate (empty for count)
+	Alias        string      // output field name
+	Program      *vm.Program // optional compiled expression for nested eval
+	OrderField   string      // optional order field for arg_min/arg_max
+	OrderProgram *vm.Program // optional compiled order expression for arg_min/arg_max
+	Scale        float64     // optional multiplier applied at finalize time
+	Window       int         // optional per-function row window/offset for streamstats functions
 	// CondProgram is an optional compiled predicate for conditional aggregation.
 	// When non-nil, it is evaluated per row BEFORE extracting the value. If the
 	// predicate returns false or null, the row is skipped for this aggregate
@@ -108,6 +110,9 @@ const (
 	aggRunSum = "running_sum"
 	aggMovAvg = "moving_avg"
 	aggDelta  = "delta"
+	aggArgMax = "arg_max"
+	aggArgMin = "arg_min"
+	aggAnyVal = "any_value"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -350,7 +355,8 @@ func (a *AggregateIterator) processBatch(batch *Batch) error {
 
 		for j, agg := range a.aggs {
 			val := a.extractValue(agg, row)
-			a.updateState(&group.states[j], agg.Name, val, row)
+			orderVal := a.extractOrderValue(agg, row)
+			a.updateState(&group.states[j], agg.Name, val, orderVal, row)
 		}
 	}
 
@@ -638,7 +644,24 @@ func (a *AggregateIterator) extractValue(agg AggFunc, row map[string]event.Value
 	return event.NullValue()
 }
 
-func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value, row map[string]event.Value) {
+func (a *AggregateIterator) extractOrderValue(agg AggFunc, row map[string]event.Value) event.Value {
+	if agg.OrderProgram != nil {
+		result, err := a.vmInst.Execute(agg.OrderProgram, row)
+		if err != nil {
+			return event.NullValue()
+		}
+		return result
+	}
+	if agg.OrderField != "" {
+		if v, ok := row[agg.OrderField]; ok {
+			return v
+		}
+		return event.NullValue()
+	}
+	return event.NullValue()
+}
+
+func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal event.Value, row map[string]event.Value) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		if !val.IsNull() {
@@ -722,10 +745,19 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value,
 			s.first = val
 			s.hasFirst = true
 		}
+	case aggAnyVal:
+		if !val.IsNull() && !s.hasFirst {
+			s.first = val
+			s.hasFirst = true
+		}
 	case "last":
 		if !val.IsNull() {
 			s.last = val
 		}
+	case aggArgMax:
+		updateArgState(s, val, orderVal, true)
+	case aggArgMin:
+		updateArgState(s, val, orderVal, false)
 	case aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if f, ok := vm.ValueToFloat(val); ok {
 			if s.tdigest == nil {
@@ -753,6 +785,38 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val event.Value,
 		a.updateChronoState(s, val, row, true)
 		a.updateChronoState(s, val, row, false)
 	}
+}
+
+func updateArgState(s *aggState, val, orderVal event.Value, maxOrder bool) {
+	if val.IsNull() || orderVal.IsNull() {
+		return
+	}
+	if !s.hasFirst {
+		s.first = val
+		if maxOrder {
+			s.max = orderVal
+		} else {
+			s.min = orderVal
+		}
+		s.hasFirst = true
+		return
+	}
+	cmp := vm.CompareValues(orderVal, argOrderValue(s, maxOrder))
+	if (maxOrder && cmp > 0) || (!maxOrder && cmp < 0) {
+		s.first = val
+		if maxOrder {
+			s.max = orderVal
+		} else {
+			s.min = orderVal
+		}
+	}
+}
+
+func argOrderValue(s *aggState, maxOrder bool) event.Value {
+	if maxOrder {
+		return s.max
+	}
+	return s.min
 }
 
 func (a *AggregateIterator) updateChronoState(s *aggState, val event.Value, row map[string]event.Value, earliest bool) {
@@ -1054,6 +1118,10 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
 		case "latest":
 			a.mergeLatestValueFromRow(&group.states[j], row, agg.Alias)
+		case aggArgMax:
+			a.mergeArgValueFromRow(&group.states[j], row, agg.Alias, true)
+		case aggArgMin:
+			a.mergeArgValueFromRow(&group.states[j], row, agg.Alias, false)
 		case aggEarT:
 			a.mergeEarliestTimeFromRow(&group.states[j], row, agg.Alias)
 		case aggLatT:
@@ -1110,7 +1178,7 @@ func (a *AggregateIterator) mergeSpilledValue(s *aggState, fn string, val event.
 			}
 			s.count++
 		}
-	case "first", "earliest":
+	case "first", "earliest", aggAnyVal:
 		if !s.hasFirst {
 			s.first = val
 			s.hasFirst = true
@@ -1302,6 +1370,12 @@ func (a *AggregateIterator) mergeLatestValueFromRow(s *aggState, row map[string]
 	s.hasFirst = true
 }
 
+func (a *AggregateIterator) mergeArgValueFromRow(s *aggState, row map[string]event.Value, alias string, maxOrder bool) {
+	val := row[alias+"__value"]
+	orderVal := row[alias+"__order"]
+	updateArgState(s, val, orderVal, maxOrder)
+}
+
 func (a *AggregateIterator) mergeEarliestTimeFromRow(s *aggState, row map[string]event.Value, alias string) {
 	if ts, ok := timeFromSecondsValue(row[alias+"__earliest_time"]); ok && (s.firstTS.IsZero() || ts.Before(s.firstTS)) {
 		s.firstTS = ts
@@ -1470,7 +1544,7 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		return event.StringValue(joinAllStrings(s.all, "|||"))
 	case aggMode:
 		return modeFromCounts(s.mode)
-	case "first", "earliest":
+	case "first", "earliest", aggAnyVal, aggArgMax, aggArgMin:
 		return s.first
 	case "last", "latest":
 		return s.last

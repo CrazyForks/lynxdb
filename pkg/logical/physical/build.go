@@ -422,6 +422,9 @@ var aggNameMapping = map[string]string{
 	"running_sum":   "running_sum",
 	"moving_avg":    "moving_avg",
 	"delta":         "delta",
+	"arg_max":       "arg_max",
+	"arg_min":       "arg_min",
+	"any_value":     "any_value",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -512,21 +515,13 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 			alias = aggAutoAlias(call)
 		}
 
-		field := ""
-		var prog *vm.Program
-
-		if len(call.Args) > 0 {
-			// If the argument is a simple identifier, use it as a field name.
-			// Otherwise compile it as an expression.
-			if ident, ok := call.Args[0].(*lfast.Ident); ok {
-				field = ident.Name
-			} else {
-				compiled, err := vm.CompileLynxFlow(call.Args[0])
-				if err != nil {
-					return nil, fmt.Errorf("physical.Build: compile agg %s arg: %w", name, err)
-				}
-				prog = compiled
-			}
+		field, prog, err := b.convertAggArg(name, call.Args, 0)
+		if err != nil {
+			return nil, err
+		}
+		orderField, orderProg, err := b.convertAggArg(name, call.Args, 1)
+		if err != nil {
+			return nil, err
 		}
 		window, err := streamstatsArgWindow(name, call)
 		if err != nil {
@@ -544,15 +539,31 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 		}
 
 		result[i] = pipeline.AggFunc{
-			Name:        mapped,
-			Field:       field,
-			Alias:       alias,
-			Program:     prog,
-			Window:      window,
-			CondProgram: condProg,
+			Name:         mapped,
+			Field:        field,
+			Alias:        alias,
+			Program:      prog,
+			OrderField:   orderField,
+			OrderProgram: orderProg,
+			Window:       window,
+			CondProgram:  condProg,
 		}
 	}
 	return result, nil
+}
+
+func (b *builder) convertAggArg(name string, args []lfast.Expr, index int) (string, *vm.Program, error) {
+	if len(args) <= index {
+		return "", nil, nil
+	}
+	if ident, ok := args[index].(*lfast.Ident); ok {
+		return ident.Name, nil, nil
+	}
+	compiled, err := vm.CompileLynxFlow(args[index])
+	if err != nil {
+		return "", nil, fmt.Errorf("physical.Build: compile agg %s arg: %w", name, err)
+	}
+	return "", compiled, nil
 }
 
 func streamstatsArgWindow(name string, call *lfast.Call) (int, error) {

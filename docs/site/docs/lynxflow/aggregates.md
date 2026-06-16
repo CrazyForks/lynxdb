@@ -29,6 +29,9 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `stdev` | (x: number) | `float` | Sample standard deviation. |
 | `var` | (x: number) | `float` | Sample variance. |
 | `mode` | (x: any) | `any` | - |
+| `arg_max` | (value: any, order: any) | `any` | Value from the row with the greatest order expression. |
+| `arg_min` | (value: any, order: any) | `any` | Value from the row with the least order expression. |
+| `any_value` | (x: any) | `any` | An arbitrary non-null value from the group. |
 | `first` | (x: any) | `any` | First non-null in row order. |
 | `last` | (x: any) | `any` | Last non-null in row order. |
 | `earliest` | (x: any) | `any` | Value from the row with the smallest _time. |

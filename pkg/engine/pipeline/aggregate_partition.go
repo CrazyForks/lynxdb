@@ -352,6 +352,16 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 					row[agg.Alias+"__last_time"] = event.FloatValue(float64(s.lastTS.UnixNano()) / 1e9)
 				}
 			}
+		case aggArgMax:
+			if s.hasFirst {
+				row[agg.Alias+"__value"] = s.first
+				row[agg.Alias+"__order"] = s.max
+			}
+		case aggArgMin:
+			if s.hasFirst {
+				row[agg.Alias+"__value"] = s.first
+				row[agg.Alias+"__order"] = s.min
+			}
 		case aggEarT:
 			if !s.firstTS.IsZero() {
 				row[agg.Alias+"__earliest_time"] = event.FloatValue(float64(s.firstTS.UnixNano()) / 1e9)
@@ -433,6 +443,10 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
 		case "latest":
 			a.mergeLatestValueFromRow(&group.states[j], row, agg.Alias)
+		case aggArgMax:
+			a.mergeArgValueFromRow(&group.states[j], row, agg.Alias, true)
+		case aggArgMin:
+			a.mergeArgValueFromRow(&group.states[j], row, agg.Alias, false)
 		case aggEarT:
 			a.mergeEarliestTimeFromRow(&group.states[j], row, agg.Alias)
 		case aggLatT:

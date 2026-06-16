@@ -1958,6 +1958,20 @@ func TestConformance_CalendarFunctions(t *testing.T) {
 	})
 }
 
+func TestConformance_TimestampGuess(t *testing.T) {
+	result, _ := runLF(t, call("timestamp_guess", litStr("2026-06-16 14:37:55.123")), nil)
+	assertTimestamp(t, result, time.Date(2026, 6, 16, 14, 37, 55, 123_000_000, time.UTC), "timestamp_guess millis")
+
+	result, _ = runLF(t, call("timestamp_guess", litStr("2026-06-16T14:37:55Z")), nil)
+	assertTimestamp(t, result, time.Date(2026, 6, 16, 14, 37, 55, 0, time.UTC), "timestamp_guess rfc3339")
+
+	result, _ = runLF(t, call("timestamp_guess", litStr("not a timestamp")), nil)
+	assertNull(t, result, "timestamp_guess invalid")
+
+	result, _ = runLF(t, call("timestamp_guess", litInt(1)), nil)
+	assertNull(t, result, "timestamp_guess non-string")
+}
+
 // xxhash64(s) -> hex string
 
 func TestConformance_XXHash64_Basic(t *testing.T) {

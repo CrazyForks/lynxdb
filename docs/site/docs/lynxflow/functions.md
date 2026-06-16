@@ -162,6 +162,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `date_trunc` | (ts: timestamp, part: string, tz: string?) | `timestamp` | null_on_failure | - | Truncate a timestamp to a calendar part. |
 | `date_part` | (ts: timestamp, part: string, tz: string?) | `int` | null_on_failure | - | Extract a calendar part from a timestamp. |
 | `date_diff` | (a: timestamp, b: timestamp, part: string) | `int` | null_on_failure | - | Difference b - a in a calendar unit. |
+| `timestamp_guess` | (s: string) | `timestamp` | null_on_failure | - | Parse a timestamp using common layouts. |
 
 ## Hash
 

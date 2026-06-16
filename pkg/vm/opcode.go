@@ -295,21 +295,22 @@ const (
 	OpRepeat          Opcode = 0x1F // pop string, count; push repeated string
 
 	// JSON Functions.
-	OpJsonExtract   Opcode = 0xD0 // pop path, pop field, push extracted value
-	OpJsonValid     Opcode = 0xD1 // pop field, push bool
-	OpJsonKeys      Opcode = 0xD2 // pop path, pop field, push JSON array of keys
-	OpJsonArrayLen  Opcode = 0xD3 // pop path, pop field, push int length
-	OpJsonObject    Opcode = 0xD4 // 2-byte operand: arg count; pop N values, push JSON object
-	OpJsonArray     Opcode = 0xD5 // 2-byte operand: arg count; pop N values, push JSON array
-	OpJsonType      Opcode = 0xD6 // pop path, pop field, push type string
-	OpJsonSet       Opcode = 0xD7 // pop value, pop path, pop field, push modified JSON
-	OpJsonRemove    Opcode = 0xD8 // pop path, pop field, push modified JSON
-	OpJsonMerge     Opcode = 0xD9 // pop json2, pop json1, push merged JSON
-	OpJsonValue     Opcode = 0xDA // pop field and path; push scalar JSON value or null
-	OpJsonQuery     Opcode = 0xDB // pop field and path; push raw JSON fragment or null
-	OpLevenshtein   Opcode = 0xDC // 2-byte count; pop a, b[, damerau]; push edit distance
-	OpJaroWinkler   Opcode = 0xDD // pop a and b; push similarity
-	OpNormalizeUTF8 Opcode = 0xDE // 2-byte count; pop s[, form]; push normalized Unicode
+	OpJsonExtract    Opcode = 0xD0 // pop path, pop field, push extracted value
+	OpJsonValid      Opcode = 0xD1 // pop field, push bool
+	OpJsonKeys       Opcode = 0xD2 // pop path, pop field, push JSON array of keys
+	OpJsonArrayLen   Opcode = 0xD3 // pop path, pop field, push int length
+	OpJsonObject     Opcode = 0xD4 // 2-byte operand: arg count; pop N values, push JSON object
+	OpJsonArray      Opcode = 0xD5 // 2-byte operand: arg count; pop N values, push JSON array
+	OpJsonType       Opcode = 0xD6 // pop path, pop field, push type string
+	OpJsonSet        Opcode = 0xD7 // pop value, pop path, pop field, push modified JSON
+	OpJsonRemove     Opcode = 0xD8 // pop path, pop field, push modified JSON
+	OpJsonMerge      Opcode = 0xD9 // pop json2, pop json1, push merged JSON
+	OpJsonValue      Opcode = 0xDA // pop field and path; push scalar JSON value or null
+	OpJsonQuery      Opcode = 0xDB // pop field and path; push raw JSON fragment or null
+	OpLevenshtein    Opcode = 0xDC // 2-byte count; pop a, b[, damerau]; push edit distance
+	OpJaroWinkler    Opcode = 0xDD // pop a and b; push similarity
+	OpNormalizeUTF8  Opcode = 0xDE // 2-byte count; pop s[, form]; push normalized Unicode
+	OpTimestampGuess Opcode = 0xDF // pop string; push parsed timestamp or null
 
 	OpReturn Opcode = 0xFF
 )
@@ -523,21 +524,22 @@ var definitions = map[Opcode]*Definition{
 	OpExtractAll:   {"OpExtractAll", []int{2}},
 	OpSubstr0Based: {"OpSubstr0Based", nil},
 
-	OpJsonExtract:   {"OpJsonExtract", nil},
-	OpJsonValid:     {"OpJsonValid", nil},
-	OpJsonKeys:      {"OpJsonKeys", nil},
-	OpJsonArrayLen:  {"OpJsonArrayLen", nil},
-	OpJsonObject:    {"OpJsonObject", []int{2}},
-	OpJsonArray:     {"OpJsonArray", []int{2}},
-	OpJsonType:      {"OpJsonType", nil},
-	OpJsonSet:       {"OpJsonSet", nil},
-	OpJsonRemove:    {"OpJsonRemove", nil},
-	OpJsonMerge:     {"OpJsonMerge", nil},
-	OpJsonValue:     {"OpJsonValue", nil},
-	OpJsonQuery:     {"OpJsonQuery", nil},
-	OpLevenshtein:   {"OpLevenshtein", []int{2}},
-	OpJaroWinkler:   {"OpJaroWinkler", nil},
-	OpNormalizeUTF8: {"OpNormalizeUTF8", []int{2}},
+	OpJsonExtract:    {"OpJsonExtract", nil},
+	OpJsonValid:      {"OpJsonValid", nil},
+	OpJsonKeys:       {"OpJsonKeys", nil},
+	OpJsonArrayLen:   {"OpJsonArrayLen", nil},
+	OpJsonObject:     {"OpJsonObject", []int{2}},
+	OpJsonArray:      {"OpJsonArray", []int{2}},
+	OpJsonType:       {"OpJsonType", nil},
+	OpJsonSet:        {"OpJsonSet", nil},
+	OpJsonRemove:     {"OpJsonRemove", nil},
+	OpJsonMerge:      {"OpJsonMerge", nil},
+	OpJsonValue:      {"OpJsonValue", nil},
+	OpJsonQuery:      {"OpJsonQuery", nil},
+	OpLevenshtein:    {"OpLevenshtein", []int{2}},
+	OpJaroWinkler:    {"OpJaroWinkler", nil},
+	OpNormalizeUTF8:  {"OpNormalizeUTF8", []int{2}},
+	OpTimestampGuess: {"OpTimestampGuess", nil},
 
 	// RFC-002 b2 lambda + array/object
 	OpArrayAny:        {"OpArrayAny", []int{2}},

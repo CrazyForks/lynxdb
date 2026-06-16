@@ -133,6 +133,7 @@ var functions = []Function{
 	{Name: "date_trunc", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "part", Type: TString}, {Name: "tz", Type: TString, Optional: true}}, Result: TTimestamp, Fallibility: NullOnFailure, Doc: "Truncate a timestamp to a calendar part."},
 	{Name: "date_part", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "part", Type: TString}, {Name: "tz", Type: TString, Optional: true}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Extract a calendar part from a timestamp."},
 	{Name: "date_diff", Category: "time", Params: []Param{{Name: "a", Type: TTimestamp}, {Name: "b", Type: TTimestamp}, {Name: "part", Type: TString}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Difference b - a in a calendar unit."},
+	{Name: "timestamp_guess", Category: "time", Params: []Param{{Name: "s", Type: TString}}, Result: TTimestamp, Fallibility: NullOnFailure, Doc: "Parse a timestamp using common layouts."},
 
 	// hash / network
 	{Name: "md5", Category: "hash", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},

@@ -1386,6 +1386,10 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp -= 2
 			vm.stack[vm.sp-1] = dateDiffValue(a, b, part, vm.Warnings)
 
+		case OpTimestampGuess:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = timestampGuessValue(v)
+
 		case OpBucket:
 			bounds := vm.stack[vm.sp-1]
 			x := vm.stack[vm.sp-2]
@@ -3677,6 +3681,7 @@ func tryParseTimestampVM(s string) (time.Time, bool) {
 		"2006-01-02T15:04:05-0700",
 		"2006-01-02T15:04:05.000Z",
 		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05.000",
 	} {
 		t, err := time.Parse(fmt, s)
 		if err == nil {
@@ -3684,6 +3689,17 @@ func tryParseTimestampVM(s string) (time.Time, bool) {
 		}
 	}
 	return time.Time{}, false
+}
+
+func timestampGuessValue(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	ts, ok := tryParseTimestampVM(v.AsString())
+	if !ok {
+		return event.NullValue()
+	}
+	return event.TimestampValue(ts.UTC())
 }
 
 func hashValue(v event.Value, algorithm string) event.Value {

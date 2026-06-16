@@ -467,6 +467,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "date_trunc", minArgs: 2, maxArgs: 3, emit: lfEmitVariadicOp(OpDateTrunc)},
 		{name: "date_part", minArgs: 2, maxArgs: 3, emit: lfEmitVariadicOp(OpDatePart)},
 		{name: "date_diff", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpDateDiff)},
+		{name: "timestamp_guess", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpTimestampGuess)},
 
 		// ---- Hash / network (§10) ----
 		{name: "md5", minArgs: 1, maxArgs: 1, emit: lfEmitHash(OpMD5)},

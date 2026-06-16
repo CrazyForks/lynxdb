@@ -124,7 +124,7 @@ var functions = []Function{
 	// time
 	{Name: "now", Category: "time", Result: TTimestamp, Fallibility: Infallible, Doc: "Query start time (stable within one query)."},
 	{Name: "bin", Category: "time", Params: []Param{{Name: "x", Type: TAny}, {Name: "width", Type: TAny}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Snap a timestamp to a duration boundary or a number to a numeric width; time by-lists emit as _time."},
-	{Name: "strftime", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "format", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
+	{Name: "strftime", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "format", Type: TString}, {Name: "tz", Type: TString, Optional: true}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format a timestamp in UTC or an IANA timezone."},
 	{Name: "strptime", Category: "time", Params: []Param{{Name: "s", Type: TString}, {Name: "format", Type: TAny}}, Result: TTimestamp, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Parse with one layout or the first matching layout in an array."},
 	{Name: "time_of_day", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}}, Result: TDuration, Fallibility: NullOnFailure},
 	{Name: "day_of_week", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}}, Result: TInt, Fallibility: NullOnFailure, Doc: "0 = Sunday."},

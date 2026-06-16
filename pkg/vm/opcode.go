@@ -155,20 +155,21 @@ const (
 	OpMatchesAny     Opcode = 0xBF
 
 	// Time Functions.
-	OpStrftime  Opcode = 0xC0
-	OpURLDecode Opcode = 0xC1
-	OpMD5       Opcode = 0xC2
-	OpSHA1      Opcode = 0xC3
-	OpSHA256    Opcode = 0xC4
-	OpSHA512    Opcode = 0xC5
-	OpPrintf    Opcode = 0xC6
-	OpIPMask    Opcode = 0xC7
-	OpStrptime  Opcode = 0xC8
-	OpFromUnix  Opcode = 0xCA
-	OpToUnix    Opcode = 0xCB
-	OpDateTrunc Opcode = 0xCC
-	OpDatePart  Opcode = 0xCD
-	OpDateDiff  Opcode = 0xCE
+	OpStrftime   Opcode = 0xC0
+	OpURLDecode  Opcode = 0xC1
+	OpMD5        Opcode = 0xC2
+	OpSHA1       Opcode = 0xC3
+	OpSHA256     Opcode = 0xC4
+	OpSHA512     Opcode = 0xC5
+	OpPrintf     Opcode = 0xC6
+	OpIPMask     Opcode = 0xC7
+	OpStrptime   Opcode = 0xC8
+	OpFromUnix   Opcode = 0xCA
+	OpToUnix     Opcode = 0xCB
+	OpDateTrunc  Opcode = 0xCC
+	OpDatePart   Opcode = 0xCD
+	OpDateDiff   Opcode = 0xCE
+	OpStrftimeTZ Opcode = 0xCF
 	// OpSearchMatch is RESERVED (0xC9). The handler was removed; the opcode
 	// constant is kept so that append-only numbering is preserved and any
 	// residual persisted bytecode (e.g. in materialized-view caches) gets a
@@ -466,6 +467,7 @@ var definitions = map[Opcode]*Definition{
 	OpMatchesAny:     {"OpMatchesAny", nil},
 
 	OpStrftime:    {"OpStrftime", nil},
+	OpStrftimeTZ:  {"OpStrftimeTZ", nil},
 	OpURLDecode:   {"OpURLDecode", nil},
 	OpMD5:         {"OpMD5", nil},
 	OpSHA1:        {"OpSHA1", nil},

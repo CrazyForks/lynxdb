@@ -457,7 +457,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		// ---- Time (§10) ----
 		{name: "now", minArgs: 0, maxArgs: 0, emit: lfEmitNow},
 		{name: "bin", minArgs: 2, maxArgs: 2, emit: lfEmitBin},
-		{name: "strftime", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpStrftime)},
+		{name: "strftime", minArgs: 2, maxArgs: 3, emit: lfEmitStrftime},
 		{name: "strptime", minArgs: 2, maxArgs: 2, strict: true, emit: lfEmitBinary(OpStrptime),
 			emitStrict: lfStrictCast("strptime", OpStrptime)},
 		{name: "time_of_day", minArgs: 1, maxArgs: 1, emit: lfEmitTimeOfDay},
@@ -1194,6 +1194,23 @@ func lfEmitBin(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	c.prog.EmitOp(OpBin)
+	return nil
+}
+
+func lfEmitStrftime(c *lfCompiler, call *lfast.Call) error {
+	if len(call.Args) != 2 && len(call.Args) != 3 {
+		return fmt.Errorf("lynxflow.Compile: strftime expects 2-3 argument(s), got %d", len(call.Args))
+	}
+	for _, arg := range call.Args {
+		if err := c.compile(arg); err != nil {
+			return err
+		}
+	}
+	if len(call.Args) == 3 {
+		c.prog.EmitOp(OpStrftimeTZ)
+		return nil
+	}
+	c.prog.EmitOp(OpStrftime)
 	return nil
 }
 

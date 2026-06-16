@@ -1943,6 +1943,21 @@ func TestConformance_BinFunction(t *testing.T) {
 	})
 }
 
+func TestConformance_StrftimeTimezone(t *testing.T) {
+	ts := time.Date(2026, 6, 16, 22, 30, 0, 0, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+
+	result, _ := runLF(t, call("strftime", ident("ts"), litStr("%Y-%m-%d %H:%M")), fields)
+	assertString(t, result, "2026-06-16 22:30", "strftime utc")
+
+	result, _ = runLF(t, call("strftime", ident("ts"), litStr("%Y-%m-%d %H:%M"), litStr("Europe/Amsterdam")), fields)
+	assertString(t, result, "2026-06-17 00:30", "strftime timezone")
+
+	result, warnings := runLF(t, call("strftime", ident("ts"), litStr("%Y-%m-%d"), litStr("No/SuchZone")), fields)
+	assertNull(t, result, "strftime invalid timezone")
+	assertWarnings(t, warnings, "type_error", 1, "strftime invalid timezone")
+}
+
 func TestConformance_StrptimeLayouts(t *testing.T) {
 	expected := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC).Unix()
 

@@ -1318,6 +1318,13 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = strftimeValue(ts, format)
 
+		case OpStrftimeTZ:
+			tz := vm.stack[vm.sp-1]
+			format := vm.stack[vm.sp-2]
+			ts := vm.stack[vm.sp-3]
+			vm.sp -= 2
+			vm.stack[vm.sp-1] = strftimeValueTZ(ts, format, tz, vm.Warnings)
+
 		case OpStrptime:
 			format := vm.stack[vm.sp-1]
 			ts := vm.stack[vm.sp-2]
@@ -3588,16 +3595,28 @@ func maxMinValue(values []event.Value, isMax bool) (event.Value, error) {
 }
 
 func strftimeValue(ts, format event.Value) event.Value {
+	return strftimeValueInLocation(ts, format, time.UTC)
+}
+
+func strftimeValueTZ(ts, format, tz event.Value, w *WarningCounters) event.Value {
+	loc, ok := locationFromValue(tz, w)
+	if !ok {
+		return event.NullValue()
+	}
+	return strftimeValueInLocation(ts, format, loc)
+}
+
+func strftimeValueInLocation(ts, format event.Value, loc *time.Location) event.Value {
 	if ts.IsNull() || format.IsNull() {
 		return event.NullValue()
 	}
 	var t time.Time
 	if ts.Type() == event.FieldTypeTimestamp {
-		t = ts.AsTimestamp().UTC()
+		t = ts.AsTimestamp().In(loc)
 	} else if ts.Type() == event.FieldTypeInt {
-		t = time.Unix(ts.AsInt(), 0).UTC()
+		t = time.Unix(ts.AsInt(), 0).In(loc)
 	} else if f, ok := ValueToFloat(ts); ok {
-		t = time.Unix(int64(f), 0).UTC()
+		t = time.Unix(int64(f), 0).In(loc)
 	} else {
 		return event.NullValue()
 	}
@@ -4182,19 +4201,27 @@ func calendarArgs(args []event.Value, w *WarningCounters) (time.Time, *time.Loca
 	}
 	loc := time.UTC
 	if len(args) == 3 {
-		if args[2].IsNull() || args[2].Type() != event.FieldTypeString {
-			incrementTypeWarning(w)
+		var ok bool
+		loc, ok = locationFromValue(args[2], w)
+		if !ok {
 			return time.Time{}, nil, "", false
 		}
-		loaded, err := time.LoadLocation(args[2].AsString())
-		if err != nil {
-			incrementTypeWarning(w)
-			return time.Time{}, nil, "", false
-		}
-		loc = loaded
 	}
 
 	return ts, loc, strings.ToLower(args[1].AsString()), true
+}
+
+func locationFromValue(v event.Value, w *WarningCounters) (*time.Location, bool) {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		incrementTypeWarning(w)
+		return nil, false
+	}
+	loc, err := time.LoadLocation(v.AsString())
+	if err != nil {
+		incrementTypeWarning(w)
+		return nil, false
+	}
+	return loc, true
 }
 
 func timestampFromValue(v event.Value, w *WarningCounters) (time.Time, bool) {

@@ -85,6 +85,35 @@ func boolV(b bool) event.Value              { return event.BoolValue(b) }
 func nullV() event.Value                    { return event.NullValue() }
 func tsV(t time.Time) event.Value           { return event.TimestampValue(t) }
 func arrV(elems ...event.Value) event.Value { return event.ArrayValue(elems) }
+func intPtr(n int64) *int64                 { return &n }
+
+func assertOptionalIntField(t *testing.T, row map[string]event.Value, field string, want *int64, rowIndex int) {
+	t.Helper()
+	got := row[field]
+	if want == nil {
+		if !got.IsNull() {
+			t.Errorf("row %d field %s: expected null, got %s", rowIndex, field, got.String())
+		}
+		return
+	}
+	assertIntField(t, row, field, *want, rowIndex)
+}
+
+func assertIntField(t *testing.T, row map[string]event.Value, field string, want int64, rowIndex int) {
+	t.Helper()
+	got, ok := row[field].TryAsInt()
+	if !ok || got != want {
+		t.Errorf("row %d field %s: expected %d, got %s", rowIndex, field, want, row[field].String())
+	}
+}
+
+func assertFloatField(t *testing.T, row map[string]event.Value, field string, want float64, rowIndex int) {
+	t.Helper()
+	got, ok := row[field].TryAsFloat()
+	if !ok || math.Abs(got-want) > 0.01 {
+		t.Errorf("row %d field %s: expected %f, got %s", rowIndex, field, want, row[field].String())
+	}
+}
 
 func sampleRows() []map[string]event.Value {
 	return []map[string]event.Value{
@@ -381,6 +410,41 @@ func TestBuild_StreamStats_CurrentFalse(t *testing.T) {
 		if math.Abs(got-expected[i]) > 0.01 {
 			t.Errorf("row %d: expected previous_sum=%f, got %f", i, expected[i], got)
 		}
+	}
+}
+
+func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"host": strV("a"), "val": intV(10)},
+		{"host": strV("a"), "val": intV(20)},
+		{"host": strV("b"), "val": intV(5)},
+		{"host": strV("a"), "val": intV(30)},
+		{"host": strV("b"), "val": intV(7)},
+	}
+	result := drain(t, `from * | streamstats lag(val) as prev, lead(val) as next, row_number() as rn, running_sum(val) as total, moving_avg(val, 2) as avg2 by host`, rows)
+	if len(result) != 5 {
+		t.Fatalf("expected 5 rows, got %d", len(result))
+	}
+
+	expected := []struct {
+		prev  *int64
+		next  *int64
+		rn    int64
+		total float64
+		avg2  float64
+	}{
+		{prev: nil, next: intPtr(20), rn: 1, total: 10, avg2: 10},
+		{prev: intPtr(10), next: intPtr(30), rn: 2, total: 30, avg2: 15},
+		{prev: nil, next: intPtr(7), rn: 1, total: 5, avg2: 5},
+		{prev: intPtr(20), next: nil, rn: 3, total: 60, avg2: 25},
+		{prev: intPtr(5), next: nil, rn: 2, total: 12, avg2: 6},
+	}
+	for i, r := range result {
+		assertOptionalIntField(t, r, "prev", expected[i].prev, i)
+		assertOptionalIntField(t, r, "next", expected[i].next, i)
+		assertIntField(t, r, "rn", expected[i].rn, i)
+		assertFloatField(t, r, "total", expected[i].total, i)
+		assertFloatField(t, r, "avg2", expected[i].avg2, i)
 	}
 }
 

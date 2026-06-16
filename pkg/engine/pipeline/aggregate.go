@@ -29,6 +29,7 @@ type AggFunc struct {
 	Alias   string      // output field name
 	Program *vm.Program // optional compiled expression for nested eval
 	Scale   float64     // optional multiplier applied at finalize time
+	Window  int         // optional per-function row window/offset for streamstats functions
 	// CondProgram is an optional compiled predicate for conditional aggregation.
 	// When non-nil, it is evaluated per row BEFORE extracting the value. If the
 	// predicate returns false or null, the row is skipped for this aggregate
@@ -101,6 +102,11 @@ const (
 	aggPerc90 = "perc90"
 	aggPerc95 = "perc95"
 	aggPerc99 = "perc99"
+	aggLag    = "lag"
+	aggLead   = "lead"
+	aggRowNum = "row_number"
+	aggRunSum = "running_sum"
+	aggMovAvg = "moving_avg"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -311,11 +317,12 @@ func (a *AggregateIterator) Schema() []FieldInfo {
 // until typed scan schemas land with the logical-IR physical builder.
 func aggResultType(name string) string {
 	switch name {
-	case aggCount, aggDC:
+	case aggCount, aggDC, aggRowNum:
 		return "int"
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
-		aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
+		aggRunSum, aggMovAvg:
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"

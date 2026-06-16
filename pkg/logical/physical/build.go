@@ -416,6 +416,11 @@ var aggNameMapping = map[string]string{
 	"sumsq":         "sumsq",
 	"earliest_time": "earliest_time",
 	"latest_time":   "latest_time",
+	"lag":           "lag",
+	"lead":          "lead",
+	"row_number":    "row_number",
+	"running_sum":   "running_sum",
+	"moving_avg":    "moving_avg",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -522,6 +527,10 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 				prog = compiled
 			}
 		}
+		window, err := streamstatsArgWindow(name, call)
+		if err != nil {
+			return nil, err
+		}
 
 		// Conditional aggregation: count(x, where=predicate)
 		var condProg *vm.Program
@@ -538,10 +547,57 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 			Field:       field,
 			Alias:       alias,
 			Program:     prog,
+			Window:      window,
 			CondProgram: condProg,
 		}
 	}
 	return result, nil
+}
+
+func streamstatsArgWindow(name string, call *lfast.Call) (int, error) {
+	switch name {
+	case "lag", "lead":
+		if len(call.Args) < 2 {
+			return 1, nil
+		}
+		n, err := intLiteralArg(call.Args[1])
+		if err != nil {
+			return 0, fmt.Errorf("physical.Build: %s offset: %w", name, err)
+		}
+		if n <= 0 {
+			return 0, fmt.Errorf("physical.Build: %s offset must be positive", name)
+		}
+		return n, nil
+	case "moving_avg":
+		if len(call.Args) < 2 {
+			return 0, fmt.Errorf("physical.Build: moving_avg requires a row count")
+		}
+		n, err := intLiteralArg(call.Args[1])
+		if err != nil {
+			return 0, fmt.Errorf("physical.Build: moving_avg row count: %w", err)
+		}
+		if n <= 0 {
+			return 0, fmt.Errorf("physical.Build: moving_avg row count must be positive")
+		}
+		return n, nil
+	default:
+		return 0, nil
+	}
+}
+
+func intLiteralArg(expr lfast.Expr) (int, error) {
+	lit, ok := expr.(*lfast.Literal)
+	if !ok || lit.Kind != lfast.LitInt {
+		return 0, fmt.Errorf("expected int literal, got %T", expr)
+	}
+	n, ok := lit.Value.(int64)
+	if !ok {
+		return 0, fmt.Errorf("int literal has value %T", lit.Value)
+	}
+	if n > int64(^uint(0)>>1) {
+		return 0, fmt.Errorf("int literal %d overflows int", n)
+	}
+	return int(n), nil
 }
 
 // aggAutoAlias generates a default alias like "count()" or "sum(x)".
@@ -685,7 +741,6 @@ func (b *builder) buildDescribe(nd *logical.Describe) (pipeline.Iterator, error)
 	}
 	return NewDescribeSummaryIterator(child, b.opts.batchSize()), nil
 }
-
 
 func (b *builder) buildParse(nd *logical.Parse) (pipeline.Iterator, error) {
 	child, err := b.buildChild(nd)

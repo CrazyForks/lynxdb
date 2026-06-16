@@ -31,15 +31,18 @@ type StreamStatsIterator struct {
 	acct      memgov.MemoryAccount          // per-operator memory tracking
 	running   map[string][]*runningAggState // per-group, per-aggregate running state
 	storeRows bool                          // true when window rows are needed for eviction/values()
+	output    []map[string]event.Value      // materialized output for lookahead functions such as lead()
+	offset    int
 }
 
 // runningAggState maintains incremental aggregate state for O(1) per-row updates.
 type runningAggState struct {
-	sum    float64
-	count  int64
-	minVal event.Value
-	maxVal event.Value
-	freq   map[string]int64 // for dc: value → frequency
+	sum       float64
+	count     int64
+	rowNumber int64
+	minVal    event.Value
+	maxVal    event.Value
+	freq      map[string]int64 // for dc: value → frequency
 }
 
 type ringBuffer struct {
@@ -129,10 +132,37 @@ func NewStreamStatsIteratorWithBudget(child Iterator, aggs []AggFunc, groupBy []
 }
 
 func (s *StreamStatsIterator) Init(ctx context.Context) error {
+	if streamStatsHasLead(s.aggs) {
+		rows, err := s.collectChild(ctx)
+		if err != nil {
+			return err
+		}
+		s.output = s.computeMaterialized(rows)
+
+		return nil
+	}
+
 	return s.child.Init(ctx)
 }
 
 func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
+	if s.output != nil {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		if s.offset >= len(s.output) {
+			return nil, nil
+		}
+		end := s.offset + DefaultBatchSize
+		if end > len(s.output) {
+			end = len(s.output)
+		}
+		batch := BatchFromRows(s.output[s.offset:end])
+		s.offset = end
+
+		return batch, nil
+	}
+
 	batch, err := s.child.Next(ctx)
 	if batch == nil || err != nil {
 		return nil, err
@@ -232,6 +262,179 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 	return batch, nil
 }
 
+func streamStatsHasLead(aggs []AggFunc) bool {
+	for _, agg := range aggs {
+		if strings.EqualFold(agg.Name, aggLead) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (s *StreamStatsIterator) collectChild(ctx context.Context) ([]map[string]event.Value, error) {
+	if err := s.child.Init(ctx); err != nil {
+		return nil, err
+	}
+	var rows []map[string]event.Value
+	for {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		batch, err := s.child.Next(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if batch == nil {
+			break
+		}
+		for i := 0; i < batch.Len; i++ {
+			rows = append(rows, batch.Row(i))
+		}
+	}
+
+	return rows, nil
+}
+
+func (s *StreamStatsIterator) computeMaterialized(rows []map[string]event.Value) []map[string]event.Value {
+	groupIndexes := make(map[string][]int)
+	groupOrder := make([]string, 0)
+	for i, row := range rows {
+		key := s.groupKey(row)
+		if _, ok := groupIndexes[key]; !ok {
+			groupOrder = append(groupOrder, key)
+		}
+		groupIndexes[key] = append(groupIndexes[key], i)
+	}
+	for _, key := range groupOrder {
+		indexes := groupIndexes[key]
+		for groupPos, rowIndex := range indexes {
+			row := rows[rowIndex]
+			windowRows := s.materializedWindowRows(rows, indexes, groupPos)
+			for _, agg := range s.aggs {
+				row[agg.Alias] = s.materializedAggValue(rows, indexes, groupPos, windowRows, agg)
+			}
+		}
+	}
+
+	return rows
+}
+
+func (s *StreamStatsIterator) materializedWindowRows(
+	rows []map[string]event.Value,
+	indexes []int,
+	groupPos int,
+) []map[string]event.Value {
+	end := groupPos
+	if s.current {
+		end++
+	}
+	if end < 0 {
+		end = 0
+	}
+	start := 0
+	if s.window < math.MaxInt32/2 && end > s.window {
+		start = end - s.window
+	}
+	result := make([]map[string]event.Value, 0, end-start)
+	for _, rowIndex := range indexes[start:end] {
+		result = append(result, rows[rowIndex])
+	}
+
+	return result
+}
+
+func (s *StreamStatsIterator) materializedAggValue(
+	rows []map[string]event.Value,
+	indexes []int,
+	groupPos int,
+	windowRows []map[string]event.Value,
+	agg AggFunc,
+) event.Value {
+	switch strings.ToLower(agg.Name) {
+	case aggLead:
+		n := agg.Window
+		if n <= 0 {
+			n = 1
+		}
+		target := groupPos + n
+		if target >= len(indexes) {
+			return event.NullValue()
+		}
+		v, ok := rows[indexes[target]][agg.Field]
+		if !ok {
+			return event.NullValue()
+		}
+		return v
+	case aggLag:
+		n := agg.Window
+		if n <= 0 {
+			n = 1
+		}
+		target := groupPos - n
+		if target < 0 {
+			return event.NullValue()
+		}
+		v, ok := rows[indexes[target]][agg.Field]
+		if !ok {
+			return event.NullValue()
+		}
+		return v
+	case aggRowNum:
+		return event.IntValue(int64(groupPos + 1))
+	case aggRunSum:
+		return materializedSum(rows, indexes[:groupPos+1], agg.Field)
+	case aggMovAvg:
+		return materializedMovingAvg(rows, indexes, groupPos, agg)
+	default:
+		return s.computeAgg(agg, windowRows)
+	}
+}
+
+func materializedSum(rows []map[string]event.Value, indexes []int, field string) event.Value {
+	sum := 0.0
+	for _, rowIndex := range indexes {
+		if v, ok := rows[rowIndex][field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				sum += f
+			}
+		}
+	}
+
+	return event.FloatValue(sum)
+}
+
+func materializedMovingAvg(
+	rows []map[string]event.Value,
+	indexes []int,
+	groupPos int,
+	agg AggFunc,
+) event.Value {
+	n := agg.Window
+	if n <= 0 {
+		return event.NullValue()
+	}
+	start := groupPos - n + 1
+	if start < 0 {
+		start = 0
+	}
+	sum := 0.0
+	count := 0
+	for _, rowIndex := range indexes[start : groupPos+1] {
+		if v, ok := rows[rowIndex][agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				sum += f
+				count++
+			}
+		}
+	}
+	if count == 0 {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(sum / float64(count))
+}
+
 func (s *StreamStatsIterator) writeAggValue(
 	batch *Batch,
 	row map[string]event.Value,
@@ -241,10 +444,21 @@ func (s *StreamStatsIterator) writeAggValue(
 	rb *ringBuffer,
 ) {
 	var val event.Value
-	if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
+	switch strings.ToLower(agg.Name) {
+	case aggValues, aggList:
 		// Values/list aggregates require full scan for order-sensitive output.
 		val = s.computeAgg(agg, rb.items())
-	} else {
+	case aggRowNum:
+		rowNumber := st.rowNumber
+		if !s.current {
+			rowNumber++
+		}
+		val = event.IntValue(rowNumber)
+	case aggLag:
+		val = s.readLag(agg, rb)
+	case aggMovAvg:
+		val = s.readMovingAvg(agg, rb)
+	default:
 		val = readRunningAgg(st, agg, rb)
 	}
 	row[agg.Alias] = val
@@ -254,12 +468,65 @@ func (s *StreamStatsIterator) writeAggValue(
 	batch.Columns[agg.Alias][rowIndex] = val
 }
 
+func (s *StreamStatsIterator) readLag(agg AggFunc, rb *ringBuffer) event.Value {
+	n := agg.Window
+	if n <= 0 {
+		n = 1
+	}
+	items := rb.items()
+	idx := len(items) - n
+	if s.current {
+		idx--
+	}
+	if idx < 0 || idx >= len(items) {
+		return event.NullValue()
+	}
+	v, ok := items[idx][agg.Field]
+	if !ok {
+		return event.NullValue()
+	}
+
+	return v
+}
+
+func (s *StreamStatsIterator) readMovingAvg(agg AggFunc, rb *ringBuffer) event.Value {
+	n := agg.Window
+	if n <= 0 {
+		return event.NullValue()
+	}
+	items := rb.items()
+	end := len(items)
+	if end == 0 {
+		return event.NullValue()
+	}
+	start := end - n
+	if start < 0 {
+		start = 0
+	}
+	sum := 0.0
+	count := 0
+	for _, item := range items[start:end] {
+		if v, ok := item[agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				sum += f
+				count++
+			}
+		}
+	}
+	if count == 0 {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(sum / float64(count))
+}
+
 func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 	if window < math.MaxInt32/2 {
 		return true
 	}
 	for _, agg := range aggs {
-		if strings.EqualFold(agg.Name, aggValues) || strings.EqualFold(agg.Name, aggList) {
+		switch strings.ToLower(agg.Name) {
+		case aggValues, aggList, aggLag, aggLead, aggMovAvg:
 			return true
 		}
 	}
@@ -271,6 +538,7 @@ func (s *StreamStatsIterator) Close() error {
 	s.acct.Close()
 	s.ringBufs = nil
 	s.running = nil
+	s.output = nil
 
 	return s.child.Close()
 }
@@ -321,6 +589,15 @@ func newRunningAggState(aggName string) *runningAggState {
 // addValueToRunning incorporates a new row's field value into the running aggregate.
 func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Value) {
 	switch strings.ToLower(agg.Name) {
+	case aggRowNum:
+		st.rowNumber++
+	case aggRunSum:
+		if v, ok := row[agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				st.sum += f
+				st.count++
+			}
+		}
 	case aggCount:
 		if agg.Field == "" {
 			st.count++
@@ -377,6 +654,15 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 // removeValueFromRunning removes a row's field value from the running aggregate.
 func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]event.Value) {
 	switch strings.ToLower(agg.Name) {
+	case aggRowNum:
+		// row_number is a partition ordinal, not a sliding aggregate.
+	case aggRunSum:
+		if v, ok := row[agg.Field]; ok {
+			if f, fok := vm.ValueToFloat(v); fok {
+				st.sum -= f
+				st.count--
+			}
+		}
 	case aggCount:
 		if agg.Field == "" {
 			st.count--
@@ -438,6 +724,8 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 // the ring buffer to find the new extremum and updates the running state.
 func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Value {
 	switch strings.ToLower(agg.Name) {
+	case aggRunSum:
+		return event.FloatValue(st.sum)
 	case aggCount:
 		return event.IntValue(st.count)
 	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:

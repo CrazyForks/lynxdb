@@ -32,6 +32,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `arg_max` | (value: any, order: any) | `any` | Value from the row with the greatest order expression. |
 | `arg_min` | (value: any, order: any) | `any` | Value from the row with the least order expression. |
 | `any_value` | (x: any) | `any` | An arbitrary non-null value from the group. |
+| `top_k` | (x: any, k: int) | `array` | Top k non-null values with counts. |
 | `first` | (x: any) | `any` | First non-null in row order. |
 | `last` | (x: any) | `any` | Last non-null in row order. |
 | `earliest` | (x: any) | `any` | Value from the row with the smallest _time. |

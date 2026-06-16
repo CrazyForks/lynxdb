@@ -279,7 +279,7 @@ func (e *EventStatsIterator) materialize(ctx context.Context) error {
 			key := e.groupKey(row)
 			group := groups[key]
 			for j, agg := range e.aggs {
-				row[agg.Alias] = finalizeAggState(&group.states[j], agg.Name)
+				row[agg.Alias] = finalizeEventStatsAgg(&group.states[j], agg)
 			}
 		}
 	}
@@ -370,7 +370,7 @@ func (e *EventStatsIterator) nextFromSpill() (*Batch, error) {
 		key := e.groupKey(row)
 		if group, ok := e.groups[key]; ok {
 			for j, agg := range e.aggs {
-				row[agg.Alias] = finalizeAggState(&group.states[j], agg.Name)
+				row[agg.Alias] = finalizeEventStatsAgg(&group.states[j], agg)
 			}
 		}
 		batch.AddRow(row)
@@ -507,6 +507,8 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal event.Value) 
 			}
 			s.mode[val.String()]++
 		}
+	case aggTopK:
+		updateTopKState(s, val, 1)
 	case aggAnyVal:
 		if !val.IsNull() && !s.hasFirst {
 			s.first = val
@@ -517,6 +519,13 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal event.Value) 
 	case aggArgMin:
 		updateArgState(s, val, orderVal, false)
 	}
+}
+
+func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
+	if strings.ToLower(agg.Name) == aggTopK {
+		return finalizeTopK(s, agg.Limit)
+	}
+	return finalizeAggState(s, agg.Name)
 }
 
 func finalizeAggState(s *aggState, fn string) event.Value {

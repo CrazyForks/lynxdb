@@ -338,6 +338,10 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 				row[agg.Alias+"__modecounts"] = event.StringValue(
 					encodeModeCounts(s.mode))
 			}
+		case aggTopK:
+			if len(s.topK) > 0 {
+				row[agg.Alias+"__topk"] = topKStateValue(s)
+			}
 		case "earliest":
 			if !s.first.IsNull() {
 				row[agg.Alias+"__first_value"] = s.first
@@ -439,6 +443,8 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeListFromRow(&group.states[j], row, agg.Alias)
 		case aggMode:
 			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
+		case aggTopK:
+			a.mergeTopKFromRow(&group.states[j], row, agg.Alias)
 		case "earliest":
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
 		case "latest":

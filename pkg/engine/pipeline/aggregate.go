@@ -30,6 +30,7 @@ type AggFunc struct {
 	Program      *vm.Program // optional compiled expression for nested eval
 	OrderField   string      // optional order field for arg_min/arg_max
 	OrderProgram *vm.Program // optional compiled order expression for arg_min/arg_max
+	Limit        int         // optional per-function limit for top_k
 	Scale        float64     // optional multiplier applied at finalize time
 	Window       int         // optional per-function row window/offset for streamstats functions
 	// CondProgram is an optional compiled predicate for conditional aggregation.
@@ -113,6 +114,7 @@ const (
 	aggArgMax = "arg_max"
 	aggArgMin = "arg_min"
 	aggAnyVal = "any_value"
+	aggTopK   = "top_k"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -156,6 +158,12 @@ type aggState struct {
 	hll      *HyperLogLog // for approximate dc when cardinality exceeds threshold
 	tdigest  *TDigest     // for approximate percentiles
 	sumSq    float64      // accumulated M2 (sum of squared deviations) for stdev after spill merge
+	topK     map[string]topKItem
+}
+
+type topKItem struct {
+	Value event.Value
+	Count int64
 }
 
 // NewAggregateIterator creates a streaming hash aggregation operator.
@@ -332,6 +340,8 @@ func aggResultType(name string) string {
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
+	case aggTopK:
+		return "array"
 	default:
 		return "any"
 	}
@@ -740,6 +750,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal ev
 			}
 			s.mode[val.String()]++
 		}
+	case aggTopK:
+		updateTopKState(s, val, 1)
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
 			s.first = val
@@ -817,6 +829,56 @@ func argOrderValue(s *aggState, maxOrder bool) event.Value {
 		return s.max
 	}
 	return s.min
+}
+
+func updateTopKState(s *aggState, val event.Value, count int64) {
+	if val.IsNull() || count <= 0 {
+		return
+	}
+	key := topKKey(val)
+	if s.topK == nil {
+		s.topK = make(map[string]topKItem)
+	}
+	item := s.topK[key]
+	if item.Count == 0 {
+		item.Value = val
+	}
+	item.Count += count
+	s.topK[key] = item
+}
+
+func topKKey(val event.Value) string {
+	return val.Type().String() + "\x00" + val.String()
+}
+
+func finalizeTopK(s *aggState, limit int) event.Value {
+	if len(s.topK) == 0 {
+		return event.ArrayValue(nil)
+	}
+	if limit <= 0 {
+		limit = len(s.topK)
+	}
+	items := make([]topKItem, 0, len(s.topK))
+	for _, item := range s.topK {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Count != items[j].Count {
+			return items[i].Count > items[j].Count
+		}
+		return items[i].Value.String() < items[j].Value.String()
+	})
+	if limit > len(items) {
+		limit = len(items)
+	}
+	result := make([]event.Value, 0, limit)
+	for _, item := range items[:limit] {
+		result = append(result, event.ObjectValue(map[string]event.Value{
+			"value": item.Value,
+			"count": event.IntValue(item.Count),
+		}))
+	}
+	return event.ArrayValue(result)
 }
 
 func (a *AggregateIterator) updateChronoState(s *aggState, val event.Value, row map[string]event.Value, earliest bool) {
@@ -1114,6 +1176,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeListFromRow(&group.states[j], row, agg.Alias)
 		case aggMode:
 			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
+		case aggTopK:
+			a.mergeTopKFromRow(&group.states[j], row, agg.Alias)
 		case "earliest":
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
 		case "latest":
@@ -1331,6 +1395,33 @@ func (a *AggregateIterator) mergeModeFromRow(s *aggState, row map[string]event.V
 	}
 	for value, count := range counts {
 		s.mode[value] += count
+	}
+}
+
+func topKStateValue(s *aggState) event.Value {
+	return finalizeTopK(s, 0)
+}
+
+func (a *AggregateIterator) mergeTopKFromRow(s *aggState, row map[string]event.Value, alias string) {
+	topVal, ok := row[alias+"__topk"]
+	if !ok || topVal.IsNull() {
+		return
+	}
+	entries, ok := topVal.TryAsArray()
+	if !ok {
+		return
+	}
+	for _, entry := range entries {
+		obj, ok := entry.TryAsObject()
+		if !ok {
+			continue
+		}
+		val := obj["value"]
+		count, ok := obj["count"].TryAsInt()
+		if !ok {
+			continue
+		}
+		updateTopKState(s, val, count)
 	}
 }
 
@@ -1618,6 +1709,9 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 }
 
 func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
+	if strings.ToLower(agg.Name) == aggTopK {
+		return finalizeTopK(s, agg.Limit)
+	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {
 		return val

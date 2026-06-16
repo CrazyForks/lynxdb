@@ -21,6 +21,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 				"group": event.StringValue(groupName),
 				"value": event.StringValue(fmt.Sprintf("%s-%02d", groupName, score)),
 				"score": event.IntValue(int64(score)),
+				"route": event.StringValue(fmt.Sprintf("route-%d", score%3)),
 				"team":  event.StringValue(fmt.Sprintf("team-%d", group)),
 			})
 		}
@@ -38,6 +39,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "arg_max", Field: "value", OrderField: "score", Alias: "max_value"},
 		{Name: "arg_min", Field: "value", OrderField: "score", Alias: "min_value"},
 		{Name: "any_value", Field: "team", Alias: "some_team"},
+		{Name: "top_k", Field: "route", Limit: 2, Alias: "top_routes"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -68,6 +70,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		if row["some_team"].IsNull() {
 			t.Fatalf("%s any_value should be non-null", group)
 		}
+		assertEventTopKEntry(t, row["top_routes"], 0, "route-0", 17, group+" top 0")
+		assertEventTopKEntry(t, row["top_routes"], 1, "route-1", 17, group+" top 1")
 	}
 }
 
@@ -78,5 +82,25 @@ func assertEventString(t *testing.T, v event.Value, expected string, label strin
 	}
 	if v.AsString() != expected {
 		t.Fatalf("%s: got %q, want %q", label, v.AsString(), expected)
+	}
+}
+
+func assertEventTopKEntry(t *testing.T, v event.Value, idx int, expected string, count int64, label string) {
+	t.Helper()
+	if v.Type() != event.FieldTypeArray {
+		t.Fatalf("%s: expected array, got %s", label, v.Type())
+	}
+	arr := v.AsArray()
+	if len(arr) <= idx {
+		t.Fatalf("%s: expected entry %d, got len %d", label, idx, len(arr))
+	}
+	obj, ok := arr[idx].TryAsObject()
+	if !ok {
+		t.Fatalf("%s: expected object, got %s", label, arr[idx].Type())
+	}
+	assertEventString(t, obj["value"], expected, label+" value")
+	got, ok := obj["count"].TryAsInt()
+	if !ok || got != count {
+		t.Fatalf("%s count: got %v, want %d", label, obj["count"], count)
 	}
 }

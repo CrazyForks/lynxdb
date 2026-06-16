@@ -425,6 +425,7 @@ var aggNameMapping = map[string]string{
 	"arg_max":       "arg_max",
 	"arg_min":       "arg_min",
 	"any_value":     "any_value",
+	"top_k":         "top_k",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -519,11 +520,19 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 		if err != nil {
 			return nil, err
 		}
-		orderField, orderProg, err := b.convertAggArg(name, call.Args, 1)
+		var orderField string
+		var orderProg *vm.Program
+		if mapped == "arg_max" || mapped == "arg_min" {
+			orderField, orderProg, err = b.convertAggArg(name, call.Args, 1)
+			if err != nil {
+				return nil, err
+			}
+		}
+		window, err := streamstatsArgWindow(name, call)
 		if err != nil {
 			return nil, err
 		}
-		window, err := streamstatsArgWindow(name, call)
+		limit, err := aggregateLimit(name, call)
 		if err != nil {
 			return nil, err
 		}
@@ -545,6 +554,7 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 			Program:      prog,
 			OrderField:   orderField,
 			OrderProgram: orderProg,
+			Limit:        limit,
 			Window:       window,
 			CondProgram:  condProg,
 		}
@@ -564,6 +574,25 @@ func (b *builder) convertAggArg(name string, args []lfast.Expr, index int) (stri
 		return "", nil, fmt.Errorf("physical.Build: compile agg %s arg: %w", name, err)
 	}
 	return "", compiled, nil
+}
+
+func aggregateLimit(name string, call *lfast.Call) (int, error) {
+	switch name {
+	case "top_k":
+		if len(call.Args) < 2 {
+			return 0, fmt.Errorf("physical.Build: top_k requires a limit")
+		}
+		n, err := intLiteralArg(call.Args[1])
+		if err != nil {
+			return 0, fmt.Errorf("physical.Build: top_k limit: %w", err)
+		}
+		if n <= 0 {
+			return 0, fmt.Errorf("physical.Build: top_k limit must be positive")
+		}
+		return n, nil
+	default:
+		return 0, nil
+	}
 }
 
 func streamstatsArgWindow(name string, call *lfast.Call) (int, error) {

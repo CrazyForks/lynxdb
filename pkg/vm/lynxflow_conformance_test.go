@@ -1616,6 +1616,20 @@ func TestLynxFlowSplitRegexFunction(t *testing.T) {
 	assertString(t, arr[0], "abc", "split_regex no match [0]")
 }
 
+func TestLynxFlowExtractGroupsFunction(t *testing.T) {
+	result, _ := runLF(
+		t,
+		call("extract_groups", litStr("POST /login HTTP/1.1"), litStr(`(?P<method>\w+) (?P<path>\S+)`)),
+		nil,
+	)
+	obj := assertObject(t, result, "extract_groups")
+	assertString(t, obj["method"], "POST", "extract_groups.method")
+	assertString(t, obj["path"], "/login", "extract_groups.path")
+
+	result, _ = runLF(t, call("extract_groups", litStr("!!!"), litStr(`(?P<method>\w+) (?P<path>\S+)`)), nil)
+	assertNull(t, result, "extract_groups no match")
+}
+
 func TestConformance_Split_NullPropagation(t *testing.T) {
 	// split(null, ",") -> null
 	result1, _ := runLF(t, call("split", litNull(), litStr(",")), nil)

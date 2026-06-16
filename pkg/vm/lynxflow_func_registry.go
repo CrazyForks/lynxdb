@@ -389,6 +389,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "matches", minArgs: 2, maxArgs: 2, emit: lfEmitMatches},
 		{name: "extract", minArgs: 2, maxArgs: 2, emit: lfEmitExtract},
 		{name: "extract_all", minArgs: 2, maxArgs: 2, emit: lfEmitExtractAll},
+		{name: "extract_groups", minArgs: 2, maxArgs: 2, emit: lfEmitExtractGroups},
 
 		// ---- Math (§10) ----
 		{name: "abs", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpAbs)},
@@ -912,6 +913,19 @@ func lfEmitExtractAll(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	c.prog.EmitOp(OpExtractAll, regIdx)
+	return nil
+}
+
+func lfEmitExtractGroups(c *lfCompiler, call *lfast.Call) error {
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	pattern := lfExprToString(call.Args[1])
+	regIdx, err := addValidatedRegex(c, "extract_groups", pattern)
+	if err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpExtractGroups, regIdx)
 	return nil
 }
 

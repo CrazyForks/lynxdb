@@ -92,6 +92,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `matches` | (s: string, pattern: regex) | `bool` | null_on_failure | - | Regex match (linear-time engine). Slow tier; (?i) for case-insensitive. |
 | `extract` | (s: string, pattern: regex) | `string` | null_on_failure | - | First capture group. |
 | `extract_all` | (s: string, pattern: regex) | `array` | null_on_failure | - | - |
+| `extract_groups` | (s: string, pattern: regex) | `object` | null_on_failure | - | Return named regex capture groups as an object. |
 
 ## Math
 

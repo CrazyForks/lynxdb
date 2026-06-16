@@ -539,6 +539,23 @@ func extractAllMatches(re *regexp.Regexp, s string) event.Value {
 	return event.ArrayValue(elems)
 }
 
+func extractGroups(re *regexp.Regexp, s string) event.Value {
+	matches := re.FindStringSubmatch(s)
+	if matches == nil {
+		return event.NullValue()
+	}
+	names := re.SubexpNames()
+	fields := make(map[string]event.Value)
+	for i := 1; i < len(matches) && i < len(names); i++ {
+		if names[i] == "" {
+			continue
+		}
+		fields[names[i]] = event.StringValue(matches[i])
+	}
+
+	return event.ObjectValue(fields)
+}
+
 // OpInStrict: strict equality in-list check with null awareness
 
 // inStrict checks if val is in the list using strict equality.

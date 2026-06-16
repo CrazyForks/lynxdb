@@ -72,6 +72,7 @@ var functions = []Function{
 	{Name: "matches", Category: "regex", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}}, Result: TBool, Fallibility: NullOnFailure, Doc: "Regex match (linear-time engine). Slow tier; (?i) for case-insensitive."},
 	{Name: "extract", Category: "regex", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}}, Result: TString, Fallibility: NullOnFailure, Doc: "First capture group."},
 	{Name: "extract_all", Category: "regex", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}}, Result: TArray, Fallibility: NullOnFailure},
+	{Name: "extract_groups", Category: "regex", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}}, Result: TObject, Fallibility: NullOnFailure, Doc: "Return named regex capture groups as an object."},
 
 	// math
 	{Name: "abs", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TNumber, Fallibility: NullOnFailure},

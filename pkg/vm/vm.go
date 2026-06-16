@@ -1968,6 +1968,21 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 				vm.stack[vm.sp-1] = extractAllMatches(vm.regexCache[regIdx], valueToString(a))
 			}
 
+		case OpExtractGroups:
+			regIdx, reErr := readIndexSafe(ins, ip, len(vm.regexCache), "regex")
+			if reErr != nil {
+				return event.NullValue(), reErr
+			}
+			ip += 2
+			a := vm.stack[vm.sp-1]
+			if a.IsNull() || a.Type() != event.FieldTypeString {
+				vm.stack[vm.sp-1] = event.NullValue()
+			} else if vm.regexCache[regIdx] == nil {
+				return event.NullValue(), fmt.Errorf("extract_groups: invalid pattern %q", vm.lastProgRegexPattern(regIdx))
+			} else {
+				vm.stack[vm.sp-1] = extractGroups(vm.regexCache[regIdx], a.AsString())
+			}
+
 		case OpCountMatches:
 			regIdx, reErr := readIndexSafe(ins, ip, len(vm.regexCache), "regex")
 			if reErr != nil {

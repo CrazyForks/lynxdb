@@ -220,6 +220,35 @@ func TestLynxFlowFrozenScalarParityFunctions(t *testing.T) {
 		)
 		assertString(t, result, "8.5.0", "useragent_parse version")
 	})
+
+	t.Run("url_accessors", func(t *testing.T) {
+		rawURL := litStr("https://example.com:8443/api/v1/users?id=42")
+		result, _ := runLF(t, call("url_domain", rawURL), nil)
+		assertString(t, result, "example.com", "url_domain")
+
+		result, _ = runLF(t, call("url_path", rawURL), nil)
+		assertString(t, result, "/api/v1/users", "url_path")
+
+		result, _ = runLF(t, call("url_protocol", rawURL), nil)
+		assertString(t, result, "https", "url_protocol")
+	})
+
+	t.Run("ip_predicates", func(t *testing.T) {
+		result, _ := runLF(t, call("is_ip", litStr("2001:db8::1")), nil)
+		assertBool(t, result, true, "is_ip ipv6")
+
+		result, _ = runLF(t, call("is_ipv4", litStr("192.168.1.10")), nil)
+		assertBool(t, result, true, "is_ipv4 true")
+
+		result, _ = runLF(t, call("is_ipv4", litStr("2001:db8::1")), nil)
+		assertBool(t, result, false, "is_ipv4 false")
+
+		result, _ = runLF(t, call("is_ipv6", litStr("2001:db8::1")), nil)
+		assertBool(t, result, true, "is_ipv6 true")
+
+		result, _ = runLF(t, call("is_ip", litStr("not-an-ip")), nil)
+		assertBool(t, result, false, "is_ip invalid")
+	})
 }
 
 // §5.2 Three-Valued Logic Truth Table

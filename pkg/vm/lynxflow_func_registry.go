@@ -335,6 +335,9 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "ends_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpEndsWith)},
 		{name: "printf", minArgs: 1, maxArgs: -1, emit: lfEmitPrintf},
 		{name: "urldecode", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpURLDecode)},
+		{name: "url_domain", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("host")},
+		{name: "url_path", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("path")},
+		{name: "url_protocol", minArgs: 1, maxArgs: 1, emit: lfEmitURLMember("scheme")},
 		{name: "path_normalize", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpPathNormalize)},
 		{name: "useragent_parse", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpUserAgentParse)},
 
@@ -386,6 +389,9 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "xxhash64", minArgs: 1, maxArgs: 1, emit: lfEmitXXHash64},
 		{name: "cidr_match", minArgs: 2, maxArgs: 2, emit: lfEmitCIDRMatch},
 		{name: "ip_parse", minArgs: 1, maxArgs: 1, emit: lfEmitIPParse},
+		{name: "is_ip", minArgs: 1, maxArgs: 1, emit: lfEmitIsIP},
+		{name: "is_ipv4", minArgs: 1, maxArgs: 1, emit: lfEmitIsIPVersion(4)},
+		{name: "is_ipv6", minArgs: 1, maxArgs: 1, emit: lfEmitIsIPVersion(6)},
 		{name: "ipmask", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIPMask)},
 
 		// ---- Array (§10) ----
@@ -1016,6 +1022,43 @@ func lfEmitIPParse(c *lfCompiler, call *lfast.Call) error {
 	}
 	c.prog.EmitOp(OpIPParseObj)
 	return nil
+}
+
+func lfEmitURLMember(member string) func(*lfCompiler, *lfast.Call) error {
+	return func(c *lfCompiler, call *lfast.Call) error {
+		if err := c.compile(call.Args[0]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpURLParse)
+		keyIdx := c.prog.AddConstant(event.StringValue(member))
+		c.prog.EmitOp(OpMember, keyIdx)
+		return nil
+	}
+}
+
+func lfEmitIsIP(c *lfCompiler, call *lfast.Call) error {
+	if err := lfEmitIPParse(c, call); err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpIsNull)
+	c.prog.EmitOp(OpNot)
+	return nil
+}
+
+func lfEmitIsIPVersion(version int64) func(*lfCompiler, *lfast.Call) error {
+	return func(c *lfCompiler, call *lfast.Call) error {
+		if err := lfEmitIPParse(c, call); err != nil {
+			return err
+		}
+		keyIdx := c.prog.AddConstant(event.StringValue("version"))
+		c.prog.EmitOp(OpMember, keyIdx)
+		versionIdx := c.prog.AddConstant(event.IntValue(version))
+		c.prog.EmitOp(OpConstInt, versionIdx)
+		c.prog.EmitOp(OpEqStrict)
+		c.prog.EmitOp(OpConstFalse)
+		c.prog.EmitOp(OpCoalesce, 2)
+		return nil
+	}
 }
 
 func lfEmitToJSON(c *lfCompiler, call *lfast.Call) error {

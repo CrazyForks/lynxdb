@@ -36,6 +36,9 @@ var functions = []Function{
 	{Name: "printf", Category: "string", Params: []Param{{Name: "format", Type: TString}, {Name: "args", Type: TAny, Variadic: true}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "urldecode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "url_parse", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TObject, Fallibility: NullOnFailure, Doc: "Parse a URL into {scheme, host, port, path, query, fragment}."},
+	{Name: "url_domain", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its host."},
+	{Name: "url_path", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its path."},
+	{Name: "url_protocol", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its scheme/protocol."},
 	{Name: "path_normalize", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "useragent_parse", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TObject, Fallibility: NullOnFailure, Doc: "Optional build."},
 
@@ -86,6 +89,9 @@ var functions = []Function{
 	{Name: "xxhash64", Category: "hash", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "cidr_match", Category: "network", Params: []Param{{Name: "cidr", Type: TString}, {Name: "ip", Type: TString}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "ip_parse", Category: "network", Params: []Param{{Name: "s", Type: TString}}, Result: TObject, Fallibility: NullOnFailure},
+	{Name: "is_ip", Category: "network", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible},
+	{Name: "is_ipv4", Category: "network", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible},
+	{Name: "is_ipv6", Category: "network", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible},
 	{Name: "ipmask", Category: "network", Params: []Param{{Name: "mask", Type: TString}, {Name: "ip", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 
 	// array

@@ -460,8 +460,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "strftime", minArgs: 2, maxArgs: 3, emit: lfEmitStrftime},
 		{name: "strptime", minArgs: 2, maxArgs: 2, strict: true, emit: lfEmitBinary(OpStrptime),
 			emitStrict: lfStrictCast("strptime", OpStrptime)},
-		{name: "time_of_day", minArgs: 1, maxArgs: 1, emit: lfEmitTimeOfDay},
-		{name: "day_of_week", minArgs: 1, maxArgs: 1, emit: lfEmitDayOfWeek},
+		{name: "time_of_day", minArgs: 1, maxArgs: 2, emit: lfEmitTimeOfDay},
+		{name: "day_of_week", minArgs: 1, maxArgs: 2, emit: lfEmitDayOfWeek},
 		{name: "from_unix", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpFromUnix)},
 		{name: "to_unix", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpToUnix)},
 		{name: "date_trunc", minArgs: 2, maxArgs: 3, emit: lfEmitVariadicOp(OpDateTrunc)},
@@ -1215,18 +1215,34 @@ func lfEmitStrftime(c *lfCompiler, call *lfast.Call) error {
 }
 
 func lfEmitTimeOfDay(c *lfCompiler, call *lfast.Call) error {
-	// time_of_day(ts) → duration since midnight UTC.
+	// time_of_day(ts[, tz]) -> duration since midnight UTC or local midnight.
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
+	}
+	if len(call.Args) == 2 {
+		if err := c.compile(call.Args[1]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpTimeOfDayTZ)
+		return nil
 	}
 	c.prog.EmitOp(OpTimeOfDay)
 	return nil
 }
 
 func lfEmitDayOfWeek(c *lfCompiler, call *lfast.Call) error {
-	// day_of_week(ts) → int 0-6 (0=Sunday).
+	// day_of_week(ts[, tz]) -> int 0-6 (0=Sunday).
 	if err := c.compile(call.Args[0]); err != nil {
 		return err
+	}
+	if len(call.Args) == 2 {
+		idx := c.prog.AddConstant(event.StringValue("dow"))
+		c.prog.EmitOp(OpConstStr, idx)
+		if err := c.compile(call.Args[1]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpDatePart, 3)
+		return nil
 	}
 	c.prog.EmitOp(OpDayOfWeek)
 	return nil

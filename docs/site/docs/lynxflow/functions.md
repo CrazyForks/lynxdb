@@ -155,8 +155,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `bin` | (x: any, width: any) | `any` | null_on_failure | - | Snap a timestamp to a duration boundary or a number to a numeric width; time by-lists emit as _time. |
 | `strftime` | (ts: timestamp, format: string, tz?: string) | `string` | null_on_failure | - | Format a timestamp in UTC or an IANA timezone. |
 | `strptime` | (s: string, format: string\|array) | `timestamp` | null_on_failure | `strptime!` | Parse with one layout or the first matching layout in an array. |
-| `time_of_day` | (ts: timestamp) | `duration` | null_on_failure | - | - |
-| `day_of_week` | (ts: timestamp) | `int` | null_on_failure | - | 0 = Sunday. |
+| `time_of_day` | (ts: timestamp, tz?: string) | `duration` | null_on_failure | - | Duration since midnight in UTC or an IANA timezone. |
+| `day_of_week` | (ts: timestamp, tz?: string) | `int` | null_on_failure | - | 0 = Sunday; optional timezone controls the local day. |
 | `from_unix` | (n: int, unit: string) | `timestamp` | null_on_failure | - | Convert Unix epoch in s, ms, us, or ns to a timestamp. |
 | `to_unix` | (ts: timestamp, unit: string) | `int` | null_on_failure | - | Convert a timestamp to Unix epoch in s, ms, us, or ns. |
 | `date_trunc` | (ts: timestamp, part: string, tz: string?) | `timestamp` | null_on_failure | - | Truncate a timestamp to a calendar part. |

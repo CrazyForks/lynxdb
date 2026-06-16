@@ -1887,6 +1887,27 @@ func TestConformance_DayOfWeek_Saturday(t *testing.T) {
 	assertInt(t, result, 6, "day_of_week Saturday")
 }
 
+func TestConformance_LocalTimeFunctions(t *testing.T) {
+	ts := time.Date(2026, 6, 14, 22, 30, 0, 0, time.UTC)
+	fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+
+	result, _ := runLF(t, call("day_of_week", ident("ts")), fields)
+	assertInt(t, result, 0, "day_of_week utc Sunday")
+
+	result, _ = runLF(t, call("day_of_week", ident("ts"), litStr("Europe/Amsterdam")), fields)
+	assertInt(t, result, 1, "day_of_week Amsterdam Monday")
+
+	result, _ = runLF(t, call("time_of_day", ident("ts")), fields)
+	assertDuration(t, result, 22*time.Hour+30*time.Minute, "time_of_day utc")
+
+	result, _ = runLF(t, call("time_of_day", ident("ts"), litStr("Europe/Amsterdam")), fields)
+	assertDuration(t, result, 30*time.Minute, "time_of_day Amsterdam")
+
+	result, warnings := runLF(t, call("time_of_day", ident("ts"), litStr("No/SuchZone")), fields)
+	assertNull(t, result, "time_of_day invalid timezone")
+	assertWarnings(t, warnings, "type_error", 1, "time_of_day invalid timezone")
+}
+
 func TestConformance_UnixEpochFunctions(t *testing.T) {
 	t.Run("from_unix milliseconds", func(t *testing.T) {
 		result, _ := runLF(t, call("from_unix", litInt(1_700_000_000_123), litStr("ms")), nil)

@@ -1417,6 +1417,13 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = timeOfDayValue(v, vm.Warnings)
 
+		case OpTimeOfDayTZ:
+			// time_of_day(ts, tz) -> duration since local midnight in tz.
+			tz := vm.stack[vm.sp-1]
+			v := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = timeOfDayValueTZ(v, tz, vm.Warnings)
+
 		case OpDayOfWeek:
 			// day_of_week(ts) -> int 0-6 (0=Sunday).
 			v := vm.stack[vm.sp-1]
@@ -3964,6 +3971,18 @@ func ipMaskValue(mask, ip event.Value) event.Value {
 // timeOfDayValue returns the duration since midnight UTC for a timestamp.
 // Non-timestamp input returns null and increments the type_error warning.
 func timeOfDayValue(v event.Value, w *WarningCounters) event.Value {
+	return timeOfDayValueInLocation(v, time.UTC, w)
+}
+
+func timeOfDayValueTZ(v, tz event.Value, w *WarningCounters) event.Value {
+	loc, ok := locationFromValue(tz, w)
+	if !ok {
+		return event.NullValue()
+	}
+	return timeOfDayValueInLocation(v, loc, w)
+}
+
+func timeOfDayValueInLocation(v event.Value, loc *time.Location, w *WarningCounters) event.Value {
 	if v.IsNull() {
 		return event.NullValue()
 	}
@@ -3979,16 +3998,16 @@ func timeOfDayValue(v event.Value, w *WarningCounters) event.Value {
 			}
 			return event.NullValue()
 		}
-		ts = parsed.UTC()
+		ts = parsed
 	default:
 		if w != nil {
 			w.Increment(warnTypeError)
 		}
 		return event.NullValue()
 	}
-	ts = ts.UTC()
-	midnight := time.Date(ts.Year(), ts.Month(), ts.Day(), 0, 0, 0, 0, time.UTC)
-	return event.DurationValue(ts.Sub(midnight))
+	local := ts.In(loc)
+	midnight := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, loc)
+	return event.DurationValue(local.Sub(midnight))
 }
 
 // dayOfWeekValue returns 0-6 (0=Sunday) for a timestamp.

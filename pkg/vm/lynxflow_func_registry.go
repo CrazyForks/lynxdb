@@ -335,6 +335,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "ends_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpEndsWith)},
 		{name: "printf", minArgs: 1, maxArgs: -1, emit: lfEmitPrintf},
 		{name: "urldecode", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpURLDecode)},
+		{name: "path_normalize", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpPathNormalize)},
+		{name: "useragent_parse", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpUserAgentParse)},
 
 		// ---- Text search (§6/§10) ----
 		{name: "has", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpHasToken)},
@@ -359,6 +361,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "exp", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpExp)},
 		{name: "pow", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpPow)},
 		{name: "clamp", minArgs: 3, maxArgs: 3, emit: lfEmitClamp},
+		{name: "bucket", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBucket)},
 		{name: "sin", minArgs: 1, maxArgs: 1, emit: lfEmitUnaryMath(mathFnSin)},
 		{name: "cos", minArgs: 1, maxArgs: 1, emit: lfEmitUnaryMath(mathFnCos)},
 		{name: "tan", minArgs: 1, maxArgs: 1, emit: lfEmitUnaryMath(mathFnTan)},

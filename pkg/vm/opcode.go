@@ -226,6 +226,9 @@ const (
 	OpIPParseObj      Opcode = 0x28 // pop string, push object {version, private, loopback}
 	OpFromJSONNative  Opcode = 0x29 // pop string, push native Value (recursive arrays/objects)
 	OpBin             Opcode = 0x2A // pop 2 (ts, dur); snap ts to dur boundary; coercion: string→parse RFC3339, int→unix-nanos; push timestamp
+	OpBucket          Opcode = 0x2B // pop 2 (x, bounds array); push largest bound <= x
+	OpPathNormalize   Opcode = 0x2C // pop string; push normalized slash path
+	OpUserAgentParse  Opcode = 0x2D // pop string; push object {name, version, raw}
 
 	// JSON Functions.
 	OpJsonExtract  Opcode = 0xD0 // pop path, pop field, push extracted value
@@ -461,6 +464,9 @@ var definitions = map[Opcode]*Definition{
 	OpIPParseObj:      {"OpIPParseObj", nil},
 	OpFromJSONNative:  {"OpFromJSONNative", nil},
 	OpBin:             {"OpBin", nil},
+	OpBucket:          {"OpBucket", nil},
+	OpPathNormalize:   {"OpPathNormalize", nil},
+	OpUserAgentParse:  {"OpUserAgentParse", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

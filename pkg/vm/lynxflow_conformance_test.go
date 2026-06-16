@@ -187,6 +187,41 @@ func inExpr(lhs lfast.Expr, rhs lfast.Expr) *lfast.In {
 	return &lfast.In{LHS: lhs, RHS: rhs}
 }
 
+func TestLynxFlowFrozenScalarParityFunctions(t *testing.T) {
+	t.Run("bucket", func(t *testing.T) {
+		result, _ := runLF(t,
+			call("bucket", litInt(15), array(litInt(0), litInt(10), litInt(20))),
+			nil,
+		)
+		assertInt(t, result, 10, "bucket largest bound")
+
+		result, _ = runLF(t,
+			call("bucket", litFloat(2.5), array(litFloat(1.5), litFloat(2.25), litFloat(4))),
+			nil,
+		)
+		assertFloat(t, result, 2.25, "bucket preserves float bound")
+	})
+
+	t.Run("path_normalize", func(t *testing.T) {
+		result, _ := runLF(t, call("path_normalize", litStr(`/api//v1/../users/./`)), nil)
+		assertString(t, result, "/api/users", "path_normalize")
+	})
+
+	t.Run("useragent_parse", func(t *testing.T) {
+		result, _ := runLF(t,
+			member(call("useragent_parse", litStr("curl/8.5.0 libcurl/8.5.0")), "name"),
+			nil,
+		)
+		assertString(t, result, "curl", "useragent_parse name")
+
+		result, _ = runLF(t,
+			member(call("useragent_parse", litStr("curl/8.5.0 libcurl/8.5.0")), "version"),
+			nil,
+		)
+		assertString(t, result, "8.5.0", "useragent_parse version")
+	})
+}
+
 // §5.2 Three-Valued Logic Truth Table
 
 func TestConformance_3VL_And(t *testing.T) {

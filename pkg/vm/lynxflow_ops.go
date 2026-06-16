@@ -14,6 +14,7 @@ import (
 	"math"
 	"net"
 	"net/url"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -1046,6 +1047,78 @@ func execIPParse(v event.Value) event.Value {
 		"private":  event.BoolValue(isPrivate),
 		"loopback": event.BoolValue(isLoopback),
 	})
+}
+
+func execBucket(x, bounds event.Value) event.Value {
+	if x.IsNull() || bounds.IsNull() || bounds.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	xNum, ok := ValueToFloat(x)
+	if !ok {
+		return event.NullValue()
+	}
+	var best event.Value
+	var bestNum float64
+	found := false
+	for _, bound := range bounds.AsArray() {
+		if bound.IsNull() {
+			return event.NullValue()
+		}
+		boundNum, ok := ValueToFloat(bound)
+		if !ok {
+			return event.NullValue()
+		}
+		if boundNum <= xNum && (!found || boundNum > bestNum) {
+			best = bound
+			bestNum = boundNum
+			found = true
+		}
+	}
+	if !found {
+		return event.NullValue()
+	}
+
+	return best
+}
+
+func execPathNormalize(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	s := strings.ReplaceAll(v.AsString(), "\\", "/")
+	cleaned := path.Clean(s)
+	if cleaned == "." && s == "" {
+		cleaned = ""
+	}
+
+	return event.StringValue(cleaned)
+}
+
+func execUserAgentParse(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	raw := strings.TrimSpace(v.AsString())
+	if raw == "" {
+		return event.NullValue()
+	}
+	name, version := parseUserAgentProduct(raw)
+
+	return event.ObjectValue(map[string]event.Value{
+		"name":    event.StringValue(name),
+		"version": event.StringValue(version),
+		"raw":     event.StringValue(raw),
+	})
+}
+
+func parseUserAgentProduct(raw string) (string, string) {
+	product := strings.Fields(raw)[0]
+	name, version, ok := strings.Cut(product, "/")
+	if !ok {
+		return product, ""
+	}
+
+	return name, version
 }
 
 // isPrivateIP checks if an IP address is in a private range (RFC 1918 / RFC 4193).

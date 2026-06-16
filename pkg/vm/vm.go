@@ -1161,6 +1161,20 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = binTimestampValue(tsVal, durVal)
 
+		case OpBucket:
+			bounds := vm.stack[vm.sp-1]
+			x := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execBucket(x, bounds)
+
+		case OpPathNormalize:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execPathNormalize(v)
+
+		case OpUserAgentParse:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execUserAgentParse(v)
+
 		case OpTimeOfDay:
 			// time_of_day(ts) -> duration since midnight UTC.
 			v := vm.stack[vm.sp-1]

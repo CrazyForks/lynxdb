@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/cespare/xxhash/v2"
+	"golang.org/x/net/idna"
+	"golang.org/x/text/unicode/norm"
 
 	"github.com/lynxbase/lynxdb/internal/glob"
 	"github.com/lynxbase/lynxdb/pkg/event"
@@ -874,6 +876,29 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 		case OpRegexEscape:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = regexEscapeValue(a)
+
+		case OpNormalizeUTF8:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if (count != 1 && count != 2) || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: normalize_utf8 count %d invalid for stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			args := vm.stack[vm.sp-int(count) : vm.sp]
+			result := normalizeUTF8Value(args)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpPunycodeEncode:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = punycodeEncodeValue(a)
+
+		case OpPunycodeDecode:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = punycodeDecodeValue(a)
 
 		case OpCountSubstr:
 			sub := vm.stack[vm.sp-1]
@@ -3159,6 +3184,57 @@ func regexEscapeValue(v event.Value) event.Value {
 	}
 
 	return event.StringValue(regexp.QuoteMeta(v.AsString()))
+}
+
+func normalizeUTF8Value(args []event.Value) event.Value {
+	if len(args) != 1 && len(args) != 2 {
+		return event.NullValue()
+	}
+	if args[0].IsNull() || args[0].Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	form := "nfc"
+	if len(args) == 2 {
+		if args[1].IsNull() || args[1].Type() != event.FieldTypeString {
+			return event.NullValue()
+		}
+		form = strings.ToLower(args[1].AsString())
+	}
+
+	switch form {
+	case "nfc":
+		return event.StringValue(norm.NFC.String(args[0].AsString()))
+	case "nfd":
+		return event.StringValue(norm.NFD.String(args[0].AsString()))
+	case "nfkc":
+		return event.StringValue(norm.NFKC.String(args[0].AsString()))
+	case "nfkd":
+		return event.StringValue(norm.NFKD.String(args[0].AsString()))
+	default:
+		return event.NullValue()
+	}
+}
+
+func punycodeEncodeValue(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	s, err := idna.ToASCII(v.AsString())
+	if err != nil {
+		return event.NullValue()
+	}
+	return event.StringValue(s)
+}
+
+func punycodeDecodeValue(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	s, err := idna.ToUnicode(v.AsString())
+	if err != nil {
+		return event.NullValue()
+	}
+	return event.StringValue(s)
 }
 
 func countSubstrValue(s, sub event.Value) event.Value {

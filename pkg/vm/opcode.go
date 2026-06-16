@@ -28,12 +28,14 @@ const (
 	OpFieldExists Opcode = 0x22
 
 	// Integer Arithmetic (pop 2, push 1).
-	OpAddInt Opcode = 0x30
-	OpSubInt Opcode = 0x31
-	OpMulInt Opcode = 0x32
-	OpDivInt Opcode = 0x33
-	OpModInt Opcode = 0x34
-	OpNegInt Opcode = 0x35
+	OpAddInt         Opcode = 0x30
+	OpSubInt         Opcode = 0x31
+	OpMulInt         Opcode = 0x32
+	OpDivInt         Opcode = 0x33
+	OpModInt         Opcode = 0x34
+	OpNegInt         Opcode = 0x35
+	OpPunycodeEncode Opcode = 0x36 // pop string; push IDNA ASCII domain
+	OpPunycodeDecode Opcode = 0x37 // pop string; push Unicode domain
 
 	// Float Arithmetic.
 	OpAddFloat Opcode = 0x38
@@ -293,20 +295,21 @@ const (
 	OpRepeat          Opcode = 0x1F // pop string, count; push repeated string
 
 	// JSON Functions.
-	OpJsonExtract  Opcode = 0xD0 // pop path, pop field, push extracted value
-	OpJsonValid    Opcode = 0xD1 // pop field, push bool
-	OpJsonKeys     Opcode = 0xD2 // pop path, pop field, push JSON array of keys
-	OpJsonArrayLen Opcode = 0xD3 // pop path, pop field, push int length
-	OpJsonObject   Opcode = 0xD4 // 2-byte operand: arg count; pop N values, push JSON object
-	OpJsonArray    Opcode = 0xD5 // 2-byte operand: arg count; pop N values, push JSON array
-	OpJsonType     Opcode = 0xD6 // pop path, pop field, push type string
-	OpJsonSet      Opcode = 0xD7 // pop value, pop path, pop field, push modified JSON
-	OpJsonRemove   Opcode = 0xD8 // pop path, pop field, push modified JSON
-	OpJsonMerge    Opcode = 0xD9 // pop json2, pop json1, push merged JSON
-	OpJsonValue    Opcode = 0xDA // pop field and path; push scalar JSON value or null
-	OpJsonQuery    Opcode = 0xDB // pop field and path; push raw JSON fragment or null
-	OpLevenshtein  Opcode = 0xDC // 2-byte count; pop a, b[, damerau]; push edit distance
-	OpJaroWinkler  Opcode = 0xDD // pop a and b; push similarity
+	OpJsonExtract   Opcode = 0xD0 // pop path, pop field, push extracted value
+	OpJsonValid     Opcode = 0xD1 // pop field, push bool
+	OpJsonKeys      Opcode = 0xD2 // pop path, pop field, push JSON array of keys
+	OpJsonArrayLen  Opcode = 0xD3 // pop path, pop field, push int length
+	OpJsonObject    Opcode = 0xD4 // 2-byte operand: arg count; pop N values, push JSON object
+	OpJsonArray     Opcode = 0xD5 // 2-byte operand: arg count; pop N values, push JSON array
+	OpJsonType      Opcode = 0xD6 // pop path, pop field, push type string
+	OpJsonSet       Opcode = 0xD7 // pop value, pop path, pop field, push modified JSON
+	OpJsonRemove    Opcode = 0xD8 // pop path, pop field, push modified JSON
+	OpJsonMerge     Opcode = 0xD9 // pop json2, pop json1, push merged JSON
+	OpJsonValue     Opcode = 0xDA // pop field and path; push scalar JSON value or null
+	OpJsonQuery     Opcode = 0xDB // pop field and path; push raw JSON fragment or null
+	OpLevenshtein   Opcode = 0xDC // 2-byte count; pop a, b[, damerau]; push edit distance
+	OpJaroWinkler   Opcode = 0xDD // pop a and b; push similarity
+	OpNormalizeUTF8 Opcode = 0xDE // 2-byte count; pop s[, form]; push normalized Unicode
 
 	OpReturn Opcode = 0xFF
 )
@@ -350,12 +353,14 @@ var definitions = map[Opcode]*Definition{
 	OpStoreField:  {"OpStoreField", []int{2}},
 	OpFieldExists: {"OpFieldExists", []int{2}},
 
-	OpAddInt: {"OpAddInt", nil},
-	OpSubInt: {"OpSubInt", nil},
-	OpMulInt: {"OpMulInt", nil},
-	OpDivInt: {"OpDivInt", nil},
-	OpModInt: {"OpModInt", nil},
-	OpNegInt: {"OpNegInt", nil},
+	OpAddInt:         {"OpAddInt", nil},
+	OpSubInt:         {"OpSubInt", nil},
+	OpMulInt:         {"OpMulInt", nil},
+	OpDivInt:         {"OpDivInt", nil},
+	OpModInt:         {"OpModInt", nil},
+	OpNegInt:         {"OpNegInt", nil},
+	OpPunycodeEncode: {"OpPunycodeEncode", nil},
+	OpPunycodeDecode: {"OpPunycodeDecode", nil},
 
 	OpAddFloat: {"OpAddFloat", nil},
 	OpSubFloat: {"OpSubFloat", nil},
@@ -518,20 +523,21 @@ var definitions = map[Opcode]*Definition{
 	OpExtractAll:   {"OpExtractAll", []int{2}},
 	OpSubstr0Based: {"OpSubstr0Based", nil},
 
-	OpJsonExtract:  {"OpJsonExtract", nil},
-	OpJsonValid:    {"OpJsonValid", nil},
-	OpJsonKeys:     {"OpJsonKeys", nil},
-	OpJsonArrayLen: {"OpJsonArrayLen", nil},
-	OpJsonObject:   {"OpJsonObject", []int{2}},
-	OpJsonArray:    {"OpJsonArray", []int{2}},
-	OpJsonType:     {"OpJsonType", nil},
-	OpJsonSet:      {"OpJsonSet", nil},
-	OpJsonRemove:   {"OpJsonRemove", nil},
-	OpJsonMerge:    {"OpJsonMerge", nil},
-	OpJsonValue:    {"OpJsonValue", nil},
-	OpJsonQuery:    {"OpJsonQuery", nil},
-	OpLevenshtein:  {"OpLevenshtein", []int{2}},
-	OpJaroWinkler:  {"OpJaroWinkler", nil},
+	OpJsonExtract:   {"OpJsonExtract", nil},
+	OpJsonValid:     {"OpJsonValid", nil},
+	OpJsonKeys:      {"OpJsonKeys", nil},
+	OpJsonArrayLen:  {"OpJsonArrayLen", nil},
+	OpJsonObject:    {"OpJsonObject", []int{2}},
+	OpJsonArray:     {"OpJsonArray", []int{2}},
+	OpJsonType:      {"OpJsonType", nil},
+	OpJsonSet:       {"OpJsonSet", nil},
+	OpJsonRemove:    {"OpJsonRemove", nil},
+	OpJsonMerge:     {"OpJsonMerge", nil},
+	OpJsonValue:     {"OpJsonValue", nil},
+	OpJsonQuery:     {"OpJsonQuery", nil},
+	OpLevenshtein:   {"OpLevenshtein", []int{2}},
+	OpJaroWinkler:   {"OpJaroWinkler", nil},
+	OpNormalizeUTF8: {"OpNormalizeUTF8", []int{2}},
 
 	// RFC-002 b2 lambda + array/object
 	OpArrayAny:        {"OpArrayAny", []int{2}},

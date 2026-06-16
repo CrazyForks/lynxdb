@@ -64,6 +64,9 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `urldecode` | (s: string) | `string` | null_on_failure | - | - |
 | `urlencode` | (s: string) | `string` | null_on_failure | - | Encode a string for URL query components. |
 | `regex_escape` | (s: string) | `string` | null_on_failure | - | Escape a string for literal use in a regex pattern. |
+| `normalize_utf8` | (s: string, form: string?) | `string` | null_on_failure | - | Normalize Unicode text as nfc, nfd, nfkc, or nfkd. |
+| `punycode_encode` | (s: string) | `string` | null_on_failure | - | Encode a domain name with IDNA punycode. |
+| `punycode_decode` | (s: string) | `string` | null_on_failure | - | Decode an IDNA punycode domain name. |
 | `base64_decode` | (s: string) | `string` | null_on_failure | `base64_decode!` | Decode standard base64; null on invalid input. |
 | `base64_encode` | (s: string) | `string` | null_on_failure | - | Encode a string as standard base64. |
 | `hex` | (s: string) | `string` | null_on_failure | - | Encode a string as lowercase hexadecimal. |

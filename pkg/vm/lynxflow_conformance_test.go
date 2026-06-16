@@ -388,6 +388,23 @@ func TestLynxFlowFuzzyStringFunctions(t *testing.T) {
 	assertNull(t, result, "jaro_winkler null")
 }
 
+func TestLynxFlowUnicodeStringFunctions(t *testing.T) {
+	result, _ := runLF(t, call("normalize_utf8", litStr("e\u0301")), nil)
+	assertString(t, result, "é", "normalize_utf8 nfc")
+
+	result, _ = runLF(t, call("normalize_utf8", litStr("①"), litStr("nfkc")), nil)
+	assertString(t, result, "1", "normalize_utf8 nfkc")
+
+	result, _ = runLF(t, call("normalize_utf8", litStr("x"), litStr("bad")), nil)
+	assertNull(t, result, "normalize_utf8 bad form")
+
+	result, _ = runLF(t, call("punycode_encode", litStr("bücher.example")), nil)
+	assertString(t, result, "xn--bcher-kva.example", "punycode_encode")
+
+	result, _ = runLF(t, call("punycode_decode", litStr("xn--bcher-kva.example")), nil)
+	assertString(t, result, "bücher.example", "punycode_decode")
+}
+
 func TestLynxFlowStringCountFunctions(t *testing.T) {
 	result, _ := runLF(t, call("count_substr", litStr("/api/v1/users"), litStr("/")), nil)
 	assertInt(t, result, 3, "count_substr")

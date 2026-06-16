@@ -18,6 +18,7 @@ import (
 	"github.com/lynxbase/lynxdb/pkg/logical/opt"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/desugar"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/registry"
 )
 
 // sliceSource helper
@@ -1079,6 +1080,17 @@ func TestAggNameMapping(t *testing.T) {
 		}
 		if got != want {
 			t.Errorf("aggNameMapping[%q] = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestWindowOnlyAggregatesHavePhysicalMapping(t *testing.T) {
+	for _, agg := range registry.Aggregates() {
+		if !agg.WindowOnly {
+			continue
+		}
+		if _, ok := aggNameMapping[agg.Name]; !ok {
+			t.Errorf("window-only aggregate %q has no physical mapping", agg.Name)
 		}
 	}
 }

@@ -30,6 +30,8 @@ var functions = []Function{
 	{Name: "substr", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "start", Type: TInt}, {Name: "len", Type: TInt, Optional: true}}, Result: TString, Fallibility: NullOnFailure, Doc: "0-based start; negative counts from end."},
 	{Name: "replace", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}, {Name: "with", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Regex replace all."},
 	{Name: "split", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "sep", Type: TString}}, Result: TArray, Fallibility: NullOnFailure},
+	{Name: "split_part", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "sep", Type: TString}, {Name: "n", Type: TInt}}, Result: TString, Fallibility: NullOnFailure, Doc: "Return the 0-based split segment, or null when out of range."},
+	{Name: "index_of", Category: "string", Params: []Param{{Name: "x", Type: TAny}, {Name: "needle", Type: TAny}}, Result: TInt, Fallibility: NullOnFailure, Doc: "0-based index in a string or array; null when not found."},
 	{Name: "join", Category: "string", Params: []Param{{Name: "arr", Type: TArray}, {Name: "sep", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "starts_with", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "prefix", Type: TString}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "ends_with", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "suffix", Type: TString}}, Result: TBool, Fallibility: NullOnFailure},

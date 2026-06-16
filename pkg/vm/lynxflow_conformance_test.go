@@ -302,6 +302,38 @@ func TestLynxFlowBarFunction(t *testing.T) {
 	assertNull(t, result, "bar invalid bounds")
 }
 
+func TestLynxFlowStringAccessorFunctions(t *testing.T) {
+	t.Run("index_of_string", func(t *testing.T) {
+		result, _ := runLF(t, call("index_of", litStr("alpha/beta"), litStr("/")), nil)
+		assertInt(t, result, 5, "index_of string")
+
+		result, _ = runLF(t, call("index_of", litStr("éclair"), litStr("l")), nil)
+		assertInt(t, result, 2, "index_of string rune index")
+
+		result, _ = runLF(t, call("index_of", litStr("alpha"), litStr("z")), nil)
+		assertNull(t, result, "index_of string missing")
+	})
+
+	t.Run("index_of_array", func(t *testing.T) {
+		result, _ := runLF(t, call("index_of", array(litStr("a"), litStr("b"), litStr("c")), litStr("b")), nil)
+		assertInt(t, result, 1, "index_of array")
+
+		result, _ = runLF(t, call("index_of", array(litInt(1), litInt(2)), litInt(3)), nil)
+		assertNull(t, result, "index_of array missing")
+	})
+
+	t.Run("split_part", func(t *testing.T) {
+		result, _ := runLF(t, call("split_part", litStr("api.example.com"), litStr("."), litInt(0)), nil)
+		assertString(t, result, "api", "split_part first")
+
+		result, _ = runLF(t, call("split_part", litStr("api.example.com"), litStr("."), litInt(1)), nil)
+		assertString(t, result, "example", "split_part middle")
+
+		result, _ = runLF(t, call("split_part", litStr("api.example.com"), litStr("."), litInt(9)), nil)
+		assertNull(t, result, "split_part out of range")
+	})
+}
+
 // §5.2 Three-Valued Logic Truth Table
 
 func TestConformance_3VL_And(t *testing.T) {

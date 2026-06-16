@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
 )
@@ -1288,6 +1289,51 @@ func execBar(x, lo, hi, width event.Value) event.Value {
 	filled := int(math.Round(frac * float64(w)))
 
 	return event.StringValue(strings.Repeat("#", filled) + strings.Repeat(".", w-filled))
+}
+
+func execIndexOf(container, needle event.Value) event.Value {
+	if container.IsNull() || needle.IsNull() {
+		return event.NullValue()
+	}
+	switch container.Type() {
+	case event.FieldTypeString:
+		if needle.Type() != event.FieldTypeString {
+			return event.NullValue()
+		}
+		byteIdx := strings.Index(container.AsString(), needle.AsString())
+		if byteIdx < 0 {
+			return event.NullValue()
+		}
+		return event.IntValue(int64(utf8.RuneCountInString(container.AsString()[:byteIdx])))
+	case event.FieldTypeArray:
+		for i, elem := range container.AsArray() {
+			if valuesEqual(elem, needle) {
+				return event.IntValue(int64(i))
+			}
+		}
+		return event.NullValue()
+	default:
+		return event.NullValue()
+	}
+}
+
+func execSplitPart(s, sep, n event.Value) event.Value {
+	if s.IsNull() || sep.IsNull() || n.IsNull() ||
+		s.Type() != event.FieldTypeString ||
+		sep.Type() != event.FieldTypeString ||
+		n.Type() != event.FieldTypeInt {
+		return event.NullValue()
+	}
+	idx := n.AsInt()
+	if idx < 0 || sep.AsString() == "" {
+		return event.NullValue()
+	}
+	parts := strings.Split(s.AsString(), sep.AsString())
+	if idx >= int64(len(parts)) {
+		return event.NullValue()
+	}
+
+	return event.StringValue(parts[idx])
 }
 
 func formatScaledNumber(n, base float64, units []string, sep string) string {

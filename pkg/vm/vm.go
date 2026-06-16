@@ -1210,6 +1210,19 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp -= 3
 			vm.stack[vm.sp-1] = execBar(x, lo, hi, width)
 
+		case OpIndexOf:
+			needle := vm.stack[vm.sp-1]
+			container := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execIndexOf(container, needle)
+
+		case OpSplitPart:
+			n := vm.stack[vm.sp-1]
+			sep := vm.stack[vm.sp-2]
+			s := vm.stack[vm.sp-3]
+			vm.sp -= 2
+			vm.stack[vm.sp-1] = execSplitPart(s, sep, n)
+
 		case OpMD5:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = hashValue(a, "md5")

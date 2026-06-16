@@ -104,6 +104,22 @@ func lfEmitBinary(op Opcode) func(*lfCompiler, *lfast.Call) error {
 	}
 }
 
+func lfEmitTernary(op Opcode) func(*lfCompiler, *lfast.Call) error {
+	return func(c *lfCompiler, call *lfast.Call) error {
+		if err := c.compile(call.Args[0]); err != nil {
+			return err
+		}
+		if err := c.compile(call.Args[1]); err != nil {
+			return err
+		}
+		if err := c.compile(call.Args[2]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(op)
+		return nil
+	}
+}
+
 func lfEmitUnaryMath(fn int) func(*lfCompiler, *lfast.Call) error {
 	return func(c *lfCompiler, call *lfast.Call) error {
 		if err := c.compile(call.Args[0]); err != nil {
@@ -330,6 +346,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "substr", minArgs: 2, maxArgs: 3, emit: lfEmitSubstr},
 		{name: "replace", minArgs: 3, maxArgs: 3, emit: lfEmitReplace},
 		{name: "split", minArgs: 2, maxArgs: 2, emit: lfEmitSplit},
+		{name: "split_part", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpSplitPart)},
+		{name: "index_of", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIndexOf)},
 		{name: "join", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpJoinArr)},
 		{name: "starts_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpStartsWith)},
 		{name: "ends_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpEndsWith)},

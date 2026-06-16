@@ -106,6 +106,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `acos` | (x: number) | `float` | null_on_failure | - | - |
 | `atan` | (x: number) | `float` | null_on_failure | - | - |
 | `atan2` | (y: number, x: number) | `float` | null_on_failure | - | - |
+| `is_finite` | (x: number) | `bool` | null_on_failure | - | True for numeric values that are neither NaN nor infinite. |
+| `is_nan` | (x: number) | `bool` | null_on_failure | - | True for numeric NaN values. |
 
 ## Humanize
 

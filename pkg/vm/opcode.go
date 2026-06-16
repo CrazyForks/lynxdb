@@ -241,6 +241,8 @@ const (
 	OpLPad            Opcode = 0x64 // pop string, target width, pad string; push left-padded string
 	OpRPad            Opcode = 0x65 // pop string, target width, pad string; push right-padded string
 	OpTranslate       Opcode = 0x66 // pop string, from, to; push translated string
+	OpIsFinite        Opcode = 0x67 // pop number; push true when finite
+	OpIsNaN           Opcode = 0x68 // pop number; push true when NaN
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
@@ -503,6 +505,8 @@ var definitions = map[Opcode]*Definition{
 	OpLPad:            {"OpLPad", nil},
 	OpRPad:            {"OpRPad", nil},
 	OpTranslate:       {"OpTranslate", nil},
+	OpIsFinite:        {"OpIsFinite", nil},
+	OpIsNaN:           {"OpIsNaN", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

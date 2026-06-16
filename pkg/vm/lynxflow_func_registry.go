@@ -399,6 +399,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "acos", minArgs: 1, maxArgs: 1, emit: lfEmitUnaryMath(mathFnAcos)},
 		{name: "atan", minArgs: 1, maxArgs: 1, emit: lfEmitUnaryMath(mathFnAtan)},
 		{name: "atan2", minArgs: 2, maxArgs: 2, emit: lfEmitBinaryMath(mathFnAtan2)},
+		{name: "is_finite", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpIsFinite)},
+		{name: "is_nan", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpIsNaN)},
 
 		// ---- Humanize (W2) ----
 		{name: "humanize_bytes", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeBytes)},

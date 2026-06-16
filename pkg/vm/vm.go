@@ -1016,6 +1016,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = binaryMathValue(a, b, int(operand))
 
+		case OpIsFinite:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = isFiniteValue(a)
+
+		case OpIsNaN:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = isNaNValue(a)
+
 		case OpRandom:
 			vm.stack[vm.sp] = event.IntValue(int64(rand.Int31()))
 			vm.sp++
@@ -2963,6 +2971,30 @@ func binaryMathValue(a, b event.Value, fn int) event.Value {
 	default:
 		return event.NullValue()
 	}
+}
+
+func isFiniteValue(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	f, ok := ValueToFloat(v)
+	if !ok {
+		return event.NullValue()
+	}
+
+	return event.BoolValue(!math.IsNaN(f) && !math.IsInf(f, 0))
+}
+
+func isNaNValue(v event.Value) event.Value {
+	if v.IsNull() {
+		return event.NullValue()
+	}
+	f, ok := ValueToFloat(v)
+	if !ok {
+		return event.NullValue()
+	}
+
+	return event.BoolValue(math.IsNaN(f))
 }
 
 func maxMinValue(values []event.Value, isMax bool) (event.Value, error) {

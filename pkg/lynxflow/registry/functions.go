@@ -83,6 +83,8 @@ var functions = []Function{
 	{Name: "acos", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TFloat, Fallibility: NullOnFailure},
 	{Name: "atan", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TFloat, Fallibility: NullOnFailure},
 	{Name: "atan2", Category: "math", Params: []Param{{Name: "y", Type: TNumber}, {Name: "x", Type: TNumber}}, Result: TFloat, Fallibility: NullOnFailure},
+	{Name: "is_finite", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TBool, Fallibility: NullOnFailure, Doc: "True for numeric values that are neither NaN nor infinite."},
+	{Name: "is_nan", Category: "math", Params: []Param{{Name: "x", Type: TNumber}}, Result: TBool, Fallibility: NullOnFailure, Doc: "True for numeric NaN values."},
 
 	// humanize
 	{Name: "humanize_bytes", Category: "humanize", Params: []Param{{Name: "n", Type: TNumber}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format bytes with binary units (KiB, MiB, ...)."},

@@ -1273,6 +1273,23 @@ func TestConformance_MathFunctions(t *testing.T) {
 		result, _ := runLF(t, call("round", litFloat(3.14159), litInt(2)), nil)
 		assertFloat(t, result, 3.14, "round(3.14159,2)")
 	})
+	t.Run("is_finite", func(t *testing.T) {
+		result, _ := runLF(t, call("is_finite", litFloat(3.5)), nil)
+		assertBool(t, result, true, "is_finite finite")
+
+		result, _ = runLF(t, call("is_finite", litFloat(math.Inf(1))), nil)
+		assertBool(t, result, false, "is_finite inf")
+
+		result, _ = runLF(t, call("is_finite", litStr("nope")), nil)
+		assertNull(t, result, "is_finite invalid")
+	})
+	t.Run("is_nan", func(t *testing.T) {
+		result, _ := runLF(t, call("is_nan", litFloat(math.NaN())), nil)
+		assertBool(t, result, true, "is_nan nan")
+
+		result, _ = runLF(t, call("is_nan", litFloat(math.Inf(1))), nil)
+		assertBool(t, result, false, "is_nan inf")
+	})
 }
 
 // String functions

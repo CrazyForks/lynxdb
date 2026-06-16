@@ -189,6 +189,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `array_compact` | (arr: array) | `array` | null_on_failure | - | Remove consecutive duplicate elements. |
 | `array_deltas` | (arr: array) | `array` | null_on_failure | - | Adjacent differences with leading null. |
 | `array_cumsum` | (arr: array) | `array` | null_on_failure | - | Cumulative sums across array elements. |
+| `zip` | (arrays: array...) | `array` | null_on_failure | - | Zip equal-length arrays into arrays of tuples. |
 | `flatten` | (arr: array) | `array` | null_on_failure | - | One level. |
 | `any` | (arr: array, pred: lambda) | `bool` | null_on_failure | - | any(tags, t -&gt; t.name == "vip") |
 | `all` | (arr: array, pred: lambda) | `bool` | null_on_failure | - | - |
@@ -203,6 +204,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `values` | (obj: object) | `array` | null_on_failure | - | - |
 | `merge` | (a: object, b: object) | `object` | null_on_failure | - | Right side wins on key collision. |
 | `has_key` | (obj: object, key: string) | `bool` | null_on_failure | - | - |
+| `entries` | (obj: object) | `array` | null_on_failure | - | Convert an object to sorted {key, value} entries. |
+| `from_entries` | (arr: array) | `object` | null_on_failure | - | Build an object from {key, value} entries. |
 | `to_json` | (x: any) | `string` | null_on_failure | - | - |
 | `from_json` | (s: string) | `any` | null_on_failure | `from_json!` | Null on invalid JSON, never the original string. |
 | `is_json` | (s: string) | `bool` | infallible | - | True when a string contains valid JSON. |

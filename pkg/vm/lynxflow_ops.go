@@ -1055,6 +1055,81 @@ func execArrayCumSum(v event.Value, warnings *WarningCounters) event.Value {
 	return event.ArrayValue(result)
 }
 
+func execZip(values []event.Value) event.Value {
+	if len(values) == 0 {
+		return event.ArrayValue(nil)
+	}
+
+	arrays := make([][]event.Value, len(values))
+	length := -1
+	for i, value := range values {
+		if value.IsNull() || value.Type() != event.FieldTypeArray {
+			return event.NullValue()
+		}
+		arr := value.AsArray()
+		if length == -1 {
+			length = len(arr)
+		} else if len(arr) != length {
+			return event.NullValue()
+		}
+		arrays[i] = arr
+	}
+
+	result := make([]event.Value, length)
+	for i := 0; i < length; i++ {
+		row := make([]event.Value, len(arrays))
+		for j, arr := range arrays {
+			row[j] = arr[i]
+		}
+		result[i] = event.ArrayValue(row)
+	}
+	return event.ArrayValue(result)
+}
+
+func execEntries(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeObject {
+		return event.NullValue()
+	}
+	obj := v.AsObject()
+	keys := make([]string, 0, len(obj))
+	for key := range obj {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	entries := make([]event.Value, len(keys))
+	for i, key := range keys {
+		entries[i] = event.ObjectValue(map[string]event.Value{
+			"key":   event.StringValue(key),
+			"value": obj[key],
+		})
+	}
+	return event.ArrayValue(entries)
+}
+
+func execFromEntries(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	result := make(map[string]event.Value)
+	for _, entry := range v.AsArray() {
+		if entry.IsNull() || entry.Type() != event.FieldTypeObject {
+			return event.NullValue()
+		}
+		obj := entry.AsObject()
+		key, ok := obj["key"]
+		if !ok || key.Type() != event.FieldTypeString {
+			return event.NullValue()
+		}
+		value, ok := obj["value"]
+		if !ok {
+			return event.NullValue()
+		}
+		result[key.AsString()] = value
+	}
+	return event.ObjectValue(result)
+}
+
 func execArrayHasAny(a, b event.Value) event.Value {
 	aArr, bArr, ok := arrayPair(a, b)
 	if !ok {

@@ -567,6 +567,40 @@ func TestB2_ArrayTransforms(t *testing.T) {
 	assertNull(t, result, "array_deltas incompatible")
 }
 
+func TestB2_ZipEntries(t *testing.T) {
+	result, _ := runLF(t, call("zip",
+		array(litStr("k1"), litStr("k2")),
+		array(litInt(10), litInt(20)),
+	), nil)
+	rows := assertArray(t, result, 2, "zip")
+	row0 := assertArray(t, rows[0], 2, "zip[0]")
+	assertString(t, row0[0], "k1", "zip[0][0]")
+	assertInt(t, row0[1], 10, "zip[0][1]")
+
+	result, _ = runLF(t, call("zip", array(litInt(1)), array(litInt(1), litInt(2))), nil)
+	assertNull(t, result, "zip mismatched lengths")
+
+	objExpr := object(objEntry("b", litInt(2)), objEntry("a", litInt(1)))
+	result, _ = runLF(t, call("entries", objExpr), nil)
+	entries := assertArray(t, result, 2, "entries")
+	first := assertObject(t, entries[0], "entries[0]")
+	assertString(t, first["key"], "a", "entries sorted key")
+	assertInt(t, first["value"], 1, "entries value")
+
+	result, _ = runLF(t, call("from_entries",
+		array(
+			object(objEntry("key", litStr("x")), objEntry("value", litInt(7))),
+			object(objEntry("key", litStr("y")), objEntry("value", litStr("yes"))),
+		),
+	), nil)
+	obj := assertObject(t, result, "from_entries")
+	assertInt(t, obj["x"], 7, "from_entries x")
+	assertString(t, obj["y"], "yes", "from_entries y")
+
+	result, _ = runLF(t, call("from_entries", array(object(objEntry("key", litInt(1))))), nil)
+	assertNull(t, result, "from_entries invalid")
+}
+
 func TestB2_ArrayCount(t *testing.T) {
 	expr := call("array_count",
 		array(litInt(1), litInt(2), litInt(3), litInt(4)),

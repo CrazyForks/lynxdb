@@ -128,6 +128,9 @@ const (
 	OpArrayCompact Opcode = 0xAA
 	OpArrayDeltas  Opcode = 0xAB
 	OpArrayCumSum  Opcode = 0xAC
+	OpZip          Opcode = 0xAD
+	OpEntries      Opcode = 0xAE
+	OpFromEntries  Opcode = 0xAF
 
 	// Null Handling.
 	OpCoalesce  Opcode = 0xB0
@@ -428,6 +431,9 @@ var definitions = map[Opcode]*Definition{
 	OpArrayCompact: {"OpArrayCompact", nil},
 	OpArrayDeltas:  {"OpArrayDeltas", nil},
 	OpArrayCumSum:  {"OpArrayCumSum", nil},
+	OpZip:          {"OpZip", []int{2}},
+	OpEntries:      {"OpEntries", nil},
+	OpFromEntries:  {"OpFromEntries", nil},
 
 	OpCoalesce:  {"OpCoalesce", []int{2}},
 	OpIsNull:    {"OpIsNull", nil},

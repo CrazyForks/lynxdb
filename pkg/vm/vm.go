@@ -2262,6 +2262,21 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execArrayCumSum(a, vm.Warnings)
 
+		case OpZip:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if count == 0 || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: zip count %d invalid for stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			args := vm.stack[vm.sp-int(count) : vm.sp]
+			result := execZip(args)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
 		case OpArrayHasAny:
 			b := vm.stack[vm.sp-1]
 			a := vm.stack[vm.sp-2]
@@ -2309,6 +2324,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			obj := vm.stack[vm.sp-2]
 			vm.sp--
 			vm.stack[vm.sp-1] = execHasKey(obj, key)
+
+		case OpEntries:
+			obj := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execEntries(obj)
+
+		case OpFromEntries:
+			arr := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execFromEntries(arr)
 
 		case OpURLParse:
 			a := vm.stack[vm.sp-1]

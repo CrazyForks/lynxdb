@@ -1918,6 +1918,33 @@ func TestConformance_UnixEpochFunctions(t *testing.T) {
 	})
 }
 
+func TestConformance_StrptimeLayouts(t *testing.T) {
+	expected := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC).Unix()
+
+	t.Run("scalar layout", func(t *testing.T) {
+		result, _ := runLF(t, call("strptime", litStr("2026-06-16"), litStr("%Y-%m-%d")), nil)
+		assertInt(t, result, expected, "strptime scalar layout")
+	})
+	t.Run("first matching layout", func(t *testing.T) {
+		result, _ := runLF(t,
+			call("strptime", litStr("2026/06/16"), array(litStr("%Y-%m-%d"), litStr("%Y/%m/%d"))),
+			nil,
+		)
+		assertInt(t, result, expected, "strptime layout array")
+	})
+	t.Run("no matching layout", func(t *testing.T) {
+		result, _ := runLF(t,
+			call("strptime", litStr("16-06-2026"), array(litStr("%Y-%m-%d"), litStr("%Y/%m/%d"))),
+			nil,
+		)
+		assertNull(t, result, "strptime no matching layout")
+	})
+	t.Run("non-string candidate", func(t *testing.T) {
+		result, _ := runLF(t, call("strptime", litStr("2026-06-16"), array(litInt(1))), nil)
+		assertNull(t, result, "strptime non-string candidate")
+	})
+}
+
 func TestConformance_CalendarFunctions(t *testing.T) {
 	t.Run("date_trunc hour", func(t *testing.T) {
 		ts := time.Date(2026, 6, 16, 14, 37, 55, 123, time.UTC)

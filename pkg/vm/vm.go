@@ -3610,13 +3610,33 @@ func strptimeValue(ts, format event.Value) event.Value {
 	if ts.IsNull() || format.IsNull() {
 		return event.NullValue()
 	}
-	layout := splTimeToGo(valueToString(format))
-	t, err := time.ParseInLocation(layout, valueToString(ts), time.UTC)
-	if err != nil {
+
+	tsStr := valueToString(ts)
+	parse := func(format event.Value) event.Value {
+		if format.IsNull() || format.Type() != event.FieldTypeString {
+			return event.NullValue()
+		}
+		layout := splTimeToGo(format.AsString())
+		t, err := time.ParseInLocation(layout, tsStr, time.UTC)
+		if err != nil {
+			return event.NullValue()
+		}
+		return event.IntValue(t.Unix())
+	}
+
+	if format.Type() == event.FieldTypeString {
+		return parse(format)
+	}
+	if format.Type() != event.FieldTypeArray {
 		return event.NullValue()
 	}
 
-	return event.IntValue(t.Unix())
+	for _, candidate := range format.AsArray() {
+		if parsed := parse(candidate); !parsed.IsNull() {
+			return parsed
+		}
+	}
+	return event.NullValue()
 }
 
 // binTimestampValue implements bin(ts, dur): snap a timestamp to a duration boundary.

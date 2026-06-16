@@ -154,7 +154,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `now` | () | `timestamp` | infallible | - | Query start time (stable within one query). |
 | `bin` | (ts: timestamp, span: duration) | `timestamp` | null_on_failure | - | Snap to span boundary; in stats by-lists the binned key emits as _time. |
 | `strftime` | (ts: timestamp, format: string) | `string` | null_on_failure | - | - |
-| `strptime` | (s: string, format: string) | `timestamp` | null_on_failure | `strptime!` | - |
+| `strptime` | (s: string, format: string\|array) | `timestamp` | null_on_failure | `strptime!` | Parse with one layout or the first matching layout in an array. |
 | `time_of_day` | (ts: timestamp) | `duration` | null_on_failure | - | - |
 | `day_of_week` | (ts: timestamp) | `int` | null_on_failure | - | 0 = Sunday. |
 | `from_unix` | (n: int, unit: string) | `timestamp` | null_on_failure | - | Convert Unix epoch in s, ms, us, or ns to a timestamp. |

@@ -345,6 +345,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "rtrim", minArgs: 1, maxArgs: 2, emit: lfEmitTrim(OpRTrim)},
 		{name: "substr", minArgs: 2, maxArgs: 3, emit: lfEmitSubstr},
 		{name: "replace", minArgs: 3, maxArgs: 3, emit: lfEmitReplace},
+		{name: "replace_first", minArgs: 3, maxArgs: 3, emit: lfEmitReplaceFirst},
 		{name: "split", minArgs: 2, maxArgs: 2, emit: lfEmitSplit},
 		{name: "split_part", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpSplitPart)},
 		{name: "index_of", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIndexOf)},
@@ -758,6 +759,22 @@ func lfEmitReplace(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	c.prog.EmitOp(OpReplace, regIdx)
+	return nil
+}
+
+func lfEmitReplaceFirst(c *lfCompiler, call *lfast.Call) error {
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	pattern := lfExprToString(call.Args[1])
+	regIdx, err := addValidatedRegex(c, "replace_first", pattern)
+	if err != nil {
+		return err
+	}
+	if err := c.compile(call.Args[2]); err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpReplaceFirst, regIdx)
 	return nil
 }
 

@@ -251,6 +251,7 @@ const (
 	OpCountMatches    Opcode = 0x6E // 2-byte regex index; pop string; push match count
 	OpIPToInt         Opcode = 0x73 // pop IPv4 string; push uint32 as int
 	OpIPFromInt       Opcode = 0x74 // pop uint32 int; push IPv4 string
+	OpReplaceFirst    Opcode = 0x75 // 2-byte regex index; pop string and replacement; replace first match
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
@@ -523,6 +524,7 @@ var definitions = map[Opcode]*Definition{
 	OpCountMatches:    {"OpCountMatches", []int{2}},
 	OpIPToInt:         {"OpIPToInt", nil},
 	OpIPFromInt:       {"OpIPFromInt", nil},
+	OpReplaceFirst:    {"OpReplaceFirst", []int{2}},
 
 	OpReturn: {"OpReturn", nil},
 }

@@ -385,6 +385,17 @@ func TestLynxFlowStringCountFunctions(t *testing.T) {
 	assertInt(t, result, 2, "count_matches")
 }
 
+func TestLynxFlowReplaceFirstFunction(t *testing.T) {
+	result, _ := runLF(t, call("replace_first", litStr("a1 b2 c3"), litStr(`\d`), litStr("X")), nil)
+	assertString(t, result, "aX b2 c3", "replace_first")
+
+	result, _ = runLF(t, call("replace_first", litStr("abc"), litStr(`z`), litStr("X")), nil)
+	assertString(t, result, "abc", "replace_first no match")
+
+	result, _ = runLF(t, call("replace_first", litStr("v12"), litStr(`v(\d+)`), litStr("id=$1")), nil)
+	assertString(t, result, "id=12", "replace_first expansion")
+}
+
 func TestLynxFlowBase64Functions(t *testing.T) {
 	result, _ := runLF(t, call("base64_encode", litStr("hello")), nil)
 	assertString(t, result, "aGVsbG8=", "base64_encode")

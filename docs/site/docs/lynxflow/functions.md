@@ -43,6 +43,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `rtrim` | (s: string, chars: string?) | `string` | null_on_failure | - | - |
 | `substr` | (s: string, start: int, len: int?) | `string` | null_on_failure | - | 0-based start; negative counts from end. |
 | `replace` | (s: string, pattern: regex, with: string) | `string` | null_on_failure | - | Regex replace all. |
+| `replace_first` | (s: string, pattern: regex, with: string) | `string` | null_on_failure | - | Regex replace first match. |
 | `split` | (s: string, sep: string) | `array` | null_on_failure | - | - |
 | `split_part` | (s: string, sep: string, n: int) | `string` | null_on_failure | - | Return the 0-based split segment, or null when out of range. |
 | `index_of` | (x: any, needle: any) | `int` | null_on_failure | - | 0-based index in a string or array; null when not found. |

@@ -465,6 +465,36 @@ func (vm *VM) execReplace(ins []byte, ip int) (int, error) {
 	return ip + 2, nil
 }
 
+func (vm *VM) execReplaceFirst(ins []byte, ip int) (int, error) {
+	idx, err := readIndexSafe(ins, ip, len(vm.regexCache), "regex")
+	if err != nil {
+		return 0, err
+	}
+
+	replacement := vm.stack[vm.sp-1]
+	str := vm.stack[vm.sp-2]
+	vm.sp--
+
+	if str.IsNull() {
+		vm.stack[vm.sp-1] = event.NullValue()
+		return ip + 2, nil
+	}
+	re := vm.regexCache[idx]
+	if re == nil {
+		return 0, fmt.Errorf("replace_first: invalid pattern %q", vm.lastProgRegexPattern(idx))
+	}
+	s := valueToString(str)
+	loc := re.FindStringSubmatchIndex(s)
+	if loc == nil {
+		vm.stack[vm.sp-1] = event.StringValue(s)
+		return ip + 2, nil
+	}
+	repl := re.ExpandString(nil, valueToString(replacement), s, loc)
+	vm.stack[vm.sp-1] = event.StringValue(s[:loc[0]] + string(repl) + s[loc[1]:])
+
+	return ip + 2, nil
+}
+
 // Execute runs a compiled program against a set of event fields.
 // Returns the top-of-stack value. The VM instance can be reused.
 func (vm *VM) Execute(prog *Program, fields map[string]event.Value) (result event.Value, err error) {
@@ -737,6 +767,13 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 
 		case OpReplace:
 			newIP, err := vm.execReplace(ins, ip)
+			if err != nil {
+				return event.NullValue(), err
+			}
+			ip = newIP
+
+		case OpReplaceFirst:
+			newIP, err := vm.execReplaceFirst(ins, ip)
 			if err != nil {
 				return event.NullValue(), err
 			}

@@ -1381,6 +1381,22 @@ func TestConformance_MathFunctions(t *testing.T) {
 		result, _ = runLF(t, call("bit_and", litFloat(1), litInt(1)), nil)
 		assertNull(t, result, "bit_and non-int")
 	})
+	t.Run("greatest_least", func(t *testing.T) {
+		result, _ := runLF(t, call("greatest", litInt(3), litInt(7), litInt(5)), nil)
+		assertInt(t, result, 7, "greatest ints")
+
+		result, _ = runLF(t, call("least", litStr("beta"), litStr("alpha")), nil)
+		assertString(t, result, "alpha", "least strings")
+
+		result, _ = runLF(t, call("greatest", litInt(2), litFloat(3.5)), nil)
+		assertFloat(t, result, 3.5, "greatest numeric cross type")
+
+		result, _ = runLF(t, call("greatest", litInt(1), litNull()), nil)
+		assertNull(t, result, "greatest null")
+
+		result, _ = runLF(t, call("least", litInt(1), litStr("1")), nil)
+		assertNull(t, result, "least incompatible")
+	})
 }
 
 // String functions

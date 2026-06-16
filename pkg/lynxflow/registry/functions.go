@@ -100,6 +100,8 @@ var functions = []Function{
 	{Name: "bit_xor", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "b", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Bitwise XOR for integers."},
 	{Name: "bit_shl", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "n", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Shift an integer left by n bits."},
 	{Name: "bit_shr", Category: "math", Params: []Param{{Name: "a", Type: TInt}, {Name: "n", Type: TInt}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Shift an integer right by n bits."},
+	{Name: "greatest", Category: "math", Params: []Param{{Name: "values", Type: TAny, Variadic: true}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Largest scalar value; null propagates."},
+	{Name: "least", Category: "math", Params: []Param{{Name: "values", Type: TAny, Variadic: true}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Smallest scalar value; null propagates."},
 
 	// humanize
 	{Name: "humanize_bytes", Category: "humanize", Params: []Param{{Name: "n", Type: TNumber}}, Result: TString, Fallibility: NullOnFailure, Doc: "Format bytes with binary units (KiB, MiB, ...)."},

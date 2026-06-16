@@ -143,6 +143,18 @@ func lfEmitBinaryMath(fn int) func(*lfCompiler, *lfast.Call) error {
 	}
 }
 
+func lfEmitScalarExtrema(op Opcode) func(*lfCompiler, *lfast.Call) error {
+	return func(c *lfCompiler, call *lfast.Call) error {
+		for _, arg := range call.Args {
+			if err := c.compile(arg); err != nil {
+				return err
+			}
+		}
+		c.prog.EmitOp(op, len(call.Args))
+		return nil
+	}
+}
+
 func lfEmitHash(op Opcode) func(*lfCompiler, *lfast.Call) error {
 	return lfEmitUnary(op)
 }
@@ -417,6 +429,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "bit_xor", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitXor)},
 		{name: "bit_shl", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitShl)},
 		{name: "bit_shr", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpBitShr)},
+		{name: "greatest", minArgs: 1, maxArgs: -1, emit: lfEmitScalarExtrema(OpGreatest)},
+		{name: "least", minArgs: 1, maxArgs: -1, emit: lfEmitScalarExtrema(OpLeast)},
 
 		// ---- Humanize (W2) ----
 		{name: "humanize_bytes", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpHumanizeBytes)},

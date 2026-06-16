@@ -1124,6 +1124,34 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = bitShiftValue(a, count, false)
 
+		case OpGreatest:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if int(count) <= 0 || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: greatest count %d exceeds stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			result := scalarExtremaValue(vm.stack[vm.sp-int(count):vm.sp], true, vm.Warnings)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpLeast:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if int(count) <= 0 || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: least count %d exceeds stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			result := scalarExtremaValue(vm.stack[vm.sp-int(count):vm.sp], false, vm.Warnings)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
 		case OpRandom:
 			vm.stack[vm.sp] = event.IntValue(int64(rand.Int31()))
 			vm.sp++
@@ -3231,6 +3259,27 @@ func bitShiftValue(a, count event.Value, left bool) event.Value {
 	}
 
 	return event.IntValue(a.AsInt() >> uint(n))
+}
+
+func scalarExtremaValue(values []event.Value, greatest bool, warnings *WarningCounters) event.Value {
+	if len(values) == 0 {
+		return event.NullValue()
+	}
+	result := values[0]
+	if result.IsNull() {
+		return event.NullValue()
+	}
+	for _, value := range values[1:] {
+		cmp, isNull := strictCompare(value, result, warnings)
+		if isNull {
+			return event.NullValue()
+		}
+		if (greatest && cmp > 0) || (!greatest && cmp < 0) {
+			result = value
+		}
+	}
+
+	return result
 }
 
 func maxMinValue(values []event.Value, isMax bool) (event.Value, error) {

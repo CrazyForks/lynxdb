@@ -123,6 +123,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `bit_xor` | (a: int, b: int) | `int` | null_on_failure | - | Bitwise XOR for integers. |
 | `bit_shl` | (a: int, n: int) | `int` | null_on_failure | - | Shift an integer left by n bits. |
 | `bit_shr` | (a: int, n: int) | `int` | null_on_failure | - | Shift an integer right by n bits. |
+| `greatest` | (values: any...) | `any` | null_on_failure | - | Largest scalar value; null propagates. |
+| `least` | (values: any...) | `any` | null_on_failure | - | Smallest scalar value; null propagates. |
 
 ## Humanize
 

@@ -119,6 +119,9 @@ var functions = []Function{
 	{Name: "day_of_week", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}}, Result: TInt, Fallibility: NullOnFailure, Doc: "0 = Sunday."},
 	{Name: "from_unix", Category: "time", Params: []Param{{Name: "n", Type: TInt}, {Name: "unit", Type: TString}}, Result: TTimestamp, Fallibility: NullOnFailure, Doc: "Convert Unix epoch in s, ms, us, or ns to a timestamp."},
 	{Name: "to_unix", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "unit", Type: TString}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Convert a timestamp to Unix epoch in s, ms, us, or ns."},
+	{Name: "date_trunc", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "part", Type: TString}, {Name: "tz", Type: TString, Optional: true}}, Result: TTimestamp, Fallibility: NullOnFailure, Doc: "Truncate a timestamp to a calendar part."},
+	{Name: "date_part", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "part", Type: TString}, {Name: "tz", Type: TString, Optional: true}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Extract a calendar part from a timestamp."},
+	{Name: "date_diff", Category: "time", Params: []Param{{Name: "a", Type: TTimestamp}, {Name: "b", Type: TTimestamp}, {Name: "part", Type: TString}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Difference b - a in a calendar unit."},
 
 	// hash / network
 	{Name: "md5", Category: "hash", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},

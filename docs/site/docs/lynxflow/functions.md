@@ -148,6 +148,9 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `day_of_week` | (ts: timestamp) | `int` | null_on_failure | - | 0 = Sunday. |
 | `from_unix` | (n: int, unit: string) | `timestamp` | null_on_failure | - | Convert Unix epoch in s, ms, us, or ns to a timestamp. |
 | `to_unix` | (ts: timestamp, unit: string) | `int` | null_on_failure | - | Convert a timestamp to Unix epoch in s, ms, us, or ns. |
+| `date_trunc` | (ts: timestamp, part: string, tz: string?) | `timestamp` | null_on_failure | - | Truncate a timestamp to a calendar part. |
+| `date_part` | (ts: timestamp, part: string, tz: string?) | `int` | null_on_failure | - | Extract a calendar part from a timestamp. |
+| `date_diff` | (a: timestamp, b: timestamp, part: string) | `int` | null_on_failure | - | Difference b - a in a calendar unit. |
 
 ## Hash
 

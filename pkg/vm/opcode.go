@@ -155,6 +155,9 @@ const (
 	OpStrptime  Opcode = 0xC8
 	OpFromUnix  Opcode = 0xCA
 	OpToUnix    Opcode = 0xCB
+	OpDateTrunc Opcode = 0xCC
+	OpDatePart  Opcode = 0xCD
+	OpDateDiff  Opcode = 0xCE
 	// OpSearchMatch is RESERVED (0xC9). The handler was removed; the opcode
 	// constant is kept so that append-only numbering is preserved and any
 	// residual persisted bytecode (e.g. in materialized-view caches) gets a
@@ -447,6 +450,9 @@ var definitions = map[Opcode]*Definition{
 	OpStrptime:    {"OpStrptime", nil},
 	OpFromUnix:    {"OpFromUnix", nil},
 	OpToUnix:      {"OpToUnix", nil},
+	OpDateTrunc:   {"OpDateTrunc", []int{2}},
+	OpDatePart:    {"OpDatePart", []int{2}},
+	OpDateDiff:    {"OpDateDiff", nil},
 	OpSearchMatch: {"OpSearchMatch", nil},
 
 	OpCIDRMatch: {"OpCIDRMatch", []int{2}},

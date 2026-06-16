@@ -1324,6 +1324,43 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = toUnixValue(ts, unit, vm.Warnings)
 
+		case OpDateTrunc:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if (count != 2 && count != 3) || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: date_trunc count %d invalid for stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			args := vm.stack[vm.sp-int(count) : vm.sp]
+			result := dateTruncValue(args, vm.Warnings)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpDatePart:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if (count != 2 && count != 3) || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: date_part count %d invalid for stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			args := vm.stack[vm.sp-int(count) : vm.sp]
+			result := datePartValue(args, vm.Warnings)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpDateDiff:
+			part := vm.stack[vm.sp-1]
+			b := vm.stack[vm.sp-2]
+			a := vm.stack[vm.sp-3]
+			vm.sp -= 2
+			vm.stack[vm.sp-1] = dateDiffValue(a, b, part, vm.Warnings)
+
 		case OpBucket:
 			bounds := vm.stack[vm.sp-1]
 			x := vm.stack[vm.sp-2]
@@ -3785,6 +3822,168 @@ func splitUnixEpoch(n int64, unit string) (int64, int64, bool) {
 		return n / int64(time.Second), n % int64(time.Second), true
 	default:
 		return 0, 0, false
+	}
+}
+
+func dateTruncValue(args []event.Value, w *WarningCounters) event.Value {
+	ts, loc, part, ok := calendarArgs(args, w)
+	if !ok {
+		return event.NullValue()
+	}
+	t := ts.In(loc)
+	year, month, day := t.Date()
+	hour, min, _ := t.Clock()
+
+	var out time.Time
+	switch part {
+	case "minute":
+		out = time.Date(year, month, day, hour, min, 0, 0, loc)
+	case "hour":
+		out = time.Date(year, month, day, hour, 0, 0, 0, loc)
+	case "day":
+		out = time.Date(year, month, day, 0, 0, 0, 0, loc)
+	case "week":
+		start := time.Date(year, month, day, 0, 0, 0, 0, loc)
+		daysSinceMonday := (int(start.Weekday()) + 6) % 7
+		out = start.AddDate(0, 0, -daysSinceMonday)
+	case "month":
+		out = time.Date(year, month, 1, 0, 0, 0, 0, loc)
+	case "quarter":
+		qMonth := time.Month(((int(month)-1)/3)*3 + 1)
+		out = time.Date(year, qMonth, 1, 0, 0, 0, 0, loc)
+	case "year":
+		out = time.Date(year, 1, 1, 0, 0, 0, 0, loc)
+	default:
+		incrementTypeWarning(w)
+		return event.NullValue()
+	}
+	return event.TimestampValue(out.UTC())
+}
+
+func datePartValue(args []event.Value, w *WarningCounters) event.Value {
+	ts, loc, part, ok := calendarArgs(args, w)
+	if !ok {
+		return event.NullValue()
+	}
+	t := ts.In(loc)
+
+	switch part {
+	case "hour":
+		return event.IntValue(int64(t.Hour()))
+	case "minute":
+		return event.IntValue(int64(t.Minute()))
+	case "day":
+		return event.IntValue(int64(t.Day()))
+	case "month":
+		return event.IntValue(int64(t.Month()))
+	case "year":
+		return event.IntValue(int64(t.Year()))
+	case "dow":
+		return event.IntValue(int64(t.Weekday()))
+	case "week":
+		_, week := t.ISOWeek()
+		return event.IntValue(int64(week))
+	default:
+		incrementTypeWarning(w)
+		return event.NullValue()
+	}
+}
+
+func dateDiffValue(a, b, part event.Value, w *WarningCounters) event.Value {
+	start, ok := timestampFromValue(a, w)
+	if !ok {
+		return event.NullValue()
+	}
+	end, ok := timestampFromValue(b, w)
+	if !ok {
+		return event.NullValue()
+	}
+	if part.IsNull() || part.Type() != event.FieldTypeString {
+		incrementTypeWarning(w)
+		return event.NullValue()
+	}
+
+	delta := end.Sub(start)
+	switch strings.ToLower(part.AsString()) {
+	case "second":
+		return event.IntValue(int64(delta / time.Second))
+	case "minute":
+		return event.IntValue(int64(delta / time.Minute))
+	case "hour":
+		return event.IntValue(int64(delta / time.Hour))
+	case "day":
+		return event.IntValue(int64(delta / (24 * time.Hour)))
+	case "week":
+		return event.IntValue(int64(delta / (7 * 24 * time.Hour)))
+	case "month":
+		return event.IntValue(int64(monthDiff(start.UTC(), end.UTC())))
+	case "quarter":
+		return event.IntValue(int64(monthDiff(start.UTC(), end.UTC()) / 3))
+	case "year":
+		return event.IntValue(int64(monthDiff(start.UTC(), end.UTC()) / 12))
+	default:
+		incrementTypeWarning(w)
+		return event.NullValue()
+	}
+}
+
+func calendarArgs(args []event.Value, w *WarningCounters) (time.Time, *time.Location, string, bool) {
+	if len(args) != 2 && len(args) != 3 {
+		incrementTypeWarning(w)
+		return time.Time{}, nil, "", false
+	}
+	ts, ok := timestampFromValue(args[0], w)
+	if !ok {
+		return time.Time{}, nil, "", false
+	}
+	if args[1].IsNull() || args[1].Type() != event.FieldTypeString {
+		incrementTypeWarning(w)
+		return time.Time{}, nil, "", false
+	}
+	loc := time.UTC
+	if len(args) == 3 {
+		if args[2].IsNull() || args[2].Type() != event.FieldTypeString {
+			incrementTypeWarning(w)
+			return time.Time{}, nil, "", false
+		}
+		loaded, err := time.LoadLocation(args[2].AsString())
+		if err != nil {
+			incrementTypeWarning(w)
+			return time.Time{}, nil, "", false
+		}
+		loc = loaded
+	}
+
+	return ts, loc, strings.ToLower(args[1].AsString()), true
+}
+
+func timestampFromValue(v event.Value, w *WarningCounters) (time.Time, bool) {
+	if v.IsNull() {
+		return time.Time{}, false
+	}
+	switch v.Type() {
+	case event.FieldTypeTimestamp:
+		return v.AsTimestamp(), true
+	case event.FieldTypeString:
+		parsed, err := time.Parse(time.RFC3339Nano, v.AsString())
+		if err != nil {
+			incrementTypeWarning(w)
+			return time.Time{}, false
+		}
+		return parsed.UTC(), true
+	default:
+		incrementTypeWarning(w)
+		return time.Time{}, false
+	}
+}
+
+func monthDiff(start, end time.Time) int {
+	return (end.Year()-start.Year())*12 + int(end.Month()-start.Month())
+}
+
+func incrementTypeWarning(w *WarningCounters) {
+	if w != nil {
+		w.Increment(warnTypeError)
 	}
 }
 

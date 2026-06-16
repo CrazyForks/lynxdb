@@ -1853,6 +1853,46 @@ func TestConformance_UnixEpochFunctions(t *testing.T) {
 	})
 }
 
+func TestConformance_CalendarFunctions(t *testing.T) {
+	t.Run("date_trunc hour", func(t *testing.T) {
+		ts := time.Date(2026, 6, 16, 14, 37, 55, 123, time.UTC)
+		fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+		result, _ := runLF(t, call("date_trunc", ident("ts"), litStr("hour")), fields)
+		assertTimestamp(t, result, time.Date(2026, 6, 16, 14, 0, 0, 0, time.UTC), "date_trunc hour")
+	})
+	t.Run("date_trunc timezone day", func(t *testing.T) {
+		ts := time.Date(2026, 6, 16, 1, 30, 0, 0, time.UTC)
+		fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+		result, _ := runLF(t, call("date_trunc", ident("ts"), litStr("day"), litStr("Europe/Amsterdam")), fields)
+		assertTimestamp(t, result, time.Date(2026, 6, 15, 22, 0, 0, 0, time.UTC), "date_trunc tz day")
+	})
+	t.Run("date_part", func(t *testing.T) {
+		ts := time.Date(2026, 6, 16, 14, 37, 0, 0, time.UTC)
+		fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+		result, _ := runLF(t, call("date_part", ident("ts"), litStr("hour")), fields)
+		assertInt(t, result, 14, "date_part hour")
+
+		result, _ = runLF(t, call("date_part", ident("ts"), litStr("dow")), fields)
+		assertInt(t, result, 2, "date_part dow")
+	})
+	t.Run("date_diff", func(t *testing.T) {
+		a := time.Date(2026, 6, 10, 0, 0, 0, 0, time.UTC)
+		b := time.Date(2026, 6, 16, 12, 0, 0, 0, time.UTC)
+		fields := map[string]event.Value{"a": event.TimestampValue(a), "b": event.TimestampValue(b)}
+
+		result, _ := runLF(t, call("date_diff", ident("a"), ident("b"), litStr("day")), fields)
+		assertInt(t, result, 6, "date_diff day")
+
+		result, _ = runLF(t, call("date_diff", ident("a"), ident("b"), litStr("hour")), fields)
+		assertInt(t, result, 156, "date_diff hour")
+	})
+	t.Run("invalid part", func(t *testing.T) {
+		result, warnings := runLF(t, call("date_part", litStr("2026-06-16T00:00:00Z"), litStr("era")), nil)
+		assertNull(t, result, "date_part invalid part")
+		assertWarnings(t, warnings, "type_error", 1, "date_part invalid part")
+	})
+}
+
 // xxhash64(s) -> hex string
 
 func TestConformance_XXHash64_Basic(t *testing.T) {

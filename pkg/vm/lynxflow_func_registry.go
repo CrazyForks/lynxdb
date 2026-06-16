@@ -453,6 +453,9 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "day_of_week", minArgs: 1, maxArgs: 1, emit: lfEmitDayOfWeek},
 		{name: "from_unix", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpFromUnix)},
 		{name: "to_unix", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpToUnix)},
+		{name: "date_trunc", minArgs: 2, maxArgs: 3, emit: lfEmitVariadicOp(OpDateTrunc)},
+		{name: "date_part", minArgs: 2, maxArgs: 3, emit: lfEmitVariadicOp(OpDatePart)},
+		{name: "date_diff", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpDateDiff)},
 
 		// ---- Hash / network (§10) ----
 		{name: "md5", minArgs: 1, maxArgs: 1, emit: lfEmitHash(OpMD5)},

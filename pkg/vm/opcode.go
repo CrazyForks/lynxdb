@@ -257,6 +257,7 @@ const (
 	OpBitXor          Opcode = 0x77 // pop two ints; push bitwise XOR
 	OpBitShl          Opcode = 0x78 // pop int and shift count; push shifted int
 	OpBitShr          Opcode = 0x79 // pop int and shift count; push shifted int
+	OpTokens          Opcode = 0x7A // pop string; push tokenizer-contract tokens
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
@@ -535,6 +536,7 @@ var definitions = map[Opcode]*Definition{
 	OpBitXor:          {"OpBitXor", nil},
 	OpBitShl:          {"OpBitShl", nil},
 	OpBitShr:          {"OpBitShr", nil},
+	OpTokens:          {"OpTokens", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

@@ -765,6 +765,10 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			}
 			ip = newIP
 
+		case OpTokens:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execTokens(a)
+
 		case OpReplace:
 			newIP, err := vm.execReplace(ins, ip)
 			if err != nil {

@@ -433,6 +433,19 @@ func tokenize(s string) []string {
 	return tokens
 }
 
+func execTokens(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	rawTokens := tokenize(strings.ToLower(v.AsString()))
+	values := make([]event.Value, 0, len(rawTokens))
+	for _, token := range rawTokens {
+		values = append(values, event.StringValue(token))
+	}
+
+	return event.ArrayValue(values)
+}
+
 // OpSubstr0Based: 0-based start per RFC-002
 
 func substr0Based(str, start, length event.Value) event.Value {

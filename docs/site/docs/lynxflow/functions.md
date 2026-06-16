@@ -82,6 +82,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `contains_cs` | (field: string, sub: string) | `bool` | null_on_failure | - | Case-sensitive substring. |
 | `glob` | (field: string, pattern: string) | `bool` | null_on_failure | - | Glob match, case-sensitive; literal-prefix extraction when possible. |
 | `has_glob` | (field: string, pattern: string) | `bool` | null_on_failure | - | Whole-token glob match (*, ?, \-escapes), always case-insensitive; FST term-dictionary expansion. Moderate. |
+| `tokens` | (s: string) | `array` | null_on_failure | - | Return lowercase tokenizer-contract tokens. |
 
 ## Regex
 

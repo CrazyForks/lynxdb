@@ -382,6 +382,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "contains_cs", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpContains)},
 		{name: "glob", minArgs: 2, maxArgs: 2, emit: lfEmitGlob},
 		{name: "has_glob", minArgs: 2, maxArgs: 2, emit: lfEmitHasGlob},
+		{name: "tokens", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpTokens)},
 
 		// ---- Regex (§10) ----
 		{name: "matches", minArgs: 2, maxArgs: 2, emit: lfEmitMatches},

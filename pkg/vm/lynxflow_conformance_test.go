@@ -1521,6 +1521,18 @@ func TestConformance_Has_TokenMatch(t *testing.T) {
 	})
 }
 
+func TestLynxFlowTokensFunction(t *testing.T) {
+	result, _ := runLF(t, call("tokens", litStr("ERROR timeout_42 café")), nil)
+	arr := assertArray(t, result, 4, "tokens")
+	assertString(t, arr[0], "error", "tokens[0]")
+	assertString(t, arr[1], "timeout", "tokens[1]")
+	assertString(t, arr[2], "42", "tokens[2]")
+	assertString(t, arr[3], "café", "tokens[3]")
+
+	result, _ = runLF(t, call("tokens", litNull()), nil)
+	assertNull(t, result, "tokens null")
+}
+
 // cidr_match
 
 func TestConformance_CIDRMatch(t *testing.T) {

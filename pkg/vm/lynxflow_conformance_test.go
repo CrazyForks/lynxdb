@@ -1604,6 +1604,18 @@ func TestConformance_Split_EmptyString(t *testing.T) {
 	assertString(t, arr[0], "", "split empty [0]")
 }
 
+func TestLynxFlowSplitRegexFunction(t *testing.T) {
+	result, _ := runLF(t, call("split_regex", litStr("a   b\tc"), litStr(`\s+`)), nil)
+	arr := assertArray(t, result, 3, "split_regex whitespace")
+	assertString(t, arr[0], "a", "split_regex[0]")
+	assertString(t, arr[1], "b", "split_regex[1]")
+	assertString(t, arr[2], "c", "split_regex[2]")
+
+	result, _ = runLF(t, call("split_regex", litStr("abc"), litStr(`\s+`)), nil)
+	arr = assertArray(t, result, 1, "split_regex no match")
+	assertString(t, arr[0], "abc", "split_regex no match [0]")
+}
+
 func TestConformance_Split_NullPropagation(t *testing.T) {
 	// split(null, ",") -> null
 	result1, _ := runLF(t, call("split", litNull(), litStr(",")), nil)

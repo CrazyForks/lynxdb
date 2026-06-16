@@ -810,6 +810,21 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 				vm.stack[vm.sp-1] = event.ArrayValue(elems)
 			}
 
+		case OpSplitRegex:
+			regIdx, reErr := readIndexSafe(ins, ip, len(vm.regexCache), "regex")
+			if reErr != nil {
+				return event.NullValue(), reErr
+			}
+			ip += 2
+			a := vm.stack[vm.sp-1]
+			if a.IsNull() || a.Type() != event.FieldTypeString {
+				vm.stack[vm.sp-1] = event.NullValue()
+			} else if vm.regexCache[regIdx] == nil {
+				return event.NullValue(), fmt.Errorf("split_regex: invalid pattern %q", vm.lastProgRegexPattern(regIdx))
+			} else {
+				vm.stack[vm.sp-1] = splitRegexValue(vm.regexCache[regIdx], a.AsString())
+			}
+
 		case OpJoinArr:
 			// join(arr, sep) -> string; concatenates array elements.
 			sep := vm.stack[vm.sp-1]
@@ -2926,6 +2941,16 @@ func countSubstrValue(s, sub event.Value) event.Value {
 
 func countMatchesValue(re *regexp.Regexp, s string) event.Value {
 	return event.IntValue(int64(len(re.FindAllStringIndex(s, -1))))
+}
+
+func splitRegexValue(re *regexp.Regexp, s string) event.Value {
+	parts := re.Split(s, -1)
+	values := make([]event.Value, 0, len(parts))
+	for _, part := range parts {
+		values = append(values, event.StringValue(part))
+	}
+
+	return event.ArrayValue(values)
 }
 
 func roundValue(num, decimals event.Value) event.Value {

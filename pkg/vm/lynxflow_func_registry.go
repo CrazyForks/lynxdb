@@ -347,6 +347,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "replace", minArgs: 3, maxArgs: 3, emit: lfEmitReplace},
 		{name: "replace_first", minArgs: 3, maxArgs: 3, emit: lfEmitReplaceFirst},
 		{name: "split", minArgs: 2, maxArgs: 2, emit: lfEmitSplit},
+		{name: "split_regex", minArgs: 2, maxArgs: 2, emit: lfEmitSplitRegex},
 		{name: "split_part", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpSplitPart)},
 		{name: "index_of", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIndexOf)},
 		{name: "count_substr", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpCountSubstr)},
@@ -793,6 +794,19 @@ func lfEmitSplit(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	c.prog.EmitOp(OpSplitArr)
+	return nil
+}
+
+func lfEmitSplitRegex(c *lfCompiler, call *lfast.Call) error {
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	pattern := lfExprToString(call.Args[1])
+	regIdx, err := addValidatedRegex(c, "split_regex", pattern)
+	if err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpSplitRegex, regIdx)
 	return nil
 }
 

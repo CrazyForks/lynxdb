@@ -31,6 +31,7 @@ var functions = []Function{
 	{Name: "replace", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}, {Name: "with", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Regex replace all."},
 	{Name: "replace_first", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}, {Name: "with", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Regex replace first match."},
 	{Name: "split", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "sep", Type: TString}}, Result: TArray, Fallibility: NullOnFailure},
+	{Name: "split_regex", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "pattern", Type: TRegex}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Split a string by regex matches."},
 	{Name: "split_part", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "sep", Type: TString}, {Name: "n", Type: TInt}}, Result: TString, Fallibility: NullOnFailure, Doc: "Return the 0-based split segment, or null when out of range."},
 	{Name: "index_of", Category: "string", Params: []Param{{Name: "x", Type: TAny}, {Name: "needle", Type: TAny}}, Result: TInt, Fallibility: NullOnFailure, Doc: "0-based index in a string or array; null when not found."},
 	{Name: "count_substr", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "sub", Type: TString}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Count non-overlapping substring occurrences."},

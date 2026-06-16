@@ -104,6 +104,9 @@ var functions = []Function{
 	{Name: "all", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "filter", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TArray, Fallibility: NullOnFailure},
 	{Name: "map", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "fn", Type: TLambda}}, Result: TArray, Fallibility: NullOnFailure},
+	{Name: "array_count", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Count elements matching a predicate."},
+	{Name: "array_has_any", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},
+	{Name: "array_has_all", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},
 
 	// object
 	{Name: "keys", Category: "object", Params: []Param{{Name: "obj", Type: TObject}}, Result: TArray, Fallibility: NullOnFailure},

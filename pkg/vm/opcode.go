@@ -229,6 +229,8 @@ const (
 	OpBucket          Opcode = 0x2B // pop 2 (x, bounds array); push largest bound <= x
 	OpPathNormalize   Opcode = 0x2C // pop string; push normalized slash path
 	OpUserAgentParse  Opcode = 0x2D // pop string; push object {name, version, raw}
+	OpArrayHasAny     Opcode = 0x2E // pop 2 arrays (a, b); true if any element of b is in a
+	OpArrayHasAll     Opcode = 0x2F // pop 2 arrays (a, b); true if every element of b is in a
 
 	// JSON Functions.
 	OpJsonExtract  Opcode = 0xD0 // pop path, pop field, push extracted value
@@ -467,6 +469,8 @@ var definitions = map[Opcode]*Definition{
 	OpBucket:          {"OpBucket", nil},
 	OpPathNormalize:   {"OpPathNormalize", nil},
 	OpUserAgentParse:  {"OpUserAgentParse", nil},
+	OpArrayHasAny:     {"OpArrayHasAny", nil},
+	OpArrayHasAll:     {"OpArrayHasAll", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

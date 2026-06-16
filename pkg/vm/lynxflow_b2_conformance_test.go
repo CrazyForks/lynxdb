@@ -516,6 +516,49 @@ func TestB2_ArraySort_Empty(t *testing.T) {
 	assertArray(t, result, 0, "sort empty")
 }
 
+func TestB2_ArrayCount(t *testing.T) {
+	expr := call("array_count",
+		array(litInt(1), litInt(2), litInt(3), litInt(4)),
+		lambda("x", binOp(lfast.OpGt, ident("x"), litInt(2))),
+	)
+	result, _ := runLF(t, expr, nil)
+	assertInt(t, result, 2, "array_count")
+}
+
+func TestB2_ArrayHasAnyAll(t *testing.T) {
+	t.Run("any", func(t *testing.T) {
+		expr := call("array_has_any",
+			array(litStr("pii"), litStr("secret")),
+			array(litStr("public"), litStr("secret")),
+		)
+		result, _ := runLF(t, expr, nil)
+		assertBool(t, result, true, "array_has_any true")
+
+		expr = call("array_has_any",
+			array(litStr("pii")),
+			array(litStr("public"), litStr("debug")),
+		)
+		result, _ = runLF(t, expr, nil)
+		assertBool(t, result, false, "array_has_any false")
+	})
+
+	t.Run("all", func(t *testing.T) {
+		expr := call("array_has_all",
+			array(litStr("pii"), litStr("secret"), litStr("audit")),
+			array(litStr("pii"), litStr("secret")),
+		)
+		result, _ := runLF(t, expr, nil)
+		assertBool(t, result, true, "array_has_all true")
+
+		expr = call("array_has_all",
+			array(litStr("pii")),
+			array(litStr("pii"), litStr("secret")),
+		)
+		result, _ = runLF(t, expr, nil)
+		assertBool(t, result, false, "array_has_all false")
+	})
+}
+
 // Array functions: flatten
 
 func TestB2_Flatten(t *testing.T) {

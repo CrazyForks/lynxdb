@@ -879,6 +879,52 @@ func execArraySort(v event.Value) event.Value {
 	return event.ArrayValue(sorted)
 }
 
+func execArrayHasAny(a, b event.Value) event.Value {
+	aArr, bArr, ok := arrayPair(a, b)
+	if !ok {
+		return event.NullValue()
+	}
+	for _, required := range bArr {
+		if arrayContains(aArr, required) {
+			return event.BoolValue(true)
+		}
+	}
+
+	return event.BoolValue(false)
+}
+
+func execArrayHasAll(a, b event.Value) event.Value {
+	aArr, bArr, ok := arrayPair(a, b)
+	if !ok {
+		return event.NullValue()
+	}
+	for _, required := range bArr {
+		if !arrayContains(aArr, required) {
+			return event.BoolValue(false)
+		}
+	}
+
+	return event.BoolValue(true)
+}
+
+func arrayPair(a, b event.Value) ([]event.Value, []event.Value, bool) {
+	if a.IsNull() || b.IsNull() || a.Type() != event.FieldTypeArray || b.Type() != event.FieldTypeArray {
+		return nil, nil, false
+	}
+
+	return a.AsArray(), b.AsArray(), true
+}
+
+func arrayContains(arr []event.Value, needle event.Value) bool {
+	for _, item := range arr {
+		if valuesEqual(item, needle) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // execFlatten flattens one level of nested arrays.
 func execFlatten(v event.Value) event.Value {
 	if v.IsNull() {

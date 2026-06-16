@@ -404,6 +404,9 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "all", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayAll)},
 		{name: "filter", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayFilter)},
 		{name: "map", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayMap)},
+		{name: "array_count", minArgs: 2, maxArgs: 2, emit: lfEmitArrayCount},
+		{name: "array_has_any", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAny)},
+		{name: "array_has_all", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAll)},
 
 		// ---- Object (§10) ----
 		{name: "keys", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpKeys)},
@@ -1146,6 +1149,14 @@ func lfEmitLambdaOp(op Opcode) func(*lfCompiler, *lfast.Call) error {
 		c.prog.EmitOp(op, subIdx)
 		return nil
 	}
+}
+
+func lfEmitArrayCount(c *lfCompiler, call *lfast.Call) error {
+	if err := lfEmitLambdaOp(OpArrayFilter)(c, call); err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpLen)
+	return nil
 }
 
 // lfExprToString extracts a string from a LynxFlow expression literal.

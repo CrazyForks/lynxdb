@@ -1902,6 +1902,18 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execArraySort(a)
 
+		case OpArrayHasAny:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execArrayHasAny(a, b)
+
+		case OpArrayHasAll:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execArrayHasAll(a, b)
+
 		case OpFlatten:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execFlatten(a)

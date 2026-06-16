@@ -373,6 +373,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "rpad", minArgs: 2, maxArgs: 3, emit: lfEmitPad(OpRPad)},
 		{name: "repeat", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpRepeat)},
 		{name: "translate", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpTranslate)},
+		{name: "levenshtein", minArgs: 2, maxArgs: 3, emit: lfEmitVariadicOp(OpLevenshtein)},
+		{name: "jaro_winkler", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpJaroWinkler)},
 		{name: "join", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpJoinArr)},
 		{name: "starts_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpStartsWith)},
 		{name: "ends_with", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpEndsWith)},

@@ -1466,6 +1466,27 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp -= 2
 			vm.stack[vm.sp-1] = execTranslate(s, from, to)
 
+		case OpLevenshtein:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if (count != 2 && count != 3) || int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: levenshtein count %d invalid for stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			args := vm.stack[vm.sp-int(count) : vm.sp]
+			result := execLevenshtein(args)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
+
+		case OpJaroWinkler:
+			b := vm.stack[vm.sp-1]
+			a := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = execJaroWinkler(a, b)
+
 		case OpURLParam:
 			name := vm.stack[vm.sp-1]
 			rawURL := vm.stack[vm.sp-2]

@@ -55,6 +55,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `rpad` | (s: string, n: int, char?: string) | `string` | null_on_failure | - | Right-pad a string to n runes; pad defaults to space. |
 | `repeat` | (s: string, n: int) | `string` | null_on_failure | - | Repeat a string n times. |
 | `translate` | (s: string, from: string, to: string) | `string` | null_on_failure | - | Replace characters from one set with characters from another. |
+| `levenshtein` | (a: string, b: string, damerau: bool?) | `int` | null_on_failure | - | Edit distance between two strings. |
+| `jaro_winkler` | (a: string, b: string) | `float` | null_on_failure | - | Jaro-Winkler similarity between two strings. |
 | `join` | (arr: array, sep: string) | `string` | null_on_failure | - | - |
 | `starts_with` | (s: string, prefix: string) | `bool` | null_on_failure | - | - |
 | `ends_with` | (s: string, suffix: string) | `bool` | null_on_failure | - | - |

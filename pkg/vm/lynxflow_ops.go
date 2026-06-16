@@ -1905,6 +1905,153 @@ func execTranslate(s, from, to event.Value) event.Value {
 	return event.StringValue(b.String())
 }
 
+const maxFuzzyCells = 4_000_000
+
+func execLevenshtein(args []event.Value) event.Value {
+	if len(args) != 2 && len(args) != 3 {
+		return event.NullValue()
+	}
+	if args[0].IsNull() || args[1].IsNull() ||
+		args[0].Type() != event.FieldTypeString ||
+		args[1].Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	damerau := false
+	if len(args) == 3 {
+		if args[2].IsNull() || args[2].Type() != event.FieldTypeBool {
+			return event.NullValue()
+		}
+		damerau = args[2].AsBool()
+	}
+
+	a := []rune(args[0].AsString())
+	b := []rune(args[1].AsString())
+	if len(a) == 0 {
+		return event.IntValue(int64(len(b)))
+	}
+	if len(b) == 0 {
+		return event.IntValue(int64(len(a)))
+	}
+	if len(a)*len(b) > maxFuzzyCells {
+		return event.NullValue()
+	}
+
+	return event.IntValue(int64(levenshteinDistance(a, b, damerau)))
+}
+
+func levenshteinDistance(a, b []rune, damerau bool) int {
+	prevPrev := make([]int, len(b)+1)
+	prev := make([]int, len(b)+1)
+	cur := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 0
+			if a[i-1] != b[j-1] {
+				cost = 1
+			}
+			best := minEdit3(cur[j-1]+1, prev[j]+1, prev[j-1]+cost)
+			if damerau && i > 1 && j > 1 && a[i-1] == b[j-2] && a[i-2] == b[j-1] {
+				if transposed := prevPrev[j-2] + 1; transposed < best {
+					best = transposed
+				}
+			}
+			cur[j] = best
+		}
+		prevPrev, prev, cur = prev, cur, prevPrev
+	}
+	return prev[len(b)]
+}
+
+func minEdit3(a, b, c int) int {
+	if b < a {
+		a = b
+	}
+	if c < a {
+		a = c
+	}
+	return a
+}
+
+func execJaroWinkler(a, b event.Value) event.Value {
+	if a.IsNull() || b.IsNull() ||
+		a.Type() != event.FieldTypeString ||
+		b.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	return event.FloatValue(jaroWinklerSimilarity([]rune(a.AsString()), []rune(b.AsString())))
+}
+
+func jaroWinklerSimilarity(a, b []rune) float64 {
+	if len(a) == 0 && len(b) == 0 {
+		return 1
+	}
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+
+	matchDistance := len(a)
+	if len(b) > matchDistance {
+		matchDistance = len(b)
+	}
+	matchDistance = matchDistance/2 - 1
+	if matchDistance < 0 {
+		matchDistance = 0
+	}
+
+	aMatches := make([]bool, len(a))
+	bMatches := make([]bool, len(b))
+	matches := 0
+	for i := range a {
+		start := i - matchDistance
+		if start < 0 {
+			start = 0
+		}
+		end := i + matchDistance + 1
+		if end > len(b) {
+			end = len(b)
+		}
+		for j := start; j < end; j++ {
+			if bMatches[j] || a[i] != b[j] {
+				continue
+			}
+			aMatches[i] = true
+			bMatches[j] = true
+			matches++
+			break
+		}
+	}
+	if matches == 0 {
+		return 0
+	}
+
+	transpositions := 0
+	k := 0
+	for i := range a {
+		if !aMatches[i] {
+			continue
+		}
+		for !bMatches[k] {
+			k++
+		}
+		if a[i] != b[k] {
+			transpositions++
+		}
+		k++
+	}
+
+	m := float64(matches)
+	jaro := (m/float64(len(a)) + m/float64(len(b)) + (m-float64(transpositions)/2)/m) / 3
+	prefix := 0
+	for prefix < 4 && prefix < len(a) && prefix < len(b) && a[prefix] == b[prefix] {
+		prefix++
+	}
+	return jaro + float64(prefix)*0.1*(1-jaro)
+}
+
 func formatScaledNumber(n, base float64, units []string, sep string) string {
 	sign := ""
 	if n < 0 {

@@ -41,6 +41,8 @@ var functions = []Function{
 	{Name: "rpad", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "n", Type: TInt}, {Name: "char", Type: TString, Optional: true}}, Result: TString, Fallibility: NullOnFailure, Doc: "Right-pad a string to n runes; pad defaults to space."},
 	{Name: "repeat", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "n", Type: TInt}}, Result: TString, Fallibility: NullOnFailure, Doc: "Repeat a string n times."},
 	{Name: "translate", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "from", Type: TString}, {Name: "to", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Replace characters from one set with characters from another."},
+	{Name: "levenshtein", Category: "string", Params: []Param{{Name: "a", Type: TString}, {Name: "b", Type: TString}, {Name: "damerau", Type: TBool, Optional: true}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Edit distance between two strings."},
+	{Name: "jaro_winkler", Category: "string", Params: []Param{{Name: "a", Type: TString}, {Name: "b", Type: TString}}, Result: TFloat, Fallibility: NullOnFailure, Doc: "Jaro-Winkler similarity between two strings."},
 	{Name: "join", Category: "string", Params: []Param{{Name: "arr", Type: TArray}, {Name: "sep", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "starts_with", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "prefix", Type: TString}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "ends_with", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "suffix", Type: TString}}, Result: TBool, Fallibility: NullOnFailure},

@@ -371,6 +371,23 @@ func TestLynxFlowStringPadRepeatTranslateFunctions(t *testing.T) {
 	assertString(t, result, "xb", "translate deletes missing replacements")
 }
 
+func TestLynxFlowFuzzyStringFunctions(t *testing.T) {
+	result, _ := runLF(t, call("levenshtein", litStr("kitten"), litStr("sitting")), nil)
+	assertInt(t, result, 3, "levenshtein")
+
+	result, _ = runLF(t, call("levenshtein", litStr("ca"), litStr("ac"), litBool(true)), nil)
+	assertInt(t, result, 1, "levenshtein damerau")
+
+	result, _ = runLF(t, call("jaro_winkler", litStr("MARTHA"), litStr("MARHTA")), nil)
+	assertFloat(t, result, 0.9611111111111111, "jaro_winkler")
+
+	result, _ = runLF(t, call("levenshtein", litStr("a"), litStr("b"), litStr("true")), nil)
+	assertNull(t, result, "levenshtein invalid flag")
+
+	result, _ = runLF(t, call("jaro_winkler", litStr("a"), litNull()), nil)
+	assertNull(t, result, "jaro_winkler null")
+}
+
 func TestLynxFlowStringCountFunctions(t *testing.T) {
 	result, _ := runLF(t, call("count_substr", litStr("/api/v1/users"), litStr("/")), nil)
 	assertInt(t, result, 3, "count_substr")

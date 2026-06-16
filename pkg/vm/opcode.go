@@ -305,6 +305,8 @@ const (
 	OpJsonMerge    Opcode = 0xD9 // pop json2, pop json1, push merged JSON
 	OpJsonValue    Opcode = 0xDA // pop field and path; push scalar JSON value or null
 	OpJsonQuery    Opcode = 0xDB // pop field and path; push raw JSON fragment or null
+	OpLevenshtein  Opcode = 0xDC // 2-byte count; pop a, b[, damerau]; push edit distance
+	OpJaroWinkler  Opcode = 0xDD // pop a and b; push similarity
 
 	OpReturn Opcode = 0xFF
 )
@@ -528,6 +530,8 @@ var definitions = map[Opcode]*Definition{
 	OpJsonMerge:    {"OpJsonMerge", nil},
 	OpJsonValue:    {"OpJsonValue", nil},
 	OpJsonQuery:    {"OpJsonQuery", nil},
+	OpLevenshtein:  {"OpLevenshtein", []int{2}},
+	OpJaroWinkler:  {"OpJaroWinkler", nil},
 
 	// RFC-002 b2 lambda + array/object
 	OpArrayAny:        {"OpArrayAny", []int{2}},

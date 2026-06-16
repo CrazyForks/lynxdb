@@ -146,6 +146,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `strptime` | (s: string, format: string) | `timestamp` | null_on_failure | `strptime!` | - |
 | `time_of_day` | (ts: timestamp) | `duration` | null_on_failure | - | - |
 | `day_of_week` | (ts: timestamp) | `int` | null_on_failure | - | 0 = Sunday. |
+| `from_unix` | (n: int, unit: string) | `timestamp` | null_on_failure | - | Convert Unix epoch in s, ms, us, or ns to a timestamp. |
+| `to_unix` | (ts: timestamp, unit: string) | `int` | null_on_failure | - | Convert a timestamp to Unix epoch in s, ms, us, or ns. |
 
 ## Hash
 

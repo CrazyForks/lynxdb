@@ -153,6 +153,8 @@ const (
 	OpPrintf    Opcode = 0xC6
 	OpIPMask    Opcode = 0xC7
 	OpStrptime  Opcode = 0xC8
+	OpFromUnix  Opcode = 0xCA
+	OpToUnix    Opcode = 0xCB
 	// OpSearchMatch is RESERVED (0xC9). The handler was removed; the opcode
 	// constant is kept so that append-only numbering is preserved and any
 	// residual persisted bytecode (e.g. in materialized-view caches) gets a
@@ -443,6 +445,8 @@ var definitions = map[Opcode]*Definition{
 	OpPrintf:      {"OpPrintf", []int{2}},
 	OpIPMask:      {"OpIPMask", nil},
 	OpStrptime:    {"OpStrptime", nil},
+	OpFromUnix:    {"OpFromUnix", nil},
+	OpToUnix:      {"OpToUnix", nil},
 	OpSearchMatch: {"OpSearchMatch", nil},
 
 	OpCIDRMatch: {"OpCIDRMatch", []int{2}},

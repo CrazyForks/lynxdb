@@ -1822,6 +1822,37 @@ func TestConformance_DayOfWeek_Saturday(t *testing.T) {
 	assertInt(t, result, 6, "day_of_week Saturday")
 }
 
+func TestConformance_UnixEpochFunctions(t *testing.T) {
+	t.Run("from_unix milliseconds", func(t *testing.T) {
+		result, _ := runLF(t, call("from_unix", litInt(1_700_000_000_123), litStr("ms")), nil)
+		assertTimestamp(t, result, time.Unix(1_700_000_000, 123_000_000).UTC(), "from_unix ms")
+	})
+	t.Run("from_unix nanoseconds", func(t *testing.T) {
+		result, _ := runLF(t, call("from_unix", litInt(1_700_000_000_123_456_789), litStr("ns")), nil)
+		assertTimestamp(t, result, time.Unix(1_700_000_000, 123_456_789).UTC(), "from_unix ns")
+	})
+	t.Run("to_unix units", func(t *testing.T) {
+		ts := time.Unix(1_700_000_000, 123_456_789).UTC()
+		fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+
+		result, _ := runLF(t, call("to_unix", ident("ts"), litStr("s")), fields)
+		assertInt(t, result, 1_700_000_000, "to_unix s")
+
+		result, _ = runLF(t, call("to_unix", ident("ts"), litStr("us")), fields)
+		assertInt(t, result, 1_700_000_000_123_456, "to_unix us")
+	})
+	t.Run("invalid unit", func(t *testing.T) {
+		result, warnings := runLF(t, call("from_unix", litInt(1), litStr("days")), nil)
+		assertNull(t, result, "from_unix invalid unit")
+		assertWarnings(t, warnings, "type_error", 1, "from_unix invalid unit")
+	})
+	t.Run("invalid type", func(t *testing.T) {
+		result, warnings := runLF(t, call("to_unix", litStr("not timestamp"), litStr("ms")), nil)
+		assertNull(t, result, "to_unix invalid type")
+		assertWarnings(t, warnings, "type_error", 1, "to_unix invalid type")
+	})
+}
+
 // xxhash64(s) -> hex string
 
 func TestConformance_XXHash64_Basic(t *testing.T) {

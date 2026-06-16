@@ -451,6 +451,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 			emitStrict: lfStrictCast("strptime", OpStrptime)},
 		{name: "time_of_day", minArgs: 1, maxArgs: 1, emit: lfEmitTimeOfDay},
 		{name: "day_of_week", minArgs: 1, maxArgs: 1, emit: lfEmitDayOfWeek},
+		{name: "from_unix", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpFromUnix)},
+		{name: "to_unix", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpToUnix)},
 
 		// ---- Hash / network (§10) ----
 		{name: "md5", minArgs: 1, maxArgs: 1, emit: lfEmitHash(OpMD5)},

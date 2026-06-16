@@ -1312,6 +1312,18 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = binTimestampValue(tsVal, durVal)
 
+		case OpFromUnix:
+			unit := vm.stack[vm.sp-1]
+			n := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = fromUnixValue(n, unit, vm.Warnings)
+
+		case OpToUnix:
+			unit := vm.stack[vm.sp-1]
+			ts := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = toUnixValue(ts, unit, vm.Warnings)
+
 		case OpBucket:
 			bounds := vm.stack[vm.sp-1]
 			x := vm.stack[vm.sp-2]
@@ -3709,6 +3721,71 @@ func dayOfWeekValue(v event.Value, w *WarningCounters) event.Value {
 		return event.NullValue()
 	}
 	return event.IntValue(int64(ts.UTC().Weekday()))
+}
+
+func fromUnixValue(n, unit event.Value, w *WarningCounters) event.Value {
+	if n.IsNull() || unit.IsNull() {
+		return event.NullValue()
+	}
+	if n.Type() != event.FieldTypeInt || unit.Type() != event.FieldTypeString {
+		if w != nil {
+			w.Increment(warnTypeError)
+		}
+		return event.NullValue()
+	}
+
+	sec, nsec, ok := splitUnixEpoch(n.AsInt(), unit.AsString())
+	if !ok {
+		if w != nil {
+			w.Increment(warnTypeError)
+		}
+		return event.NullValue()
+	}
+	return event.TimestampValue(time.Unix(sec, nsec).UTC())
+}
+
+func toUnixValue(ts, unit event.Value, w *WarningCounters) event.Value {
+	if ts.IsNull() || unit.IsNull() {
+		return event.NullValue()
+	}
+	if ts.Type() != event.FieldTypeTimestamp || unit.Type() != event.FieldTypeString {
+		if w != nil {
+			w.Increment(warnTypeError)
+		}
+		return event.NullValue()
+	}
+
+	t := ts.AsTimestamp()
+	switch unit.AsString() {
+	case "s":
+		return event.IntValue(t.Unix())
+	case "ms":
+		return event.IntValue(t.Unix()*1_000 + int64(t.Nanosecond())/1_000_000)
+	case "us":
+		return event.IntValue(t.Unix()*1_000_000 + int64(t.Nanosecond())/1_000)
+	case "ns":
+		return event.IntValue(t.UnixNano())
+	default:
+		if w != nil {
+			w.Increment(warnTypeError)
+		}
+		return event.NullValue()
+	}
+}
+
+func splitUnixEpoch(n int64, unit string) (int64, int64, bool) {
+	switch unit {
+	case "s":
+		return n, 0, true
+	case "ms":
+		return n / 1_000, (n % 1_000) * int64(time.Millisecond), true
+	case "us":
+		return n / 1_000_000, (n % 1_000_000) * int64(time.Microsecond), true
+	case "ns":
+		return n / int64(time.Second), n % int64(time.Second), true
+	default:
+		return 0, 0, false
+	}
 }
 
 // xxhash64Value returns the hex-encoded 64-bit xxhash of a string value.

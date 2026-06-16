@@ -117,6 +117,8 @@ var functions = []Function{
 	{Name: "strptime", Category: "time", Params: []Param{{Name: "s", Type: TString}, {Name: "format", Type: TString}}, Result: TTimestamp, Fallibility: NullOnFailure, StrictVariant: true},
 	{Name: "time_of_day", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}}, Result: TDuration, Fallibility: NullOnFailure},
 	{Name: "day_of_week", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}}, Result: TInt, Fallibility: NullOnFailure, Doc: "0 = Sunday."},
+	{Name: "from_unix", Category: "time", Params: []Param{{Name: "n", Type: TInt}, {Name: "unit", Type: TString}}, Result: TTimestamp, Fallibility: NullOnFailure, Doc: "Convert Unix epoch in s, ms, us, or ns to a timestamp."},
+	{Name: "to_unix", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "unit", Type: TString}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Convert a timestamp to Unix epoch in s, ms, us, or ns."},
 
 	// hash / network
 	{Name: "md5", Category: "hash", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},

@@ -334,6 +334,22 @@ func TestLynxFlowStringAccessorFunctions(t *testing.T) {
 	})
 }
 
+func TestLynxFlowBase64Functions(t *testing.T) {
+	result, _ := runLF(t, call("base64_encode", litStr("hello")), nil)
+	assertString(t, result, "aGVsbG8=", "base64_encode")
+
+	result, _ = runLF(t, call("base64_decode", litStr("aGVsbG8=")), nil)
+	assertString(t, result, "hello", "base64_decode")
+
+	result, _ = runLF(t, call("base64_decode", litStr("not base64")), nil)
+	assertNull(t, result, "base64_decode invalid")
+
+	err := runLFErr(t, callBang("base64_decode", litStr("not base64")), nil)
+	if err == nil {
+		t.Fatal("expected base64_decode! to fail on invalid input")
+	}
+}
+
 // §5.2 Three-Valued Logic Truth Table
 
 func TestConformance_3VL_And(t *testing.T) {

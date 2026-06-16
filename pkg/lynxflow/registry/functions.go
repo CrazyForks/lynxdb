@@ -37,6 +37,8 @@ var functions = []Function{
 	{Name: "ends_with", Category: "string", Params: []Param{{Name: "s", Type: TString}, {Name: "suffix", Type: TString}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "printf", Category: "string", Params: []Param{{Name: "format", Type: TString}, {Name: "args", Type: TAny, Variadic: true}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "urldecode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
+	{Name: "base64_decode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Decode standard base64; null on invalid input."},
+	{Name: "base64_encode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Encode a string as standard base64."},
 	{Name: "url_parse", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TObject, Fallibility: NullOnFailure, Doc: "Parse a URL into {scheme, host, port, path, query, fragment}."},
 	{Name: "url_domain", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its host."},
 	{Name: "url_path", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Parse a URL and return its path."},

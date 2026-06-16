@@ -8,6 +8,7 @@ package vm
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
@@ -1334,6 +1335,26 @@ func execSplitPart(s, sep, n event.Value) event.Value {
 	}
 
 	return event.StringValue(parts[idx])
+}
+
+func execBase64Decode(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	decoded, err := base64.StdEncoding.DecodeString(v.AsString())
+	if err != nil {
+		return event.NullValue()
+	}
+
+	return event.StringValue(string(decoded))
+}
+
+func execBase64Encode(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+
+	return event.StringValue(base64.StdEncoding.EncodeToString([]byte(v.AsString())))
 }
 
 func formatScaledNumber(n, base float64, units []string, sep string) string {

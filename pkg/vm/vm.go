@@ -1223,6 +1223,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp -= 2
 			vm.stack[vm.sp-1] = execSplitPart(s, sep, n)
 
+		case OpBase64Decode:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execBase64Decode(v)
+
+		case OpBase64Encode:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execBase64Encode(v)
+
 		case OpMD5:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = hashValue(a, "md5")

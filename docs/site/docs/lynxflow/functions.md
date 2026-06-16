@@ -181,6 +181,9 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `array_avg` | (arr: array) | `float` | null_on_failure | - | Average numeric array elements. |
 | `array_min` | (arr: array) | `any` | null_on_failure | - | Minimum comparable array element. |
 | `array_max` | (arr: array) | `any` | null_on_failure | - | Maximum comparable array element. |
+| `array_compact` | (arr: array) | `array` | null_on_failure | - | Remove consecutive duplicate elements. |
+| `array_deltas` | (arr: array) | `array` | null_on_failure | - | Adjacent differences with leading null. |
+| `array_cumsum` | (arr: array) | `array` | null_on_failure | - | Cumulative sums across array elements. |
 | `flatten` | (arr: array) | `array` | null_on_failure | - | One level. |
 | `any` | (arr: array, pred: lambda) | `bool` | null_on_failure | - | any(tags, t -&gt; t.name == "vip") |
 | `all` | (arr: array, pred: lambda) | `bool` | null_on_failure | - | - |

@@ -990,6 +990,71 @@ func numericArray(v event.Value) ([]event.Value, bool) {
 	return arr, true
 }
 
+func execArrayCompact(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := v.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil)
+	}
+
+	result := make([]event.Value, 0, len(arr))
+	result = append(result, arr[0])
+	for _, elem := range arr[1:] {
+		if !valuesEqual(elem, result[len(result)-1]) {
+			result = append(result, elem)
+		}
+	}
+	return event.ArrayValue(result)
+}
+
+func execArrayDeltas(v event.Value, warnings *WarningCounters) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := v.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil)
+	}
+
+	result := make([]event.Value, len(arr))
+	result[0] = event.NullValue()
+	for i := 1; i < len(arr); i++ {
+		delta := subStrict(arr[i], arr[i-1], warnings)
+		if delta.IsNull() {
+			return event.NullValue()
+		}
+		result[i] = delta
+	}
+	return event.ArrayValue(result)
+}
+
+func execArrayCumSum(v event.Value, warnings *WarningCounters) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := v.AsArray()
+	if len(arr) == 0 {
+		return event.ArrayValue(nil)
+	}
+	if arr[0].IsNull() {
+		return event.NullValue()
+	}
+
+	result := make([]event.Value, len(arr))
+	total := arr[0]
+	result[0] = total
+	for i := 1; i < len(arr); i++ {
+		total = addStrict(total, arr[i], warnings)
+		if total.IsNull() {
+			return event.NullValue()
+		}
+		result[i] = total
+	}
+	return event.ArrayValue(result)
+}
+
 func execArrayHasAny(a, b event.Value) event.Value {
 	aArr, bArr, ok := arrayPair(a, b)
 	if !ok {

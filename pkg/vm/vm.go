@@ -2201,6 +2201,18 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execArrayExtrema(a, true, vm.Warnings)
 
+		case OpArrayCompact:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayCompact(a)
+
+		case OpArrayDeltas:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayDeltas(a, vm.Warnings)
+
+		case OpArrayCumSum:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayCumSum(a, vm.Warnings)
+
 		case OpArrayHasAny:
 			b := vm.stack[vm.sp-1]
 			a := vm.stack[vm.sp-2]

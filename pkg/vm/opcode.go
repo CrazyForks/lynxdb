@@ -115,16 +115,19 @@ const (
 	OpRandom     Opcode = 0x9D
 
 	// Multivalue Operations.
-	OpMvAppend Opcode = 0xA0
-	OpMvJoin   Opcode = 0xA1
-	OpMvDedup  Opcode = 0xA2
-	OpMvCount  Opcode = 0xA3
-	OpURLParam Opcode = 0xA4
-	OpURLStrip Opcode = 0xA5
-	OpArraySum Opcode = 0xA6
-	OpArrayAvg Opcode = 0xA7
-	OpArrayMin Opcode = 0xA8
-	OpArrayMax Opcode = 0xA9
+	OpMvAppend     Opcode = 0xA0
+	OpMvJoin       Opcode = 0xA1
+	OpMvDedup      Opcode = 0xA2
+	OpMvCount      Opcode = 0xA3
+	OpURLParam     Opcode = 0xA4
+	OpURLStrip     Opcode = 0xA5
+	OpArraySum     Opcode = 0xA6
+	OpArrayAvg     Opcode = 0xA7
+	OpArrayMin     Opcode = 0xA8
+	OpArrayMax     Opcode = 0xA9
+	OpArrayCompact Opcode = 0xAA
+	OpArrayDeltas  Opcode = 0xAB
+	OpArrayCumSum  Opcode = 0xAC
 
 	// Null Handling.
 	OpCoalesce  Opcode = 0xB0
@@ -407,16 +410,19 @@ var definitions = map[Opcode]*Definition{
 	OpMathBinary: {"OpMathBinary", []int{2}},
 	OpRandom:     {"OpRandom", nil},
 
-	OpMvAppend: {"OpMvAppend", []int{2}},
-	OpMvJoin:   {"OpMvJoin", nil},
-	OpMvDedup:  {"OpMvDedup", nil},
-	OpMvCount:  {"OpMvCount", nil},
-	OpURLParam: {"OpURLParam", nil},
-	OpURLStrip: {"OpURLStrip", nil},
-	OpArraySum: {"OpArraySum", nil},
-	OpArrayAvg: {"OpArrayAvg", nil},
-	OpArrayMin: {"OpArrayMin", nil},
-	OpArrayMax: {"OpArrayMax", nil},
+	OpMvAppend:     {"OpMvAppend", []int{2}},
+	OpMvJoin:       {"OpMvJoin", nil},
+	OpMvDedup:      {"OpMvDedup", nil},
+	OpMvCount:      {"OpMvCount", nil},
+	OpURLParam:     {"OpURLParam", nil},
+	OpURLStrip:     {"OpURLStrip", nil},
+	OpArraySum:     {"OpArraySum", nil},
+	OpArrayAvg:     {"OpArrayAvg", nil},
+	OpArrayMin:     {"OpArrayMin", nil},
+	OpArrayMax:     {"OpArrayMax", nil},
+	OpArrayCompact: {"OpArrayCompact", nil},
+	OpArrayDeltas:  {"OpArrayDeltas", nil},
+	OpArrayCumSum:  {"OpArrayCumSum", nil},
 
 	OpCoalesce:  {"OpCoalesce", []int{2}},
 	OpIsNull:    {"OpIsNull", nil},

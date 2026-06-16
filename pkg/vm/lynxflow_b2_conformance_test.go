@@ -542,6 +542,31 @@ func TestB2_ArrayReducers(t *testing.T) {
 	assertNull(t, result, "array_min incompatible")
 }
 
+func TestB2_ArrayTransforms(t *testing.T) {
+	result, _ := runLF(t, call("array_compact",
+		array(litStr("A"), litStr("A"), litStr("B"), litStr("B"), litStr("A")),
+	), nil)
+	arr := assertArray(t, result, 3, "array_compact")
+	assertString(t, arr[0], "A", "array_compact[0]")
+	assertString(t, arr[1], "B", "array_compact[1]")
+	assertString(t, arr[2], "A", "array_compact[2]")
+
+	result, _ = runLF(t, call("array_deltas", array(litInt(10), litInt(15), litInt(23))), nil)
+	arr = assertArray(t, result, 3, "array_deltas")
+	assertNull(t, arr[0], "array_deltas[0]")
+	assertInt(t, arr[1], 5, "array_deltas[1]")
+	assertInt(t, arr[2], 8, "array_deltas[2]")
+
+	result, _ = runLF(t, call("array_cumsum", array(litInt(1), litInt(2), litInt(3))), nil)
+	arr = assertArray(t, result, 3, "array_cumsum")
+	assertInt(t, arr[0], 1, "array_cumsum[0]")
+	assertInt(t, arr[1], 3, "array_cumsum[1]")
+	assertInt(t, arr[2], 6, "array_cumsum[2]")
+
+	result, _ = runLF(t, call("array_deltas", array(litInt(1), litStr("2"))), nil)
+	assertNull(t, result, "array_deltas incompatible")
+}
+
 func TestB2_ArrayCount(t *testing.T) {
 	expr := call("array_count",
 		array(litInt(1), litInt(2), litInt(3), litInt(4)),

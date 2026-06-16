@@ -357,6 +357,20 @@ func TestLynxFlowStringPadRepeatTranslateFunctions(t *testing.T) {
 	assertString(t, result, "xb", "translate deletes missing replacements")
 }
 
+func TestLynxFlowStringCountFunctions(t *testing.T) {
+	result, _ := runLF(t, call("count_substr", litStr("/api/v1/users"), litStr("/")), nil)
+	assertInt(t, result, 3, "count_substr")
+
+	result, _ = runLF(t, call("count_substr", litStr("aaaa"), litStr("aa")), nil)
+	assertInt(t, result, 2, "count_substr non-overlapping")
+
+	result, _ = runLF(t, call("count_substr", litStr("abc"), litStr("")), nil)
+	assertNull(t, result, "count_substr empty needle")
+
+	result, _ = runLF(t, call("count_matches", litStr("ip 10.0.0.1 and 192.168.0.1"), litStr(`\d+\.\d+\.\d+\.\d+`)), nil)
+	assertInt(t, result, 2, "count_matches")
+}
+
 func TestLynxFlowBase64Functions(t *testing.T) {
 	result, _ := runLF(t, call("base64_encode", litStr("hello")), nil)
 	assertString(t, result, "aGVsbG8=", "base64_encode")

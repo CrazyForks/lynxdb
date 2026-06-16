@@ -348,6 +348,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "split", minArgs: 2, maxArgs: 2, emit: lfEmitSplit},
 		{name: "split_part", minArgs: 3, maxArgs: 3, emit: lfEmitTernary(OpSplitPart)},
 		{name: "index_of", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIndexOf)},
+		{name: "count_substr", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpCountSubstr)},
+		{name: "count_matches", minArgs: 2, maxArgs: 2, emit: lfEmitCountMatches},
 		{name: "lpad", minArgs: 2, maxArgs: 3, emit: lfEmitPad(OpLPad)},
 		{name: "rpad", minArgs: 2, maxArgs: 3, emit: lfEmitPad(OpRPad)},
 		{name: "repeat", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpRepeat)},
@@ -830,6 +832,19 @@ func lfEmitMatches(c *lfCompiler, call *lfast.Call) error {
 		return err
 	}
 	c.prog.EmitOp(OpStrMatch, regIdx)
+	return nil
+}
+
+func lfEmitCountMatches(c *lfCompiler, call *lfast.Call) error {
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	pattern := lfExprToString(call.Args[1])
+	regIdx, err := addValidatedRegex(c, "count_matches", pattern)
+	if err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpCountMatches, regIdx)
 	return nil
 }
 

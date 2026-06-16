@@ -819,6 +819,12 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = regexEscapeValue(a)
 
+		case OpCountSubstr:
+			sub := vm.stack[vm.sp-1]
+			s := vm.stack[vm.sp-2]
+			vm.sp--
+			vm.stack[vm.sp-1] = countSubstrValue(s, sub)
+
 		case OpEq:
 			b := vm.stack[vm.sp-1]
 			a := vm.stack[vm.sp-2]
@@ -1876,6 +1882,21 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 				vm.stack[vm.sp-1] = extractAllMatches(vm.regexCache[regIdx], valueToString(a))
 			}
 
+		case OpCountMatches:
+			regIdx, reErr := readIndexSafe(ins, ip, len(vm.regexCache), "regex")
+			if reErr != nil {
+				return event.NullValue(), reErr
+			}
+			ip += 2
+			a := vm.stack[vm.sp-1]
+			if a.IsNull() || a.Type() != event.FieldTypeString {
+				vm.stack[vm.sp-1] = event.NullValue()
+			} else if vm.regexCache[regIdx] == nil {
+				return event.NullValue(), fmt.Errorf("count_matches: invalid pattern %q", vm.lastProgRegexPattern(regIdx))
+			} else {
+				vm.stack[vm.sp-1] = countMatchesValue(vm.regexCache[regIdx], a.AsString())
+			}
+
 		case OpSubstr0Based:
 			length := vm.stack[vm.sp-1]
 			start := vm.stack[vm.sp-2]
@@ -2811,6 +2832,21 @@ func regexEscapeValue(v event.Value) event.Value {
 	}
 
 	return event.StringValue(regexp.QuoteMeta(v.AsString()))
+}
+
+func countSubstrValue(s, sub event.Value) event.Value {
+	if s.IsNull() || sub.IsNull() ||
+		s.Type() != event.FieldTypeString ||
+		sub.Type() != event.FieldTypeString ||
+		sub.AsString() == "" {
+		return event.NullValue()
+	}
+
+	return event.IntValue(int64(strings.Count(s.AsString(), sub.AsString())))
+}
+
+func countMatchesValue(re *regexp.Regexp, s string) event.Value {
+	return event.IntValue(int64(len(re.FindAllStringIndex(s, -1))))
 }
 
 func roundValue(num, decimals event.Value) event.Value {

@@ -46,6 +46,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `split` | (s: string, sep: string) | `array` | null_on_failure | - | - |
 | `split_part` | (s: string, sep: string, n: int) | `string` | null_on_failure | - | Return the 0-based split segment, or null when out of range. |
 | `index_of` | (x: any, needle: any) | `int` | null_on_failure | - | 0-based index in a string or array; null when not found. |
+| `count_substr` | (s: string, sub: string) | `int` | null_on_failure | - | Count non-overlapping substring occurrences. |
+| `count_matches` | (s: string, pattern: regex) | `int` | null_on_failure | - | Count regex matches. |
 | `lpad` | (s: string, n: int, char?: string) | `string` | null_on_failure | - | Left-pad a string to n runes; pad defaults to space. |
 | `rpad` | (s: string, n: int, char?: string) | `string` | null_on_failure | - | Right-pad a string to n runes; pad defaults to space. |
 | `repeat` | (s: string, n: int) | `string` | null_on_failure | - | Repeat a string n times. |

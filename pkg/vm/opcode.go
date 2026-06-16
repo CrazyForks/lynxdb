@@ -247,6 +247,8 @@ const (
 	OpUnhex           Opcode = 0x6A // pop string; push decoded hex string or null
 	OpURLEncode       Opcode = 0x6B // pop string; push URL query escaped string
 	OpRegexEscape     Opcode = 0x6C // pop string; push regexp literal escape
+	OpCountSubstr     Opcode = 0x6D // pop string, substring; push occurrence count
+	OpCountMatches    Opcode = 0x6E // 2-byte regex index; pop string; push match count
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
@@ -515,6 +517,8 @@ var definitions = map[Opcode]*Definition{
 	OpUnhex:           {"OpUnhex", nil},
 	OpURLEncode:       {"OpURLEncode", nil},
 	OpRegexEscape:     {"OpRegexEscape", nil},
+	OpCountSubstr:     {"OpCountSubstr", nil},
+	OpCountMatches:    {"OpCountMatches", []int{2}},
 
 	OpReturn: {"OpReturn", nil},
 }

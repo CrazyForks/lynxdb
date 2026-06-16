@@ -43,6 +43,7 @@ var rules = []Rule{
 	{Code: "LF06", Doc: "head before sort (arbitrary rows then sorted)", Check: checkHeadBeforeSort},
 	// LF07: dedup after sort by other keys — placeholder, not implemented.
 	{Code: "LF08", Doc: "has() with uppercase term (has is always case-insensitive)", Check: checkHasUppercase},
+	{Code: "LF10", Doc: "Foreign or deprecated function spelling with canonical LynxFlow equivalent", Check: checkForeignFunctionSpelling},
 }
 
 // preDesugarRules are lint rules that must run on the pre-desugar AST.
@@ -507,6 +508,63 @@ func containsUpper(s string) bool {
 		}
 	}
 	return false
+}
+
+// LF10: foreign or deprecated function spellings
+
+type functionSpellingFix struct {
+	suggestion string
+}
+
+var foreignFunctionSpellings = map[string]functionSpellingFix{
+	"sumif":          {suggestion: "sum(x, where p)"},
+	"countif":        {suggestion: "count(where p)"},
+	"avgif":          {suggestion: "avg(x, where p)"},
+	"uniq":           {suggestion: "estdc(x)"},
+	"uniqexact":      {suggestion: "dc(x)"},
+	"quantile":       {suggestion: "perc(x, p) or p99(x)"},
+	"argmax":         {suggestion: "arg_max(a, b)"},
+	"argmin":         {suggestion: "arg_min(a, b)"},
+	"max_by":         {suggestion: "arg_max(a, b)"},
+	"min_by":         {suggestion: "arg_min(a, b)"},
+	"topk":           {suggestion: "top_k(x, k)"},
+	"position":       {suggestion: "index_of(s, sub)"},
+	"strpos":         {suggestion: "index_of(s, sub)"},
+	"instr":          {suggestion: "index_of(s, sub)"},
+	"locate":         {suggestion: "index_of(s, sub)"},
+	"regexp_replace": {suggestion: `replace(s, r"...", with)`},
+	"string_agg":     {suggestion: "join(list(x), sep)"},
+	"group_concat":   {suggestion: "join(list(x), sep)"},
+	"substring":      {suggestion: "substr(s, start, len)"},
+	"length":         {suggestion: "len(x)"},
+	"lcase":          {suggestion: "lower(s)"},
+	"ucase":          {suggestion: "upper(s)"},
+	"startswith":     {suggestion: "starts_with(s, prefix)"},
+	"p25":            {suggestion: "perc(x, 25)"},
+	"median":         {suggestion: "p50(x)"},
+}
+
+func checkForeignFunctionSpelling(q *ast.Query) []Lint {
+	var lints []Lint
+	forEachExpr(q, func(e ast.Expr) {
+		call, ok := e.(*ast.Call)
+		if !ok {
+			return
+		}
+		fix, ok := foreignFunctionSpellings[strings.ToLower(call.Callee)]
+		if !ok {
+			return
+		}
+		lints = append(lints, Lint{
+			Code:       "LF10",
+			Message:    fmt.Sprintf("function %q uses a foreign or deprecated spelling; use %s", call.Callee, fix.suggestion),
+			Reason:     "canon",
+			Span:       call.ExprSpan(),
+			Suggestion: fix.suggestion,
+		})
+	})
+
+	return lints
 }
 
 // AST walking helpers

@@ -64,6 +64,15 @@ func assertNoCode(t *testing.T, lints []Lint, code string) {
 	}
 }
 
+func findLint(lints []Lint, code string) (Lint, bool) {
+	for _, l := range lints {
+		if l.Code == code {
+			return l, true
+		}
+	}
+	return Lint{}, false
+}
+
 // 1. Registry invariants
 
 func TestRegistryInvariants(t *testing.T) {
@@ -393,6 +402,73 @@ func TestLF08_HasUppercase(t *testing.T) {
 		q := mustParseDesugar(t, `from app[-1h] ERROR`)
 		lints := Run(q)
 		assertHasCode(t, lints, "LF08")
+	})
+}
+
+func TestLF10_ForeignFunctionSpelling(t *testing.T) {
+	tests := []struct {
+		name       string
+		query      string
+		suggestion string
+	}{
+		{
+			name:       "p25_percentile",
+			query:      `from app[-1h] | stats p25(duration) as p by service`,
+			suggestion: "perc(x, 25)",
+		},
+		{
+			name:       "conditional_aggregate",
+			query:      `from app[-1h] | stats sumIf(bytes, status >= 500) as b`,
+			suggestion: "sum(x, where p)",
+		},
+		{
+			name:       "clickhouse_distinct",
+			query:      `from app[-1h] | stats uniq(user_id) as users`,
+			suggestion: "estdc(x)",
+		},
+		{
+			name:       "duckdb_position",
+			query:      `from app[-1h] | extend q = strpos(uri, "?")`,
+			suggestion: "index_of(s, sub)",
+		},
+		{
+			name:       "duckdb_length",
+			query:      `from app[-1h] | extend n = length(uri)`,
+			suggestion: "len(x)",
+		},
+		{
+			name:       "argmax_camel_case",
+			query:      `from app[-1h] | stats argMax(uri, duration) as slow_uri by service`,
+			suggestion: "arg_max(a, b)",
+		},
+		{
+			name:       "string_agg",
+			query:      `from app[-1h] | stats string_agg(uri, ",") as uris by service`,
+			suggestion: "join(list(x), sep)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q := mustParseDesugar(t, tt.query)
+			lints := Run(q)
+			lint, ok := findLint(lints, "LF10")
+			if !ok {
+				t.Fatalf("expected LF10, got codes: %v", lintCodes(lints))
+			}
+			if lint.Reason != "canon" {
+				t.Errorf("LF10 reason = %q, want canon", lint.Reason)
+			}
+			if lint.Suggestion != tt.suggestion {
+				t.Errorf("LF10 suggestion = %q, want %q", lint.Suggestion, tt.suggestion)
+			}
+		})
+	}
+
+	t.Run("negative_canonical_spelling", func(t *testing.T) {
+		q := mustParseDesugar(t, `from app[-1h] | extend n = len(uri), s = starts_with(uri, "/api") | stats p50(duration)`)
+		lints := Run(q)
+		assertNoCode(t, lints, "LF10")
 	})
 }
 

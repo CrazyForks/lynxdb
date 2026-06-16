@@ -29,7 +29,6 @@ const (
 	CodeStageError DiagCode = "E014"
 )
 
-
 // Parse parses a complete LynxFlow v2 query and returns the AST along with
 // any diagnostics. On success diags is empty. On error the returned Query
 // is a best-effort partial tree (never nil) and diags contains entries.
@@ -2370,6 +2369,7 @@ var killedSpellings = map[string]killedFix{
 	"glimpse":       {message: "glimpse is replaced by describe in v2", suggestion: "describe"},
 	"select":        {message: "select is replaced by keep in v2", suggestion: "keep"},
 	"filter":        {message: "filter is replaced by where in v2", suggestion: "where"},
+	"qualify":       {message: "QUALIFY is expressed as streamstats followed by where in v2", suggestion: "streamstats ... | where ..."},
 	"append":        {message: "append is replaced by union in v2", suggestion: "union"},
 	"multisearch":   {message: "multisearch is replaced by union in v2", suggestion: "union"},
 	"slowest":       {message: "slowest is replaced by stats + sort + head in v2", suggestion: "stats max(field) as m by key | sort -m | head N"},

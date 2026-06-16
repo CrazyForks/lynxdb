@@ -322,6 +322,7 @@ func TestErrorRecovery_KilledSpellings(t *testing.T) {
 		{`| group by service compute count()`, "group", "stats"},
 		{`| select service, level`, "select", "keep"},
 		{`| filter status >= 500`, "filter", "where"},
+		{`| qualify rn <= 3`, "qualify", "streamstats"},
 		{`| order -count`, "order", "sort"},
 	}
 	for _, tt := range tests {

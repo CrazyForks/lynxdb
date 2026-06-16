@@ -116,6 +116,8 @@ var functions = []Function{
 	{Name: "is_ip", Category: "network", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible},
 	{Name: "is_ipv4", Category: "network", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible},
 	{Name: "is_ipv6", Category: "network", Params: []Param{{Name: "s", Type: TString}}, Result: TBool, Fallibility: Infallible},
+	{Name: "ip_to_int", Category: "network", Params: []Param{{Name: "ip", Type: TString}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Convert an IPv4 string to a 32-bit integer; IPv6 returns null."},
+	{Name: "ip_from_int", Category: "network", Params: []Param{{Name: "n", Type: TInt}}, Result: TString, Fallibility: NullOnFailure, Doc: "Convert a 32-bit integer to an IPv4 string."},
 	{Name: "ipmask", Category: "network", Params: []Param{{Name: "mask", Type: TString}, {Name: "ip", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 
 	// array

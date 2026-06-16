@@ -434,6 +434,8 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "is_ip", minArgs: 1, maxArgs: 1, emit: lfEmitIsIP},
 		{name: "is_ipv4", minArgs: 1, maxArgs: 1, emit: lfEmitIsIPVersion(4)},
 		{name: "is_ipv6", minArgs: 1, maxArgs: 1, emit: lfEmitIsIPVersion(6)},
+		{name: "ip_to_int", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpIPToInt)},
+		{name: "ip_from_int", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpIPFromInt)},
 		{name: "ipmask", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpIPMask)},
 
 		// ---- Array (§10) ----

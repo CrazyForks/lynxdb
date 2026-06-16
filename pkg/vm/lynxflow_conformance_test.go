@@ -249,6 +249,20 @@ func TestLynxFlowFrozenScalarParityFunctions(t *testing.T) {
 		result, _ = runLF(t, call("is_ip", litStr("not-an-ip")), nil)
 		assertBool(t, result, false, "is_ip invalid")
 	})
+
+	t.Run("ip_int_conversions", func(t *testing.T) {
+		result, _ := runLF(t, call("ip_to_int", litStr("192.168.1.10")), nil)
+		assertInt(t, result, 3232235786, "ip_to_int")
+
+		result, _ = runLF(t, call("ip_from_int", litInt(3232235786)), nil)
+		assertString(t, result, "192.168.1.10", "ip_from_int")
+
+		result, _ = runLF(t, call("ip_to_int", litStr("2001:db8::1")), nil)
+		assertNull(t, result, "ip_to_int ipv6")
+
+		result, _ = runLF(t, call("ip_from_int", litInt(-1)), nil)
+		assertNull(t, result, "ip_from_int negative")
+	})
 }
 
 func TestLynxFlowHumanizeFunctions(t *testing.T) {

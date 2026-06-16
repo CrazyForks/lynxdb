@@ -150,6 +150,11 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 |----------|--------|--------|-------------|--------|-------------|
 | `cidr_match` | (cidr: string, ip: string) | `bool` | null_on_failure | - | - |
 | `ip_parse` | (s: string) | `object` | null_on_failure | - | - |
+| `is_ip` | (s: string) | `bool` | infallible | - | - |
+| `is_ipv4` | (s: string) | `bool` | infallible | - | - |
+| `is_ipv6` | (s: string) | `bool` | infallible | - | - |
+| `ip_to_int` | (ip: string) | `int` | null_on_failure | - | Convert an IPv4 string to a 32-bit integer; IPv6 returns null. |
+| `ip_from_int` | (n: int) | `string` | null_on_failure | - | Convert a 32-bit integer to an IPv4 string. |
 | `ipmask` | (mask: string, ip: string) | `string` | null_on_failure | - | - |
 
 ## Array

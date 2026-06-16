@@ -2083,6 +2083,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execIPParse(a)
 
+		case OpIPToInt:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execIPToInt(a)
+
+		case OpIPFromInt:
+			a := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execIPFromInt(a)
+
 		case OpFromJSONNative:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execFromJSONNative(a)

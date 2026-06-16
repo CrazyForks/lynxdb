@@ -1166,6 +1166,33 @@ func execIPParse(v event.Value) event.Value {
 	})
 }
 
+func execIPToInt(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	ip := net.ParseIP(v.AsString()).To4()
+	if ip == nil {
+		return event.NullValue()
+	}
+
+	return event.IntValue(int64(binary.BigEndian.Uint32(ip)))
+}
+
+func execIPFromInt(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeInt {
+		return event.NullValue()
+	}
+	const maxIPv4Int = 1<<32 - 1
+	n := v.AsInt()
+	if n < 0 || n > maxIPv4Int {
+		return event.NullValue()
+	}
+	ip := make(net.IP, net.IPv4len)
+	binary.BigEndian.PutUint32(ip, uint32(n))
+
+	return event.StringValue(ip.String())
+}
+
 func execBucket(x, bounds event.Value) event.Value {
 	if x.IsNull() || bounds.IsNull() || bounds.Type() != event.FieldTypeArray {
 		return event.NullValue()

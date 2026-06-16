@@ -1239,6 +1239,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execBase64Encode(v)
 
+		case OpHex:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execHex(v)
+
+		case OpUnhex:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execUnhex(v)
+
 		case OpRepeat:
 			count := vm.stack[vm.sp-1]
 			s := vm.stack[vm.sp-2]

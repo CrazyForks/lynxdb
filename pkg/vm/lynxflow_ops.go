@@ -10,6 +10,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -1393,6 +1394,26 @@ func execBase64Encode(v event.Value) event.Value {
 	}
 
 	return event.StringValue(base64.StdEncoding.EncodeToString([]byte(v.AsString())))
+}
+
+func execHex(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+
+	return event.StringValue(hex.EncodeToString([]byte(v.AsString())))
+}
+
+func execUnhex(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	decoded, err := hex.DecodeString(v.AsString())
+	if err != nil {
+		return event.NullValue()
+	}
+
+	return event.StringValue(string(decoded))
 }
 
 const maxStringFunctionOutputRunes = 1_000_000

@@ -373,6 +373,22 @@ func TestLynxFlowBase64Functions(t *testing.T) {
 	}
 }
 
+func TestLynxFlowHexFunctions(t *testing.T) {
+	result, _ := runLF(t, call("hex", litStr("hi")), nil)
+	assertString(t, result, "6869", "hex")
+
+	result, _ = runLF(t, call("unhex", litStr("6869")), nil)
+	assertString(t, result, "hi", "unhex")
+
+	result, _ = runLF(t, call("unhex", litStr("not hex")), nil)
+	assertNull(t, result, "unhex invalid")
+
+	err := runLFErr(t, callBang("unhex", litStr("not hex")), nil)
+	if err == nil {
+		t.Fatal("expected unhex! to fail on invalid input")
+	}
+}
+
 func TestLynxFlowURLUtilityFunctions(t *testing.T) {
 	rawURL := litStr("https://example.com/search?q=lynx&page=2#section")
 

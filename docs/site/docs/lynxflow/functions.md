@@ -57,6 +57,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `urldecode` | (s: string) | `string` | null_on_failure | - | - |
 | `base64_decode` | (s: string) | `string` | null_on_failure | `base64_decode!` | Decode standard base64; null on invalid input. |
 | `base64_encode` | (s: string) | `string` | null_on_failure | - | Encode a string as standard base64. |
+| `hex` | (s: string) | `string` | null_on_failure | - | Encode a string as lowercase hexadecimal. |
+| `unhex` | (s: string) | `string` | null_on_failure | `unhex!` | Decode hexadecimal bytes; null on invalid input. |
 | `url_parse` | (s: string) | `object` | null_on_failure | - | Parse a URL into &#123;scheme, host, port, path, query, fragment&#125;. |
 | `url_domain` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its host. |
 | `url_path` | (s: string) | `string` | null_on_failure | - | Parse a URL and return its path. |

@@ -243,6 +243,8 @@ const (
 	OpTranslate       Opcode = 0x66 // pop string, from, to; push translated string
 	OpIsFinite        Opcode = 0x67 // pop number; push true when finite
 	OpIsNaN           Opcode = 0x68 // pop number; push true when NaN
+	OpHex             Opcode = 0x69 // pop string; push lowercase hex encoding
+	OpUnhex           Opcode = 0x6A // pop string; push decoded hex string or null
 	OpBar             Opcode = 0x1A // pop x, lo, hi, width; push fixed-width ASCII bar
 	OpIndexOf         Opcode = 0x1B // pop container/string and needle; push 0-based index or null
 	OpSplitPart       Opcode = 0x1C // pop string, separator, index; push segment or null
@@ -507,6 +509,8 @@ var definitions = map[Opcode]*Definition{
 	OpTranslate:       {"OpTranslate", nil},
 	OpIsFinite:        {"OpIsFinite", nil},
 	OpIsNaN:           {"OpIsNaN", nil},
+	OpHex:             {"OpHex", nil},
+	OpUnhex:           {"OpUnhex", nil},
 
 	OpReturn: {"OpReturn", nil},
 }

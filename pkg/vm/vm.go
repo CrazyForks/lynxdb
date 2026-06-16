@@ -1325,8 +1325,9 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.stack[vm.sp-1] = strptimeValue(ts, format)
 
 		case OpBin:
-			// bin(ts, dur): pop duration (TOS), pop timestamp; snap ts to dur boundary.
+			// bin(ts, dur) or bin(x, width): pop width/span (TOS), pop value.
 			// Coercion rule (RFC-002 §10):
+			//   - number + number → snap to numeric width
 			//   - FieldTypeTimestamp → snap directly
 			//   - FieldTypeString parseable as RFC3339 → parse, snap, return timestamp
 			//   - FieldTypeInt → treat as Unix nanoseconds, snap, return timestamp
@@ -1335,7 +1336,7 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			durVal := vm.stack[vm.sp-1]
 			tsVal := vm.stack[vm.sp-2]
 			vm.sp--
-			vm.stack[vm.sp-1] = binTimestampValue(tsVal, durVal)
+			vm.stack[vm.sp-1] = binValue(tsVal, durVal)
 
 		case OpFromUnix:
 			unit := vm.stack[vm.sp-1]
@@ -3637,6 +3638,53 @@ func strptimeValue(ts, format event.Value) event.Value {
 		}
 	}
 	return event.NullValue()
+}
+
+// binValue implements bin(ts, dur) and bin(x, width).
+func binValue(xVal, widthVal event.Value) event.Value {
+	if xVal.IsNull() || widthVal.IsNull() {
+		return event.NullValue()
+	}
+	if isNumericType(xVal.Type()) && isNumericType(widthVal.Type()) {
+		return binNumberValue(xVal, widthVal)
+	}
+	return binTimestampValue(xVal, widthVal)
+}
+
+func binNumberValue(xVal, widthVal event.Value) event.Value {
+	if xVal.Type() == event.FieldTypeInt && widthVal.Type() == event.FieldTypeInt {
+		x := xVal.AsInt()
+		width := widthVal.AsInt()
+		if width <= 0 {
+			return event.NullValue()
+		}
+		q := x / width
+		if r := x % width; r != 0 && x < 0 {
+			q--
+		}
+		return event.IntValue(q * width)
+	}
+
+	x, ok := numericValue(xVal)
+	if !ok {
+		return event.NullValue()
+	}
+	width, ok := numericValue(widthVal)
+	if !ok || width <= 0 || math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(x) || math.IsInf(x, 0) {
+		return event.NullValue()
+	}
+	return event.FloatValue(math.Floor(x/width) * width)
+}
+
+func numericValue(v event.Value) (float64, bool) {
+	switch v.Type() {
+	case event.FieldTypeInt:
+		return float64(v.AsInt()), true
+	case event.FieldTypeFloat:
+		return v.AsFloat(), true
+	default:
+		return 0, false
+	}
 }
 
 // binTimestampValue implements bin(ts, dur): snap a timestamp to a duration boundary.

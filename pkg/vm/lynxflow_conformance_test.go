@@ -1918,6 +1918,31 @@ func TestConformance_UnixEpochFunctions(t *testing.T) {
 	})
 }
 
+func TestConformance_BinFunction(t *testing.T) {
+	t.Run("numeric int", func(t *testing.T) {
+		result, _ := runLF(t, call("bin", litInt(137), litInt(50)), nil)
+		assertInt(t, result, 100, "bin int")
+	})
+	t.Run("numeric int negative floors", func(t *testing.T) {
+		result, _ := runLF(t, call("bin", litInt(-1), litInt(50)), nil)
+		assertInt(t, result, -50, "bin negative int")
+	})
+	t.Run("numeric float", func(t *testing.T) {
+		result, _ := runLF(t, call("bin", litFloat(12.75), litFloat(0.5)), nil)
+		assertFloat(t, result, 12.5, "bin float")
+	})
+	t.Run("invalid width", func(t *testing.T) {
+		result, _ := runLF(t, call("bin", litInt(10), litInt(0)), nil)
+		assertNull(t, result, "bin zero width")
+	})
+	t.Run("timestamp duration", func(t *testing.T) {
+		ts := time.Date(2026, 6, 16, 14, 37, 55, 0, time.UTC)
+		fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+		result, _ := runLF(t, call("bin", ident("ts"), litDur(time.Hour)), fields)
+		assertTimestamp(t, result, time.Date(2026, 6, 16, 14, 0, 0, 0, time.UTC), "bin timestamp")
+	})
+}
+
 func TestConformance_StrptimeLayouts(t *testing.T) {
 	expected := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC).Unix()
 

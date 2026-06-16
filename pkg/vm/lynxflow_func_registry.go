@@ -1180,7 +1180,9 @@ func lfEmitNow(c *lfCompiler, _ *lfast.Call) error {
 
 func lfEmitBin(c *lfCompiler, call *lfast.Call) error {
 	// bin(ts, dur) → snap timestamp to duration boundary.
+	// bin(x, width) → snap number to numeric width.
 	// Coercion rule (RFC-002 §10):
+	//   - number + number → snap to numeric width
 	//   - timestamp input → snap directly
 	//   - string input parseable as RFC3339 → parse, snap, return timestamp
 	//   - int input → treat as Unix nanoseconds, snap, return timestamp

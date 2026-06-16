@@ -123,7 +123,7 @@ var functions = []Function{
 
 	// time
 	{Name: "now", Category: "time", Result: TTimestamp, Fallibility: Infallible, Doc: "Query start time (stable within one query)."},
-	{Name: "bin", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "span", Type: TDuration}}, Result: TTimestamp, Fallibility: NullOnFailure, Doc: "Snap to span boundary; in stats by-lists the binned key emits as _time."},
+	{Name: "bin", Category: "time", Params: []Param{{Name: "x", Type: TAny}, {Name: "width", Type: TAny}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Snap a timestamp to a duration boundary or a number to a numeric width; time by-lists emit as _time."},
 	{Name: "strftime", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}, {Name: "format", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 	{Name: "strptime", Category: "time", Params: []Param{{Name: "s", Type: TString}, {Name: "format", Type: TAny}}, Result: TTimestamp, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Parse with one layout or the first matching layout in an array."},
 	{Name: "time_of_day", Category: "time", Params: []Param{{Name: "ts", Type: TTimestamp}}, Result: TDuration, Fallibility: NullOnFailure},

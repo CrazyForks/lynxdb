@@ -414,8 +414,12 @@ func (a *analyzer) inferCall(c *ast.Call) FieldType {
 		// Arity check.
 		a.checkArity(c, fn)
 		// Type-check args.
+		argTypes := make([]FieldType, 0, len(c.Args))
 		for _, arg := range c.Args {
-			a.inferExpr(arg)
+			argTypes = append(argTypes, a.inferExpr(arg))
+		}
+		if callee == "bin" {
+			return inferBinCall(argTypes)
 		}
 		return registryTypeToFieldType(fn.Result)
 	}
@@ -440,6 +444,29 @@ func (a *analyzer) inferCall(c *ast.Call) FieldType {
 		suggestion)
 	for _, arg := range c.Args {
 		a.inferExpr(arg)
+	}
+	return TypeAny
+}
+
+func inferBinCall(argTypes []FieldType) FieldType {
+	if len(argTypes) != 2 {
+		return TypeAny
+	}
+	xType, widthType := argTypes[0], argTypes[1]
+	if xType == TypeAny || widthType == TypeAny {
+		return TypeAny
+	}
+	if isNumeric(xType) && isNumeric(widthType) {
+		if xType == TypeFloat || widthType == TypeFloat {
+			return TypeFloat
+		}
+		return TypeInt
+	}
+	if widthType == TypeDuration && (xType == TypeTimestamp || xType == TypeString || xType == TypeInt || xType == TypeDuration) {
+		return TypeTimestamp
+	}
+	if widthType == TypeInt && (xType == TypeTimestamp || xType == TypeString || xType == TypeDuration) {
+		return TypeTimestamp
 	}
 	return TypeAny
 }

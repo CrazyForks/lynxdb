@@ -152,7 +152,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | Function | Params | Result | Fallibility | Strict | Description |
 |----------|--------|--------|-------------|--------|-------------|
 | `now` | () | `timestamp` | infallible | - | Query start time (stable within one query). |
-| `bin` | (ts: timestamp, span: duration) | `timestamp` | null_on_failure | - | Snap to span boundary; in stats by-lists the binned key emits as _time. |
+| `bin` | (x: any, width: any) | `any` | null_on_failure | - | Snap a timestamp to a duration boundary or a number to a numeric width; time by-lists emit as _time. |
 | `strftime` | (ts: timestamp, format: string) | `string` | null_on_failure | - | - |
 | `strptime` | (s: string, format: string\|array) | `timestamp` | null_on_failure | `strptime!` | Parse with one layout or the first matching layout in an array. |
 | `time_of_day` | (ts: timestamp) | `duration` | null_on_failure | - | - |

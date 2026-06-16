@@ -507,6 +507,8 @@ func TestInfer_FunctionCalls(t *testing.T) {
 		{`round(3.14)`, TypeFloat},
 		{`now()`, TypeTimestamp},
 		{`bin(_time, 5m)`, TypeTimestamp},
+		{`bin(137, 50)`, TypeInt},
+		{`bin(12.75, 0.5)`, TypeFloat},
 	}
 	cat := MapCatalog{}
 	for _, tt := range tests {

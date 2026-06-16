@@ -34,6 +34,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `any_value` | (x: any) | `any` | An arbitrary non-null value from the group. |
 | `top_k` | (x: any, k: int) | `array` | Top k non-null values with counts. |
 | `value_counts` | (x: any) | `array` | All non-null values with counts, sorted by frequency. |
+| `avg_weighted` | (x: number, weight: number) | `float` | Weighted average as sum(x * weight) / sum(weight). |
 | `first` | (x: any) | `any` | First non-null in row order. |
 | `last` | (x: any) | `any` | Last non-null in row order. |
 | `earliest` | (x: any) | `any` | Value from the row with the smallest _time. |

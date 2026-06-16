@@ -24,15 +24,17 @@ import (
 
 // AggFunc describes an aggregation function.
 type AggFunc struct {
-	Name         string      // "count", "sum", "avg", "min", "max", "dc", "values", "first", "last"
-	Field        string      // field to aggregate (empty for count)
-	Alias        string      // output field name
-	Program      *vm.Program // optional compiled expression for nested eval
-	OrderField   string      // optional order field for arg_min/arg_max
-	OrderProgram *vm.Program // optional compiled order expression for arg_min/arg_max
-	Limit        int         // optional per-function limit for top_k
-	Scale        float64     // optional multiplier applied at finalize time
-	Window       int         // optional per-function row window/offset for streamstats functions
+	Name          string      // "count", "sum", "avg", "min", "max", "dc", "values", "first", "last"
+	Field         string      // field to aggregate (empty for count)
+	Alias         string      // output field name
+	Program       *vm.Program // optional compiled expression for nested eval
+	OrderField    string      // optional order field for arg_min/arg_max
+	OrderProgram  *vm.Program // optional compiled order expression for arg_min/arg_max
+	WeightField   string      // optional weight field for weighted aggregates
+	WeightProgram *vm.Program // optional compiled weight expression for weighted aggregates
+	Limit         int         // optional per-function limit for top_k
+	Scale         float64     // optional multiplier applied at finalize time
+	Window        int         // optional per-function row window/offset for streamstats functions
 	// CondProgram is an optional compiled predicate for conditional aggregation.
 	// When non-nil, it is evaluated per row BEFORE extracting the value. If the
 	// predicate returns false or null, the row is skipped for this aggregate
@@ -116,6 +118,7 @@ const (
 	aggAnyVal = "any_value"
 	aggTopK   = "top_k"
 	aggValCnt = "value_counts"
+	aggAvgW   = "avg_weighted"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -144,22 +147,23 @@ type aggGroup struct {
 }
 
 type aggState struct {
-	count    int64
-	sum      float64
-	min      event.Value
-	max      event.Value
-	values   map[string]bool
-	all      []interface{}
-	mode     map[string]int64
-	first    event.Value
-	last     event.Value
-	hasFirst bool
-	firstTS  time.Time
-	lastTS   time.Time
-	hll      *HyperLogLog // for approximate dc when cardinality exceeds threshold
-	tdigest  *TDigest     // for approximate percentiles
-	sumSq    float64      // accumulated M2 (sum of squared deviations) for stdev after spill merge
-	topK     map[string]topKItem
+	count     int64
+	sum       float64
+	min       event.Value
+	max       event.Value
+	values    map[string]bool
+	all       []interface{}
+	mode      map[string]int64
+	first     event.Value
+	last      event.Value
+	hasFirst  bool
+	firstTS   time.Time
+	lastTS    time.Time
+	hll       *HyperLogLog // for approximate dc when cardinality exceeds threshold
+	tdigest   *TDigest     // for approximate percentiles
+	sumSq     float64      // accumulated M2 (sum of squared deviations) for stdev after spill merge
+	topK      map[string]topKItem
+	weightSum float64
 }
 
 type topKItem struct {
@@ -337,7 +341,7 @@ func aggResultType(name string) string {
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
 		aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
-		aggRunSum, aggMovAvg, aggDelta:
+		aggRunSum, aggMovAvg, aggDelta, aggAvgW:
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
@@ -367,7 +371,8 @@ func (a *AggregateIterator) processBatch(batch *Batch) error {
 		for j, agg := range a.aggs {
 			val := a.extractValue(agg, row)
 			orderVal := a.extractOrderValue(agg, row)
-			a.updateState(&group.states[j], agg.Name, val, orderVal, row)
+			weightVal := a.extractWeightValue(agg, row)
+			a.updateState(&group.states[j], agg.Name, val, orderVal, weightVal, row)
 		}
 	}
 
@@ -672,7 +677,24 @@ func (a *AggregateIterator) extractOrderValue(agg AggFunc, row map[string]event.
 	return event.NullValue()
 }
 
-func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal event.Value, row map[string]event.Value) {
+func (a *AggregateIterator) extractWeightValue(agg AggFunc, row map[string]event.Value) event.Value {
+	if agg.WeightProgram != nil {
+		result, err := a.vmInst.Execute(agg.WeightProgram, row)
+		if err != nil {
+			return event.NullValue()
+		}
+		return result
+	}
+	if agg.WeightField != "" {
+		if v, ok := row[agg.WeightField]; ok {
+			return v
+		}
+		return event.NullValue()
+	}
+	return event.NullValue()
+}
+
+func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, weightVal event.Value, row map[string]event.Value) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		if !val.IsNull() {
@@ -693,6 +715,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal ev
 			s.sum += f
 			s.count++
 		}
+	case aggAvgW:
+		updateWeightedAvgState(s, val, weightVal)
 	case aggMin:
 		if !val.IsNull() {
 			if s.min.IsNull() || vm.CompareValues(val, s.min) < 0 {
@@ -880,6 +904,19 @@ func finalizeTopK(s *aggState, limit int) event.Value {
 		}))
 	}
 	return event.ArrayValue(result)
+}
+
+func updateWeightedAvgState(s *aggState, val, weightVal event.Value) {
+	x, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	weight, ok := vm.ValueToFloat(weightVal)
+	if !ok {
+		return
+	}
+	s.sum += x * weight
+	s.weightSum += weight
 }
 
 func (a *AggregateIterator) updateChronoState(s *aggState, val event.Value, row map[string]event.Value, earliest bool) {
@@ -1163,6 +1200,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			if countF, ok := vm.ValueToFloat(countVal); ok {
 				group.states[j].count += int64(countF)
 			}
+		case aggAvgW:
+			a.mergeWeightedAvgFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
@@ -1399,6 +1438,15 @@ func (a *AggregateIterator) mergeModeFromRow(s *aggState, row map[string]event.V
 	}
 }
 
+func (a *AggregateIterator) mergeWeightedAvgFromRow(s *aggState, row map[string]event.Value, alias string) {
+	if sumF, ok := vm.ValueToFloat(row[alias+"__sum"]); ok {
+		s.sum += sumF
+	}
+	if weightF, ok := vm.ValueToFloat(row[alias+"__weight_sum"]); ok {
+		s.weightSum += weightF
+	}
+}
+
 func topKStateValue(s *aggState) event.Value {
 	return finalizeTopK(s, 0)
 }
@@ -1603,6 +1651,11 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		}
 
 		return event.FloatValue(s.sum / float64(s.count))
+	case aggAvgW:
+		if s.weightSum == 0 {
+			return event.NullValue()
+		}
+		return event.FloatValue(s.sum / s.weightSum)
 	case aggMin:
 		return s.min
 	case aggMax:

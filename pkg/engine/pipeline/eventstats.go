@@ -260,7 +260,8 @@ func (e *EventStatsIterator) materialize(ctx context.Context) error {
 			for j, agg := range e.aggs {
 				val := e.extractValue(agg, row)
 				orderVal := e.extractOrderValue(agg, row)
-				updateAggStateWithOrder(&group.states[j], agg.Name, val, orderVal)
+				weightVal := e.extractWeightValue(agg, row)
+				updateAggStateWithOrder(&group.states[j], agg.Name, val, orderVal, weightVal)
 			}
 		}
 	}
@@ -453,11 +454,28 @@ func (e *EventStatsIterator) extractOrderValue(agg AggFunc, row map[string]event
 	return event.NullValue()
 }
 
-func updateAggState(s *aggState, fn string, val event.Value) {
-	updateAggStateWithOrder(s, fn, val, event.NullValue())
+func (e *EventStatsIterator) extractWeightValue(agg AggFunc, row map[string]event.Value) event.Value {
+	if agg.WeightProgram != nil {
+		result, err := e.vmInst.Execute(agg.WeightProgram, row)
+		if err != nil {
+			return event.NullValue()
+		}
+		return result
+	}
+	if agg.WeightField != "" {
+		if v, ok := row[agg.WeightField]; ok {
+			return v
+		}
+		return event.NullValue()
+	}
+	return event.NullValue()
 }
 
-func updateAggStateWithOrder(s *aggState, fn string, val, orderVal event.Value) {
+func updateAggState(s *aggState, fn string, val event.Value) {
+	updateAggStateWithOrder(s, fn, val, event.NullValue(), event.NullValue())
+}
+
+func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal event.Value) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		if !val.IsNull() {
@@ -476,6 +494,8 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal event.Value) 
 			s.sum += f
 			s.count++
 		}
+	case aggAvgW:
+		updateWeightedAvgState(s, val, weightVal)
 	case aggMin:
 		if !val.IsNull() && (s.min.IsNull() || vm.CompareValues(val, s.min) < 0) {
 			s.min = val

@@ -3,6 +3,7 @@ package pipeline
 import (
 	"context"
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
@@ -18,11 +19,12 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		for group := 0; group < groups; group++ {
 			groupName := fmt.Sprintf("g%d", group)
 			rows = append(rows, map[string]event.Value{
-				"group": event.StringValue(groupName),
-				"value": event.StringValue(fmt.Sprintf("%s-%02d", groupName, score)),
-				"score": event.IntValue(int64(score)),
-				"route": event.StringValue(fmt.Sprintf("route-%d", score%3)),
-				"team":  event.StringValue(fmt.Sprintf("team-%d", group)),
+				"group":  event.StringValue(groupName),
+				"value":  event.StringValue(fmt.Sprintf("%s-%02d", groupName, score)),
+				"score":  event.IntValue(int64(score)),
+				"weight": event.IntValue(int64(score%5 + 1)),
+				"route":  event.StringValue(fmt.Sprintf("route-%d", score%3)),
+				"team":   event.StringValue(fmt.Sprintf("team-%d", group)),
 			})
 		}
 	}
@@ -41,6 +43,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "any_value", Field: "team", Alias: "some_team"},
 		{Name: "top_k", Field: "route", Limit: 2, Alias: "top_routes"},
 		{Name: "value_counts", Field: "route", Alias: "route_counts"},
+		{Name: "avg_weighted", Field: "score", WeightField: "weight", Alias: "weighted_score"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -76,7 +79,18 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventTopKEntry(t, row["route_counts"], 0, "route-0", 17, group+" counts 0")
 		assertEventTopKEntry(t, row["route_counts"], 1, "route-1", 17, group+" counts 1")
 		assertEventTopKEntry(t, row["route_counts"], 2, "route-2", 16, group+" counts 2")
+		assertEventFloat(t, row["weighted_score"], weightedScoreWant(), group+" weighted")
 	}
+}
+
+func weightedScoreWant() float64 {
+	var sum, weightSum float64
+	for score := 0; score < 50; score++ {
+		weight := float64(score%5 + 1)
+		sum += float64(score) * weight
+		weightSum += weight
+	}
+	return sum / weightSum
 }
 
 func assertEventString(t *testing.T, v event.Value, expected string, label string) {
@@ -106,5 +120,16 @@ func assertEventTopKEntry(t *testing.T, v event.Value, idx int, expected string,
 	got, ok := obj["count"].TryAsInt()
 	if !ok || got != count {
 		t.Fatalf("%s count: got %v, want %d", label, obj["count"], count)
+	}
+}
+
+func assertEventFloat(t *testing.T, v event.Value, expected float64, label string) {
+	t.Helper()
+	got, ok := v.TryAsFloat()
+	if !ok {
+		t.Fatalf("%s: expected float, got %s", label, v.Type())
+	}
+	if math.Abs(got-expected) > 1e-9 {
+		t.Fatalf("%s: got %f, want %f", label, got, expected)
 	}
 }

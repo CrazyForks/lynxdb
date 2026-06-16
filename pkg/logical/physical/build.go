@@ -427,6 +427,7 @@ var aggNameMapping = map[string]string{
 	"any_value":     "any_value",
 	"top_k":         "top_k",
 	"value_counts":  "value_counts",
+	"avg_weighted":  "avg_weighted",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -529,6 +530,14 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 				return nil, err
 			}
 		}
+		var weightField string
+		var weightProg *vm.Program
+		if mapped == "avg_weighted" {
+			weightField, weightProg, err = b.convertAggArg(name, call.Args, 1)
+			if err != nil {
+				return nil, err
+			}
+		}
 		window, err := streamstatsArgWindow(name, call)
 		if err != nil {
 			return nil, err
@@ -549,15 +558,17 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 		}
 
 		result[i] = pipeline.AggFunc{
-			Name:         mapped,
-			Field:        field,
-			Alias:        alias,
-			Program:      prog,
-			OrderField:   orderField,
-			OrderProgram: orderProg,
-			Limit:        limit,
-			Window:       window,
-			CondProgram:  condProg,
+			Name:          mapped,
+			Field:         field,
+			Alias:         alias,
+			Program:       prog,
+			OrderField:    orderField,
+			OrderProgram:  orderProg,
+			WeightField:   weightField,
+			WeightProgram: weightProg,
+			Limit:         limit,
+			Window:        window,
+			CondProgram:   condProg,
 		}
 	}
 	return result, nil

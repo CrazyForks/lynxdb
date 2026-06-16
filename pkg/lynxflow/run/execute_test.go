@@ -2,6 +2,7 @@ package run
 
 import (
 	"context"
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -247,17 +248,18 @@ func TestExecute_ParseJSON_FilterOnError(t *testing.T) {
 
 func TestExecute_ArgAggregates(t *testing.T) {
 	events := makeRawEvents(
-		`{"service":"api","uri":"/fast","duration_ms":25,"team":"core"}`,
-		`{"service":"api","uri":"/slow","duration_ms":250,"team":"edge"}`,
-		`{"service":"api","uri":"/medium","duration_ms":125,"team":"core"}`,
-		`{"service":"web","uri":"/home","duration_ms":30,"team":"web"}`,
+		`{"service":"api","uri":"/fast","duration_ms":25,"samples":2,"team":"core"}`,
+		`{"service":"api","uri":"/slow","duration_ms":250,"samples":1,"team":"edge"}`,
+		`{"service":"api","uri":"/medium","duration_ms":125,"samples":1,"team":"core"}`,
+		`{"service":"web","uri":"/home","duration_ms":30,"samples":4,"team":"web"}`,
 	)
 	query := `from main | parse json | stats ` +
 		`arg_max(uri, duration_ms * 2) as worst_uri, ` +
 		`arg_min(uri, duration_ms + 0) as best_uri, ` +
 		`any_value(team) as some_team, ` +
 		`top_k(team, 2) as teams, ` +
-		`value_counts(team) as team_counts by service`
+		`value_counts(team) as team_counts, ` +
+		`avg_weighted(duration_ms, samples) as weighted_ms by service`
 
 	rows, err := Execute(
 		context.Background(),
@@ -286,11 +288,13 @@ func TestExecute_ArgAggregates(t *testing.T) {
 	assertTopKEntry(t, byService["api"], "teams", 1, "edge", 1)
 	assertTopKEntry(t, byService["api"], "team_counts", 0, "core", 2)
 	assertTopKEntry(t, byService["api"], "team_counts", 1, "edge", 1)
+	assertFloatField(t, byService["api"], "weighted_ms", 106.25)
 	assertStringField(t, byService["web"], "worst_uri", "/home", 0)
 	assertStringField(t, byService["web"], "best_uri", "/home", 0)
 	assertStringField(t, byService["web"], "some_team", "web", 0)
 	assertTopKEntry(t, byService["web"], "teams", 0, "web", 1)
 	assertTopKEntry(t, byService["web"], "team_counts", 0, "web", 1)
+	assertFloatField(t, byService["web"], "weighted_ms", 30)
 }
 
 func assertTopKEntry(t *testing.T, row map[string]event.Value, field string, idx int, value string, count int64) {
@@ -310,6 +314,17 @@ func assertTopKEntry(t *testing.T, row map[string]event.Value, field string, idx
 	gotCount, ok := obj["count"].TryAsInt()
 	if !ok || gotCount != count {
 		t.Fatalf("%s[%d].count got %v, want %d", field, idx, obj["count"], count)
+	}
+}
+
+func assertFloatField(t *testing.T, row map[string]event.Value, field string, want float64) {
+	t.Helper()
+	got, ok := row[field].TryAsFloat()
+	if !ok {
+		t.Fatalf("%s should be float, got %s", field, row[field].Type())
+	}
+	if math.Abs(got-want) > 1e-9 {
+		t.Fatalf("%s got %f, want %f", field, got, want)
 	}
 }
 

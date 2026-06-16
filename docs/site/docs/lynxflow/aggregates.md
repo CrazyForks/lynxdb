@@ -47,6 +47,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `row_number` | () | `int` | 1-based row index within the group. |
 | `running_sum` | (x: number) | `number` | - |
 | `moving_avg` | (x: number, n: int) | `float` | - |
+| `delta` | (x: number) | `float` | Difference between the current value and previous group value. |
 
 ---
 

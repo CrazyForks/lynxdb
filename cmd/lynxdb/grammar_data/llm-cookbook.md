@@ -256,6 +256,7 @@ Please fix the query."""
 | "95th percentile" | `\| stats p95(duration_ms)` |
 | "top 10 URIs" | `\| top 10 uri` |
 | "error count only" | `\| stats count(where level == "error") as errors` |
+| "sum successful bytes" | `\| stats sum(bytes, where status < 500) as ok_bytes` |
 
 ### 5.3 Time series patterns
 
@@ -277,6 +278,7 @@ Please fix the query."""
 | "fill missing values" | `\| extend duration_ms = duration_ms ?? 0` |
 | "parse JSON logs" | `\| parse json` |
 | "parse mixed formats" | `\| parse first_of(json, logfmt)` |
+| "weekday name" | `\| extend weekday = strftime(_time, "%A")` |
 
 ### 5.5 Advanced patterns
 
@@ -292,19 +294,23 @@ Please fix the query."""
 | "field distribution" | `\| facets service, host limit=5` |
 | "detect anomalies" | `\| baseline error_rate window=12 by service` |
 | "track changes" | `\| changes version by service` |
+| "QUALIFY-style rank filter" | `\| sort +service, -count \| streamstats row_number() as rn by service \| where rn <= 3` |
+| "union by name" | `\| union [from api[-1h] \| stats count() as api_errors], [from web[-1h] \| stats count() as web_errors]` |
 
 ### 5.6 Edge cases to handle
 
 1. **`==` for comparison**: `status == 500` (never `status = 500` outside search sugar)
 2. **`=` for assignment/options**: `extend x = 1`, `type=inner`, `maxpause=30m`
 3. **count() requires parens**: `stats count()` not `stats count`
-4. **Conditional aggregates**: `count(where status >= 500)` not `count(eval(...))`
+4. **Conditional aggregates**: all standard aggregates support `where`, e.g. `count(where status >= 500)` and `sum(bytes, where status < 500)`
 5. **CTE syntax**: `let $name = pipeline;` then `from $name`
 6. **Duration units**: `5m`, `1h`, `30s`, `1d`, `1w` — no month/year
 7. **Standard boolean precedence**: `and` binds tighter than `or` (unlike SPL2 search)
 8. **Raw-string regex**: `r"pattern"` not `"pattern"` in parse regex
 9. **Null handling**: `exists(f)` for non-null check, `f ?? default` for coalesce
 10. **Array literals**: `[1, 2, 3]` not `(1, 2, 3)` for `in` expressions
+11. **QUALIFY idiom**: use `streamstats ... | where ...` instead of a `QUALIFY` stage
+12. **Union by name**: `union` already merges schemas by column name and null-pads missing columns
 
 ---
 

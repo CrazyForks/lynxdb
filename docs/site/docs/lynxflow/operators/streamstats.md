@@ -39,6 +39,10 @@ streamstats window=3 avg(duration_ms) as rolling_avg
 streamstats row_number() as rk by host
 ```
 
+```
+streamstats delta(bytes_total) as bytes_delta by host
+```
+
 ---
 
 *Generated from the [LynxFlow registry](https://github.com/lynxbase/lynxdb/blob/main/pkg/lynxflow/registry/operators.go). See [RFC-002](https://github.com/lynxbase/lynxdb/blob/main/docs/grammar/RFC-002.md) for the full language specification.*

@@ -75,6 +75,8 @@ func isDecomposableAgg(expr ast.Expr) bool {
 		return false
 	}
 	switch call.Callee {
+	case "perc":
+		return isSimplePercentile(call)
 	case "perc_weighted":
 		return isSimpleWeightedPercentile(call)
 	case "count", "sum", "min", "max", "avg",
@@ -93,6 +95,18 @@ func isDecomposableAgg(expr ast.Expr) bool {
 	default:
 		return false
 	}
+}
+
+func isSimplePercentile(call *ast.Call) bool {
+	if len(call.Args) < 2 {
+		return false
+	}
+	lit, ok := call.Args[1].(*ast.Literal)
+	if !ok {
+		return false
+	}
+
+	return lit.Kind == ast.LitInt || lit.Kind == ast.LitFloat
 }
 
 func isSimpleWeightedPercentile(call *ast.Call) bool {

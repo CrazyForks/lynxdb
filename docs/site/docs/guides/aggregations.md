@@ -161,6 +161,12 @@ lynxdb query 'from main level=error | stats count() as count, values(source) as 
 
 `list()` collects all non-null values in row order (duplicates included).
 
+Use `top_k_weighted()` to rank values by summed numeric weight:
+
+```bash
+lynxdb query 'from sales | stats top_k_weighted(product, revenue, 10) as top_products by region'
+```
+
 ### Earliest and latest
 
 Get the first and last value seen (by `_time`):

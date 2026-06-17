@@ -31,6 +31,7 @@ var aggregates = []Aggregate{
 	{Name: "arg_min", Params: []Param{{Name: "value", Type: TAny}, {Name: "order", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the least order expression."},
 	{Name: "any_value", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "An arbitrary non-null value from the group."},
 	{Name: "top_k", Params: []Param{{Name: "x", Type: TAny}, {Name: "k", Type: TInt}}, SupportsWhere: true, Result: TArray, Doc: "Top k non-null values with counts."},
+	{Name: "top_k_weighted", Params: []Param{{Name: "x", Type: TAny}, {Name: "weight", Type: TNumber}, {Name: "k", Type: TInt}}, SupportsWhere: true, Result: TArray, Doc: "Top k non-null values by summed positive weight."},
 	{Name: "value_counts", Params: []Param{{Name: "x", Type: TAny}, {Name: "max", Type: TInt, Optional: true}}, SupportsWhere: true, Result: TArray, Doc: "Non-null values with counts, sorted by frequency and optionally capped."},
 	{Name: "avg_weighted", Params: []Param{{Name: "x", Type: TNumber}, {Name: "weight", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Weighted average as sum(x * weight) / sum(weight)."},
 	{Name: "entropy", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TFloat, Doc: "Shannon entropy of non-null values, in bits."},

@@ -369,6 +369,10 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 			if len(s.topK) > 0 {
 				row[agg.Alias+"__topk"] = topKStateValue(s)
 			}
+		case aggTopKW:
+			if len(s.topK) > 0 {
+				row[agg.Alias+"__topk_weighted"] = weightedTopKStateValue(s)
+			}
 		case "earliest":
 			if !s.first.IsNull() {
 				row[agg.Alias+"__first_value"] = s.first
@@ -482,6 +486,8 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
 		case aggTopK, aggValCnt, aggEntropy, aggMaxN, aggMinN:
 			a.mergeTopKFromRow(&group.states[j], row, agg.Alias)
+		case aggTopKW:
+			a.mergeWeightedTopKFromRow(&group.states[j], row, agg.Alias)
 		case "earliest":
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
 		case "latest":

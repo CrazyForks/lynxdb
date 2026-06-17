@@ -479,7 +479,7 @@ func (s *StreamStatsIterator) writeAggValue(
 ) {
 	var val event.Value
 	switch strings.ToLower(agg.Name) {
-	case aggValues, aggList, aggMAD, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggPercW:
+	case aggValues, aggList, aggMAD, aggTopKW, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggPercW:
 		// These aggregates require full window scans for ordered or distributional output.
 		val = s.computeAgg(agg, rb.items())
 	case aggRowNum:
@@ -592,7 +592,7 @@ func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 	for _, agg := range aggs {
 		switch strings.ToLower(agg.Name) {
 		case aggValues, aggList, aggLag, aggLead, aggMovAvg, aggDelta,
-			aggMAD, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
+			aggMAD, aggTopKW, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
 			aggPercW:
 			return true
 		}
@@ -1130,6 +1130,17 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return finalizePercentile(&st, agg.Quantile)
+	case aggTopKW:
+		st := aggState{}
+		for _, item := range items {
+			val, valOK := item[agg.Field]
+			weight, weightOK := item[agg.WeightField]
+			if valOK && weightOK {
+				updateWeightedTopKState(&st, val, weight)
+			}
+		}
+
+		return finalizeWeightedTopK(&st, agg.Limit)
 	case aggMAD:
 		st := aggState{}
 		for _, item := range items {

@@ -47,6 +47,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "arg_min", Field: "value", OrderField: "score", Alias: "min_value"},
 		{Name: "any_value", Field: "team", Alias: "some_team"},
 		{Name: "top_k", Field: "route", Limit: 2, Alias: "top_routes"},
+		{Name: "top_k_weighted", Field: "route", WeightField: "weight", Limit: 2, Alias: "top_weighted_routes"},
 		{Name: "value_counts", Field: "route", Alias: "route_counts"},
 		{Name: "avg_weighted", Field: "score", WeightField: "weight", Alias: "weighted_score"},
 		{Name: "entropy", Field: "route", Alias: "route_entropy"},
@@ -93,6 +94,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		}
 		assertEventTopKEntry(t, row["top_routes"], 0, "route-0", 17, group+" top 0")
 		assertEventTopKEntry(t, row["top_routes"], 1, "route-1", 17, group+" top 1")
+		assertEventWeightedTopKEntry(t, row["top_weighted_routes"], 0, "route-1", 52, group+" weighted top 0")
+		assertEventWeightedTopKEntry(t, row["top_weighted_routes"], 1, "route-0", 50, group+" weighted top 1")
 		assertEventTopKEntry(t, row["route_counts"], 0, "route-0", 17, group+" counts 0")
 		assertEventTopKEntry(t, row["route_counts"], 1, "route-1", 17, group+" counts 1")
 		assertEventTopKEntry(t, row["route_counts"], 2, "route-2", 16, group+" counts 2")
@@ -262,6 +265,26 @@ func assertEventTopKEntry(t *testing.T, v event.Value, idx int, expected string,
 	got, ok := obj["count"].TryAsInt()
 	if !ok || got != count {
 		t.Fatalf("%s count: got %v, want %d", label, obj["count"], count)
+	}
+}
+
+func assertEventWeightedTopKEntry(t *testing.T, v event.Value, idx int, expected string, weight float64, label string) {
+	t.Helper()
+	if v.Type() != event.FieldTypeArray {
+		t.Fatalf("%s: expected array, got %s", label, v.Type())
+	}
+	arr := v.AsArray()
+	if len(arr) <= idx {
+		t.Fatalf("%s: expected entry %d, got len %d", label, idx, len(arr))
+	}
+	obj, ok := arr[idx].TryAsObject()
+	if !ok {
+		t.Fatalf("%s: expected object, got %s", label, arr[idx].Type())
+	}
+	assertEventString(t, obj["value"], expected, label+" value")
+	got, ok := obj["weight"].TryAsFloat()
+	if !ok || math.Abs(got-weight) > 1e-9 {
+		t.Fatalf("%s weight: got %v, want %f", label, obj["weight"], weight)
 	}
 }
 

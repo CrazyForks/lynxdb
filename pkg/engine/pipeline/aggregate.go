@@ -120,6 +120,7 @@ const (
 	aggArgMin  = "arg_min"
 	aggAnyVal  = "any_value"
 	aggTopK    = "top_k"
+	aggTopKW   = "top_k_weighted"
 	aggValCnt  = "value_counts"
 	aggAvgW    = "avg_weighted"
 	aggEntropy = "entropy"
@@ -186,8 +187,9 @@ type aggState struct {
 }
 
 type topKItem struct {
-	Value event.Value
-	Count int64
+	Value  event.Value
+	Count  int64
+	Weight float64
 }
 
 // NewAggregateIterator creates a streaming hash aggregation operator.
@@ -367,7 +369,7 @@ func aggResultType(name string) string {
 		return "timestamp"
 	case aggLinFit:
 		return "object"
-	case aggTopK, aggValCnt, aggMaxN, aggMinN:
+	case aggTopK, aggTopKW, aggValCnt, aggMaxN, aggMinN:
 		return "array"
 	default:
 		return "any"
@@ -807,6 +809,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		}
 	case aggTopK, aggValCnt, aggEntropy, aggMaxN, aggMinN:
 		updateTopKState(s, val, 1)
+	case aggTopKW:
+		updateWeightedTopKState(s, val, weightVal)
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
 			s.first = val
@@ -904,6 +908,26 @@ func updateTopKState(s *aggState, val event.Value, count int64) {
 	s.topK[key] = item
 }
 
+func updateWeightedTopKState(s *aggState, val, weightVal event.Value) {
+	if val.IsNull() {
+		return
+	}
+	weight, ok := vm.ValueToFloat(weightVal)
+	if !ok || weight <= 0 || math.IsNaN(weight) || math.IsInf(weight, 0) {
+		return
+	}
+	key := topKKey(val)
+	if s.topK == nil {
+		s.topK = make(map[string]topKItem)
+	}
+	item := s.topK[key]
+	if item.Weight == 0 {
+		item.Value = val
+	}
+	item.Weight += weight
+	s.topK[key] = item
+}
+
 func topKKey(val event.Value) string {
 	return val.Type().String() + "\x00" + val.String()
 }
@@ -933,6 +957,36 @@ func finalizeTopK(s *aggState, limit int) event.Value {
 		result = append(result, event.ObjectValue(map[string]event.Value{
 			"value": item.Value,
 			"count": event.IntValue(item.Count),
+		}))
+	}
+	return event.ArrayValue(result)
+}
+
+func finalizeWeightedTopK(s *aggState, limit int) event.Value {
+	if len(s.topK) == 0 {
+		return event.ArrayValue(nil)
+	}
+	if limit <= 0 {
+		limit = len(s.topK)
+	}
+	items := make([]topKItem, 0, len(s.topK))
+	for _, item := range s.topK {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].Weight != items[j].Weight {
+			return items[i].Weight > items[j].Weight
+		}
+		return items[i].Value.String() < items[j].Value.String()
+	})
+	if limit > len(items) {
+		limit = len(items)
+	}
+	result := make([]event.Value, 0, limit)
+	for _, item := range items[:limit] {
+		result = append(result, event.ObjectValue(map[string]event.Value{
+			"value":  item.Value,
+			"weight": event.FloatValue(item.Weight),
 		}))
 	}
 	return event.ArrayValue(result)
@@ -1535,6 +1589,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
 		case aggTopK, aggValCnt, aggEntropy, aggMaxN, aggMinN:
 			a.mergeTopKFromRow(&group.states[j], row, agg.Alias)
+		case aggTopKW:
+			a.mergeWeightedTopKFromRow(&group.states[j], row, agg.Alias)
 		case "earliest":
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
 		case "latest":
@@ -1842,6 +1898,10 @@ func topKStateValue(s *aggState) event.Value {
 	return finalizeTopK(s, 0)
 }
 
+func weightedTopKStateValue(s *aggState) event.Value {
+	return finalizeWeightedTopK(s, 0)
+}
+
 func (a *AggregateIterator) mergeTopKFromRow(s *aggState, row map[string]event.Value, alias string) {
 	topVal, ok := row[alias+"__topk"]
 	if !ok || topVal.IsNull() {
@@ -1862,6 +1922,24 @@ func (a *AggregateIterator) mergeTopKFromRow(s *aggState, row map[string]event.V
 			continue
 		}
 		updateTopKState(s, val, count)
+	}
+}
+
+func (a *AggregateIterator) mergeWeightedTopKFromRow(s *aggState, row map[string]event.Value, alias string) {
+	topVal, ok := row[alias+"__topk_weighted"]
+	if !ok || topVal.IsNull() {
+		return
+	}
+	entries, ok := topVal.TryAsArray()
+	if !ok {
+		return
+	}
+	for _, entry := range entries {
+		obj, ok := entry.TryAsObject()
+		if !ok {
+			continue
+		}
+		updateWeightedTopKState(s, obj["value"], obj["weight"])
 	}
 }
 
@@ -2161,6 +2239,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 	switch strings.ToLower(agg.Name) {
 	case aggTopK:
 		return finalizeTopK(s, agg.Limit)
+	case aggTopKW:
+		return finalizeWeightedTopK(s, agg.Limit)
 	case aggValCnt:
 		return finalizeTopK(s, agg.Limit)
 	case aggEntropy:

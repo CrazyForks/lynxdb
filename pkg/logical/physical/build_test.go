@@ -478,6 +478,58 @@ func TestBuild_ObjectSumAggregates(t *testing.T) {
 	assertObjectFloatField(t, streamRows[2], "totals", "err", 4, 2)
 }
 
+func TestBuild_WeightedTopKAggregate(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"item": strV("a"), "w": intV(2)},
+		{"item": strV("b"), "w": intV(5)},
+		{"item": strV("a"), "w": intV(4)},
+		{"item": strV("c"), "w": intV(10)},
+		{"item": strV("b"), "w": intV(1)},
+	}
+
+	statsRows := drain(t, `from * | stats top_k_weighted(item, w, 2) as top_items`, rows)
+	if len(statsRows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(statsRows))
+	}
+	assertWeightedTopKField(t, statsRows[0], "top_items", 0, "c", 10)
+	assertWeightedTopKField(t, statsRows[0], "top_items", 1, "a", 6)
+
+	eventRows := drain(t, `from * | eventstats top_k_weighted(item, w, 2) as top_items`, rows)
+	assertWeightedTopKField(t, eventRows[0], "top_items", 0, "c", 10)
+	assertWeightedTopKField(t, eventRows[4], "top_items", 1, "a", 6)
+
+	streamRows := drain(t, `from * | streamstats top_k_weighted(item, w, 2) as top_items`, rows)
+	assertWeightedTopKField(t, streamRows[0], "top_items", 0, "a", 2)
+	assertWeightedTopKField(t, streamRows[4], "top_items", 0, "c", 10)
+	assertWeightedTopKField(t, streamRows[4], "top_items", 1, "a", 6)
+}
+
+func assertWeightedTopKField(
+	t *testing.T,
+	row map[string]event.Value,
+	field string,
+	index int,
+	wantValue string,
+	wantWeight float64,
+) {
+	t.Helper()
+	values, ok := row[field].TryAsArray()
+	if !ok || len(values) <= index {
+		t.Fatalf("%s: missing weighted top-k entry %d in %s", field, index, row[field].String())
+	}
+	obj, ok := values[index].TryAsObject()
+	if !ok {
+		t.Fatalf("%s[%d]: expected object, got %s", field, index, values[index].String())
+	}
+	if got := obj["value"].String(); got != wantValue {
+		t.Fatalf("%s[%d].value = %s, want %s", field, index, got, wantValue)
+	}
+	gotWeight, ok := obj["weight"].TryAsFloat()
+	if !ok || math.Abs(gotWeight-wantWeight) > 0.01 {
+		t.Fatalf("%s[%d].weight = %s, want %f", field, index, obj["weight"].String(), wantWeight)
+	}
+}
+
 func TestBuild_PercAggregate(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"x": intV(1)},
@@ -1348,40 +1400,41 @@ func TestBuild_CondProgram_AggFunc(t *testing.T) {
 
 func TestAggNameMapping(t *testing.T) {
 	expected := map[string]string{
-		"count":         "count",
-		"sum":           "sum",
-		"avg":           "avg",
-		"min":           "min",
-		"max":           "max",
-		"dc":            "dc",
-		"estdc":         "dc",
-		"perc":          "perc",
-		"perc_weighted": "perc_weighted",
-		"p50":           "perc50",
-		"p95":           "perc95",
-		"p99":           "perc99",
-		"stdev":         "stdev",
-		"values":        "values",
-		"first":         "first",
-		"last":          "last",
-		"mode":          "mode",
-		"arg_max":       "arg_max",
-		"arg_min":       "arg_min",
-		"any_value":     "any_value",
-		"top_k":         "top_k",
-		"value_counts":  "value_counts",
-		"avg_weighted":  "avg_weighted",
-		"entropy":       "entropy",
-		"max_n":         "max_n",
-		"min_n":         "min_n",
-		"corr":          "corr",
-		"covar":         "covar",
-		"linear_fit":    "linear_fit",
-		"sum_object":    "sum_object",
-		"skewness":      "skewness",
-		"kurtosis":      "kurtosis",
-		"mad":           "mad",
-		"rate":          "rate",
+		"count":          "count",
+		"sum":            "sum",
+		"avg":            "avg",
+		"min":            "min",
+		"max":            "max",
+		"dc":             "dc",
+		"estdc":          "dc",
+		"perc":           "perc",
+		"perc_weighted":  "perc_weighted",
+		"p50":            "perc50",
+		"p95":            "perc95",
+		"p99":            "perc99",
+		"stdev":          "stdev",
+		"values":         "values",
+		"first":          "first",
+		"last":           "last",
+		"mode":           "mode",
+		"arg_max":        "arg_max",
+		"arg_min":        "arg_min",
+		"any_value":      "any_value",
+		"top_k":          "top_k",
+		"top_k_weighted": "top_k_weighted",
+		"value_counts":   "value_counts",
+		"avg_weighted":   "avg_weighted",
+		"entropy":        "entropy",
+		"max_n":          "max_n",
+		"min_n":          "min_n",
+		"corr":           "corr",
+		"covar":          "covar",
+		"linear_fit":     "linear_fit",
+		"sum_object":     "sum_object",
+		"skewness":       "skewness",
+		"kurtosis":       "kurtosis",
+		"mad":            "mad",
+		"rate":           "rate",
 	}
 	for input, want := range expected {
 		got, ok := aggNameMapping[input]

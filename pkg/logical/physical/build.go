@@ -376,70 +376,71 @@ func (b *builder) buildProject(nd *logical.Project) (pipeline.Iterator, error) {
 // aggNameMapping maps LynxFlow v2 aggregate function names (lowercase) to the
 // pipeline's internal aggregate name constants.
 var aggNameMapping = map[string]string{
-	"count":         "count",
-	"sum":           "sum",
-	"avg":           "avg",
-	"min":           "min",
-	"max":           "max",
-	"dc":            "dc",
-	"estdc":         "dc",
-	"estdc_error":   "estdc_error",
-	"perc":          "perc",
-	"p25":           "perc25",
-	"p50":           "perc50",
-	"p75":           "perc75",
-	"p90":           "perc90",
-	"p95":           "perc95",
-	"p99":           "perc99",
-	"perc25":        "perc25",
-	"perc50":        "perc50",
-	"perc75":        "perc75",
-	"perc90":        "perc90",
-	"perc95":        "perc95",
-	"perc99":        "perc99",
-	"perc_weighted": "perc_weighted",
-	"stdev":         "stdev",
-	"stdevp":        "stdevp",
-	"var":           "var",
-	"varp":          "varp",
-	"mode":          "mode",
-	"first":         "first",
-	"last":          "last",
-	"earliest":      "earliest",
-	"latest":        "latest",
-	"values":        "values",
-	"list":          "list",
-	"rate":          "rate",
-	"per_second":    "per_second",
-	"per_minute":    "per_minute",
-	"per_hour":      "per_hour",
-	"per_day":       "per_day",
-	"range":         "range",
-	"sumsq":         "sumsq",
-	"earliest_time": "earliest_time",
-	"latest_time":   "latest_time",
-	"lag":           "lag",
-	"lead":          "lead",
-	"row_number":    "row_number",
-	"running_sum":   "running_sum",
-	"moving_avg":    "moving_avg",
-	"delta":         "delta",
-	"arg_max":       "arg_max",
-	"arg_min":       "arg_min",
-	"any_value":     "any_value",
-	"top_k":         "top_k",
-	"value_counts":  "value_counts",
-	"avg_weighted":  "avg_weighted",
-	"entropy":       "entropy",
-	"max_n":         "max_n",
-	"min_n":         "min_n",
-	"corr":          "corr",
-	"covar":         "covar",
-	"linear_fit":    "linear_fit",
-	"sum_object":    "sum_object",
-	"skewness":      "skewness",
-	"kurtosis":      "kurtosis",
-	"mad":           "mad",
+	"count":          "count",
+	"sum":            "sum",
+	"avg":            "avg",
+	"min":            "min",
+	"max":            "max",
+	"dc":             "dc",
+	"estdc":          "dc",
+	"estdc_error":    "estdc_error",
+	"perc":           "perc",
+	"p25":            "perc25",
+	"p50":            "perc50",
+	"p75":            "perc75",
+	"p90":            "perc90",
+	"p95":            "perc95",
+	"p99":            "perc99",
+	"perc25":         "perc25",
+	"perc50":         "perc50",
+	"perc75":         "perc75",
+	"perc90":         "perc90",
+	"perc95":         "perc95",
+	"perc99":         "perc99",
+	"perc_weighted":  "perc_weighted",
+	"stdev":          "stdev",
+	"stdevp":         "stdevp",
+	"var":            "var",
+	"varp":           "varp",
+	"mode":           "mode",
+	"first":          "first",
+	"last":           "last",
+	"earliest":       "earliest",
+	"latest":         "latest",
+	"values":         "values",
+	"list":           "list",
+	"rate":           "rate",
+	"per_second":     "per_second",
+	"per_minute":     "per_minute",
+	"per_hour":       "per_hour",
+	"per_day":        "per_day",
+	"range":          "range",
+	"sumsq":          "sumsq",
+	"earliest_time":  "earliest_time",
+	"latest_time":    "latest_time",
+	"lag":            "lag",
+	"lead":           "lead",
+	"row_number":     "row_number",
+	"running_sum":    "running_sum",
+	"moving_avg":     "moving_avg",
+	"delta":          "delta",
+	"arg_max":        "arg_max",
+	"arg_min":        "arg_min",
+	"any_value":      "any_value",
+	"top_k":          "top_k",
+	"top_k_weighted": "top_k_weighted",
+	"value_counts":   "value_counts",
+	"avg_weighted":   "avg_weighted",
+	"entropy":        "entropy",
+	"max_n":          "max_n",
+	"min_n":          "min_n",
+	"corr":           "corr",
+	"covar":          "covar",
+	"linear_fit":     "linear_fit",
+	"sum_object":     "sum_object",
+	"skewness":       "skewness",
+	"kurtosis":       "kurtosis",
+	"mad":            "mad",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -545,7 +546,8 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 		var weightField string
 		var weightProg *vm.Program
 		if mapped == "avg_weighted" || mapped == "corr" || mapped == "covar" ||
-			mapped == "linear_fit" || mapped == "perc_weighted" {
+			mapped == "linear_fit" || mapped == "perc_weighted" ||
+			mapped == "top_k_weighted" {
 			weightField, weightProg, err = b.convertAggArg(name, call.Args, 1)
 			if err != nil {
 				return nil, err
@@ -613,6 +615,18 @@ func aggregateLimit(name string, call *lfast.Call) (int, error) {
 			return 0, fmt.Errorf("physical.Build: %s requires a limit", name)
 		}
 		n, err := intLiteralArg(call.Args[1])
+		if err != nil {
+			return 0, fmt.Errorf("physical.Build: %s limit: %w", name, err)
+		}
+		if n <= 0 {
+			return 0, fmt.Errorf("physical.Build: %s limit must be positive", name)
+		}
+		return n, nil
+	case "top_k_weighted":
+		if len(call.Args) < 3 {
+			return 0, fmt.Errorf("physical.Build: %s requires a limit", name)
+		}
+		n, err := intLiteralArg(call.Args[2])
 		if err != nil {
 			return 0, fmt.Errorf("physical.Build: %s limit: %w", name, err)
 		}

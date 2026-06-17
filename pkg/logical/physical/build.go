@@ -506,11 +506,18 @@ func (b *builder) buildWindowAggregate(child pipeline.Iterator, nd *logical.Aggr
 		if nd.Window.Window != nil {
 			window = *nd.Window.Window
 		}
+		var durationWindow time.Duration
+		if nd.Window.WindowDuration != nil {
+			durationWindow, err = exprToDuration(nd.Window.WindowDuration)
+			if err != nil {
+				return nil, fmt.Errorf("physical.Build: streamstats window: %w", err)
+			}
+		}
 		current := true
 		if nd.Window.Current != nil {
 			current = *nd.Window.Current
 		}
-		return pipeline.NewStreamStatsIterator(child, aggs, groupBy, window, current), nil
+		return pipeline.NewStreamStatsIteratorWithDuration(child, aggs, groupBy, window, durationWindow, current), nil
 	default:
 		return nil, fmt.Errorf("physical.Build: unknown window variant %d", nd.Window.Variant)
 	}

@@ -180,6 +180,7 @@ func (l *lowerer) lowerStage(input Node, s ast.Stage) Node {
 		ws := &WindowSpec{Variant: WindowStreamstats}
 		if s.Streamstats != nil {
 			ws.Window = s.Streamstats.Window
+			ws.WindowDuration = s.Streamstats.WindowDuration
 			ws.Current = s.Streamstats.Current
 		}
 		var sp *ast.StatsPayload

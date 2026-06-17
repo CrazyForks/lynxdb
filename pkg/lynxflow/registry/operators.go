@@ -73,7 +73,7 @@ var operators = []Operator{
 		Name: "streamstats", Class: ClassCore, Streaming: StreamingRow,
 		Positionals: []Positional{{Name: "aggs", Type: ArgAggList, Required: true, Doc: "aggregates or window functions (lag, lead, row_number, ...)"}},
 		Options: []Option{
-			{Name: "window", Type: ArgInt, Doc: "sliding window size in rows; 0 = all preceding"},
+			{Name: "window", Type: ArgWindow, Doc: "sliding window size in rows or a duration over _time; 0 = all preceding"},
 			{Name: "current", Type: ArgBool, Default: "true", Doc: "include the current row"},
 			{Name: "by", Type: ArgFieldList},
 		},

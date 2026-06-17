@@ -1132,9 +1132,13 @@ func (p *parser) parseStreamstatsBody(s *ast.Stage) {
 			if n == "window" && p.peekIsEq() {
 				p.advance() // consume 'window'
 				p.advance() // consume '='
-				v := p.parseIntValue()
-				vi := int(v)
-				payload.Window = &vi
+				if p.at(lexer.Duration) {
+					payload.WindowDuration = p.parseDurationLiteral()
+				} else {
+					v := p.parseIntValue()
+					vi := int(v)
+					payload.Window = &vi
+				}
 				continue
 			}
 			if n == "current" && p.peekIsEq() {

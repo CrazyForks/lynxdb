@@ -226,6 +226,21 @@ func TestLower_Streamstats(t *testing.T) {
 	if agg.Window.Window == nil || *agg.Window.Window != 10 {
 		t.Errorf("expected window=10, got %v", agg.Window.Window)
 	}
+
+	plan, diags = parseDesugarLower(t,
+		`from app | streamstats window=5m sum(bytes) as recent_bytes`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Aggregate](t, plan.Root, "root should be Aggregate")
+	agg = plan.Root.(*Aggregate)
+	if agg.Window == nil || agg.Window.Variant != WindowStreamstats {
+		t.Error("expected WindowStreamstats variant")
+	}
+	if agg.Window.WindowDuration == nil {
+		t.Fatal("expected duration window")
+	}
+	if got := agg.Window.WindowDuration.String(); got != "5m" {
+		t.Errorf("expected window=5m, got %q", got)
+	}
 }
 
 func TestLower_Parse(t *testing.T) {

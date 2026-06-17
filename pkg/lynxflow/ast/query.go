@@ -628,14 +628,20 @@ func (a *AggExpr) String() string {
 // StreamstatsPayload extends StatsPayload with window options.
 type StreamstatsPayload struct {
 	StatsPayload
-	Window  *int  // nil means not specified
-	Current *bool // nil means not specified
+	Window         *int // nil means not specified
+	WindowDuration Expr // nil means not specified
+	Current        *bool
 }
 
 func (s *StreamstatsPayload) String() string {
 	var b strings.Builder
 	if s.Window != nil {
 		b.WriteString(fmt.Sprintf("window=%d ", *s.Window))
+	}
+	if s.WindowDuration != nil {
+		b.WriteString("window=")
+		b.WriteString(s.WindowDuration.String())
+		b.WriteByte(' ')
 	}
 	if s.Current != nil {
 		b.WriteString(fmt.Sprintf("current=%t ", *s.Current))

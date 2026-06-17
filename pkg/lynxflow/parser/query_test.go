@@ -237,6 +237,11 @@ func TestGoldenStructure(t *testing.T) {
 			input: `| stats count(where status >= 500) as errors, count() as total`,
 			want:  `stats count(where (status >= 500)) as errors, count() as total`,
 		},
+		{
+			name:  "streamstats_duration_window",
+			input: `| streamstats window=5m sum(bytes) as recent_bytes`,
+			want:  `streamstats window=5m sum(bytes) as recent_bytes`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -454,6 +459,18 @@ func TestSpan_OptionValues(t *testing.T) {
 	}
 	if s.Streamstats.Window == nil || *s.Streamstats.Window != 3 {
 		t.Errorf("window = %v, want 3", s.Streamstats.Window)
+	}
+
+	q, diags = Parse(`| streamstats window=5m avg(x) as rolling`)
+	if len(diags) > 0 {
+		t.Errorf("unexpected diags: %v", diagMsgs(diags))
+	}
+	s = q.Pipeline.Stages[0]
+	if s.Streamstats.WindowDuration == nil {
+		t.Fatal("expected duration window")
+	}
+	if got := s.Streamstats.WindowDuration.String(); got != "5m" {
+		t.Errorf("duration window = %q, want 5m", got)
 	}
 }
 

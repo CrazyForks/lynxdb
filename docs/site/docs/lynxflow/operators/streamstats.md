@@ -12,7 +12,7 @@ Running/windowed values in row order.
 ## Signature
 
 ```
-| streamstats <aggs> [window=<int>] [current=<bool>] [by=<field_list>]
+| streamstats <aggs> [window=<int|duration>] [current=<bool>] [by=<field_list>]
 ```
 
 ## Positional Arguments
@@ -25,7 +25,7 @@ Running/windowed values in row order.
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
-| `window` | `int` | `-` | sliding window size in rows; 0 = all preceding |
+| `window` | `int|duration` | `-` | sliding window size in rows or a duration over _time; 0 = all preceding |
 | `current` | `bool` | `true` | include the current row |
 | `by` | `field_list` | `-` | - |
 

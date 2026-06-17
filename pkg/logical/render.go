@@ -343,6 +343,11 @@ func renderAggregate(n *Aggregate) string {
 		if n.Window.Window != nil {
 			b.WriteString(fmt.Sprintf("window=%d ", *n.Window.Window))
 		}
+		if n.Window.WindowDuration != nil {
+			b.WriteString("window=")
+			b.WriteString(n.Window.WindowDuration.String())
+			b.WriteByte(' ')
+		}
 		if n.Window.Current != nil {
 			if *n.Window.Current {
 				b.WriteString("current=true ")

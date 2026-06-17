@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
 	"github.com/lynxbase/lynxdb/pkg/memgov"
@@ -22,17 +23,18 @@ const estimatedRingBufferSlotBytes int64 = 8
 
 // StreamStatsIterator implements rolling window aggregation with O(N) incremental updates.
 type StreamStatsIterator struct {
-	child     Iterator
-	aggs      []AggFunc
-	groupBy   []string
-	window    int
-	current   bool
-	ringBufs  map[string]*ringBuffer
-	acct      memgov.MemoryAccount          // per-operator memory tracking
-	running   map[string][]*runningAggState // per-group, per-aggregate running state
-	storeRows bool                          // true when window rows are needed for eviction/values()
-	output    []map[string]event.Value      // materialized output for lookahead functions such as lead()
-	offset    int
+	child      Iterator
+	aggs       []AggFunc
+	groupBy    []string
+	window     int
+	timeWindow time.Duration
+	current    bool
+	ringBufs   map[string]*ringBuffer
+	acct       memgov.MemoryAccount          // per-operator memory tracking
+	running    map[string][]*runningAggState // per-group, per-aggregate running state
+	storeRows  bool                          // true when window rows are needed for eviction/values()
+	output     []map[string]event.Value      // materialized output for lookahead functions such as lead()
+	offset     int
 }
 
 // runningAggState maintains incremental aggregate state for O(1) per-row updates.
@@ -61,6 +63,11 @@ type ringBuffer struct {
 	pos      int
 	count    int
 	capacity int // 0 means unlimited (use append-only mode)
+}
+
+type evictedStreamRow struct {
+	row   map[string]event.Value
+	bytes int64
 }
 
 func newRingBuffer(size int) *ringBuffer {
@@ -113,20 +120,37 @@ func (r *ringBuffer) items() []map[string]event.Value {
 
 // NewStreamStatsIterator creates a streaming rolling window aggregation.
 func NewStreamStatsIterator(child Iterator, aggs []AggFunc, groupBy []string, window int, current bool) *StreamStatsIterator {
+	return NewStreamStatsIteratorWithDuration(child, aggs, groupBy, window, 0, current)
+}
+
+// NewStreamStatsIteratorWithDuration creates a streaming rolling window
+// aggregation with either a row-count window or a _time-based duration window.
+func NewStreamStatsIteratorWithDuration(
+	child Iterator,
+	aggs []AggFunc,
+	groupBy []string,
+	window int,
+	timeWindow time.Duration,
+	current bool,
+) *StreamStatsIterator {
 	if window <= 0 {
+		window = math.MaxInt32
+	}
+	if timeWindow > 0 {
 		window = math.MaxInt32
 	}
 
 	return &StreamStatsIterator{
-		child:     child,
-		aggs:      aggs,
-		groupBy:   groupBy,
-		window:    window,
-		current:   current,
-		ringBufs:  make(map[string]*ringBuffer),
-		acct:      memgov.NopAccount(),
-		running:   make(map[string][]*runningAggState),
-		storeRows: streamStatsNeedsRows(aggs, window),
+		child:      child,
+		aggs:       aggs,
+		groupBy:    groupBy,
+		window:     window,
+		timeWindow: timeWindow,
+		current:    current,
+		ringBufs:   make(map[string]*ringBuffer),
+		acct:       memgov.NopAccount(),
+		running:    make(map[string][]*runningAggState),
+		storeRows:  timeWindow > 0 || streamStatsNeedsRows(aggs, window),
 	}
 }
 
@@ -210,10 +234,13 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 		}
 
 		if s.current {
+			if s.timeWindow > 0 {
+				s.evictExpiredRows(row, rb, states)
+			}
 			// Determine which row is being evicted (if window is full).
 			var evictedRow map[string]event.Value
 			var evictedBytes int64
-			if s.storeRows && rb.capacity > 0 && rb.count >= rb.capacity {
+			if s.timeWindow == 0 && s.storeRows && rb.capacity > 0 && rb.count >= rb.capacity {
 				// Window is full: the oldest entry will be overwritten.
 				evictedRow = rb.oldest()
 				evictedBytes = rb.nextEvictedBytes()
@@ -238,6 +265,9 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 				s.writeAggValue(batch, row, i, states[j], agg, rb)
 			}
 		} else {
+			if s.timeWindow > 0 {
+				s.evictExpiredRows(row, rb, states)
+			}
 			// Trailing window: compute first, then add the current row.
 			for j, agg := range s.aggs {
 				s.writeAggValue(batch, row, i, states[j], agg, rb)
@@ -245,7 +275,7 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 
 			var willEvict map[string]event.Value
 			var willEvictBytes int64
-			if s.storeRows && rb.capacity > 0 && rb.count >= rb.capacity {
+			if s.timeWindow == 0 && s.storeRows && rb.capacity > 0 && rb.count >= rb.capacity {
 				willEvict = rb.oldest()
 				willEvictBytes = rb.nextEvictedBytes()
 			}
@@ -270,6 +300,28 @@ func (s *StreamStatsIterator) Next(ctx context.Context) (*Batch, error) {
 	}
 
 	return batch, nil
+}
+
+func (s *StreamStatsIterator) evictExpiredRows(
+	current map[string]event.Value,
+	rb *ringBuffer,
+	states []*runningAggState,
+) {
+	ts, ok := streamStatsRowTime(current)
+	if !ok {
+		return
+	}
+	evicted := rb.evictBefore(ts.Add(-s.timeWindow))
+	var shrink int64
+	for _, item := range evicted {
+		for j, agg := range s.aggs {
+			removeValueFromRunning(states[j], agg, item.row)
+		}
+		shrink += item.bytes
+	}
+	if shrink > 0 {
+		s.acct.Shrink(shrink)
+	}
 }
 
 func streamStatsHasLead(aggs []AggFunc) bool {
@@ -341,6 +393,22 @@ func (s *StreamStatsIterator) materializedWindowRows(
 	}
 	if end < 0 {
 		end = 0
+	}
+	if s.timeWindow > 0 {
+		currentTime, ok := streamStatsRowTime(rows[indexes[groupPos]])
+		if ok {
+			cutoff := currentTime.Add(-s.timeWindow)
+			result := make([]map[string]event.Value, 0, end)
+			for _, rowIndex := range indexes[:end] {
+				row := rows[rowIndex]
+				rowTime, hasTime := streamStatsRowTime(row)
+				if !hasTime || !rowTime.Before(cutoff) {
+					result = append(result, row)
+				}
+			}
+
+			return result
+		}
 	}
 	start := 0
 	if s.window < math.MaxInt32/2 && end > s.window {
@@ -693,6 +761,61 @@ func (r *ringBuffer) nextEvictedBytes() int64 {
 	}
 
 	return r.bytes[r.pos]
+}
+
+func (r *ringBuffer) evictBefore(cutoff time.Time) []evictedStreamRow {
+	if r.count == 0 {
+		return nil
+	}
+	items := r.items()
+	bytes := r.orderedBytes()
+	keptRows := items[:0]
+	keptBytes := bytes[:0]
+	evicted := make([]evictedStreamRow, 0)
+	for i, row := range items {
+		ts, ok := streamStatsRowTime(row)
+		if ok && ts.Before(cutoff) {
+			evicted = append(evicted, evictedStreamRow{row: row, bytes: bytes[i]})
+			continue
+		}
+		keptRows = append(keptRows, row)
+		keptBytes = append(keptBytes, bytes[i])
+	}
+	if len(evicted) == 0 {
+		return nil
+	}
+	r.buf = keptRows
+	r.bytes = keptBytes
+	r.count = len(keptRows)
+	r.pos = 0
+	r.capacity = 0
+
+	return evicted
+}
+
+func (r *ringBuffer) orderedBytes() []int64 {
+	if r.capacity == 0 {
+		return r.bytes
+	}
+	result := make([]int64, 0, r.count)
+	start := r.pos - r.count
+	if start < 0 {
+		start += len(r.bytes)
+	}
+	for i := 0; i < r.count; i++ {
+		idx := (start + i) % len(r.bytes)
+		result = append(result, r.bytes[idx])
+	}
+
+	return result
+}
+
+func streamStatsRowTime(row map[string]event.Value) (time.Time, bool) {
+	v, ok := row["_time"]
+	if !ok {
+		return time.Time{}, false
+	}
+	return v.TryAsTimestamp()
 }
 
 // newRunningAggState creates an initialized running state for the given aggregate.

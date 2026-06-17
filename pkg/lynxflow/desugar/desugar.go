@@ -1578,6 +1578,7 @@ func cloneStreamstatsPayload(sp *ast.StreamstatsPayload) *ast.StreamstatsPayload
 		w := *sp.Window
 		out.Window = &w
 	}
+	out.WindowDuration = cloneExpr(sp.WindowDuration)
 	if sp.Current != nil {
 		c := *sp.Current
 		out.Current = &c

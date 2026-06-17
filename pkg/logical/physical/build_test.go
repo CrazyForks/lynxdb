@@ -741,6 +741,20 @@ func TestBuild_StreamStats_Window(t *testing.T) {
 	}
 }
 
+func TestBuild_StreamStats_DurationWindow(t *testing.T) {
+	result := drain(t, `from * | streamstats window=5m sum(val) as recent_sum`, timedRows())
+	if len(result) != 6 {
+		t.Fatalf("expected 6 rows, got %d", len(result))
+	}
+	expected := []float64{10, 30, 60, 90, 90, 110}
+	for i, r := range result {
+		got, _ := r["recent_sum"].TryAsFloat()
+		if math.Abs(got-expected[i]) > 0.01 {
+			t.Errorf("row %d: expected recent_sum=%f, got %f", i, expected[i], got)
+		}
+	}
+}
+
 func TestBuild_StreamStats_CurrentFalse(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"val": intV(1)},
@@ -756,6 +770,20 @@ func TestBuild_StreamStats_CurrentFalse(t *testing.T) {
 		got, _ := r["previous_sum"].TryAsFloat()
 		if math.Abs(got-expected[i]) > 0.01 {
 			t.Errorf("row %d: expected previous_sum=%f, got %f", i, expected[i], got)
+		}
+	}
+}
+
+func TestBuild_StreamStats_DurationWindowCurrentFalse(t *testing.T) {
+	result := drain(t, `from * | streamstats window=5m current=false sum(val) as recent_sum`, timedRows())
+	if len(result) != 6 {
+		t.Fatalf("expected 6 rows, got %d", len(result))
+	}
+	expected := []float64{0, 10, 30, 50, 40, 50}
+	for i, r := range result {
+		got, _ := r["recent_sum"].TryAsFloat()
+		if math.Abs(got-expected[i]) > 0.01 {
+			t.Errorf("row %d: expected recent_sum=%f, got %f", i, expected[i], got)
 		}
 	}
 }

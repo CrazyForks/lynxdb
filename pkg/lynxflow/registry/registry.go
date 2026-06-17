@@ -47,6 +47,7 @@ const (
 	ArgAggList       ArgType = "agg_list"       // agg() [as name], ...
 	ArgSortList      ArgType = "sort_list"      // -f, +f, f
 	ArgInt           ArgType = "int"
+	ArgWindow        ArgType = "int|duration"
 	ArgString        ArgType = "string"
 	ArgDuration      ArgType = "duration"
 	ArgFormat        ArgType = "format"       // parse format spec, incl. first_of(...)

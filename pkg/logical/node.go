@@ -377,9 +377,10 @@ const (
 
 // WindowSpec carries extra options for eventstats/streamstats variants.
 type WindowSpec struct {
-	Variant WindowVariant
-	Window  *int  // streamstats window (nil = unbounded)
-	Current *bool // streamstats current row inclusion
+	Variant        WindowVariant
+	Window         *int     // streamstats row window (nil = unbounded)
+	WindowDuration ast.Expr // streamstats duration window (nil = unbounded)
+	Current        *bool    // streamstats current row inclusion
 }
 
 // TopKHint is set on Aggregate by the topk-into-agg optimizer rule.
@@ -481,6 +482,10 @@ func (n *Aggregate) String() string {
 			b.WriteString(" [streamstats")
 			if n.Window.Window != nil {
 				b.WriteString(fmt.Sprintf(" window=%d", *n.Window.Window))
+			}
+			if n.Window.WindowDuration != nil {
+				b.WriteString(" window=")
+				b.WriteString(n.Window.WindowDuration.String())
 			}
 			b.WriteByte(']')
 		}

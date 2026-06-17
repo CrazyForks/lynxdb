@@ -389,6 +389,7 @@ obj_entry   ::= (ident | string) ':' expr ;
 	b.WriteString("field_list  ::= field { ',' field } ;\n")
 	b.WriteString("sort_list   ::= sort_key { ',' sort_key } ;\n")
 	b.WriteString("sort_key    ::= ['+' | '-'] field ;\n")
+	b.WriteString("window      ::= number | duration ;\n")
 	b.WriteString("agg_list    ::= agg_call { ',' agg_call } ;\n")
 	b.WriteString("agg_call    ::= ident '(' [expr_list] [',']? ['where' expr]? ')' ['as' ident] ;\n")
 	b.WriteString("assign_list ::= assignment { ',' assignment } ;\n")
@@ -459,6 +460,8 @@ func argTypeToNonTerminal(t registry.ArgType) string {
 		return "sort_list"
 	case registry.ArgInt:
 		return "number"
+	case registry.ArgWindow:
+		return "window"
 	case registry.ArgString:
 		return "string"
 	case registry.ArgDuration:

@@ -108,6 +108,13 @@ var operators = []Operator{
 		Examples: []string{`dedup service`, `dedup 3 service, host`},
 	},
 	{
+		Name: "sample", Class: ClassCore, Streaming: StreamingAcc,
+		Positionals: []Positional{{Name: "n-or-percent", Type: ArgExpr, Required: true, Doc: "row count for reservoir sampling, or percentage with % suffix for Bernoulli sampling"}},
+		Options:     []Option{{Name: "seed", Type: ArgInt, Doc: "optional deterministic random seed"}},
+		Doc:         "Random sampling. `sample 1%` is streaming Bernoulli sampling; `sample 10000` is reservoir sampling.",
+		Examples:    []string{`sample 1% seed=42`, `sample 10000`},
+	},
+	{
 		Name: "join", Class: ClassCore, Streaming: StreamingAcc,
 		Positionals: []Positional{{Name: "right", Type: ArgSubPipeline, Required: true, Doc: "with $cte or with [ <pipeline> ]"}},
 		Options: []Option{

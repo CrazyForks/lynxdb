@@ -73,6 +73,7 @@ const sidebars: SidebarsConfig = {
             'lynxflow/operators/head',
             'lynxflow/operators/tail',
             'lynxflow/operators/dedup',
+            'lynxflow/operators/sample',
             'lynxflow/operators/join',
             'lynxflow/operators/union',
             'lynxflow/operators/explode',

@@ -412,6 +412,10 @@ func stageAlternation() string {
 }
 
 func renderStageProduction(op registry.Operator) string {
+	if op.Name == "sample" {
+		return "sample_stage     ::= 'sample' number ['%'] ['seed' '=' number] ;\n"
+	}
+
 	var b strings.Builder
 	name := op.Name + "_stage"
 	fmt.Fprintf(&b, "%-16s ::= '%s'", name, op.Name)

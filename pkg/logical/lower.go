@@ -195,6 +195,8 @@ func (l *lowerer) lowerStage(input Node, s ast.Stage) Node {
 		return l.lowerTail(input, s)
 	case "dedup":
 		return l.lowerDedup(input, s)
+	case "sample":
+		return l.lowerSample(input, s)
 	case "join":
 		return l.lowerJoin(input, s)
 	case "union":
@@ -368,6 +370,18 @@ func (l *lowerer) lowerDedup(input Node, s ast.Stage) Node {
 		unaryNode: unaryNode{Input: input},
 		N:         n,
 		Fields:    fields,
+	}
+}
+
+func (l *lowerer) lowerSample(input Node, s ast.Stage) Node {
+	if s.Sample == nil {
+		return input
+	}
+	return &Sample{
+		unaryNode: unaryNode{Input: input},
+		Count:     s.Sample.Count,
+		Percent:   s.Sample.Percent,
+		Seed:      s.Sample.Seed,
 	}
 }
 

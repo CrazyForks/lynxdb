@@ -1307,6 +1307,13 @@ func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 		out.Tail = &ast.IntPayload{N: s.Tail.N, Pos: s.Tail.Pos}
 	case s.Dedup != nil:
 		out.Dedup = &ast.DedupPayload{N: s.Dedup.N, Fields: cloneExprs(s.Dedup.Fields)}
+	case s.Sample != nil:
+		out.Sample = &ast.SamplePayload{
+			Count:   cloneInt64Ptr(s.Sample.Count),
+			Percent: cloneFloat64Ptr(s.Sample.Percent),
+			Seed:    cloneInt64Ptr(s.Sample.Seed),
+			Pos:     s.Sample.Pos,
+		}
 	case s.Keep != nil:
 		out.Keep = cloneFieldPatternsPayload(s.Keep)
 	case s.Drop != nil:
@@ -1352,6 +1359,22 @@ func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 	}
 
 	return out
+}
+
+func cloneInt64Ptr(v *int64) *int64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
+}
+
+func cloneFloat64Ptr(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	out := *v
+	return &out
 }
 
 func (d *desugarer) cloneJoinPayload(j *ast.JoinPayload) *ast.JoinPayload {

@@ -275,6 +275,33 @@ func TestLower_Tail(t *testing.T) {
 	}
 }
 
+func TestLower_Sample(t *testing.T) {
+	plan, diags := parseDesugarLower(t, `from app | sample 1.5% seed=42`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Sample](t, plan.Root, "root should be Sample")
+	sample := plan.Root.(*Sample)
+	if sample.Percent == nil || *sample.Percent != 1.5 {
+		t.Fatalf("Sample.Percent = %v, want 1.5", sample.Percent)
+	}
+	if sample.Count != nil {
+		t.Fatalf("Sample.Count = %v, want nil", sample.Count)
+	}
+	if sample.Seed == nil || *sample.Seed != 42 {
+		t.Fatalf("Sample.Seed = %v, want 42", sample.Seed)
+	}
+
+	plan, diags = parseDesugarLower(t, `from app | sample 10000`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Sample](t, plan.Root, "root should be Sample")
+	sample = plan.Root.(*Sample)
+	if sample.Count == nil || *sample.Count != 10000 {
+		t.Fatalf("Sample.Count = %v, want 10000", sample.Count)
+	}
+	if sample.Percent != nil {
+		t.Fatalf("Sample.Percent = %v, want nil", sample.Percent)
+	}
+}
+
 func TestLower_Materialize(t *testing.T) {
 	plan, diags := parseDesugarLower(t,
 		`from app | stats count() by service | materialize "mv_test" retention=90d`)

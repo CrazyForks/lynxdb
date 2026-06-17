@@ -183,6 +183,16 @@ func TestGoldenStructure(t *testing.T) {
 			want:  `dedup 3 service, host`,
 		},
 		{
+			name:  "sample_percent_seed",
+			input: `| sample 1.5% seed=42`,
+			want:  `sample 1.5% seed=42`,
+		},
+		{
+			name:  "sample_count",
+			input: `| sample 10000`,
+			want:  `sample 10000`,
+		},
+		{
 			name:  "rename",
 			input: `| rename service as svc, level as severity`,
 			want:  `rename service as svc, level as severity`,

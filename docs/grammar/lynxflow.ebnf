@@ -61,6 +61,7 @@ stage       ::= baseline_stage
               | rate_stage
               | rename_stage
               | rollup_stage
+              | sample_stage
               | sessionize_stage
               | sort_stage
               | stats_stage
@@ -108,6 +109,7 @@ rare_stage       ::= 'rare' [number] field ;
 rate_stage       ::= 'rate' ['per' '=' duration] ['by' '=' field_list] ;
 rename_stage     ::= 'rename' assign_list ;
 rollup_stage     ::= 'rollup' duration... ['by' '=' field_list] ;
+sample_stage     ::= 'sample' number ['%'] ['seed' '=' number] ;
 sessionize_stage ::= 'sessionize' ['maxpause' '=' duration] ['by' '=' field_list] ;
 sort_stage       ::= 'sort' sort_list ;
 stats_stage      ::= 'stats' agg_list ['by' '=' field_list] ;

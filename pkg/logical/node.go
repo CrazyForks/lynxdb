@@ -201,7 +201,6 @@ func (n *Filter) String() string {
 	return "Filter(" + n.Expr.String() + ")"
 }
 
-
 // Capture is a typed capture field in a Parse node.
 type Capture struct {
 	Name string
@@ -560,6 +559,35 @@ func (n *Limit) String() string {
 		return fmt.Sprintf("Limit(tail %d)", n.N)
 	}
 	return fmt.Sprintf("Limit(%d)", n.N)
+}
+
+// Sample
+
+// Sample randomly keeps either a percentage of rows or a fixed reservoir count.
+type Sample struct {
+	unaryNode
+	Count   *int64
+	Percent *float64
+	Seed    *int64
+}
+
+func (n *Sample) Schema() []sema.Field { return n.inputSchema() }
+func (n *Sample) String() string {
+	var b strings.Builder
+	b.WriteString("Sample(")
+	switch {
+	case n.Count != nil:
+		b.WriteString(fmt.Sprintf("%d", *n.Count))
+	case n.Percent != nil:
+		b.WriteString(fmt.Sprintf("%g%%", *n.Percent))
+	default:
+		b.WriteString("?")
+	}
+	if n.Seed != nil {
+		b.WriteString(fmt.Sprintf(", seed=%d", *n.Seed))
+	}
+	b.WriteByte(')')
+	return b.String()
 }
 
 // Dedup

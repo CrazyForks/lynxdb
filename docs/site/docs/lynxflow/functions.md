@@ -51,8 +51,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `index_of` | (x: any, needle: any) | `int` | null_on_failure | - | 0-based index in a string or array; null when not found. |
 | `count_substr` | (s: string, sub: string) | `int` | null_on_failure | - | Count non-overlapping substring occurrences. |
 | `count_matches` | (s: string, pattern: regex) | `int` | null_on_failure | - | Count regex matches. |
-| `lpad` | (s: string, n: int, char?: string) | `string` | null_on_failure | - | Left-pad a string to n runes; pad defaults to space. |
-| `rpad` | (s: string, n: int, char?: string) | `string` | null_on_failure | - | Right-pad a string to n runes; pad defaults to space. |
+| `lpad` | (s: string, n: int, char: string?) | `string` | null_on_failure | - | Left-pad a string to n runes; pad defaults to space. |
+| `rpad` | (s: string, n: int, char: string?) | `string` | null_on_failure | - | Right-pad a string to n runes; pad defaults to space. |
 | `repeat` | (s: string, n: int) | `string` | null_on_failure | - | Repeat a string n times. |
 | `translate` | (s: string, from: string, to: string) | `string` | null_on_failure | - | Replace characters from one set with characters from another. |
 | `levenshtein` | (a: string, b: string, damerau: bool?) | `int` | null_on_failure | - | Edit distance between two strings. |
@@ -155,10 +155,10 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 |----------|--------|--------|-------------|--------|-------------|
 | `now` | () | `timestamp` | infallible | - | Query start time (stable within one query). |
 | `bin` | (x: any, width: any) | `any` | null_on_failure | - | Snap a timestamp to a duration boundary or a number to a numeric width; time by-lists emit as _time. |
-| `strftime` | (ts: timestamp, format: string, tz?: string) | `string` | null_on_failure | - | Format a timestamp in UTC or an IANA timezone. |
-| `strptime` | (s: string, format: string\|array) | `timestamp` | null_on_failure | `strptime!` | Parse with one layout or the first matching layout in an array. |
-| `time_of_day` | (ts: timestamp, tz?: string) | `duration` | null_on_failure | - | Duration since midnight in UTC or an IANA timezone. |
-| `day_of_week` | (ts: timestamp, tz?: string) | `int` | null_on_failure | - | 0 = Sunday; optional timezone controls the local day. |
+| `strftime` | (ts: timestamp, format: string, tz: string?) | `string` | null_on_failure | - | Format a timestamp in UTC or an IANA timezone. |
+| `strptime` | (s: string, format: any) | `timestamp` | null_on_failure | `strptime!` | Parse with one layout or the first matching layout in an array. |
+| `time_of_day` | (ts: timestamp, tz: string?) | `duration` | null_on_failure | - | Duration since midnight in UTC or an IANA timezone. |
+| `day_of_week` | (ts: timestamp, tz: string?) | `int` | null_on_failure | - | 0 = Sunday; optional timezone controls the local day. |
 | `from_unix` | (n: int, unit: string) | `timestamp` | null_on_failure | - | Convert Unix epoch in s, ms, us, or ns to a timestamp. |
 | `to_unix` | (ts: timestamp, unit: string) | `int` | null_on_failure | - | Convert a timestamp to Unix epoch in s, ms, us, or ns. |
 | `date_trunc` | (ts: timestamp, part: string, tz: string?) | `timestamp` | null_on_failure | - | Truncate a timestamp to a calendar part. |
@@ -203,13 +203,18 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `array_compact` | (arr: array) | `array` | null_on_failure | - | Remove consecutive duplicate elements. |
 | `array_deltas` | (arr: array) | `array` | null_on_failure | - | Adjacent differences with leading null. |
 | `array_cumsum` | (arr: array) | `array` | null_on_failure | - | Cumulative sums across array elements. |
-| `generate_series` | (start: int, stop: int, step?: int) | `array` | null_on_failure | - | Integer series from start to stop, excluding stop; default step is 1. |
+| `generate_series` | (start: int, stop: int, step: int?) | `array` | null_on_failure | - | Integer series from start to stop, excluding stop; default step is 1. |
 | `zip` | (arrays: array...) | `array` | null_on_failure | - | Zip equal-length arrays into arrays of tuples. |
 | `flatten` | (arr: array) | `array` | null_on_failure | - | One level. |
 | `any` | (arr: array, pred: lambda) | `bool` | null_on_failure | - | any(tags, t -&gt; t.name == "vip") |
 | `all` | (arr: array, pred: lambda) | `bool` | null_on_failure | - | - |
 | `filter` | (arr: array, pred: lambda) | `array` | null_on_failure | - | - |
 | `map` | (arr: array, fn: lambda) | `array` | null_on_failure | - | - |
+| `array_count` | (arr: array, pred: lambda) | `int` | null_on_failure | - | Count elements matching a predicate. |
+| `array_has_any` | (a: array, b: array) | `bool` | null_on_failure | - | - |
+| `array_has_all` | (a: array, b: array) | `bool` | null_on_failure | - | - |
+| `array_intersect` | (a: array, b: array) | `array` | null_on_failure | - | Elements from a that also appear in b, preserving a order. |
+| `array_except` | (a: array, b: array) | `array` | null_on_failure | - | Elements from a that do not appear in b, preserving a order. |
 
 ## Object
 
@@ -219,8 +224,8 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `values` | (obj: object) | `array` | null_on_failure | - | - |
 | `merge` | (a: object, b: object) | `object` | null_on_failure | - | Right side wins on key collision. |
 | `has_key` | (obj: object, key: string) | `bool` | null_on_failure | - | - |
-| `entries` | (obj: object) | `array` | null_on_failure | - | Convert an object to sorted {key, value} entries. |
-| `from_entries` | (arr: array) | `object` | null_on_failure | - | Build an object from {key, value} entries. |
+| `entries` | (obj: object) | `array` | null_on_failure | - | Convert an object to sorted &#123;key, value&#125; entries. |
+| `from_entries` | (arr: array) | `object` | null_on_failure | - | Build an object from &#123;key, value&#125; entries. |
 | `to_json` | (x: any) | `string` | null_on_failure | - | - |
 | `from_json` | (s: string) | `any` | null_on_failure | `from_json!` | Null on invalid JSON, never the original string. |
 | `is_json` | (s: string) | `bool` | infallible | - | True when a string contains valid JSON. |

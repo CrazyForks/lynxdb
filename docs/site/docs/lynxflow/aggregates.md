@@ -31,7 +31,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `var` | (x: number) | `float` | Sample variance. |
 | `corr` | (x: number, y: number) | `float` | Pearson correlation over rows where both arguments are numeric. |
 | `covar` | (x: number, y: number) | `float` | Sample covariance over rows where both arguments are numeric. |
-| `linear_fit` | (x: number, y: number) | `object` | Least-squares fit as {slope, intercept, r2}. |
+| `linear_fit` | (x: number, y: number) | `object` | Least-squares fit as &#123;slope, intercept, r2&#125;. |
 | `sum_object` | (obj: object) | `object` | Per-key sums for numeric object values. |
 | `skewness` | (x: number) | `float` | Bias-corrected sample skewness. |
 | `kurtosis` | (x: number) | `float` | Bias-corrected sample excess kurtosis. |

@@ -180,6 +180,8 @@ func (b *builder) buildNode(n logical.Node) (pipeline.Iterator, error) {
 		iter, err = b.buildSort(nd)
 	case *logical.Limit:
 		iter, err = b.buildLimit(nd)
+	case *logical.Sample:
+		iter, err = b.buildSample(nd)
 	case *logical.Dedup:
 		iter, err = b.buildDedup(nd)
 	case *logical.Join:
@@ -805,6 +807,29 @@ func (b *builder) buildLimit(nd *logical.Limit) (pipeline.Iterator, error) {
 		return pipeline.NewTailIteratorWithBudget(child, int(nd.N), b.opts.batchSize(), acct), nil
 	}
 	return pipeline.NewLimitIterator(child, int(nd.N)), nil
+}
+
+func (b *builder) buildSample(nd *logical.Sample) (pipeline.Iterator, error) {
+	child, err := b.buildChild(nd)
+	if err != nil {
+		return nil, err
+	}
+	if nd.Percent != nil {
+		if *nd.Percent <= 0 || *nd.Percent > 100 {
+			return nil, fmt.Errorf("physical.Build: sample percent must be in (0, 100]")
+		}
+		return pipeline.NewBernoulliSampleIterator(child, *nd.Percent, nd.Seed), nil
+	}
+	if nd.Count == nil {
+		return nil, fmt.Errorf("physical.Build: sample requires a row count or percent")
+	}
+	if *nd.Count <= 0 {
+		return nil, fmt.Errorf("physical.Build: sample row count must be positive")
+	}
+	if *nd.Count > int64(^uint(0)>>1) {
+		return nil, fmt.Errorf("physical.Build: sample row count overflows int")
+	}
+	return pipeline.NewReservoirSampleIterator(child, int(*nd.Count), b.opts.batchSize(), nd.Seed), nil
 }
 
 // Dedup

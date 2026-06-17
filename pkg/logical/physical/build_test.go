@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -159,6 +160,27 @@ func sampleRows() []map[string]event.Value {
 		{"level": strV("error"), "status": intV(503), "duration": floatV(200.3), "host": strV("web-02")},
 		{"level": strV("info"), "status": intV(200), "duration": floatV(8.7), "host": strV("web-01")},
 	}
+}
+
+func idRows(n int) []map[string]event.Value {
+	rows := make([]map[string]event.Value, n)
+	for i := range rows {
+		rows[i] = map[string]event.Value{"id": intV(int64(i))}
+	}
+	return rows
+}
+
+func rowIDs(t *testing.T, rows []map[string]event.Value) []int64 {
+	t.Helper()
+	ids := make([]int64, len(rows))
+	for i, row := range rows {
+		id, ok := row["id"].TryAsInt()
+		if !ok {
+			t.Fatalf("row %d: missing integer id: %v", i, row["id"])
+		}
+		ids[i] = id
+	}
+	return ids
 }
 
 func timedRows() []map[string]event.Value {
@@ -859,6 +881,61 @@ func TestBuild_Tail(t *testing.T) {
 	result := drain(t, `from * | tail 2`, rows)
 	if len(result) != 2 {
 		t.Fatalf("expected 2 rows, got %d", len(result))
+	}
+}
+
+func TestBuild_SamplePercent(t *testing.T) {
+	rows := idRows(100)
+	first := rowIDs(t, drainWithBatchSize(t, `from * | sample 12.5% seed=7`, rows, 9))
+	second := rowIDs(t, drainWithBatchSize(t, `from * | sample 12.5% seed=7`, rows, 9))
+	if !slices.Equal(first, second) {
+		t.Fatalf("seeded percent sample changed:\nfirst:  %v\nsecond: %v", first, second)
+	}
+	if len(first) == 0 || len(first) >= len(rows) {
+		t.Fatalf("expected a partial percent sample, got %d rows", len(first))
+	}
+	for _, id := range first {
+		if id < 0 || id >= int64(len(rows)) {
+			t.Fatalf("sampled id %d is outside input range", id)
+		}
+	}
+}
+
+func TestBuild_SamplePercentHundredKeepsAllRows(t *testing.T) {
+	rows := idRows(12)
+	got := rowIDs(t, drainWithBatchSize(t, `from * | sample 100% seed=9`, rows, 3))
+	want := rowIDs(t, rows)
+	if !slices.Equal(got, want) {
+		t.Fatalf("sample 100%% ids = %v, want %v", got, want)
+	}
+}
+
+func TestBuild_SampleReservoir(t *testing.T) {
+	rows := idRows(30)
+	first := rowIDs(t, drainWithBatchSize(t, `from * | sample 5 seed=11`, rows, 4))
+	second := rowIDs(t, drainWithBatchSize(t, `from * | sample 5 seed=11`, rows, 4))
+	if !slices.Equal(first, second) {
+		t.Fatalf("seeded reservoir sample changed:\nfirst:  %v\nsecond: %v", first, second)
+	}
+	if len(first) != 5 {
+		t.Fatalf("expected 5 sampled rows, got %d", len(first))
+	}
+	for i, id := range first {
+		if id < 0 || id >= int64(len(rows)) {
+			t.Fatalf("sampled id %d is outside input range", id)
+		}
+		if i > 0 && id < first[i-1] {
+			t.Fatalf("reservoir sample is not in input order: %v", first)
+		}
+	}
+}
+
+func TestBuild_SampleReservoirLargerThanInputKeepsAllRows(t *testing.T) {
+	rows := idRows(7)
+	got := rowIDs(t, drainWithBatchSize(t, `from * | sample 100 seed=3`, rows, 2))
+	want := rowIDs(t, rows)
+	if !slices.Equal(got, want) {
+		t.Fatalf("sample ids = %v, want %v", got, want)
 	}
 }
 

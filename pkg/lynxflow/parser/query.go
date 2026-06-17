@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
@@ -977,6 +978,8 @@ func (p *parser) parseStageBody(s *ast.Stage) {
 		p.parseIntBody(s, false)
 	case "dedup":
 		p.parseDedupBody(s)
+	case "sample":
+		p.parseSampleBody(s)
 	case "keep":
 		p.parseFieldPatternsBody(s, true)
 	case "drop":
@@ -1258,6 +1261,70 @@ func (p *parser) parseDedupBody(s *ast.Stage) {
 		}
 	}
 	s.Dedup = payload
+}
+
+func (p *parser) parseSampleBody(s *ast.Stage) {
+	payload := &ast.SamplePayload{Pos: ast.Span{Start: s.NamePos.Start}}
+	amountSpan := p.curSpan()
+
+	switch p.cur.Kind {
+	case lexer.Int:
+		n, _ := parseInt(p.cur.Text)
+		p.advance()
+		if p.consume(lexer.Percent) {
+			f := float64(n)
+			payload.Percent = &f
+		} else {
+			payload.Count = &n
+		}
+	case lexer.Float:
+		f, err := strconv.ParseFloat(normalizeNumericLiteral(p.cur.Text), 64)
+		if err != nil {
+			p.errorf(p.cur, CodeStageError, []string{"integer or percent"}, "",
+				"invalid sample percentage: %v", err)
+		}
+		p.advance()
+		if p.consume(lexer.Percent) {
+			payload.Percent = &f
+		} else {
+			p.errorf(p.cur, CodeStageError, []string{"%"}, "",
+				"sample fractional amounts require a percent suffix")
+		}
+	default:
+		p.errorf(p.cur, CodeStageError, []string{"integer or percent"}, "",
+			"expected sample amount, got %s", kindName(p.cur.Kind))
+	}
+
+	if payload.Count != nil && *payload.Count <= 0 {
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    "sample row count must be positive",
+			Span:       amountSpan,
+			Suggestion: "use sample 1000 or sample 1%",
+		})
+	}
+	if payload.Percent != nil && (*payload.Percent <= 0 || *payload.Percent > 100) {
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    "sample percent must be in (0, 100]",
+			Span:       amountSpan,
+			Suggestion: "use sample 1% or sample 0.1%",
+		})
+	}
+
+	for !p.atStageBoundary() {
+		if n, ok := p.identLike(); ok && n == "seed" && p.peekIsEq() {
+			p.advance()
+			p.advance()
+			seed := p.parseIntValue()
+			payload.Seed = &seed
+			continue
+		}
+		break
+	}
+
+	payload.Pos.End = p.prev.End
+	s.Sample = payload
 }
 
 // isFieldRef reports whether e is a plain field reference (ident or a

@@ -311,6 +311,7 @@ type Stage struct {
 	Head        *IntPayload
 	Tail        *IntPayload
 	Dedup       *DedupPayload
+	Sample      *SamplePayload
 	Keep        *FieldPatternsPayload
 	Drop        *FieldPatternsPayload
 	Join        *JoinPayload
@@ -387,6 +388,9 @@ func (s *Stage) String() string {
 	case s.Dedup != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Dedup.String())
+	case s.Sample != nil:
+		b.WriteByte(' ')
+		b.WriteString(s.Sample.String())
 	case s.Keep != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Keep.String())
@@ -674,6 +678,31 @@ func (k *SortKey) String() string {
 type IntPayload struct {
 	N   int64
 	Pos Span
+}
+
+// SamplePayload is the typed payload for sample.
+type SamplePayload struct {
+	Count   *int64
+	Percent *float64
+	Seed    *int64
+	Pos     Span
+}
+
+func (s *SamplePayload) String() string {
+	var b strings.Builder
+	switch {
+	case s.Count != nil:
+		b.WriteString(fmt.Sprintf("%d", *s.Count))
+	case s.Percent != nil:
+		b.WriteString(fmt.Sprintf("%g%%", *s.Percent))
+	}
+	if s.Seed != nil {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString(fmt.Sprintf("seed=%d", *s.Seed))
+	}
+	return b.String()
 }
 
 // DedupPayload is the typed payload for dedup.

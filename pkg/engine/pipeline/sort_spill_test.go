@@ -781,6 +781,65 @@ func TestAggregateSpillWithDeltaSum(t *testing.T) {
 	}
 }
 
+func TestAggregateSpillWithHistogram(t *testing.T) {
+	numGroups := 100
+	steps := 50
+	rows := make([]map[string]event.Value, 0, numGroups*steps)
+	for step := 0; step < steps; step++ {
+		for groupIdx := 0; groupIdx < numGroups; groupIdx++ {
+			rows = append(rows, map[string]event.Value{
+				"group": event.StringValue(fmt.Sprintf("g%d", groupIdx)),
+				"val":   event.FloatValue(float64(step)),
+			})
+		}
+	}
+
+	child := NewRowScanIterator(rows, 128)
+	mgr, err := NewSpillManager(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.CleanupAll()
+
+	acct := memgov.NewTestBudget("test", 8*1024).NewAccount("agg")
+	aggs := []AggFunc{
+		{Name: "histogram", Field: "val", Limit: 5, Alias: "hist"},
+		{Name: "count", Alias: "cnt"},
+	}
+	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
+
+	ctx := context.Background()
+	result, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iter.spilledRows == 0 {
+		t.Fatal("expected aggregate to spill")
+	}
+	if len(result) != numGroups {
+		t.Fatalf("expected %d groups, got %d", numGroups, len(result))
+	}
+	for _, row := range result {
+		bins, ok := row["hist"].TryAsArray()
+		if !ok || len(bins) != 5 {
+			t.Fatalf("group %s: expected 5 histogram bins, got %s", row["group"].String(), row["hist"].String())
+		}
+		for i, bin := range bins {
+			obj, ok := bin.TryAsObject()
+			if !ok {
+				t.Fatalf("group %s bin %d: expected object, got %s", row["group"].String(), i, bin.String())
+			}
+			count, ok := obj["count"].TryAsInt()
+			if !ok || count != 10 {
+				t.Fatalf("group %s bin %d: expected count=10, got %s", row["group"].String(), i, obj["count"].String())
+			}
+		}
+		if cnt := row["cnt"].AsInt(); cnt != int64(steps) {
+			t.Fatalf("group %s: expected count=%d, got %d", row["group"].String(), steps, cnt)
+		}
+	}
+}
+
 func TestAggregateSpillWithDC(t *testing.T) {
 	// Test dc (distinct count) correctness across spill boundaries.
 	// 100 groups, each with 50 events. Each event has a unique "item" per group,

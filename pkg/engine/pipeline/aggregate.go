@@ -138,6 +138,7 @@ const (
 	aggKurt     = "kurtosis"
 	aggMAD      = "mad"
 	aggDeltaSum = "delta_sum"
+	aggHist     = "histogram"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -204,6 +205,8 @@ func NewAggregateIterator(child Iterator, aggs []AggFunc, groupBy []string, acct
 	for i, a := range aggs {
 		switch strings.ToLower(a.Name) {
 		case aggDC, aggEstDCE, aggValues, aggList, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev, aggStdevP, aggVar, aggVarP, aggMAD:
+			needsValues[i] = true
+		case aggHist:
 			needsValues[i] = true
 		}
 	}
@@ -756,6 +759,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		updateMADState(s, val)
 	case aggDeltaSum:
 		updateDeltaSumState(s, val)
+	case aggHist:
+		updateHistogramState(s, val)
 	case aggMin:
 		if !val.IsNull() {
 			if s.min.IsNull() || vm.CompareValues(val, s.min) < 0 {
@@ -886,6 +891,17 @@ func updateDeltaSumState(s *aggState, val event.Value) {
 		s.sum += f - last
 	}
 	s.last = current
+	s.count++
+}
+
+func updateHistogramState(s *aggState, val event.Value) {
+	f, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	if len(s.all) < maxValuesPerGroup {
+		s.all = append(s.all, f)
+	}
 	s.count++
 }
 
@@ -1226,6 +1242,62 @@ func finalizeLinearFit(s *aggState) event.Value {
 		fields["r2"] = event.FloatValue(corr * corr)
 	}
 	return event.ObjectValue(fields)
+}
+
+func finalizeHistogram(s *aggState, bins int) event.Value {
+	if bins <= 0 || s.count == 0 || int64(len(s.all)) < s.count {
+		return event.NullValue()
+	}
+	values := float64SliceFromAll(s.all)
+	if len(values) == 0 {
+		return event.NullValue()
+	}
+	minVal := values[0]
+	maxVal := values[0]
+	for _, value := range values[1:] {
+		if value < minVal {
+			minVal = value
+		}
+		if value > maxVal {
+			maxVal = value
+		}
+	}
+	if minVal == maxVal {
+		return event.ArrayValue([]event.Value{
+			event.ObjectValue(map[string]event.Value{
+				"lo":    event.FloatValue(minVal),
+				"hi":    event.FloatValue(maxVal),
+				"count": event.IntValue(int64(len(values))),
+			}),
+		})
+	}
+	width := (maxVal - minVal) / float64(bins)
+	counts := make([]int64, bins)
+	for _, value := range values {
+		idx := int((value - minVal) / width)
+		if idx >= bins {
+			idx = bins - 1
+		}
+		if idx < 0 {
+			idx = 0
+		}
+		counts[idx]++
+	}
+	result := make([]event.Value, 0, bins)
+	for i, count := range counts {
+		lo := minVal + float64(i)*width
+		hi := lo + width
+		if i == bins-1 {
+			hi = maxVal
+		}
+		result = append(result, event.ObjectValue(map[string]event.Value{
+			"lo":    event.FloatValue(lo),
+			"hi":    event.FloatValue(hi),
+			"count": event.IntValue(count),
+		}))
+	}
+
+	return event.ArrayValue(result)
 }
 
 func finalizePercentile(s *aggState, quantile float64) event.Value {
@@ -1602,6 +1674,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeMADFromRow(&group.states[j], row, agg.Alias)
 		case aggDeltaSum:
 			a.mergeDeltaSumFromRow(&group.states[j], row, agg.Alias)
+		case aggHist:
+			a.mergeFloatValuesFromRow(&group.states[j], row, agg.Alias, "__histvals")
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
@@ -1737,6 +1811,25 @@ func (a *AggregateIterator) mergeDeltaSumFromRow(s *aggState, row map[string]eve
 	s.sum += segmentSum
 	s.last = event.FloatValue(lastF)
 	s.count += segmentCount
+}
+
+func (a *AggregateIterator) mergeFloatValuesFromRow(s *aggState, row map[string]event.Value, alias, suffix string) {
+	if countF, ok := vm.ValueToFloat(row[alias+"__count"]); ok {
+		s.count += int64(countF)
+	}
+	valuesVal, ok := row[alias+suffix]
+	if !ok || valuesVal.IsNull() {
+		return
+	}
+	valuesStr, _ := valuesVal.TryAsString()
+	for _, part := range strings.Split(valuesStr, "|") {
+		if part == "" || len(s.all) >= maxValuesPerGroup {
+			continue
+		}
+		if f, err := strconv.ParseFloat(part, 64); err == nil {
+			s.all = append(s.all, f)
+		}
+	}
 }
 
 // mergeDCFromRow merges distinct-count state from a spill row's suffixed columns.
@@ -2218,6 +2311,8 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 			return event.NullValue()
 		}
 		return event.FloatValue(s.sum)
+	case aggHist:
+		return finalizeHistogram(s, 0)
 	case aggMin:
 		return s.min
 	case aggMax:
@@ -2328,6 +2423,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizePercentile(s, agg.Quantile)
 	case aggMAD:
 		return finalizeMAD(s)
+	case aggHist:
+		return finalizeHistogram(s, agg.Limit)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

@@ -334,6 +334,12 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 				row[agg.Alias+"__madvals"] = event.StringValue(
 					joinAllFloats(s.all, "|"))
 			}
+		case aggHist:
+			row[agg.Alias+"__count"] = event.IntValue(s.count)
+			if len(s.all) > 0 {
+				row[agg.Alias+"__histvals"] = event.StringValue(
+					joinAllFloats(s.all, "|"))
+			}
 		case aggDeltaSum:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 			row[agg.Alias+"__count"] = event.IntValue(s.count)
@@ -476,6 +482,8 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeMomentsFromRow(&group.states[j], row, agg.Alias)
 		case aggMAD:
 			a.mergeMADFromRow(&group.states[j], row, agg.Alias)
+		case aggHist:
+			a.mergeFloatValuesFromRow(&group.states[j], row, agg.Alias, "__histvals")
 		case aggDeltaSum:
 			a.mergeDeltaSumFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:

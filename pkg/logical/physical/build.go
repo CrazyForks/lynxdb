@@ -445,6 +445,7 @@ var aggNameMapping = map[string]string{
 	"kurtosis":       "kurtosis",
 	"mad":            "mad",
 	"delta_sum":      "delta_sum",
+	"histogram":      "histogram",
 	"rank":           "rank",
 	"dense_rank":     "dense_rank",
 }
@@ -667,7 +668,7 @@ func (b *builder) convertAggArg(name string, args []lfast.Expr, index int) (stri
 
 func aggregateLimit(name string, call *lfast.Call) (int, error) {
 	switch name {
-	case "top_k", "max_n", "min_n":
+	case "top_k", "max_n", "min_n", "histogram":
 		if len(call.Args) < 2 {
 			return 0, fmt.Errorf("physical.Build: %s requires a limit", name)
 		}

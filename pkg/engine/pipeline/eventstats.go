@@ -506,6 +506,8 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal ev
 		updateMADState(s, val)
 	case aggDeltaSum:
 		updateDeltaSumState(s, val)
+	case aggHist:
+		updateHistogramState(s, val)
 	case aggMin:
 		if !val.IsNull() && (s.min.IsNull() || vm.CompareValues(val, s.min) < 0) {
 			s.min = val
@@ -611,6 +613,8 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeKurtosis(s)
 	case aggMAD:
 		return finalizeMAD(s)
+	case aggHist:
+		return finalizeHistogram(s, agg.Limit)
 	case aggDeltaSum:
 		return finalizeAggState(s, agg.Name)
 	}

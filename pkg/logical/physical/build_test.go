@@ -695,6 +695,55 @@ func TestBuild_DeltaSumAggregate(t *testing.T) {
 	}
 }
 
+func TestBuild_HistogramAggregate(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(0)},
+		{"x": intV(1)},
+		{"x": intV(2)},
+		{"x": intV(3)},
+	}
+
+	statsRows := drain(t, `from * | stats histogram(x, 2) as h`, rows)
+	if len(statsRows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(statsRows))
+	}
+	assertHistogramCounts(t, statsRows[0]["h"], []int64{2, 2})
+
+	eventRows := drain(t, `from * | eventstats histogram(x, 2) as h`, rows)
+	assertHistogramCounts(t, eventRows[0]["h"], []int64{2, 2})
+	assertHistogramCounts(t, eventRows[3]["h"], []int64{2, 2})
+
+	streamRows := drain(t, `from * | streamstats histogram(x, 2) as h`, rows)
+	assertHistogramCounts(t, streamRows[3]["h"], []int64{2, 2})
+}
+
+func assertHistogramCounts(t *testing.T, value event.Value, want []int64) {
+	t.Helper()
+	bins, ok := value.TryAsArray()
+	if !ok {
+		t.Fatalf("histogram got %s, want array", value.String())
+	}
+	if len(bins) != len(want) {
+		t.Fatalf("histogram bin count got %d, want %d", len(bins), len(want))
+	}
+	for i, bin := range bins {
+		obj, ok := bin.TryAsObject()
+		if !ok {
+			t.Fatalf("histogram bin %d got %s, want object", i, bin.String())
+		}
+		count, ok := obj["count"].TryAsInt()
+		if !ok || count != want[i] {
+			t.Fatalf("histogram bin %d count got %s, want %d", i, obj["count"].String(), want[i])
+		}
+		if _, ok := obj["lo"].TryAsFloat(); !ok {
+			t.Fatalf("histogram bin %d lo got %s, want float", i, obj["lo"].String())
+		}
+		if _, ok := obj["hi"].TryAsFloat(); !ok {
+			t.Fatalf("histogram bin %d hi got %s, want float", i, obj["hi"].String())
+		}
+	}
+}
+
 func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"x": intV(1), "y": intV(2)},
@@ -1650,6 +1699,7 @@ func TestAggNameMapping(t *testing.T) {
 		"kurtosis":       "kurtosis",
 		"mad":            "mad",
 		"delta_sum":      "delta_sum",
+		"histogram":      "histogram",
 		"rank":           "rank",
 		"dense_rank":     "dense_rank",
 		"rate":           "rate",

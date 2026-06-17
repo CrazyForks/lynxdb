@@ -76,6 +76,8 @@ func (c *lfCompiler) compile(e lfast.Expr) error {
 		return c.compileSafeMember(n)
 	case *lfast.Index:
 		return c.compileIndex(n)
+	case *lfast.Slice:
+		return c.compileSlice(n)
 	case *lfast.Array:
 		return c.compileArray(n)
 	case *lfast.Object:
@@ -461,6 +463,30 @@ func (c *lfCompiler) compileIndex(idx *lfast.Index) error {
 		return err
 	}
 	c.prog.EmitOp(OpIndex)
+	return nil
+}
+
+func (c *lfCompiler) compileSlice(slice *lfast.Slice) error {
+	if err := c.compile(slice.Object); err != nil {
+		return err
+	}
+	if slice.Start != nil {
+		if err := c.compile(slice.Start); err != nil {
+			return err
+		}
+	} else {
+		if err := c.compile(&lfast.Literal{Kind: lfast.LitInt, Raw: "0", Value: int64(0)}); err != nil {
+			return err
+		}
+	}
+	if slice.End != nil {
+		if err := c.compile(slice.End); err != nil {
+			return err
+		}
+	} else {
+		c.prog.EmitOp(OpConstNull)
+	}
+	c.prog.EmitOp(OpSlice)
 	return nil
 }
 

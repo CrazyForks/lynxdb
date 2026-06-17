@@ -763,6 +763,10 @@ func collectExprIdents(e ast.Expr, cols map[string]bool) {
 	case *ast.Index:
 		collectExprIdents(x.Object, cols)
 		collectExprIdents(x.Idx, cols)
+	case *ast.Slice:
+		collectExprIdents(x.Object, cols)
+		collectExprIdents(x.Start, cols)
+		collectExprIdents(x.End, cols)
 	case *ast.Lambda:
 		collectExprIdents(x.Body, cols)
 	case *ast.Array:

@@ -1648,6 +1648,8 @@ func cloneExpr(e ast.Expr) ast.Expr {
 		return &ast.SafeMember{Object: cloneExpr(x.Object), Field: x.Field, Pos: x.Pos}
 	case *ast.Index:
 		return &ast.Index{Object: cloneExpr(x.Object), Idx: cloneExpr(x.Idx), Pos: x.Pos}
+	case *ast.Slice:
+		return &ast.Slice{Object: cloneExpr(x.Object), Start: cloneExpr(x.Start), End: cloneExpr(x.End), Pos: x.Pos}
 	case *ast.Lambda:
 		return &ast.Lambda{Param: x.Param, Body: cloneExpr(x.Body), Pos: x.Pos}
 	case *ast.Paren:

@@ -175,6 +175,48 @@ func TestIndex_String(t *testing.T) {
 	}
 }
 
+func TestSlice_String(t *testing.T) {
+	tests := []struct {
+		name string
+		expr *Slice
+		want string
+	}{
+		{
+			name: "bounded",
+			expr: &Slice{
+				Object: &Ident{Name: "trace_id"},
+				Start:  &Literal{Kind: LitInt, Value: int64(1)},
+				End:    &Literal{Kind: LitInt, Value: int64(4)},
+			},
+			want: "trace_id[1:4]",
+		},
+		{
+			name: "tail",
+			expr: &Slice{
+				Object: &Ident{Name: "trace_id"},
+				Start:  &Literal{Kind: LitInt, Value: int64(-8)},
+			},
+			want: "trace_id[-8:]",
+		},
+		{
+			name: "prefix",
+			expr: &Slice{
+				Object: &Ident{Name: "trace_id"},
+				End:    &Literal{Kind: LitInt, Value: int64(8)},
+			},
+			want: "trace_id[:8]",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.expr.String(); got != tt.want {
+				t.Errorf("got %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestLambda_String(t *testing.T) {
 	l := &Lambda{
 		Param: "t",

@@ -154,7 +154,7 @@ var functions = []Function{
 	{Name: "ipmask", Category: "network", Params: []Param{{Name: "mask", Type: TString}, {Name: "ip", Type: TString}}, Result: TString, Fallibility: NullOnFailure},
 
 	// array
-	{Name: "slice", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "start", Type: TInt}, {Name: "end", Type: TInt, Optional: true}}, Result: TArray, Fallibility: NullOnFailure},
+	{Name: "slice", Category: "array", Params: []Param{{Name: "x", Type: TAny}, {Name: "start", Type: TInt}, {Name: "end", Type: TInt, Optional: true}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Slice an array or string with 0-based indexes; negative indexes count from the end."},
 	{Name: "array_concat", Category: "array", Params: []Param{{Name: "arrays", Type: TArray, Variadic: true}}, Result: TArray, Fallibility: NullOnFailure},
 	{Name: "array_distinct", Category: "array", Params: []Param{{Name: "arr", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure},
 	{Name: "array_sort", Category: "array", Params: []Param{{Name: "arr", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure},

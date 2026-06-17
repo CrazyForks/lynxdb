@@ -621,6 +621,17 @@ func (d *dumper) dumpExpr(e Expr, depth int) {
 		d.line(depth, "Index")
 		d.dumpExpr(n.Object, depth+1)
 		d.dumpExpr(n.Idx, depth+1)
+	case *Slice:
+		d.line(depth, "Slice")
+		d.dumpExpr(n.Object, depth+1)
+		if n.Start != nil {
+			d.line(depth+1, "Start")
+			d.dumpExpr(n.Start, depth+2)
+		}
+		if n.End != nil {
+			d.line(depth+1, "End")
+			d.dumpExpr(n.End, depth+2)
+		}
 	case *Lambda:
 		d.line(depth, "Lambda %s", n.Param)
 		d.dumpExpr(n.Body, depth+1)

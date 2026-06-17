@@ -194,7 +194,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 
 | Function | Params | Result | Fallibility | Strict | Description |
 |----------|--------|--------|-------------|--------|-------------|
-| `slice` | (arr: array, start: int, end: int?) | `array` | null_on_failure | - | - |
+| `slice` | (x: any, start: int, end: int?) | `any` | null_on_failure | - | Slice an array or string with 0-based indexes; negative indexes count from the end. |
 | `array_concat` | (arrays: array...) | `array` | null_on_failure | - | - |
 | `array_distinct` | (arr: array) | `array` | null_on_failure | - | - |
 | `array_sort` | (arr: array) | `array` | null_on_failure | - | - |

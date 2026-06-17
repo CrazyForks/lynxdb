@@ -864,26 +864,34 @@ func (vm *VM) execArrayMap(prog *Program, subIdx int, arrVal event.Value, fields
 
 // Slice, ArrayConcat, ArrayDistinct, ArraySort, Flatten
 
-// execSlice implements slice(arr, start[, end]).
-// Stack: [..., arr, start, end] or [..., arr, start] (end=null means to end).
+// execSlice implements slice(arr|string, start[, end]).
+// Stack: [..., x, start, end] or [..., x, start] (end=null means to end).
 // 0-based indexing, negative from end, clamped.
 func (vm *VM) execSlice() {
 	endVal := vm.stack[vm.sp-1]
 	startVal := vm.stack[vm.sp-2]
-	arrVal := vm.stack[vm.sp-3]
+	container := vm.stack[vm.sp-3]
 	vm.sp -= 2
 
-	if arrVal.IsNull() || startVal.IsNull() {
+	if container.IsNull() || startVal.IsNull() {
 		vm.stack[vm.sp-1] = event.NullValue()
 		return
 	}
-	if arrVal.Type() != event.FieldTypeArray {
+	if container.Type() != event.FieldTypeArray && container.Type() != event.FieldTypeString {
 		vm.stack[vm.sp-1] = event.NullValue()
 		return
 	}
 
-	arr := arrVal.AsArray()
-	n := int64(len(arr))
+	var arr []event.Value
+	var runes []rune
+	var n int64
+	if container.Type() == event.FieldTypeString {
+		runes = []rune(container.AsString())
+		n = int64(len(runes))
+	} else {
+		arr = container.AsArray()
+		n = int64(len(arr))
+	}
 
 	si, ok := valueToInt64(startVal)
 	if !ok {
@@ -922,7 +930,16 @@ func (vm *VM) execSlice() {
 	}
 
 	if si >= ei {
-		vm.stack[vm.sp-1] = event.ArrayValue(nil)
+		if container.Type() == event.FieldTypeString {
+			vm.stack[vm.sp-1] = event.StringValue("")
+		} else {
+			vm.stack[vm.sp-1] = event.ArrayValue(nil)
+		}
+		return
+	}
+
+	if container.Type() == event.FieldTypeString {
+		vm.stack[vm.sp-1] = event.StringValue(string(runes[si:ei]))
 		return
 	}
 

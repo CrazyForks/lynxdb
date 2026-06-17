@@ -264,6 +264,15 @@ func rewriteBottomUp(e ast.Expr, f func(ast.Expr) (ast.Expr, bool)) (ast.Expr, b
 			e = &ast.Index{Object: obj, Idx: idx, Pos: x.Pos}
 		}
 
+	case *ast.Slice:
+		obj, oc := rewriteBottomUp(x.Object, f)
+		start, sc := rewriteBottomUp(x.Start, f)
+		end, ec := rewriteBottomUp(x.End, f)
+		if oc || sc || ec {
+			anyChanged = true
+			e = &ast.Slice{Object: obj, Start: start, End: end, Pos: x.Pos}
+		}
+
 	case *ast.Lambda:
 		body, c := rewriteBottomUp(x.Body, f)
 		if c {

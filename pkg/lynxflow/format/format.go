@@ -245,6 +245,18 @@ func formatExpr(b *strings.Builder, e ast.Expr, parentPrec prec) {
 		formatExpr(b, n.Idx, precTop)
 		b.WriteByte(']')
 
+	case *ast.Slice:
+		formatExpr(b, n.Object, precAtom)
+		b.WriteByte('[')
+		if n.Start != nil {
+			formatExpr(b, n.Start, precTop)
+		}
+		b.WriteByte(':')
+		if n.End != nil {
+			formatExpr(b, n.End, precTop)
+		}
+		b.WriteByte(']')
+
 	case *ast.Lambda:
 		needParens := parentPrec > precTop
 		if needParens {

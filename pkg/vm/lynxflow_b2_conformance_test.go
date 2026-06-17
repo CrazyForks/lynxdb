@@ -406,6 +406,47 @@ func TestB2_Slice(t *testing.T) {
 	}
 }
 
+func TestB2_SliceString(t *testing.T) {
+	tests := []struct {
+		name string
+		expr lfast.Expr
+		want string
+	}{
+		{
+			name: "bounded",
+			expr: sliceExpr(litStr("abcdef"), litInt(1), litInt(4)),
+			want: "bcd",
+		},
+		{
+			name: "tail",
+			expr: sliceExpr(litStr("abcdef"), litInt(-3), nil),
+			want: "def",
+		},
+		{
+			name: "prefix",
+			expr: sliceExpr(litStr("abcdef"), nil, litInt(2)),
+			want: "ab",
+		},
+		{
+			name: "runes",
+			expr: sliceExpr(litStr("éclair"), litInt(0), litInt(2)),
+			want: "éc",
+		},
+		{
+			name: "empty",
+			expr: sliceExpr(litStr("abcdef"), litInt(4), litInt(1)),
+			want: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result, _ := runLF(t, tt.expr, nil)
+			assertString(t, result, tt.want, tt.name)
+		})
+	}
+}
+
 // Array functions: array_concat
 
 func TestB2_ArrayConcat(t *testing.T) {

@@ -76,6 +76,11 @@ func TestPrecedenceGolden(t *testing.T) {
 		{"a == b != c", "(a == b)"}, // chained comparison generates error; first one returns
 		// 30. nested calls
 		{"f(g(x), h(y))", "f(g(x), h(y))"},
+		// 30b. slice syntax
+		{"trace_id[-8:]", "trace_id[(-8):]"},
+		{"items[:3]", "items[:3]"},
+		{"items[1:3]", "items[1:3]"},
+		{"items[:]", "items[:]"},
 		// 31. bool literals
 		{"true and false", "(true and false)"},
 		// 32. null coalesce

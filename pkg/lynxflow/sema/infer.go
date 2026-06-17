@@ -81,6 +81,11 @@ func (a *analyzer) inferExpr(e ast.Expr) FieldType {
 		a.inferExpr(x.Object)
 		a.inferExpr(x.Idx)
 		return TypeAny
+	case *ast.Slice:
+		a.inferExpr(x.Object)
+		a.inferExpr(x.Start)
+		a.inferExpr(x.End)
+		return TypeAny
 	case *ast.Lambda:
 		// Lambda body: infer with param bound to "any".
 		a.inferExpr(x.Body)

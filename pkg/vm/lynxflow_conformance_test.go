@@ -171,6 +171,9 @@ func safeMember(obj lfast.Expr, field string) *lfast.SafeMember {
 func index(obj, idx lfast.Expr) *lfast.Index {
 	return &lfast.Index{Object: obj, Idx: idx}
 }
+func sliceExpr(obj, start, end lfast.Expr) *lfast.Slice {
+	return &lfast.Slice{Object: obj, Start: start, End: end}
+}
 func array(elems ...lfast.Expr) *lfast.Array {
 	return &lfast.Array{Elems: elems}
 }

@@ -373,6 +373,30 @@ func (n *Index) String() string {
 	return n.Object.String() + "[" + n.Idx.String() + "]"
 }
 
+// Slice is a subscript slice expression: expr[start:end].
+type Slice struct {
+	Object Expr
+	Start  Expr // nil means from the beginning
+	End    Expr // nil means through the end
+	Pos    Span // from start of object to closing ]
+}
+
+func (n *Slice) ExprSpan() Span { return n.Pos }
+func (n *Slice) String() string {
+	var b strings.Builder
+	b.WriteString(n.Object.String())
+	b.WriteByte('[')
+	if n.Start != nil {
+		b.WriteString(n.Start.String())
+	}
+	b.WriteByte(':')
+	if n.End != nil {
+		b.WriteString(n.End.String())
+	}
+	b.WriteByte(']')
+	return b.String()
+}
+
 // Lambda
 
 // Lambda is a lambda expression: param -> body.
@@ -462,6 +486,10 @@ func Walk(n Expr, fn Visitor) {
 	case *Index:
 		Walk(x.Object, fn)
 		Walk(x.Idx, fn)
+	case *Slice:
+		Walk(x.Object, fn)
+		Walk(x.Start, fn)
+		Walk(x.End, fn)
 	case *Lambda:
 		Walk(x.Body, fn)
 	case *Paren:

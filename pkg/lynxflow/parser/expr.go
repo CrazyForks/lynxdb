@@ -499,17 +499,47 @@ func (p *parser) parsePostfix() ast.Expr {
 
 		case p.at(lexer.LBracket):
 			p.advance()
-			idx := p.parseExpr()
+			var idx ast.Expr
+			var startExpr ast.Expr
+			var endExpr ast.Expr
+			isSlice := false
+			if p.at(lexer.Colon) {
+				isSlice = true
+				p.advance()
+				if !p.at(lexer.RBracket) {
+					endExpr = p.parseExpr()
+				}
+			} else {
+				idx = p.parseExpr()
+				if p.at(lexer.Colon) {
+					isSlice = true
+					startExpr = idx
+					idx = nil
+					p.advance()
+					if !p.at(lexer.RBracket) {
+						endExpr = p.parseExpr()
+					}
+				}
+			}
 			end := p.cur.End
 			if _, ok := p.expect(lexer.RBracket); !ok {
 				// Try recovery: skip to ].
 				p.recoverTo(lexer.RBracket)
 				end = p.prev.End
 			}
-			left = &ast.Index{
-				Object: left,
-				Idx:    idx,
-				Pos:    ast.Span{Start: left.ExprSpan().Start, End: end},
+			if isSlice {
+				left = &ast.Slice{
+					Object: left,
+					Start:  startExpr,
+					End:    endExpr,
+					Pos:    ast.Span{Start: left.ExprSpan().Start, End: end},
+				}
+			} else {
+				left = &ast.Index{
+					Object: left,
+					Idx:    idx,
+					Pos:    ast.Span{Start: left.ExprSpan().Start, End: end},
+				}
 			}
 
 		default:

@@ -82,9 +82,9 @@ var operators = []Operator{
 	},
 	{
 		Name: "sort", Class: ClassCore, Streaming: StreamingAcc,
-		Positionals: []Positional{{Name: "keys", Type: ArgSortList, Required: true, Doc: "-f desc, +f or f asc"}},
-		Doc:         "External merge sort, spill-capable. Nulls last ascending, first descending.",
-		Examples:    []string{`sort -count, service`},
+		Positionals: []Positional{{Name: "keys", Type: ArgSortList, Required: true, Doc: "-f desc, +f or f asc; * expands to all known input fields"}},
+		Doc:         "External merge sort, spill-capable. Nulls last ascending, first descending. `sort *` is schema-resolved.",
+		Examples:    []string{`sort -count, service`, `sort *`, `sort -*`},
 	},
 	{
 		Name: "head", Class: ClassCore, Streaming: StreamingRow,

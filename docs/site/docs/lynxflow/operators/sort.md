@@ -7,7 +7,7 @@ sidebar_label: "sort"
 
 **Class:** `core` &middot; **Streaming:** accumulating
 
-External merge sort, spill-capable. Nulls last ascending, first descending.
+External merge sort, spill-capable. Nulls last ascending, first descending. `sort *` is schema-resolved.
 
 ## Signature
 
@@ -19,12 +19,20 @@ External merge sort, spill-capable. Nulls last ascending, first descending.
 
 | Name | Type | Required | Description |
 |------|------|----------|-------------|
-| `keys` | `sort_list` | Yes | -f desc, +f or f asc |
+| `keys` | `sort_list` | Yes | -f desc, +f or f asc; * expands to all known input fields |
 
 ## Examples
 
 ```
 sort -count, service
+```
+
+```
+sort *
+```
+
+```
+sort -*
 ```
 
 ---

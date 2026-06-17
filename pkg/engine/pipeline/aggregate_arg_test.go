@@ -49,6 +49,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "min_n", Field: "score", Limit: 3, Alias: "min_scores"},
 		{Name: "corr", Field: "score", WeightField: "weight", Alias: "score_weight_corr"},
 		{Name: "covar", Field: "score", WeightField: "weight", Alias: "score_weight_covar"},
+		{Name: "linear_fit", Field: "score", WeightField: "weight", Alias: "score_weight_fit"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -90,6 +91,9 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventIntArray(t, row["min_scores"], []int64{0, 1, 2}, group+" min_n")
 		assertEventFloat(t, row["score_weight_corr"], scoreWeightCorrWant(), group+" corr")
 		assertEventFloat(t, row["score_weight_covar"], scoreWeightCovarWant(), group+" covar")
+		assertEventObjectFloat(t, row["score_weight_fit"], "slope", scoreWeightSlopeWant(), group+" fit slope")
+		assertEventObjectFloat(t, row["score_weight_fit"], "intercept", scoreWeightInterceptWant(), group+" fit intercept")
+		assertEventObjectFloat(t, row["score_weight_fit"], "r2", scoreWeightR2Want(), group+" fit r2")
 	}
 }
 
@@ -126,6 +130,22 @@ func scoreWeightCovarWant() float64 {
 	stats := scoreWeightStats()
 	n := float64(stats.count)
 	return (stats.sumXY - stats.sumX*stats.sumY/n) / (n - 1)
+}
+
+func scoreWeightSlopeWant() float64 {
+	stats := scoreWeightStats()
+	n := float64(stats.count)
+	return (n*stats.sumXY - stats.sumX*stats.sumY) / (n*stats.sumX2 - stats.sumX*stats.sumX)
+}
+
+func scoreWeightInterceptWant() float64 {
+	stats := scoreWeightStats()
+	return (stats.sumY - scoreWeightSlopeWant()*stats.sumX) / float64(stats.count)
+}
+
+func scoreWeightR2Want() float64 {
+	corr := scoreWeightCorrWant()
+	return corr * corr
 }
 
 type scoreWeightSummary struct {
@@ -191,6 +211,18 @@ func assertEventFloat(t *testing.T, v event.Value, expected float64, label strin
 	if math.Abs(got-expected) > 1e-9 {
 		t.Fatalf("%s: got %f, want %f", label, got, expected)
 	}
+}
+
+func assertEventObjectFloat(t *testing.T, v event.Value, key string, expected float64, label string) {
+	t.Helper()
+	if v.Type() != event.FieldTypeObject {
+		t.Fatalf("%s: expected object, got %s", label, v.Type())
+	}
+	obj, ok := v.TryAsObject()
+	if !ok {
+		t.Fatalf("%s: expected object, got %s", label, v.Type())
+	}
+	assertEventFloat(t, obj[key], expected, label+" "+key)
 }
 
 func assertEventIntArray(t *testing.T, v event.Value, expected []int64, label string) {

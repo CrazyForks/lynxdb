@@ -312,7 +312,7 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 		case aggAvgW:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 			row[agg.Alias+"__weight_sum"] = event.FloatValue(s.weightSum)
-		case aggCorr, aggCovar:
+		case aggCorr, aggCovar, aggLinFit:
 			row[agg.Alias+"__count"] = event.IntValue(s.count)
 			row[agg.Alias+"__sum_x"] = event.FloatValue(s.sum)
 			row[agg.Alias+"__sum_y"] = event.FloatValue(s.weightSum)
@@ -442,7 +442,7 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			}
 		case aggAvgW:
 			a.mergeWeightedAvgFromRow(&group.states[j], row, agg.Alias)
-		case aggCorr, aggCovar:
+		case aggCorr, aggCovar, aggLinFit:
 			a.mergePairStatsFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			sumVal := row[agg.Alias+"__sum"]

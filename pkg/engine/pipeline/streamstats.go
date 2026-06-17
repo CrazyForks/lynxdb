@@ -686,7 +686,7 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 				st.count++
 			}
 		}
-	case aggCorr, aggCovar:
+	case aggCorr, aggCovar, aggLinFit:
 		addPairValueToRunning(st, agg, row)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
@@ -753,7 +753,7 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 				st.count--
 			}
 		}
-	case aggCorr, aggCovar:
+	case aggCorr, aggCovar, aggLinFit:
 		removePairValueFromRunning(st, agg, row)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
@@ -807,6 +807,8 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		return finalizeRunningCorr(st)
 	case aggCovar:
 		return finalizeRunningCovar(st)
+	case aggLinFit:
+		return finalizeRunningLinearFit(st)
 	case aggMin:
 		if st.minVal.IsNull() && st.count > 0 {
 			// Min was evicted — rescan window to find new minimum.
@@ -912,6 +914,30 @@ func finalizeRunningCorr(st *runningAggState) event.Value {
 	return event.FloatValue(num / math.Sqrt(xDen*yDen))
 }
 
+func finalizeRunningLinearFit(st *runningAggState) event.Value {
+	if st.count < 2 {
+		return event.NullValue()
+	}
+	n := float64(st.count)
+	xDen := n*st.sumSq - st.sum*st.sum
+	if xDen <= 0 {
+		return event.NullValue()
+	}
+	slope := (n*st.sumXY - st.sum*st.weightSum) / xDen
+	intercept := (st.weightSum - slope*st.sum) / n
+	fields := map[string]event.Value{
+		"slope":     event.FloatValue(slope),
+		"intercept": event.FloatValue(intercept),
+		"r2":        event.NullValue(),
+	}
+	yDen := n*st.sumY2 - st.weightSum*st.weightSum
+	if yDen > 0 {
+		corr := (n*st.sumXY - st.sum*st.weightSum) / math.Sqrt(xDen*yDen)
+		fields["r2"] = event.FloatValue(corr * corr)
+	}
+	return event.ObjectValue(fields)
+}
+
 // groupKey builds a composite key from the BY-clause fields of a row.
 //
 // Uses null byte (\x00) as separator instead of '|' to avoid collisions when
@@ -991,13 +1017,16 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return event.FloatValue(sum / float64(count))
-	case aggCorr, aggCovar:
+	case aggCorr, aggCovar, aggLinFit:
 		st := runningAggState{}
 		for _, item := range items {
 			addPairValueToRunning(&st, agg, item)
 		}
 		if strings.EqualFold(agg.Name, aggCorr) {
 			return finalizeRunningCorr(&st)
+		}
+		if strings.EqualFold(agg.Name, aggLinFit) {
+			return finalizeRunningLinearFit(&st)
 		}
 		return finalizeRunningCovar(&st)
 	case aggMin:

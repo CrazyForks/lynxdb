@@ -124,6 +124,7 @@ const (
 	aggMinN    = "min_n"
 	aggCorr    = "corr"
 	aggCovar   = "covar"
+	aggLinFit  = "linear_fit"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -352,6 +353,8 @@ func aggResultType(name string) string {
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
+	case aggLinFit:
+		return "object"
 	case aggTopK, aggValCnt, aggMaxN, aggMinN:
 		return "array"
 	default:
@@ -724,7 +727,7 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		}
 	case aggAvgW:
 		updateWeightedAvgState(s, val, weightVal)
-	case aggCorr, aggCovar:
+	case aggCorr, aggCovar, aggLinFit:
 		updatePairStatsState(s, val, weightVal)
 	case aggMin:
 		if !val.IsNull() {
@@ -1011,6 +1014,31 @@ func finalizeCorr(s *aggState) event.Value {
 		return event.NullValue()
 	}
 	return event.FloatValue(num / math.Sqrt(xDen*yDen))
+}
+
+func finalizeLinearFit(s *aggState) event.Value {
+	if s.count < 2 {
+		return event.NullValue()
+	}
+	n := float64(s.count)
+	xDen := n*s.sumSq - s.sum*s.sum
+	if xDen <= 0 {
+		return event.NullValue()
+	}
+	slope := (n*s.sumXY - s.sum*s.weightSum) / xDen
+	intercept := (s.weightSum - slope*s.sum) / n
+
+	fields := map[string]event.Value{
+		"slope":     event.FloatValue(slope),
+		"intercept": event.FloatValue(intercept),
+		"r2":        event.NullValue(),
+	}
+	yDen := n*s.sumY2 - s.weightSum*s.weightSum
+	if yDen > 0 {
+		corr := (n*s.sumXY - s.sum*s.weightSum) / math.Sqrt(xDen*yDen)
+		fields["r2"] = event.FloatValue(corr * corr)
+	}
+	return event.ObjectValue(fields)
 }
 
 func finalizeEntropy(s *aggState) event.Value {
@@ -1312,7 +1340,7 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			}
 		case aggAvgW:
 			a.mergeWeightedAvgFromRow(&group.states[j], row, agg.Alias)
-		case aggCorr, aggCovar:
+		case aggCorr, aggCovar, aggLinFit:
 			a.mergePairStatsFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
@@ -1793,6 +1821,8 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		return finalizeCorr(s)
 	case aggCovar:
 		return finalizeCovar(s)
+	case aggLinFit:
+		return finalizeLinearFit(s)
 	case aggMin:
 		return s.min
 	case aggMax:
@@ -1917,6 +1947,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeCorr(s)
 	case aggCovar:
 		return finalizeCovar(s)
+	case aggLinFit:
+		return finalizeLinearFit(s)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

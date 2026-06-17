@@ -129,6 +129,25 @@ func assertFloatField(t *testing.T, row map[string]event.Value, field string, wa
 	}
 }
 
+func assertObjectFloatField(
+	t *testing.T,
+	row map[string]event.Value,
+	field string,
+	key string,
+	want float64,
+	rowIndex int,
+) {
+	t.Helper()
+	obj, ok := row[field].TryAsObject()
+	if !ok {
+		t.Fatalf("row %d field %s: expected object, got %s", rowIndex, field, row[field].Type())
+	}
+	got, ok := obj[key].TryAsFloat()
+	if !ok || math.Abs(got-want) > 0.01 {
+		t.Errorf("row %d field %s.%s: expected %f, got %s", rowIndex, field, key, want, obj[key].String())
+	}
+}
+
 func sampleRows() []map[string]event.Value {
 	return []map[string]event.Value{
 		{"level": strV("info"), "status": intV(200), "duration": floatV(10.5), "host": strV("web-01")},
@@ -402,12 +421,15 @@ func TestBuild_CorrCovarAggregates(t *testing.T) {
 		{"x": intV(2), "y": intV(4)},
 		{"x": intV(3), "y": intV(6)},
 	}
-	result := drain(t, `from * | stats corr(x, y) as r, covar(x, y) as c`, rows)
+	result := drain(t, `from * | stats corr(x, y) as r, covar(x, y) as c, linear_fit(x, y) as fit`, rows)
 	if len(result) != 1 {
 		t.Fatalf("expected 1 row, got %d", len(result))
 	}
 	assertFloatField(t, result[0], "r", 1, 0)
 	assertFloatField(t, result[0], "c", 2, 0)
+	assertObjectFloatField(t, result[0], "fit", "slope", 2, 0)
+	assertObjectFloatField(t, result[0], "fit", "intercept", 0, 0)
+	assertObjectFloatField(t, result[0], "fit", "r2", 1, 0)
 }
 
 func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
@@ -416,21 +438,33 @@ func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
 		{"x": intV(2), "y": intV(4)},
 		{"x": intV(3), "y": intV(6)},
 	}
-	result := drain(t, `from * | eventstats corr(x, y) as er, covar(x, y) as ec | streamstats corr(x, y) as sr, covar(x, y) as sc`, rows)
+	result := drain(t, `from * | eventstats corr(x, y) as er, covar(x, y) as ec, linear_fit(x, y) as ef | streamstats corr(x, y) as sr, covar(x, y) as sc, linear_fit(x, y) as sf`, rows)
 	if len(result) != len(rows) {
 		t.Fatalf("expected %d rows, got %d", len(rows), len(result))
 	}
 	for i, row := range result {
 		assertFloatField(t, row, "er", 1, i)
 		assertFloatField(t, row, "ec", 2, i)
+		assertObjectFloatField(t, row, "ef", "slope", 2, i)
+		assertObjectFloatField(t, row, "ef", "intercept", 0, i)
+		assertObjectFloatField(t, row, "ef", "r2", 1, i)
 	}
 	if !result[0]["sr"].IsNull() {
 		t.Fatalf("row 0 streamstats corr got %v, want null", result[0]["sr"])
 	}
+	if !result[0]["sf"].IsNull() {
+		t.Fatalf("row 0 streamstats linear_fit got %v, want null", result[0]["sf"])
+	}
 	assertFloatField(t, result[1], "sr", 1, 1)
 	assertFloatField(t, result[1], "sc", 1, 1)
+	assertObjectFloatField(t, result[1], "sf", "slope", 2, 1)
+	assertObjectFloatField(t, result[1], "sf", "intercept", 0, 1)
+	assertObjectFloatField(t, result[1], "sf", "r2", 1, 1)
 	assertFloatField(t, result[2], "sr", 1, 2)
 	assertFloatField(t, result[2], "sc", 2, 2)
+	assertObjectFloatField(t, result[2], "sf", "slope", 2, 2)
+	assertObjectFloatField(t, result[2], "sf", "intercept", 0, 2)
+	assertObjectFloatField(t, result[2], "sf", "r2", 1, 2)
 }
 
 func TestBuild_StreamStats(t *testing.T) {
@@ -1185,6 +1219,7 @@ func TestAggNameMapping(t *testing.T) {
 		"min_n":        "min_n",
 		"corr":         "corr",
 		"covar":        "covar",
+		"linear_fit":   "linear_fit",
 		"rate":         "rate",
 	}
 	for input, want := range expected {

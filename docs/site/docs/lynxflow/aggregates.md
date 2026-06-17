@@ -30,6 +30,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `var` | (x: number) | `float` | Sample variance. |
 | `corr` | (x: number, y: number) | `float` | Pearson correlation over rows where both arguments are numeric. |
 | `covar` | (x: number, y: number) | `float` | Sample covariance over rows where both arguments are numeric. |
+| `linear_fit` | (x: number, y: number) | `object` | Least-squares fit as {slope, intercept, r2}. |
 | `mode` | (x: any) | `any` | - |
 | `arg_max` | (value: any, order: any) | `any` | Value from the row with the greatest order expression. |
 | `arg_min` | (value: any, order: any) | `any` | Value from the row with the least order expression. |

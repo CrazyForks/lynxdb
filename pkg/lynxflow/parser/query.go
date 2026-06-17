@@ -1246,6 +1246,16 @@ func (p *parser) parseSortKey() ast.SortKey {
 		p.advance()
 	}
 
+	if p.at(lexer.Star) {
+		end := p.cur.End
+		p.advance()
+		return ast.SortKey{
+			Field: &ast.Ident{Name: "*", Pos: ast.Span{Start: start, End: end}},
+			Desc:  desc,
+			Pos:   ast.Span{Start: start, End: end},
+		}
+	}
+
 	field := p.parseExprSafe()
 
 	// D22: check for trailing 'desc'/'asc' — error with fix-it.
@@ -2497,7 +2507,12 @@ func (p *parser) parseGroupByList() []ast.Expr {
 		if p.at(lexer.Pipe) || p.at(lexer.EOF) || p.at(lexer.Semicolon) || p.at(lexer.RBracket) {
 			break
 		}
-		keys = append(keys, p.parseExprSafe())
+		if p.at(lexer.Star) {
+			keys = append(keys, &ast.Ident{Name: "*", Pos: p.curSpan()})
+			p.advance()
+		} else {
+			keys = append(keys, p.parseExprSafe())
+		}
 		if !p.consume(lexer.Comma) {
 			break
 		}

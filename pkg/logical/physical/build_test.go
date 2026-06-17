@@ -120,6 +120,30 @@ func TestBuild_ScalarLet(t *testing.T) {
 	}
 }
 
+func TestBuild_StatsByStar(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"host": strV("a"), "index": strV("main")},
+		{"host": strV("a"), "index": strV("main")},
+		{"host": strV("b"), "index": strV("main")},
+	}
+	got := drain(t, `from * | stats count() as n by * | sort host`, rows)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows, got %d: %#v", len(got), got)
+	}
+	if host := got[0]["host"].AsString(); host != "a" {
+		t.Fatalf("row 0 host = %q, want a", host)
+	}
+	if n := got[0]["n"].AsInt(); n != 2 {
+		t.Fatalf("row 0 n = %d, want 2", n)
+	}
+	if host := got[1]["host"].AsString(); host != "b" {
+		t.Fatalf("row 1 host = %q, want b", host)
+	}
+	if n := got[1]["n"].AsInt(); n != 1 {
+		t.Fatalf("row 1 n = %d, want 1", n)
+	}
+}
+
 func TestBuild_Unpivot(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"service": strV("api"), "cpu_ms": intV(12), "db_ms": intV(7), "status": intV(200)},

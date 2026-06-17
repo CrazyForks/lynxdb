@@ -307,6 +307,13 @@ func (l *lowerer) lowerStats(input Node, sp *ast.StatsPayload, window *WindowSpe
 	var timeBin *TimeBin
 
 	for _, byExpr := range sp.By {
+		if isStarExpr(byExpr) {
+			for _, field := range input.Schema() {
+				expr := &ast.Ident{Name: field.Name, Pos: byExpr.ExprSpan()}
+				keys = append(keys, Key{Expr: expr, Name: field.Name})
+			}
+			continue
+		}
 		// Check for bin(_time, d) -> extract TimeBin.
 		if call, ok := byExpr.(*ast.Call); ok && call.Callee == "bin" && len(call.Args) >= 2 && len(call.Args) <= 3 {
 			if ident, ok := call.Args[0].(*ast.Ident); ok && ident.Name == "_time" {
@@ -334,13 +341,9 @@ func (l *lowerer) lowerSort(input Node, s ast.Stage) Node {
 	if s.Sort == nil {
 		return input
 	}
-	keys := make([]SortKey, len(s.Sort.Keys))
-	for i, k := range s.Sort.Keys {
-		keys[i] = SortKey{Expr: k.Field, Desc: k.Desc}
-	}
 	return &Sort{
 		unaryNode: unaryNode{Input: input},
-		Keys:      keys,
+		Keys:      lowerSortKeys(input, s.Sort.Keys),
 	}
 }
 
@@ -367,15 +370,28 @@ func (l *lowerer) lowerTail(input Node, s ast.Stage) Node {
 }
 
 func (l *lowerer) lowerTopK(input Node, sortStage, headStage ast.Stage) Node {
-	keys := make([]SortKey, len(sortStage.Sort.Keys))
-	for i, k := range sortStage.Sort.Keys {
-		keys[i] = SortKey{Expr: k.Field, Desc: k.Desc}
-	}
 	return &TopK{
 		unaryNode: unaryNode{Input: input},
 		K:         headStage.Head.N,
-		SortKeys:  keys,
+		SortKeys:  lowerSortKeys(input, sortStage.Sort.Keys),
 	}
+}
+
+func lowerSortKeys(input Node, keys []ast.SortKey) []SortKey {
+	out := make([]SortKey, 0, len(keys))
+	for _, k := range keys {
+		if isStarExpr(k.Field) {
+			for _, field := range input.Schema() {
+				out = append(out, SortKey{
+					Expr: &ast.Ident{Name: field.Name, Pos: k.Field.ExprSpan()},
+					Desc: k.Desc,
+				})
+			}
+			continue
+		}
+		out = append(out, SortKey{Expr: k.Field, Desc: k.Desc})
+	}
+	return out
 }
 
 func (l *lowerer) lowerDedup(input Node, s ast.Stage) Node {
@@ -1082,4 +1098,9 @@ func exprFieldName(e ast.Expr) string {
 		return x.Callee + "()"
 	}
 	return strings.ReplaceAll(e.String(), " ", "")
+}
+
+func isStarExpr(e ast.Expr) bool {
+	ident, ok := e.(*ast.Ident)
+	return ok && ident.Name == "*"
 }

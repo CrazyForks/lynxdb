@@ -51,6 +51,41 @@ func TestFusion_SortHead_TopK(t *testing.T) {
 	}
 }
 
+func TestLower_StatsByStarExpandsInputSchema(t *testing.T) {
+	plan, diags := parseDesugarLower(t, `from app | stats count() by *`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Aggregate](t, plan.Root, "root should be Aggregate")
+	agg := plan.Root.(*Aggregate)
+	want := []string{"_time", "_raw", "_source", "_sourcetype", "host", "index"}
+	if len(agg.Keys) != len(want) {
+		t.Fatalf("keys len = %d, want %d", len(agg.Keys), len(want))
+	}
+	for i, key := range agg.Keys {
+		if key.Name != want[i] {
+			t.Fatalf("key %d = %q, want %q", i, key.Name, want[i])
+		}
+	}
+}
+
+func TestLower_SortStarExpandsInputSchema(t *testing.T) {
+	plan, diags := parseDesugarLower(t, `from app | sort -*`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Sort](t, plan.Root, "root should be Sort")
+	sort := plan.Root.(*Sort)
+	want := []string{"_time", "_raw", "_source", "_sourcetype", "host", "index"}
+	if len(sort.Keys) != len(want) {
+		t.Fatalf("keys len = %d, want %d", len(sort.Keys), len(want))
+	}
+	for i, key := range sort.Keys {
+		if got := exprFieldName(key.Expr); got != want[i] {
+			t.Fatalf("key %d = %q, want %q", i, got, want[i])
+		}
+		if !key.Desc {
+			t.Fatalf("key %d Desc = false, want true", i)
+		}
+	}
+}
+
 func TestFusion_SortHead_NotFused_WhenInterleaved(t *testing.T) {
 	plan, diags := parseDesugarLower(t,
 		`from app | sort -count | where status == 200 | head 10`)

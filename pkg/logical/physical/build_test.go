@@ -396,6 +396,43 @@ func TestBuild_ListValuesLimitsInWindowAggregates(t *testing.T) {
 	}
 }
 
+func TestBuild_CorrCovarAggregates(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(1), "y": intV(2)},
+		{"x": intV(2), "y": intV(4)},
+		{"x": intV(3), "y": intV(6)},
+	}
+	result := drain(t, `from * | stats corr(x, y) as r, covar(x, y) as c`, rows)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(result))
+	}
+	assertFloatField(t, result[0], "r", 1, 0)
+	assertFloatField(t, result[0], "c", 2, 0)
+}
+
+func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(1), "y": intV(2)},
+		{"x": intV(2), "y": intV(4)},
+		{"x": intV(3), "y": intV(6)},
+	}
+	result := drain(t, `from * | eventstats corr(x, y) as er, covar(x, y) as ec | streamstats corr(x, y) as sr, covar(x, y) as sc`, rows)
+	if len(result) != len(rows) {
+		t.Fatalf("expected %d rows, got %d", len(rows), len(result))
+	}
+	for i, row := range result {
+		assertFloatField(t, row, "er", 1, i)
+		assertFloatField(t, row, "ec", 2, i)
+	}
+	if !result[0]["sr"].IsNull() {
+		t.Fatalf("row 0 streamstats corr got %v, want null", result[0]["sr"])
+	}
+	assertFloatField(t, result[1], "sr", 1, 1)
+	assertFloatField(t, result[1], "sc", 1, 1)
+	assertFloatField(t, result[2], "sr", 1, 2)
+	assertFloatField(t, result[2], "sc", 2, 2)
+}
+
 func TestBuild_StreamStats(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"val": intV(1)},
@@ -1146,6 +1183,8 @@ func TestAggNameMapping(t *testing.T) {
 		"entropy":      "entropy",
 		"max_n":        "max_n",
 		"min_n":        "min_n",
+		"corr":         "corr",
+		"covar":        "covar",
 		"rate":         "rate",
 	}
 	for input, want := range expected {

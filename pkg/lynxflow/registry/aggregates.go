@@ -18,6 +18,8 @@ var aggregates = []Aggregate{
 	{Name: "p99", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Alias for perc(x, 99)."},
 	{Name: "stdev", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Sample standard deviation."},
 	{Name: "var", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Sample variance."},
+	{Name: "corr", Params: []Param{{Name: "x", Type: TNumber}, {Name: "y", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Pearson correlation over rows where both arguments are numeric."},
+	{Name: "covar", Params: []Param{{Name: "x", Type: TNumber}, {Name: "y", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Sample covariance over rows where both arguments are numeric."},
 	{Name: "mode", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny},
 	{Name: "arg_max", Params: []Param{{Name: "value", Type: TAny}, {Name: "order", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the greatest order expression."},
 	{Name: "arg_min", Params: []Param{{Name: "value", Type: TAny}, {Name: "order", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the least order expression."},

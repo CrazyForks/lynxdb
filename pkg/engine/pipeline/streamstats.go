@@ -43,6 +43,10 @@ type runningAggState struct {
 	minVal    event.Value
 	maxVal    event.Value
 	freq      map[string]int64 // for dc: value → frequency
+	weightSum float64
+	sumSq     float64
+	sumY2     float64
+	sumXY     float64
 }
 
 type ringBuffer struct {
@@ -682,6 +686,8 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 				st.count++
 			}
 		}
+	case aggCorr, aggCovar:
+		addPairValueToRunning(st, agg, row)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			if st.minVal.IsNull() || vm.CompareValues(v, st.minVal) < 0 {
@@ -747,6 +753,8 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 				st.count--
 			}
 		}
+	case aggCorr, aggCovar:
+		removePairValueFromRunning(st, agg, row)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			st.count--
@@ -795,6 +803,10 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		}
 
 		return event.FloatValue(st.sum / float64(st.count))
+	case aggCorr:
+		return finalizeRunningCorr(st)
+	case aggCovar:
+		return finalizeRunningCovar(st)
 	case aggMin:
 		if st.minVal.IsNull() && st.count > 0 {
 			// Min was evicted — rescan window to find new minimum.
@@ -830,6 +842,74 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 	}
 
 	return event.NullValue()
+}
+
+func addPairValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Value) {
+	x, y, ok := pairValuesFromRow(agg, row)
+	if !ok {
+		return
+	}
+	st.count++
+	st.sum += x
+	st.weightSum += y
+	st.sumSq += x * x
+	st.sumY2 += y * y
+	st.sumXY += x * y
+}
+
+func removePairValueFromRunning(st *runningAggState, agg AggFunc, row map[string]event.Value) {
+	x, y, ok := pairValuesFromRow(agg, row)
+	if !ok {
+		return
+	}
+	st.count--
+	st.sum -= x
+	st.weightSum -= y
+	st.sumSq -= x * x
+	st.sumY2 -= y * y
+	st.sumXY -= x * y
+}
+
+func pairValuesFromRow(agg AggFunc, row map[string]event.Value) (float64, float64, bool) {
+	xVal, ok := row[agg.Field]
+	if !ok {
+		return 0, 0, false
+	}
+	yVal, ok := row[agg.WeightField]
+	if !ok {
+		return 0, 0, false
+	}
+	x, ok := vm.ValueToFloat(xVal)
+	if !ok {
+		return 0, 0, false
+	}
+	y, ok := vm.ValueToFloat(yVal)
+	if !ok {
+		return 0, 0, false
+	}
+	return x, y, true
+}
+
+func finalizeRunningCovar(st *runningAggState) event.Value {
+	if st.count < 2 {
+		return event.NullValue()
+	}
+	n := float64(st.count)
+	return event.FloatValue((st.sumXY - st.sum*st.weightSum/n) / (n - 1))
+}
+
+func finalizeRunningCorr(st *runningAggState) event.Value {
+	if st.count < 2 {
+		return event.NullValue()
+	}
+	n := float64(st.count)
+	num := n*st.sumXY - st.sum*st.weightSum
+	xDen := n*st.sumSq - st.sum*st.sum
+	yDen := n*st.sumY2 - st.weightSum*st.weightSum
+	if xDen <= 0 || yDen <= 0 {
+		return event.NullValue()
+	}
+	return event.FloatValue(num / math.Sqrt(xDen*yDen))
 }
 
 // groupKey builds a composite key from the BY-clause fields of a row.
@@ -911,6 +991,15 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return event.FloatValue(sum / float64(count))
+	case aggCorr, aggCovar:
+		st := runningAggState{}
+		for _, item := range items {
+			addPairValueToRunning(&st, agg, item)
+		}
+		if strings.EqualFold(agg.Name, aggCorr) {
+			return finalizeRunningCorr(&st)
+		}
+		return finalizeRunningCovar(&st)
 	case aggMin:
 		var minVal event.Value
 		for _, item := range items {

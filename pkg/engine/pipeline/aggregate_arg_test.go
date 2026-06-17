@@ -47,6 +47,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "entropy", Field: "route", Alias: "route_entropy"},
 		{Name: "max_n", Field: "score", Limit: 3, Alias: "max_scores"},
 		{Name: "min_n", Field: "score", Limit: 3, Alias: "min_scores"},
+		{Name: "corr", Field: "score", WeightField: "weight", Alias: "score_weight_corr"},
+		{Name: "covar", Field: "score", WeightField: "weight", Alias: "score_weight_covar"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -86,6 +88,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventFloat(t, row["route_entropy"], routeEntropyWant(), group+" entropy")
 		assertEventIntArray(t, row["max_scores"], []int64{49, 48, 47}, group+" max_n")
 		assertEventIntArray(t, row["min_scores"], []int64{0, 1, 2}, group+" min_n")
+		assertEventFloat(t, row["score_weight_corr"], scoreWeightCorrWant(), group+" corr")
+		assertEventFloat(t, row["score_weight_covar"], scoreWeightCovarWant(), group+" covar")
 	}
 }
 
@@ -107,6 +111,45 @@ func routeEntropyWant() float64 {
 		entropy -= p * math.Log2(p)
 	}
 	return entropy
+}
+
+func scoreWeightCorrWant() float64 {
+	stats := scoreWeightStats()
+	n := float64(stats.count)
+	num := n*stats.sumXY - stats.sumX*stats.sumY
+	xDen := n*stats.sumX2 - stats.sumX*stats.sumX
+	yDen := n*stats.sumY2 - stats.sumY*stats.sumY
+	return num / math.Sqrt(xDen*yDen)
+}
+
+func scoreWeightCovarWant() float64 {
+	stats := scoreWeightStats()
+	n := float64(stats.count)
+	return (stats.sumXY - stats.sumX*stats.sumY/n) / (n - 1)
+}
+
+type scoreWeightSummary struct {
+	count int
+	sumX  float64
+	sumY  float64
+	sumX2 float64
+	sumY2 float64
+	sumXY float64
+}
+
+func scoreWeightStats() scoreWeightSummary {
+	var stats scoreWeightSummary
+	for score := 0; score < 50; score++ {
+		x := float64(score)
+		y := float64(score%5 + 1)
+		stats.count++
+		stats.sumX += x
+		stats.sumY += y
+		stats.sumX2 += x * x
+		stats.sumY2 += y * y
+		stats.sumXY += x * y
+	}
+	return stats
 }
 
 func assertEventString(t *testing.T, v event.Value, expected string, label string) {

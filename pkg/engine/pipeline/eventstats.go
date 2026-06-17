@@ -496,6 +496,8 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal ev
 		}
 	case aggAvgW:
 		updateWeightedAvgState(s, val, weightVal)
+	case aggCorr, aggCovar:
+		updatePairStatsState(s, val, weightVal)
 	case aggMin:
 		if !val.IsNull() && (s.min.IsNull() || vm.CompareValues(val, s.min) < 0) {
 			s.min = val
@@ -555,6 +557,10 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeExtremaN(s, agg.Limit, false)
 	case aggValues, aggList:
 		return event.StringValue(joinLimitedAllStrings(s.all, agg.Limit))
+	case aggCorr:
+		return finalizeCorr(s)
+	case aggCovar:
+		return finalizeCovar(s)
 	}
 	return finalizeAggState(s, agg.Name)
 }

@@ -312,6 +312,13 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 		case aggAvgW:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 			row[agg.Alias+"__weight_sum"] = event.FloatValue(s.weightSum)
+		case aggCorr, aggCovar:
+			row[agg.Alias+"__count"] = event.IntValue(s.count)
+			row[agg.Alias+"__sum_x"] = event.FloatValue(s.sum)
+			row[agg.Alias+"__sum_y"] = event.FloatValue(s.weightSum)
+			row[agg.Alias+"__sum_x2"] = event.FloatValue(s.sumSq)
+			row[agg.Alias+"__sum_y2"] = event.FloatValue(s.sumY2)
+			row[agg.Alias+"__sum_xy"] = event.FloatValue(s.sumXY)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 		case aggRange:
@@ -435,6 +442,8 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			}
 		case aggAvgW:
 			a.mergeWeightedAvgFromRow(&group.states[j], row, agg.Alias)
+		case aggCorr, aggCovar:
+			a.mergePairStatsFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			sumVal := row[agg.Alias+"__sum"]
 			a.mergeSpilledValue(&group.states[j], agg.Name, sumVal)

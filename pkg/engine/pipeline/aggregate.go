@@ -122,6 +122,8 @@ const (
 	aggEntropy = "entropy"
 	aggMaxN    = "max_n"
 	aggMinN    = "min_n"
+	aggCorr    = "corr"
+	aggCovar   = "covar"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -167,6 +169,8 @@ type aggState struct {
 	sumSq     float64      // accumulated M2 (sum of squared deviations) for stdev after spill merge
 	topK      map[string]topKItem
 	weightSum float64
+	sumY2     float64
+	sumXY     float64
 }
 
 type topKItem struct {
@@ -344,7 +348,7 @@ func aggResultType(name string) string {
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
 		aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
-		aggRunSum, aggMovAvg, aggDelta, aggAvgW, aggEntropy:
+		aggRunSum, aggMovAvg, aggDelta, aggAvgW, aggEntropy, aggCorr, aggCovar:
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
@@ -720,6 +724,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		}
 	case aggAvgW:
 		updateWeightedAvgState(s, val, weightVal)
+	case aggCorr, aggCovar:
+		updatePairStatsState(s, val, weightVal)
 	case aggMin:
 		if !val.IsNull() {
 			if s.min.IsNull() || vm.CompareValues(val, s.min) < 0 {
@@ -965,6 +971,46 @@ func updateWeightedAvgState(s *aggState, val, weightVal event.Value) {
 	}
 	s.sum += x * weight
 	s.weightSum += weight
+}
+
+func updatePairStatsState(s *aggState, val, otherVal event.Value) {
+	x, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	y, ok := vm.ValueToFloat(otherVal)
+	if !ok {
+		return
+	}
+	s.count++
+	s.sum += x
+	s.weightSum += y
+	s.sumSq += x * x
+	s.sumY2 += y * y
+	s.sumXY += x * y
+}
+
+func finalizeCovar(s *aggState) event.Value {
+	if s.count < 2 {
+		return event.NullValue()
+	}
+	n := float64(s.count)
+	cov := (s.sumXY - s.sum*s.weightSum/n) / (n - 1)
+	return event.FloatValue(cov)
+}
+
+func finalizeCorr(s *aggState) event.Value {
+	if s.count < 2 {
+		return event.NullValue()
+	}
+	n := float64(s.count)
+	num := n*s.sumXY - s.sum*s.weightSum
+	xDen := n*s.sumSq - s.sum*s.sum
+	yDen := n*s.sumY2 - s.weightSum*s.weightSum
+	if xDen <= 0 || yDen <= 0 {
+		return event.NullValue()
+	}
+	return event.FloatValue(num / math.Sqrt(xDen*yDen))
 }
 
 func finalizeEntropy(s *aggState) event.Value {
@@ -1266,6 +1312,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			}
 		case aggAvgW:
 			a.mergeWeightedAvgFromRow(&group.states[j], row, agg.Alias)
+		case aggCorr, aggCovar:
+			a.mergePairStatsFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
@@ -1511,6 +1559,27 @@ func (a *AggregateIterator) mergeWeightedAvgFromRow(s *aggState, row map[string]
 	}
 }
 
+func (a *AggregateIterator) mergePairStatsFromRow(s *aggState, row map[string]event.Value, alias string) {
+	if countF, ok := vm.ValueToFloat(row[alias+"__count"]); ok {
+		s.count += int64(countF)
+	}
+	if sumX, ok := vm.ValueToFloat(row[alias+"__sum_x"]); ok {
+		s.sum += sumX
+	}
+	if sumY, ok := vm.ValueToFloat(row[alias+"__sum_y"]); ok {
+		s.weightSum += sumY
+	}
+	if sumX2, ok := vm.ValueToFloat(row[alias+"__sum_x2"]); ok {
+		s.sumSq += sumX2
+	}
+	if sumY2, ok := vm.ValueToFloat(row[alias+"__sum_y2"]); ok {
+		s.sumY2 += sumY2
+	}
+	if sumXY, ok := vm.ValueToFloat(row[alias+"__sum_xy"]); ok {
+		s.sumXY += sumXY
+	}
+}
+
 func topKStateValue(s *aggState) event.Value {
 	return finalizeTopK(s, 0)
 }
@@ -1720,6 +1789,10 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 			return event.NullValue()
 		}
 		return event.FloatValue(s.sum / s.weightSum)
+	case aggCorr:
+		return finalizeCorr(s)
+	case aggCovar:
+		return finalizeCovar(s)
 	case aggMin:
 		return s.min
 	case aggMax:
@@ -1840,6 +1913,10 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeExtremaN(s, agg.Limit, false)
 	case aggValues, aggList:
 		return event.StringValue(joinLimitedAllStrings(s.all, agg.Limit))
+	case aggCorr:
+		return finalizeCorr(s)
+	case aggCovar:
+		return finalizeCovar(s)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

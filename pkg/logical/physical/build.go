@@ -431,6 +431,8 @@ var aggNameMapping = map[string]string{
 	"entropy":       "entropy",
 	"max_n":         "max_n",
 	"min_n":         "min_n",
+	"corr":          "corr",
+	"covar":         "covar",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -535,7 +537,7 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 		}
 		var weightField string
 		var weightProg *vm.Program
-		if mapped == "avg_weighted" {
+		if mapped == "avg_weighted" || mapped == "corr" || mapped == "covar" {
 			weightField, weightProg, err = b.convertAggArg(name, call.Args, 1)
 			if err != nil {
 				return nil, err

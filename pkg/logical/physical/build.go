@@ -397,6 +397,7 @@ var aggNameMapping = map[string]string{
 	"perc90":        "perc90",
 	"perc95":        "perc95",
 	"perc99":        "perc99",
+	"perc_weighted": "perc_weighted",
 	"stdev":         "stdev",
 	"stdevp":        "stdevp",
 	"var":           "var",
@@ -543,7 +544,8 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 		}
 		var weightField string
 		var weightProg *vm.Program
-		if mapped == "avg_weighted" || mapped == "corr" || mapped == "covar" || mapped == "linear_fit" {
+		if mapped == "avg_weighted" || mapped == "corr" || mapped == "covar" ||
+			mapped == "linear_fit" || mapped == "perc_weighted" {
 			weightField, weightProg, err = b.convertAggArg(name, call.Args, 1)
 			if err != nil {
 				return nil, err
@@ -636,18 +638,23 @@ func aggregateLimit(name string, call *lfast.Call) (int, error) {
 }
 
 func aggregateQuantile(name string, call *lfast.Call) (float64, error) {
-	if name != "perc" {
+	argIndex := 1
+	switch name {
+	case "perc":
+	case "perc_weighted":
+		argIndex = 2
+	default:
 		return 0, nil
 	}
-	if len(call.Args) < 2 {
-		return 0, fmt.Errorf("physical.Build: perc requires a percentile")
+	if len(call.Args) <= argIndex {
+		return 0, fmt.Errorf("physical.Build: %s requires a percentile", name)
 	}
-	p, err := numericLiteralArg(call.Args[1])
+	p, err := numericLiteralArg(call.Args[argIndex])
 	if err != nil {
-		return 0, fmt.Errorf("physical.Build: perc percentile: %w", err)
+		return 0, fmt.Errorf("physical.Build: %s percentile: %w", name, err)
 	}
 	if p < 0 || p > 100 {
-		return 0, fmt.Errorf("physical.Build: perc percentile must be between 0 and 100")
+		return 0, fmt.Errorf("physical.Build: %s percentile must be between 0 and 100", name)
 	}
 	return p / 100, nil
 }

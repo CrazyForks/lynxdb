@@ -123,6 +123,12 @@ lynxdb query 'from nginx | stats avg(duration_ms) as avg_lat, p50(duration_ms) a
 
 Available percentile functions: `p50`, `p75`, `p90`, `p95`, `p99` (the SPL2 `perc50`...`perc99` zoo is gone). For arbitrary percentiles the registry defines `perc(x, p)` with `p` in [0, 100] — see the [aggregate functions reference](/docs/lynxflow/aggregates).
 
+For weighted samples, use `perc_weighted(x, weight, p)`:
+
+```bash
+lynxdb query 'from metrics | stats perc_weighted(latency_ms, sample_count, 95) as weighted_p95 by endpoint'
+```
+
 There is also a [`percentiles`](/docs/lynxflow/operators/percentiles) sugar stage that expands to the full p50/p75/p90/p95/p99 set:
 
 ```bash

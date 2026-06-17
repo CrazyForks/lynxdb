@@ -16,6 +16,7 @@ var aggregates = []Aggregate{
 	{Name: "p90", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Alias for perc(x, 90)."},
 	{Name: "p95", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Alias for perc(x, 95)."},
 	{Name: "p99", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Alias for perc(x, 99)."},
+	{Name: "perc_weighted", Params: []Param{{Name: "x", Type: TNumber}, {Name: "weight", Type: TNumber}, {Name: "p", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Weighted t-digest percentile; p in [0, 100]."},
 	{Name: "stdev", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Sample standard deviation."},
 	{Name: "var", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Sample variance."},
 	{Name: "corr", Params: []Param{{Name: "x", Type: TNumber}, {Name: "y", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Pearson correlation over rows where both arguments are numeric."},

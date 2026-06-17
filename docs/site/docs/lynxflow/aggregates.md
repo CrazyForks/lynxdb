@@ -26,6 +26,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `p90` | (x: number) | `float` | Alias for perc(x, 90). |
 | `p95` | (x: number) | `float` | Alias for perc(x, 95). |
 | `p99` | (x: number) | `float` | Alias for perc(x, 99). |
+| `perc_weighted` | (x: number, weight: number, p: number) | `float` | Weighted t-digest percentile; p in [0, 100]. |
 | `stdev` | (x: number) | `float` | Sample standard deviation. |
 | `var` | (x: number) | `float` | Sample variance. |
 | `corr` | (x: number, y: number) | `float` | Pearson correlation over rows where both arguments are numeric. |

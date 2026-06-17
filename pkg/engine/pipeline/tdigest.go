@@ -34,8 +34,17 @@ func NewTDigest(compression float64) *TDigest {
 
 // Add adds a value to the t-digest.
 func (td *TDigest) Add(value float64) {
-	td.centroids = append(td.centroids, centroid{mean: value, count: 1})
-	td.count++
+	td.AddWeighted(value, 1)
+}
+
+// AddWeighted adds a value with positive weight to the t-digest.
+func (td *TDigest) AddWeighted(value, weight float64) {
+	if weight <= 0 || math.IsNaN(value) || math.IsNaN(weight) ||
+		math.IsInf(value, 0) || math.IsInf(weight, 0) {
+		return
+	}
+	td.centroids = append(td.centroids, centroid{mean: value, count: weight})
+	td.count += weight
 	if len(td.centroids) > td.maxSize {
 		td.compress()
 	}

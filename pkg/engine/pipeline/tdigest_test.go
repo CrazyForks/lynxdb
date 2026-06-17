@@ -62,6 +62,21 @@ func TestTDigestSmallExact(t *testing.T) {
 	}
 }
 
+func TestTDigestWeighted(t *testing.T) {
+	td := NewTDigest(100)
+	td.AddWeighted(10, 100)
+	td.AddWeighted(100, 1)
+	td.AddWeighted(1_000, 0)
+
+	got := td.Quantile(0.5)
+	if got < 10 || got > 20 {
+		t.Fatalf("weighted p50 = %f, want near heavily weighted value", got)
+	}
+	if got := td.Count(); got != 101 {
+		t.Fatalf("weighted count = %f, want 101", got)
+	}
+}
+
 func TestTDigestUniformAccuracy(t *testing.T) {
 	rng := rand.New(rand.NewSource(42))
 	td := NewTDigest(100)

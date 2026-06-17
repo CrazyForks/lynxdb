@@ -39,7 +39,8 @@ func batch3PlanRules() []PlanRule {
 // Decomposable functions:
 //
 //	count, sum, min, max, avg (sum+count), dc/estdc (HLL),
-//	p50..p99/perc* (t-digest), stdev/var (M2), first/last/earliest/latest
+//	p50..p99/perc* (t-digest), perc_weighted(field, weight, p),
+//	stdev/var (M2), first/last/earliest/latest
 //	(row pick), values (distinct set merge), rate/per_second (sum merge),
 //	mode (count-map merge).
 //
@@ -74,6 +75,8 @@ func isDecomposableAgg(expr ast.Expr) bool {
 		return false
 	}
 	switch call.Callee {
+	case "perc_weighted":
+		return isSimpleWeightedPercentile(call)
 	case "count", "sum", "min", "max", "avg",
 		"dc", "estdc",
 		"p50", "p75", "p90", "p95", "p99",
@@ -90,6 +93,24 @@ func isDecomposableAgg(expr ast.Expr) bool {
 	default:
 		return false
 	}
+}
+
+func isSimpleWeightedPercentile(call *ast.Call) bool {
+	if len(call.Args) < 3 {
+		return false
+	}
+	if _, ok := call.Args[0].(*ast.Ident); !ok {
+		return false
+	}
+	if _, ok := call.Args[1].(*ast.Ident); !ok {
+		return false
+	}
+	lit, ok := call.Args[2].(*ast.Literal)
+	if !ok {
+		return false
+	}
+
+	return lit.Kind == ast.LitInt || lit.Kind == ast.LitFloat
 }
 
 // Rule: topk-into-agg

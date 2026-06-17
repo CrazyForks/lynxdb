@@ -60,6 +60,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "kurtosis", Field: "score", Alias: "score_kurt"},
 		{Name: "perc", Field: "score", Quantile: 1, Alias: "score_p100"},
 		{Name: "mad", Field: "score", Alias: "score_mad"},
+		{Name: "perc_weighted", Field: "score", WeightField: "weight", Quantile: 0.5, Alias: "weighted_p50"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -110,6 +111,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventFloat(t, row["score_kurt"], scoreKurtWant(), group+" kurt")
 		assertEventFloat(t, row["score_p100"], 49, group+" p100")
 		assertEventFloat(t, row["score_mad"], 12.5, group+" mad")
+		assertEventFloat(t, row["weighted_p50"], weightedP50Want(), group+" weighted p50")
 	}
 }
 
@@ -121,6 +123,15 @@ func weightedScoreWant() float64 {
 		weightSum += weight
 	}
 	return sum / weightSum
+}
+
+func weightedP50Want() float64 {
+	td := NewTDigest(defaultTDigestCompression)
+	for score := 0; score < 50; score++ {
+		td.AddWeighted(float64(score), float64(score%5+1))
+	}
+
+	return td.Quantile(0.5)
 }
 
 func routeEntropyWant() float64 {

@@ -21,11 +21,12 @@ type PartialAggSpec struct {
 
 // PartialAggFunc describes a single aggregation function for partial aggregation.
 type PartialAggFunc struct {
-	Name     string  `json:"name"`               // "count", "sum", "avg", "min", "max"
-	Field    string  `json:"field"`              // field to aggregate (empty for count)
-	Alias    string  `json:"alias"`              // output name
-	Quantile float64 `json:"quantile,omitempty"` // perc(x, p) quantile in [0,1]
-	Hidden   bool    `json:"hidden,omitempty"`   // if true, omitted from finalized output (e.g., auto-injected count for avg)
+	Name        string  `json:"name"`                   // "count", "sum", "avg", "min", "max"
+	Field       string  `json:"field"`                  // field to aggregate (empty for count)
+	WeightField string  `json:"weight_field,omitempty"` // optional weight field for weighted aggregates
+	Alias       string  `json:"alias"`                  // output name
+	Quantile    float64 `json:"quantile,omitempty"`     // perc(x, p) quantile in [0,1]
+	Hidden      bool    `json:"hidden,omitempty"`       // if true, omitted from finalized output (e.g., auto-injected count for avg)
 }
 
 // PartialAggGroup holds partial aggregation results for one group.
@@ -83,7 +84,7 @@ type PartialAggState struct {
 func IsPushableAgg(name string) bool {
 	switch strings.ToLower(name) {
 	case aggCount, aggSum, aggSumSq, aggAvg, aggMin, aggMax, aggRange, aggDC, aggEstDCE, aggMode, aggPerc,
-		aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
+		aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggPercW,
 		aggStdev, aggStdevP, aggVar, aggVarP:
 		return true
 	default:
@@ -114,7 +115,8 @@ func ComputePartialAggWithBudget(events []*event.Event, spec *PartialAggSpec, ac
 
 		for j, fn := range spec.Funcs {
 			val := extractEventValue(ev, fn.Field)
-			updatePartialState(&group.States[j], fn.Name, val)
+			weightVal := extractEventValue(ev, fn.WeightField)
+			updatePartialStateWithWeight(&group.States[j], fn.Name, val, weightVal)
 		}
 	}
 
@@ -160,7 +162,11 @@ func ComputePartialAggFromBatches(batches []*Batch, spec *PartialAggSpec) []*Par
 				} else {
 					val = batch.Value(fn.Field, i)
 				}
-				updatePartialState(&group.States[j], fn.Name, val)
+				weightVal := event.NullValue()
+				if fn.WeightField != "" {
+					weightVal = batch.Value(fn.WeightField, i)
+				}
+				updatePartialStateWithWeight(&group.States[j], fn.Name, val, weightVal)
 			}
 		}
 	}
@@ -664,6 +670,10 @@ func partialKeysEqual(a, b map[string]event.Value, groupBy []string) bool {
 
 // updatePartialState updates a partial aggregation state with a new value.
 func updatePartialState(s *PartialAggState, fn string, val event.Value) {
+	updatePartialStateWithWeight(s, fn, val, event.NullValue())
+}
+
+func updatePartialStateWithWeight(s *PartialAggState, fn string, val, weightVal event.Value) {
 	switch strings.ToLower(fn) {
 	case aggCount:
 		if !val.IsNull() {
@@ -742,6 +752,19 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 			}
 			s.Digest.Add(f)
 		}
+	case aggPercW:
+		x, ok := vm.ValueToFloat(val)
+		if !ok {
+			return
+		}
+		weight, ok := vm.ValueToFloat(weightVal)
+		if !ok {
+			return
+		}
+		if s.Digest == nil {
+			s.Digest = NewTDigest(defaultTDigestCompression)
+		}
+		s.Digest.AddWeighted(x, weight)
 	case aggStdev, aggStdevP, aggVar, aggVarP:
 		if f, ok := vm.ValueToFloat(val); ok {
 			// Welford's online algorithm for numerically stable variance.
@@ -837,7 +860,7 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 		for value, count := range src.ModeCounts {
 			dst.ModeCounts[value] += count
 		}
-	case aggPerc, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+	case aggPerc, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggPercW:
 		if src.Digest != nil {
 			if dst.Digest == nil {
 				dst.Digest = NewTDigest(defaultTDigestCompression)
@@ -917,6 +940,8 @@ func finalizePartialState(s *PartialAggState, fn PartialAggFunc) event.Value {
 	case aggMode:
 		return modeFromCounts(s.ModeCounts)
 	case aggPerc:
+		return finalizeTDigest(s, fn.Quantile)
+	case aggPercW:
 		return finalizeTDigest(s, fn.Quantile)
 	case aggPerc50:
 		return finalizeTDigest(s, 0.50)

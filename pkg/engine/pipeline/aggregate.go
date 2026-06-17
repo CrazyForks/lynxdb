@@ -109,6 +109,7 @@ const (
 	aggPerc90  = "perc90"
 	aggPerc95  = "perc95"
 	aggPerc99  = "perc99"
+	aggPercW   = "perc_weighted"
 	aggLag     = "lag"
 	aggLead    = "lead"
 	aggRowNum  = "row_number"
@@ -358,7 +359,7 @@ func aggResultType(name string) string {
 		return "int"
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
-		aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
+		aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggPercW,
 		aggRunSum, aggMovAvg, aggDelta, aggAvgW, aggEntropy, aggCorr, aggCovar,
 		aggMAD:
 		return "float"
@@ -835,6 +836,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 				s.all = append(s.all, f)
 			}
 		}
+	case aggPercW:
+		updateWeightedPercentileState(s, val, weightVal)
 	case aggStdev, aggStdevP, aggVar, aggVarP:
 		if f, ok := vm.ValueToFloat(val); ok {
 			if len(s.all) < maxValuesPerGroup {
@@ -991,6 +994,25 @@ func updateWeightedAvgState(s *aggState, val, weightVal event.Value) {
 	}
 	s.sum += x * weight
 	s.weightSum += weight
+}
+
+func updateWeightedPercentileState(s *aggState, val, weightVal event.Value) {
+	x, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	weight, ok := vm.ValueToFloat(weightVal)
+	if !ok {
+		return
+	}
+	if weight <= 0 || math.IsNaN(x) || math.IsNaN(weight) ||
+		math.IsInf(x, 0) || math.IsInf(weight, 0) {
+		return
+	}
+	if s.tdigest == nil {
+		s.tdigest = NewTDigest(defaultTDigestCompression)
+	}
+	s.tdigest.AddWeighted(x, weight)
 }
 
 func updatePairStatsState(s *aggState, val, otherVal event.Value) {
@@ -1529,7 +1551,7 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeRateFromRow(&group.states[j], row, agg.Alias)
 		case aggStdev, aggStdevP, aggVar, aggVarP:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
-		case aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		case aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggPercW:
 			a.mergePercFromRow(&group.states[j], row, agg.Alias)
 		default:
 			val, ok := row[agg.Alias]
@@ -2156,6 +2178,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 	case aggLinFit:
 		return finalizeLinearFit(s)
 	case aggPerc:
+		return finalizePercentile(s, agg.Quantile)
+	case aggPercW:
 		return finalizePercentile(s, agg.Quantile)
 	case aggMAD:
 		return finalizeMAD(s)

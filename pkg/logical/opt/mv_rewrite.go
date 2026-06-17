@@ -332,6 +332,7 @@ var nonRollableAggs = map[string]bool{
 	"latest":   true,
 	"perc25":   true, "perc50": true, "perc75": true, "perc90": true, "perc95": true, "perc99": true,
 	"p25": true, "p50": true, "p75": true, "p90": true, "p95": true, "p99": true,
+	"perc_weighted": true,
 }
 
 // rewriteSubsetMatch rewrites for subset group-by with rolled-up aggregation.

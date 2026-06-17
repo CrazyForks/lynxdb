@@ -556,6 +556,8 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal ev
 				s.all = append(s.all, f)
 			}
 		}
+	case aggPercW:
+		updateWeightedPercentileState(s, val, weightVal)
 	}
 }
 
@@ -595,6 +597,8 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizePercentile(s, 0.95)
 	case aggPerc99:
 		return finalizePercentile(s, 0.99)
+	case aggPercW:
+		return finalizePercentile(s, agg.Quantile)
 	case aggSkew:
 		return finalizeSkewness(s)
 	case aggKurt:

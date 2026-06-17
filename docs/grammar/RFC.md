@@ -478,6 +478,7 @@ Time/statistical functions: `earliest`, `earliest_time`, `latest`, `latest_time`
 Percentiles:
 - Generic SPL2 form: `perc(field, percentile)`, `percentile(field, percentile)`, `exactperc(field, percentile)`, `upperperc(field, percentile)`.
 - SPL-style suffix form: `perc95(field)`, `percentile95(field)`, `exactperc95(field)`, `upperperc95(field)`.
+- Weighted form: `perc_weighted(field, weight, percentile)`.
 - LynxDB aliases: `p50`, `p75`, `p90`, `p95`, and `p99` parse as `perc50`, `perc75`, `perc90`, `perc95`, and `perc99` in aggregate shorthand.
 
 Multivalue/array aggregations: `dataset()`, `pivot(key, value)`, `list(value)`, `values(value)`.

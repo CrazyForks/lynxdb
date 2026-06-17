@@ -502,6 +502,35 @@ func TestBuild_PercAggregate(t *testing.T) {
 	assertFloatField(t, streamRows[4], "p25", 2, 4)
 }
 
+func TestBuild_WeightedPercAggregate(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(10), "w": intV(100)},
+		{"x": intV(100), "w": intV(1)},
+	}
+
+	statsRows := drain(t, `from * | stats perc_weighted(x, w, 50) as p50w`, rows)
+	if len(statsRows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(statsRows))
+	}
+	assertWeightedPercentileNearHeavyValue(t, statsRows[0], "p50w", 0)
+
+	eventRows := drain(t, `from * | eventstats perc_weighted(x, w, 50) as p50w`, rows)
+	assertWeightedPercentileNearHeavyValue(t, eventRows[0], "p50w", 0)
+	assertWeightedPercentileNearHeavyValue(t, eventRows[1], "p50w", 1)
+
+	streamRows := drain(t, `from * | streamstats perc_weighted(x, w, 50) as p50w`, rows)
+	assertFloatField(t, streamRows[0], "p50w", 10, 0)
+	assertWeightedPercentileNearHeavyValue(t, streamRows[1], "p50w", 1)
+}
+
+func assertWeightedPercentileNearHeavyValue(t *testing.T, row map[string]event.Value, field string, rowIndex int) {
+	t.Helper()
+	got, ok := row[field].TryAsFloat()
+	if !ok || got < 10 || got > 20 {
+		t.Fatalf("row %d field %s: got %s, want weighted percentile near 10", rowIndex, field, row[field].String())
+	}
+}
+
 func TestBuild_MomentAggregates(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"x": intV(1)},
@@ -1319,39 +1348,40 @@ func TestBuild_CondProgram_AggFunc(t *testing.T) {
 
 func TestAggNameMapping(t *testing.T) {
 	expected := map[string]string{
-		"count":        "count",
-		"sum":          "sum",
-		"avg":          "avg",
-		"min":          "min",
-		"max":          "max",
-		"dc":           "dc",
-		"estdc":        "dc",
-		"perc":         "perc",
-		"p50":          "perc50",
-		"p95":          "perc95",
-		"p99":          "perc99",
-		"stdev":        "stdev",
-		"values":       "values",
-		"first":        "first",
-		"last":         "last",
-		"mode":         "mode",
-		"arg_max":      "arg_max",
-		"arg_min":      "arg_min",
-		"any_value":    "any_value",
-		"top_k":        "top_k",
-		"value_counts": "value_counts",
-		"avg_weighted": "avg_weighted",
-		"entropy":      "entropy",
-		"max_n":        "max_n",
-		"min_n":        "min_n",
-		"corr":         "corr",
-		"covar":        "covar",
-		"linear_fit":   "linear_fit",
-		"sum_object":   "sum_object",
-		"skewness":     "skewness",
-		"kurtosis":     "kurtosis",
-		"mad":          "mad",
-		"rate":         "rate",
+		"count":         "count",
+		"sum":           "sum",
+		"avg":           "avg",
+		"min":           "min",
+		"max":           "max",
+		"dc":            "dc",
+		"estdc":         "dc",
+		"perc":          "perc",
+		"perc_weighted": "perc_weighted",
+		"p50":           "perc50",
+		"p95":           "perc95",
+		"p99":           "perc99",
+		"stdev":         "stdev",
+		"values":        "values",
+		"first":         "first",
+		"last":          "last",
+		"mode":          "mode",
+		"arg_max":       "arg_max",
+		"arg_min":       "arg_min",
+		"any_value":     "any_value",
+		"top_k":         "top_k",
+		"value_counts":  "value_counts",
+		"avg_weighted":  "avg_weighted",
+		"entropy":       "entropy",
+		"max_n":         "max_n",
+		"min_n":         "min_n",
+		"corr":          "corr",
+		"covar":         "covar",
+		"linear_fit":    "linear_fit",
+		"sum_object":    "sum_object",
+		"skewness":      "skewness",
+		"kurtosis":      "kurtosis",
+		"mad":           "mad",
+		"rate":          "rate",
 	}
 	for input, want := range expected {
 		got, ok := aggNameMapping[input]

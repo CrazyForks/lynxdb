@@ -190,12 +190,25 @@ func extractPartialAggSpecFromAggregate(agg *logical.Aggregate) (*pipeline.Parti
 	for i, a := range agg.Aggs {
 		funcName := ""
 		field := ""
+		weightField := ""
 
 		if call, ok := a.Func.(*ast.Call); ok {
 			funcName = strings.ToLower(call.Callee)
 			if len(call.Args) > 0 {
 				if ident, ok := call.Args[0].(*ast.Ident); ok {
 					field = ident.Name
+				}
+			}
+			if funcName == "perc_weighted" {
+				if field == "" {
+					return nil, fmt.Errorf("cluster query: perc_weighted value must be a field")
+				}
+				if len(call.Args) > 1 {
+					if ident, ok := call.Args[1].(*ast.Ident); ok {
+						weightField = ident.Name
+					} else {
+						return nil, fmt.Errorf("cluster query: perc_weighted weight must be a field")
+					}
 				}
 			}
 			quantile, err := partialAggQuantile(funcName, call)
@@ -216,6 +229,7 @@ func extractPartialAggSpecFromAggregate(agg *logical.Aggregate) (*pipeline.Parti
 
 		funcs[i].Name = funcName
 		funcs[i].Field = field
+		funcs[i].WeightField = weightField
 		funcs[i].Alias = alias
 	}
 
@@ -226,18 +240,23 @@ func extractPartialAggSpecFromAggregate(agg *logical.Aggregate) (*pipeline.Parti
 }
 
 func partialAggQuantile(name string, call *ast.Call) (float64, error) {
-	if name != "perc" {
+	argIndex := 1
+	switch name {
+	case "perc":
+	case "perc_weighted":
+		argIndex = 2
+	default:
 		return 0, nil
 	}
-	if len(call.Args) < 2 {
-		return 0, fmt.Errorf("cluster query: perc requires a percentile")
+	if len(call.Args) <= argIndex {
+		return 0, fmt.Errorf("cluster query: %s requires a percentile", name)
 	}
-	p, err := astNumericLiteral(call.Args[1])
+	p, err := astNumericLiteral(call.Args[argIndex])
 	if err != nil {
-		return 0, fmt.Errorf("cluster query: perc percentile: %w", err)
+		return 0, fmt.Errorf("cluster query: %s percentile: %w", name, err)
 	}
 	if p < 0 || p > 100 {
-		return 0, fmt.Errorf("cluster query: perc percentile must be between 0 and 100")
+		return 0, fmt.Errorf("cluster query: %s percentile must be between 0 and 100", name)
 	}
 	return p / 100, nil
 }

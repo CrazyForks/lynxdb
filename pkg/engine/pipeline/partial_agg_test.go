@@ -825,6 +825,39 @@ func TestPartialAgg_Perc(t *testing.T) {
 	}
 }
 
+func TestPartialAgg_WeightedPerc(t *testing.T) {
+	events := makePartialAggEvents(
+		map[string]event.Value{"latency": event.FloatValue(10), "weight": event.FloatValue(100)},
+		map[string]event.Value{"latency": event.FloatValue(100), "weight": event.FloatValue(1)},
+	)
+
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{
+			Name:        "perc_weighted",
+			Field:       "latency",
+			WeightField: "weight",
+			Alias:       "p50w",
+			Quantile:    0.5,
+		}},
+	}
+	partials := ComputePartialAgg(events, spec)
+	if len(partials) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(partials))
+	}
+	if partials[0].States[0].Digest == nil {
+		t.Fatal("expected Digest to be non-nil")
+	}
+
+	rows := MergePartialAggs([][]*PartialAggGroup{partials}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	got := rows[0]["p50w"].AsFloat()
+	if got < 10 || got > 20 {
+		t.Errorf("weighted perc: expected p50 near heavily weighted value, got %f", got)
+	}
+}
+
 func TestMergePartialAggs_Perc99(t *testing.T) {
 	spec := &PartialAggSpec{
 		Funcs: []PartialAggFunc{{Name: "perc99", Field: "latency", Alias: "p99"}},

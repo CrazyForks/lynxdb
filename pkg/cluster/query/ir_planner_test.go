@@ -87,6 +87,25 @@ func TestPlanDistributedQueryIR_WhereStatsAvg(t *testing.T) {
 	}
 }
 
+func TestPlanDistributedQueryIR_WeightedPercentile(t *testing.T) {
+	plan := parseLowerOptIR(t, `from main | stats perc_weighted(latency, weight, 50) as p50w by endpoint`)
+	result, err := PlanDistributedQueryIR(plan)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.Strategy != MergePartialAgg {
+		t.Errorf("expected MergePartialAgg, got %v", result.Strategy)
+	}
+	if result.PartialAggSpec == nil {
+		t.Fatal("expected PartialAggSpec to be non-nil")
+	}
+	fn := result.PartialAggSpec.Funcs[0]
+	if fn.Name != "perc_weighted" || fn.Field != "latency" || fn.WeightField != "weight" ||
+		fn.Alias != "p50w" || fn.Quantile != 0.5 {
+		t.Fatalf("unexpected partial func: %+v", fn)
+	}
+}
+
 func TestIsPushableIR(t *testing.T) {
 	tests := []struct {
 		name     string

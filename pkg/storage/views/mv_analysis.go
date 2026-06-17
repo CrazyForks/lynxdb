@@ -347,7 +347,8 @@ func validateAggFuncForMV(name string) error {
 	case "stdev", "stdevp", "var", "varp":
 		return fmt.Errorf("views.AnalyzeLynxFlow: stdev/var not supported for MV")
 	case "perc25", "perc50", "perc75", "perc90", "perc95", "perc99",
-		"p25", "p50", "p75", "p90", "p95", "p99":
+		"p25", "p50", "p75", "p90", "p95", "p99",
+		"perc_weighted":
 		return fmt.Errorf("views.AnalyzeLynxFlow: percentile functions not supported for MV")
 	default:
 		return fmt.Errorf("views.AnalyzeLynxFlow: unsupported aggregation function %q for MV", name)

@@ -47,6 +47,11 @@ func TestPartialAgg(t *testing.T) {
 			contains: []string{"[partial]"},
 		},
 		{
+			name:     "weighted_percentile_decomposable",
+			query:    "from main | stats perc_weighted(latency, weight, 50)",
+			contains: []string{"[partial]"},
+		},
+		{
 			name:     "stdev_decomposable",
 			query:    "from main | stats stdev(x)",
 			contains: []string{"[partial]"},
@@ -69,6 +74,11 @@ func TestPartialAgg(t *testing.T) {
 		{
 			name:     "list_blocks_partial",
 			query:    "from main | stats list(x)",
+			excludes: []string{"[partial]"},
+		},
+		{
+			name:     "weighted_percentile_expression_blocks_partial",
+			query:    "from main | stats perc_weighted(latency, weight * 2, 50)",
 			excludes: []string{"[partial]"},
 		},
 		{

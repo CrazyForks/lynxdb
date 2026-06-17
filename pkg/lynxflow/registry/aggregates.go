@@ -32,8 +32,8 @@ var aggregates = []Aggregate{
 	{Name: "last", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Last non-null in row order."},
 	{Name: "earliest", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the smallest _time."},
 	{Name: "latest", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the largest _time."},
-	{Name: "values", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TArray, Doc: "Distinct non-null values as an array."},
-	{Name: "list", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TArray, Doc: "All non-null values as an array, row order."},
+	{Name: "values", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt, Optional: true}}, SupportsWhere: true, Result: TArray, Doc: "Distinct non-null values, optionally capped at n."},
+	{Name: "list", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt, Optional: true}}, SupportsWhere: true, Result: TArray, Doc: "All non-null values in row order, optionally capped at n."},
 	{Name: "rate", SupportsWhere: true, Result: TFloat, Doc: "Row count divided by the group's time-bucket span."},
 	{Name: "per_second", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "sum(x) divided by the group's time-bucket span in seconds."},
 

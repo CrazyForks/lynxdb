@@ -363,6 +363,39 @@ func TestBuild_EventStats(t *testing.T) {
 	}
 }
 
+func TestBuild_ListValuesLimits(t *testing.T) {
+	rows := sampleRows()
+	result := drain(t, `from * | stats values(level, 2) as levels, list(level, 3) as listed`, rows)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(result))
+	}
+	if got := result[0]["levels"].AsString(); got != "info|||error" {
+		t.Fatalf("values(level, 2) got %q", got)
+	}
+	if got := result[0]["listed"].AsString(); got != "info|||error|||warn" {
+		t.Fatalf("list(level, 3) got %q", got)
+	}
+}
+
+func TestBuild_ListValuesLimitsInWindowAggregates(t *testing.T) {
+	rows := sampleRows()
+	result := drain(t, `from * | eventstats values(level, 2) as levels | streamstats list(level, 2) as seen`, rows)
+	if len(result) != len(rows) {
+		t.Fatalf("expected %d rows, got %d", len(rows), len(result))
+	}
+	for i, row := range result {
+		if got := row["levels"].AsString(); got != "info|||error" {
+			t.Fatalf("row %d eventstats values(level, 2) got %q", i, got)
+		}
+	}
+	if got := result[0]["seen"].AsString(); got != "info" {
+		t.Fatalf("row 0 streamstats list(level, 2) got %q", got)
+	}
+	if got := result[2]["seen"].AsString(); got != "info|||error" {
+		t.Fatalf("row 2 streamstats list(level, 2) got %q", got)
+	}
+}
+
 func TestBuild_StreamStats(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"val": intV(1)},

@@ -553,6 +553,8 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeExtremaN(s, agg.Limit, true)
 	case aggMinN:
 		return finalizeExtremaN(s, agg.Limit, false)
+	case aggValues, aggList:
+		return event.StringValue(joinLimitedAllStrings(s.all, agg.Limit))
 	}
 	return finalizeAggState(s, agg.Name)
 }

@@ -940,6 +940,20 @@ func finalizeExtremaN(s *aggState, limit int, maxOrder bool) event.Value {
 	return event.ArrayValue(result)
 }
 
+func joinLimitedAllStrings(values []interface{}, limit int) string {
+	if limit > 0 && limit < len(values) {
+		values = values[:limit]
+	}
+	return joinAllStrings(values, "|||")
+}
+
+func joinLimitedStringSlice(values []string, limit int) string {
+	if limit > 0 && limit < len(values) {
+		values = values[:limit]
+	}
+	return strings.Join(values, "|||")
+}
+
 func updateWeightedAvgState(s *aggState, val, weightVal event.Value) {
 	x, ok := vm.ValueToFloat(val)
 	if !ok {
@@ -1824,6 +1838,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeExtremaN(s, agg.Limit, true)
 	case aggMinN:
 		return finalizeExtremaN(s, agg.Limit, false)
+	case aggValues, aggList:
+		return event.StringValue(joinLimitedAllStrings(s.all, agg.Limit))
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

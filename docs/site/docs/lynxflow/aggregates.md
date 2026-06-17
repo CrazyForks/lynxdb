@@ -42,8 +42,8 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `last` | (x: any) | `any` | Last non-null in row order. |
 | `earliest` | (x: any) | `any` | Value from the row with the smallest _time. |
 | `latest` | (x: any) | `any` | Value from the row with the largest _time. |
-| `values` | (x: any) | `array` | Distinct non-null values as an array. |
-| `list` | (x: any) | `array` | All non-null values as an array, row order. |
+| `values` | (x: any, n: int?) | `array` | Distinct non-null values, optionally capped at n. |
+| `list` | (x: any, n: int?) | `array` | All non-null values in row order, optionally capped at n. |
 | `rate` | () | `float` | Row count divided by the group's time-bucket span. |
 | `per_second` | (x: number) | `float` | sum(x) divided by the group's time-bucket span in seconds. |
 

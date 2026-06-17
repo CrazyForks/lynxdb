@@ -967,7 +967,7 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 			}
 		}
 
-		return event.StringValue(strings.Join(vals, "|||"))
+		return event.StringValue(joinLimitedStringSlice(vals, agg.Limit))
 	case aggList:
 		var vals []string
 		for _, item := range items {
@@ -976,7 +976,7 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 			}
 		}
 
-		return event.StringValue(strings.Join(vals, "|||"))
+		return event.StringValue(joinLimitedStringSlice(vals, agg.Limit))
 	}
 
 	return event.NullValue()

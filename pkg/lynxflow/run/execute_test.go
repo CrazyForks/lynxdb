@@ -259,6 +259,7 @@ func TestExecute_ArgAggregates(t *testing.T) {
 		`any_value(team) as some_team, ` +
 		`top_k(team, 2) as teams, ` +
 		`value_counts(team) as team_counts, ` +
+		`value_counts(team, 1) as top_team_count, ` +
 		`avg_weighted(duration_ms, samples) as weighted_ms, ` +
 		`entropy(team) as team_entropy, ` +
 		`max_n(duration_ms, 2) as worst_ms, ` +
@@ -291,6 +292,8 @@ func TestExecute_ArgAggregates(t *testing.T) {
 	assertTopKEntry(t, byService["api"], "teams", 1, "edge", 1)
 	assertTopKEntry(t, byService["api"], "team_counts", 0, "core", 2)
 	assertTopKEntry(t, byService["api"], "team_counts", 1, "edge", 1)
+	assertTopKEntry(t, byService["api"], "top_team_count", 0, "core", 2)
+	assertArrayLen(t, byService["api"], "top_team_count", 1)
 	assertFloatField(t, byService["api"], "weighted_ms", 106.25)
 	assertFloatField(t, byService["api"], "team_entropy", 0.9182958340544896)
 	assertIntArrayField(t, byService["api"], "worst_ms", []int64{250, 125})
@@ -300,10 +303,23 @@ func TestExecute_ArgAggregates(t *testing.T) {
 	assertStringField(t, byService["web"], "some_team", "web", 0)
 	assertTopKEntry(t, byService["web"], "teams", 0, "web", 1)
 	assertTopKEntry(t, byService["web"], "team_counts", 0, "web", 1)
+	assertTopKEntry(t, byService["web"], "top_team_count", 0, "web", 1)
+	assertArrayLen(t, byService["web"], "top_team_count", 1)
 	assertFloatField(t, byService["web"], "weighted_ms", 30)
 	assertFloatField(t, byService["web"], "team_entropy", 0)
 	assertIntArrayField(t, byService["web"], "worst_ms", []int64{30})
 	assertIntArrayField(t, byService["web"], "best_ms", []int64{30})
+}
+
+func assertArrayLen(t *testing.T, row map[string]event.Value, field string, want int) {
+	t.Helper()
+	arr, ok := row[field].TryAsArray()
+	if !ok {
+		t.Fatalf("%s should be array, got %s", field, row[field].Type())
+	}
+	if len(arr) != want {
+		t.Fatalf("%s length got %d, want %d", field, len(arr), want)
+	}
 }
 
 func assertTopKEntry(t *testing.T, row map[string]event.Value, field string, idx int, value string, count int64) {

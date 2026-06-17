@@ -33,7 +33,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `arg_min` | (value: any, order: any) | `any` | Value from the row with the least order expression. |
 | `any_value` | (x: any) | `any` | An arbitrary non-null value from the group. |
 | `top_k` | (x: any, k: int) | `array` | Top k non-null values with counts. |
-| `value_counts` | (x: any) | `array` | All non-null values with counts, sorted by frequency. |
+| `value_counts` | (x: any, max: int?) | `array` | Non-null values with counts, sorted by frequency and optionally capped. |
 | `avg_weighted` | (x: number, weight: number) | `float` | Weighted average as sum(x * weight) / sum(weight). |
 | `entropy` | (x: any) | `float` | Shannon entropy of non-null values, in bits. |
 | `max_n` | (x: any, n: int) | `array` | Largest n non-null values. |

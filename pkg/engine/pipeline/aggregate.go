@@ -1831,7 +1831,7 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 	case aggTopK:
 		return finalizeTopK(s, agg.Limit)
 	case aggValCnt:
-		return finalizeTopK(s, 0)
+		return finalizeTopK(s, agg.Limit)
 	case aggEntropy:
 		return finalizeEntropy(s)
 	case aggMaxN:

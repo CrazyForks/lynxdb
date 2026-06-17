@@ -605,7 +605,7 @@ func aggregateLimit(name string, call *lfast.Call) (int, error) {
 			return 0, fmt.Errorf("physical.Build: %s limit must be positive", name)
 		}
 		return n, nil
-	case "values", "list":
+	case "value_counts", "values", "list":
 		if len(call.Args) < 2 {
 			return 0, nil
 		}

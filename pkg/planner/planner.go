@@ -789,10 +789,16 @@ func viewDefToInfo(def *views.ViewDefinition) *opt.ViewInfo {
 		return nil // skip views that fail analysis
 	}
 
+	spec := def.AggSpec
+	if spec == nil {
+		spec = mvAn.AggSpec
+	}
+
 	vi := &opt.ViewInfo{
-		Name:   def.Name,
-		Status: string(def.Status),
-		Source: mvAn.SourceIndex,
+		Name:         def.Name,
+		Status:       string(def.Status),
+		Source:       mvAn.SourceIndex,
+		PartialState: spec != nil,
 	}
 
 	// Extract canonical filter from the streaming plan.
@@ -802,16 +808,19 @@ func viewDefToInfo(def *views.ViewDefinition) *opt.ViewInfo {
 
 	vi.GroupBy = mvAn.GroupBy
 
-	// Convert AggSpec to AggInfo slice.
-	if mvAn.AggSpec != nil {
-		for _, fn := range mvAn.AggSpec.Funcs {
+	// Convert the persisted AggSpec to AggInfo slice. Migrated views may
+	// preserve old aliases and state-column names even after query migration.
+	if spec != nil {
+		for _, fn := range spec.Funcs {
 			if fn.Hidden {
 				continue // skip auto-injected hidden counts
 			}
 			vi.Aggs = append(vi.Aggs, opt.AggInfo{
-				Func:  fn.Name,
-				Arg:   fn.Field,
-				Alias: fn.Alias,
+				Func:        fn.Name,
+				Arg:         fn.Field,
+				WeightField: fn.WeightField,
+				Alias:       fn.Alias,
+				Quantile:    fn.Quantile,
 			})
 		}
 	}

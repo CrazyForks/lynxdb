@@ -814,6 +814,73 @@ func TestDispatcher_AggregationView_DCMerge(t *testing.T) {
 	}
 }
 
+func TestDispatcher_ViewRollupMergesPartialStates(t *testing.T) {
+	d, reg, _ := setupDispatcher(t)
+	def := createLynxFlowAggView(
+		t,
+		reg,
+		"mv_rollup",
+		`from main | stats avg(duration) as avg_dur, dc(user) as users by service, host`,
+	)
+	d.ActivateView(def)
+
+	events := []*event.Event{
+		makeRollupEvent("api", "web1", "alice", 10),
+		makeRollupEvent("api", "web1", "bob", 20),
+		makeRollupEvent("api", "web2", "bob", 30),
+		makeRollupEvent("api", "web2", "charlie", 40),
+		makeRollupEvent("worker", "web3", "dana", 100),
+	}
+	if err := d.Dispatch(events[:3]); err != nil {
+		t.Fatalf("Dispatch batch 1: %v", err)
+	}
+	d.FlushView("mv_rollup")
+	if err := d.Dispatch(events[3:]); err != nil {
+		t.Fatalf("Dispatch batch 2: %v", err)
+	}
+
+	got, err := d.ViewRollup("mv_rollup", []string{"service"}, []pipeline.PartialAggFunc{
+		{Name: "avg", Field: "duration", Alias: "avg_dur"},
+		{Name: "dc", Field: "user", Alias: "users"},
+	})
+	if err != nil {
+		t.Fatalf("ViewRollup: %v", err)
+	}
+
+	byService := make(map[string]*event.Event, len(got))
+	for _, ev := range got {
+		byService[ev.GetField("service").String()] = ev
+	}
+	api := byService["api"]
+	if api == nil {
+		t.Fatal("missing api rollup row")
+	}
+	if got := api.GetField("avg_dur").AsFloat(); got != 25 {
+		t.Errorf("api avg_dur: got %f, want 25", got)
+	}
+	if got := api.GetField("users").AsInt(); got != 3 {
+		t.Errorf("api users: got %d, want 3", got)
+	}
+
+	worker := byService["worker"]
+	if worker == nil {
+		t.Fatal("missing worker rollup row")
+	}
+	if got := worker.GetField("avg_dur").AsFloat(); got != 100 {
+		t.Errorf("worker avg_dur: got %f, want 100", got)
+	}
+	if got := worker.GetField("users").AsInt(); got != 1 {
+		t.Errorf("worker users: got %d, want 1", got)
+	}
+}
+
+func makeRollupEvent(service, host, user string, duration float64) *event.Event {
+	ev := makeTestEventWithUser("main", host, user)
+	ev.SetField("service", event.StringValue(service))
+	ev.SetField("duration", event.FloatValue(duration))
+	return ev
+}
+
 func TestPartialGroupsToEvents_DCHLLRoundtrip(t *testing.T) {
 	spec := &pipeline.PartialAggSpec{
 		GroupBy: []string{"host"},

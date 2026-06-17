@@ -121,6 +121,19 @@ func (e *Engine) ResolveView(name string) ([]*event.Event, error) {
 	return e.mvDispatcher.ViewAllEvents(name)
 }
 
+// ResolveViewRollup implements pipeline.ViewResolver for optimizer-created
+// scans that merge materialized view partial states to a coarser grouping.
+func (e *Engine) ResolveViewRollup(name string, groupBy []string, funcs []enginepipeline.PartialAggFunc) ([]*event.Event, error) {
+	if e.viewRegistry == nil {
+		return nil, ErrViewsNotAvailable
+	}
+	if _, err := e.viewRegistry.Get(name); err != nil {
+		return nil, err
+	}
+
+	return e.mvDispatcher.ViewRollup(name, groupBy, funcs)
+}
+
 // CreateView implements pipeline.ViewManager for the engine.
 func (e *Engine) CreateView(name, query, retention string) error {
 	if e.viewRegistry == nil {

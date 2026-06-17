@@ -69,12 +69,34 @@ func avgAgg(field, alias string) logical.Agg {
 	}
 }
 
+func dcAgg(field, alias string) logical.Agg {
+	return logical.Agg{
+		Func:  &ast.Call{Callee: "dc", Args: []ast.Expr{&ast.Ident{Name: field}}},
+		Alias: alias,
+	}
+}
+
 func serviceKey() logical.Key {
 	return logical.Key{Name: "service", Expr: &ast.Ident{Name: "service"}}
 }
 
 func hostKey() logical.Key {
 	return logical.Key{Name: "host", Expr: &ast.Ident{Name: "host"}}
+}
+
+func onlyScan(t *testing.T, root logical.Node) *logical.Scan {
+	t.Helper()
+	var scan *logical.Scan
+	walkPlan(root, func(n logical.Node) bool {
+		if s, ok := n.(*logical.Scan); ok {
+			scan = s
+		}
+		return false
+	})
+	if scan == nil {
+		t.Fatal("no Scan node in rewritten plan")
+	}
+	return scan
 }
 
 func TestMVRewrite_ExactMatch(t *testing.T) {
@@ -178,18 +200,18 @@ func TestMVRewrite_SubsetGroupBy_Rollup(t *testing.T) {
 	}
 }
 
-func TestMVRewrite_SubsetGroupBy_AvgRefused(t *testing.T) {
-	// View has count and avg; query asks for avg with subset group-by.
-	// avg is NOT correctly derivable from finalized rows -> REFUSE.
+func TestMVRewrite_SubsetGroupBy_AvgPartialStateRollup(t *testing.T) {
+	// View has avg partial states; query asks for avg with subset group-by.
 	viewFilter := format.Expr(levelEqError())
 
 	catalog := &stubCatalog{
 		views: []ViewInfo{{
-			Name:    "mv_avg",
-			Status:  "active",
-			Source:  "main",
-			Filter:  viewFilter,
-			GroupBy: []string{"service", "host"},
+			Name:         "mv_avg",
+			Status:       "active",
+			Source:       "main",
+			Filter:       viewFilter,
+			GroupBy:      []string{"service", "host"},
+			PartialState: true,
 			Aggs: []AggInfo{
 				{Func: "avg", Arg: "duration", Alias: "avg_dur"},
 			},
@@ -206,8 +228,53 @@ func TestMVRewrite_SubsetGroupBy_AvgRefused(t *testing.T) {
 
 	_, _, accel := OptimizeWithViews(plan, Options{Views: catalog})
 
-	if accel != nil {
-		t.Fatal("expected avg with subset group-by to be REFUSED, got acceleration")
+	if accel == nil {
+		t.Fatal("expected avg subset group-by to use partial-state MV acceleration")
+	}
+	scan := onlyScan(t, plan.Root)
+	if scan.ViewRollup == nil {
+		t.Fatal("expected Scan.ViewRollup to be set")
+	}
+	if len(scan.ViewRollup.Aggs) != 1 || scan.ViewRollup.Aggs[0].Func != "avg" {
+		t.Fatalf("unexpected ViewRollup aggs: %+v", scan.ViewRollup.Aggs)
+	}
+}
+
+func TestMVRewrite_SubsetGroupBy_DcPartialStateRollup(t *testing.T) {
+	viewFilter := format.Expr(levelEqError())
+
+	catalog := &stubCatalog{
+		views: []ViewInfo{{
+			Name:         "mv_dc",
+			Status:       "active",
+			Source:       "main",
+			Filter:       viewFilter,
+			GroupBy:      []string{"service", "host"},
+			PartialState: true,
+			Aggs: []AggInfo{
+				{Func: "dc", Arg: "user", Alias: "users"},
+			},
+			RowCount: 1000,
+		}},
+	}
+
+	plan := buildTestPlan(
+		levelEqError(),
+		[]logical.Agg{dcAgg("user", "users")},
+		[]logical.Key{serviceKey()},
+	)
+
+	_, _, accel := OptimizeWithViews(plan, Options{Views: catalog})
+
+	if accel == nil {
+		t.Fatal("expected dc subset group-by to use partial-state MV acceleration")
+	}
+	scan := onlyScan(t, plan.Root)
+	if scan.ViewRollup == nil {
+		t.Fatal("expected Scan.ViewRollup to be set")
+	}
+	if len(scan.ViewRollup.GroupBy) != 1 || scan.ViewRollup.GroupBy[0] != "service" {
+		t.Fatalf("unexpected ViewRollup group-by: %+v", scan.ViewRollup.GroupBy)
 	}
 }
 

@@ -3,13 +3,14 @@
 //
 // v1 matching restrictions (documented in RFC-002 decision log):
 //   - Exact canonical filter equality (no implication/range tightening)
-//   - Rollup table: count->sum, sum->sum, min->min, max->max
-//   - Refused aggs for subset group-by: avg, dc, stdev, perc*, values, earliest, latest
+//   - Finalized rollup table: count->sum, sum->sum, min->min, max->max
+//   - Partial-state subset rollup when the view exposes mergeable states
 //   - View must be active or backfilling
 //   - No catalog = no-op
 package opt
 
 import (
+	"strconv"
 	"strings"
 
 	"github.com/lynxbase/lynxdb/pkg/logical"
@@ -21,20 +22,23 @@ import (
 
 // ViewInfo describes a materialized view for optimizer matching.
 type ViewInfo struct {
-	Name     string
-	Status   string // "active", "backfill", "paused", "needs-migration", etc.
-	Filter   string // canonical filter expression (formatted from AST), empty = no filter
-	GroupBy  []string
-	Aggs     []AggInfo
-	Source   string // source index name (e.g. "main")
-	RowCount int64  // approximate row count in the view
+	Name         string
+	Status       string // "active", "backfill", "paused", "needs-migration", etc.
+	Filter       string // canonical filter expression (formatted from AST), empty = no filter
+	GroupBy      []string
+	Aggs         []AggInfo
+	Source       string // source index name (e.g. "main")
+	RowCount     int64  // approximate row count in the view
+	PartialState bool
 }
 
 // AggInfo describes a single aggregation in a view.
 type AggInfo struct {
-	Func  string // "count", "sum", "avg", "min", "max", "dc"
-	Arg   string // field name (empty for count())
-	Alias string // output column name
+	Func        string  // "count", "sum", "avg", "min", "max", "dc"
+	Arg         string  // field name (empty for count())
+	WeightField string  // optional weight field for weighted aggregates
+	Alias       string  // output column name
+	Quantile    float64 // perc/perc_weighted quantile in [0,1]
 }
 
 // ViewCatalog provides materialized view metadata for the optimizer.
@@ -250,7 +254,7 @@ func rewriteExactMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, que
 	// Verify all query aggs exist in the view (by function + field).
 	viewAggMap := buildViewAggMap(vi.Aggs)
 	for _, qa := range queryAggs {
-		key := qa.Func + "\x00" + qa.Arg
+		key := aggInfoKey(AggInfo{Func: qa.Func, Arg: qa.Arg, WeightField: qa.WeightField, Quantile: qa.Quantile})
 		if _, ok := viewAggMap[key]; !ok {
 			return nil // query asks for an agg the view doesn't have
 		}
@@ -276,7 +280,7 @@ func rewriteExactMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, que
 		})
 	}
 	for _, qa := range queryAggs {
-		key := qa.Func + "\x00" + qa.Arg
+		key := aggInfoKey(AggInfo{Func: qa.Func, Arg: qa.Arg, WeightField: qa.WeightField, Quantile: qa.Quantile})
 		viewAlias := viewAggMap[key]
 		projCols = append(projCols, logical.ProjectCol{
 			Name:   viewAlias,
@@ -339,6 +343,12 @@ var nonRollableAggs = map[string]bool{
 func rewriteSubsetMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, queryGroupBy []string, queryAggs []aggMatch) *MVAccel {
 	viewAggMap := buildViewAggMap(vi.Aggs)
 
+	if vi.PartialState {
+		if accel := rewritePartialStateSubsetMatch(p, shape, vi, queryGroupBy, queryAggs, viewAggMap); accel != nil {
+			return accel
+		}
+	}
+
 	// Check that all query aggs are rollable.
 	for _, qa := range queryAggs {
 		if nonRollableAggs[qa.Func] {
@@ -350,7 +360,7 @@ func rewriteSubsetMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, qu
 		}
 		_ = rollFunc // used below
 
-		key := qa.Func + "\x00" + qa.Arg
+		key := aggInfoKey(AggInfo{Func: qa.Func, Arg: qa.Arg, WeightField: qa.WeightField, Quantile: qa.Quantile})
 		if _, ok := viewAggMap[key]; !ok {
 			return nil // query asks for an agg the view doesn't have
 		}
@@ -365,7 +375,7 @@ func rewriteSubsetMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, qu
 
 	var aggs []logical.Agg
 	for _, qa := range queryAggs {
-		key := qa.Func + "\x00" + qa.Arg
+		key := aggInfoKey(AggInfo{Func: qa.Func, Arg: qa.Arg, WeightField: qa.WeightField, Quantile: qa.Quantile})
 		viewAlias := viewAggMap[key]
 		rollFunc := rollableAggs[qa.Func]
 
@@ -405,13 +415,59 @@ func rewriteSubsetMatch(p *logical.Plan, shape *rewritableShape, vi ViewInfo, qu
 	}
 }
 
+func rewritePartialStateSubsetMatch(
+	p *logical.Plan,
+	shape *rewritableShape,
+	vi ViewInfo,
+	queryGroupBy []string,
+	queryAggs []aggMatch,
+	viewAggMap map[string]string,
+) *MVAccel {
+	var rollupAggs []logical.ViewRollupAgg
+	for _, qa := range queryAggs {
+		key := aggInfoKey(AggInfo{Func: qa.Func, Arg: qa.Arg, WeightField: qa.WeightField, Quantile: qa.Quantile})
+		if _, ok := viewAggMap[key]; !ok {
+			return nil
+		}
+		rollupAggs = append(rollupAggs, logical.ViewRollupAgg{
+			Func:        qa.Func,
+			Field:       qa.Arg,
+			WeightField: qa.WeightField,
+			Alias:       qa.Alias,
+			Quantile:    qa.Quantile,
+		})
+	}
+
+	viewScan := &logical.Scan{
+		Sources: []logical.SourcePattern{
+			{Kind: ast.SourceName, Name: vi.Name},
+		},
+		ViewRollup: &logical.ViewRollup{
+			GroupBy: append([]string(nil), queryGroupBy...),
+			Aggs:    rollupAggs,
+		},
+	}
+
+	var newRoot logical.Node = viewScan
+	newRoot = reattachAbove(shape.agg, p.Root, newRoot)
+	p.Root = newRoot
+
+	return &MVAccel{
+		ViewName: vi.Name,
+		Status:   vi.Status,
+		Speedup:  estimateSpeedup(vi.RowCount),
+	}
+}
+
 // Helpers
 
 // aggMatch captures a query's aggregation function for matching.
 type aggMatch struct {
-	Func  string // "count", "sum", etc.
-	Arg   string // field name
-	Alias string // output alias
+	Func        string // "count", "sum", etc.
+	Arg         string // field name
+	WeightField string
+	Alias       string // output alias
+	Quantile    float64
 }
 
 // canonicalizeFilter returns a canonical string for the filter expression.
@@ -450,6 +506,13 @@ func extractAggInfos(agg *logical.Aggregate) []aggMatch {
 				field = ident.Name
 			}
 		}
+		weightField := ""
+		if name == "perc_weighted" && len(call.Args) > 1 {
+			if ident, ok := call.Args[1].(*ast.Ident); ok {
+				weightField = ident.Name
+			}
+		}
+		quantile := aggregateQuantile(name, call)
 		alias := a.Alias
 		if alias == "" {
 			if field != "" {
@@ -458,7 +521,13 @@ func extractAggInfos(agg *logical.Aggregate) []aggMatch {
 				alias = name + "()"
 			}
 		}
-		result = append(result, aggMatch{Func: name, Arg: field, Alias: alias})
+		result = append(result, aggMatch{
+			Func:        name,
+			Arg:         field,
+			WeightField: weightField,
+			Alias:       alias,
+			Quantile:    quantile,
+		})
 	}
 	return result
 }
@@ -467,10 +536,50 @@ func extractAggInfos(agg *logical.Aggregate) []aggMatch {
 func buildViewAggMap(aggs []AggInfo) map[string]string {
 	m := make(map[string]string, len(aggs))
 	for _, a := range aggs {
-		key := a.Func + "\x00" + a.Arg
-		m[key] = a.Alias
+		m[aggInfoKey(a)] = a.Alias
 	}
 	return m
+}
+
+func aggInfoKey(a AggInfo) string {
+	return strings.ToLower(a.Func) + "\x00" + a.Arg + "\x00" + a.WeightField + "\x00" +
+		strconv.FormatFloat(a.Quantile, 'g', -1, 64)
+}
+
+func aggregateQuantile(name string, call *ast.Call) float64 {
+	switch name {
+	case "perc":
+		if len(call.Args) < 2 {
+			return 0
+		}
+		return literalQuantile(call.Args[1])
+	case "perc_weighted":
+		if len(call.Args) < 3 {
+			return 0
+		}
+		return literalQuantile(call.Args[2])
+	default:
+		return 0
+	}
+}
+
+func literalQuantile(expr ast.Expr) float64 {
+	lit, ok := expr.(*ast.Literal)
+	if !ok {
+		return 0
+	}
+	switch v := lit.Value.(type) {
+	case int64:
+		return float64(v) / 100
+	case int:
+		return float64(v) / 100
+	case float64:
+		return v / 100
+	case float32:
+		return float64(v) / 100
+	default:
+		return 0
+	}
 }
 
 // toStringSet converts a string slice to a set.

@@ -762,32 +762,7 @@ func (d *Dispatcher) ViewAllEvents(name string) ([]*event.Event, error) {
 		return nil, fmt.Errorf("views.ViewAllEvents: view %q: %w", name, ErrViewNeedsMigration)
 	}
 
-	// Flush pending into the memtable and snapshot it under the lock. Sorting
-	// happens here (not later, unlocked) so a concurrent Dispatch cannot race
-	// the in-place sort, and the copy keeps the internal slice private.
-	av.mu.Lock()
-	av.flushPendingLocked()
-	sorted := av.sortedEvents()
-	memEvents := make([]*event.Event, len(sorted))
-	copy(memEvents, sorted)
-	av.mu.Unlock()
-
-	var all []*event.Event
-
-	// Read flushed segment files.
-	if d.layout != nil {
-		segDir := d.layout.ViewSegmentDir(name)
-		segEvents, err := d.readViewSegments(segDir)
-		if err != nil {
-			d.logger.Warn("views: read segments", "name", name, "err", err)
-			// Non-fatal: continue with memtable events.
-		} else {
-			all = append(all, segEvents...)
-		}
-	}
-
-	// Append the memtable snapshot taken under the lock above.
-	all = append(all, memEvents...)
+	all := d.collectViewEvents(name, av)
 
 	// For aggregation views: deserialize → merge → finalize → events.
 	// Works for both native LynxFlow views and migrated views (which share
@@ -802,6 +777,132 @@ func (d *Dispatcher) ViewAllEvents(name string) ([]*event.Event, error) {
 	}
 
 	return all, nil
+}
+
+// ViewRollup returns finalized aggregation rows by merging a view's stored
+// partial states to the requested group-by fields. It is used by optimizer MV
+// rewrites when the query groups by a subset of the view's grouping keys.
+func (d *Dispatcher) ViewRollup(name string, groupBy []string, funcs []pipeline.PartialAggFunc) ([]*event.Event, error) {
+	d.mu.RLock()
+	av, ok := d.views[name]
+	d.mu.RUnlock()
+	if !ok {
+		return nil, ErrViewNotFound
+	}
+	if av.def.Status == ViewStatusNeedsMigration {
+		return nil, fmt.Errorf("views.ViewRollup: view %q: %w", name, ErrViewNeedsMigration)
+	}
+
+	sourceSpec := av.def.AggSpec
+	if av.mvAnalysis == nil || !av.mvAnalysis.IsAggregation || sourceSpec == nil {
+		return nil, fmt.Errorf("views.ViewRollup: view %q is not an aggregation view", name)
+	}
+
+	selected, err := selectRollupFuncs(sourceSpec.Funcs, funcs)
+	if err != nil {
+		return nil, fmt.Errorf("views.ViewRollup: view %q: %w", name, err)
+	}
+
+	all := d.collectViewEvents(name, av)
+	sourceGroups := EventsToPartialGroups(all, sourceSpec)
+	rollupSpec := &pipeline.PartialAggSpec{
+		GroupBy: append([]string(nil), groupBy...),
+		Funcs:   funcs,
+	}
+	rollupGroups := make([]*pipeline.PartialAggGroup, 0, len(sourceGroups))
+	for _, g := range sourceGroups {
+		rg := &pipeline.PartialAggGroup{
+			Key:    make(map[string]event.Value, len(groupBy)),
+			States: make([]pipeline.PartialAggState, len(funcs)),
+		}
+		for _, field := range groupBy {
+			rg.Key[field] = g.Key[field]
+		}
+		for dst, src := range selected {
+			rg.States[dst] = clonePartialState(g.States[src])
+		}
+		rollupGroups = append(rollupGroups, rg)
+	}
+
+	finalRows := pipeline.MergePartialAggs([][]*pipeline.PartialAggGroup{rollupGroups}, rollupSpec)
+	return rowsToEvents(finalRows, name), nil
+}
+
+func (d *Dispatcher) collectViewEvents(name string, av *activeView) []*event.Event {
+	// Flush pending into the memtable and snapshot it under the lock. Sorting
+	// happens here (not later, unlocked) so a concurrent Dispatch cannot race
+	// the in-place sort, and the copy keeps the internal slice private.
+	av.mu.Lock()
+	av.flushPendingLocked()
+	sorted := av.sortedEvents()
+	memEvents := make([]*event.Event, len(sorted))
+	copy(memEvents, sorted)
+	av.mu.Unlock()
+
+	var all []*event.Event
+	if d.layout != nil {
+		segDir := d.layout.ViewSegmentDir(name)
+		segEvents, err := d.readViewSegments(segDir)
+		if err != nil {
+			d.logger.Warn("views: read segments", "name", name, "err", err)
+		} else {
+			all = append(all, segEvents...)
+		}
+	}
+
+	return append(all, memEvents...)
+}
+
+func selectRollupFuncs(source, requested []pipeline.PartialAggFunc) ([]int, error) {
+	result := make([]int, len(requested))
+	for i, req := range requested {
+		found := -1
+		for j, fn := range source {
+			if fn.Hidden {
+				continue
+			}
+			if partialFuncMatches(fn, req) {
+				found = j
+				break
+			}
+		}
+		if found < 0 {
+			return nil, fmt.Errorf("aggregate %s(%s) is not stored in the view", req.Name, req.Field)
+		}
+		result[i] = found
+	}
+	return result, nil
+}
+
+func partialFuncMatches(a, b pipeline.PartialAggFunc) bool {
+	return strings.EqualFold(a.Name, b.Name) &&
+		a.Field == b.Field &&
+		a.WeightField == b.WeightField &&
+		a.Quantile == b.Quantile
+}
+
+func clonePartialState(s pipeline.PartialAggState) pipeline.PartialAggState {
+	if s.DistinctSet != nil {
+		cp := make(map[string]bool, len(s.DistinctSet))
+		for k, v := range s.DistinctSet {
+			cp[k] = v
+		}
+		s.DistinctSet = cp
+	}
+	if s.ModeCounts != nil {
+		cp := make(map[string]int64, len(s.ModeCounts))
+		for k, v := range s.ModeCounts {
+			cp[k] = v
+		}
+		s.ModeCounts = cp
+	}
+	if s.DistinctHLL != nil {
+		s.DistinctHLL = pipeline.UnmarshalHyperLogLog(s.DistinctHLL.MarshalBinary())
+	}
+	if s.Digest != nil {
+		s.Digest = pipeline.UnmarshalTDigest(s.Digest.MarshalBinary())
+	}
+	return s
 }
 
 // readViewSegments reads all .lsg segment files from a directory.

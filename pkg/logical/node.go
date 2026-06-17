@@ -106,9 +106,10 @@ type Pushdown struct {
 
 // Scan reads events from one or more sources.
 type Scan struct {
-	Sources   []SourcePattern
-	TimeRange *TimeBounds
-	Pushdown  Pushdown
+	Sources    []SourcePattern
+	TimeRange  *TimeBounds
+	Pushdown   Pushdown
+	ViewRollup *ViewRollup
 	// Reverse is set by the tail-scan optimizer rule. When true, the physical
 	// scan reads segments/rows in reverse chronological order so that a
 	// subsequent Limit (head) can terminate early.
@@ -150,8 +151,26 @@ func (n *Scan) String() string {
 	if n.Reverse {
 		b.WriteString(", reverse")
 	}
+	if n.ViewRollup != nil {
+		b.WriteString(", view_rollup")
+	}
 	b.WriteByte(')')
 	return b.String()
+}
+
+// ViewRollup asks the physical source to resolve a materialized view by
+// merging its stored partial aggregation states to a coarser grouping.
+type ViewRollup struct {
+	GroupBy []string
+	Aggs    []ViewRollupAgg
+}
+
+type ViewRollupAgg struct {
+	Func        string
+	Field       string
+	WeightField string
+	Alias       string
+	Quantile    float64
 }
 
 func timeBoundsString(tb *TimeBounds) string {

@@ -1139,7 +1139,7 @@ func streamingStoreToSource(ss *StreamingServerStore, defaultIndex string, vr en
 
 		// Check if the target names a materialized view.
 		if vr != nil && targetIndex != "*" && targetIndex != defaultIndex {
-			if iter, ok := tryResolveViewSource(vr, targetIndex); ok {
+			if iter, ok := tryResolveViewSourceWithRollup(vr, targetIndex, scan.ViewRollup); ok {
 				return iter, nil
 			}
 		}
@@ -1163,7 +1163,7 @@ func batchStoreToSource(bs *enginepipeline.ColumnarBatchStore, defaultIndex stri
 
 		// Check if the target names a materialized view.
 		if vr != nil && targetIndex != "*" && targetIndex != defaultIndex {
-			if iter, ok := tryResolveViewSource(vr, targetIndex); ok {
+			if iter, ok := tryResolveViewSourceWithRollup(vr, targetIndex, scan.ViewRollup); ok {
 				return iter, nil
 			}
 		}
@@ -1191,7 +1191,7 @@ func materializeStoreToSource(store enginepipeline.IndexStore, defaultIndex stri
 
 		// Check if the target names a materialized view.
 		if vr != nil && targetIndex != "*" && targetIndex != defaultIndex {
-			if iter, ok := tryResolveViewSource(vr, targetIndex); ok {
+			if iter, ok := tryResolveViewSourceWithRollup(vr, targetIndex, scan.ViewRollup); ok {
 				return iter, nil
 			}
 		}
@@ -1218,7 +1218,19 @@ func materializeStoreToSource(store enginepipeline.IndexStore, defaultIndex stri
 // and we fall through silently. This avoids needing a separate "view exists?"
 // API.
 func tryResolveViewSource(vr enginepipeline.ViewResolver, targetName string) (enginepipeline.Iterator, bool) {
-	events, err := vr.ResolveView(targetName)
+	return tryResolveViewSourceWithRollup(vr, targetName, nil)
+}
+
+func tryResolveViewSourceWithRollup(vr enginepipeline.ViewResolver, targetName string, rollup *logical.ViewRollup) (enginepipeline.Iterator, bool) {
+	var (
+		events []*event.Event
+		err    error
+	)
+	if rollup != nil {
+		events, err = vr.ResolveViewRollup(targetName, rollup.GroupBy, viewRollupFuncs(rollup.Aggs))
+	} else {
+		events, err = vr.ResolveView(targetName)
+	}
 	if err != nil {
 		// ErrViewNotFound means this name isn't a view — fall through to index scan.
 		if errors.Is(err, views.ErrViewNotFound) {
@@ -1230,6 +1242,20 @@ func tryResolveViewSource(vr enginepipeline.ViewResolver, targetName string) (en
 	}
 	rows := eventsToValueRows(events)
 	return enginepipeline.NewRowScanIterator(rows, enginepipeline.DefaultBatchSize), true
+}
+
+func viewRollupFuncs(aggs []logical.ViewRollupAgg) []enginepipeline.PartialAggFunc {
+	funcs := make([]enginepipeline.PartialAggFunc, 0, len(aggs))
+	for _, a := range aggs {
+		funcs = append(funcs, enginepipeline.PartialAggFunc{
+			Name:        a.Func,
+			Field:       a.Field,
+			WeightField: a.WeightField,
+			Alias:       a.Alias,
+			Quantile:    a.Quantile,
+		})
+	}
+	return funcs
 }
 
 // viewErrorIterator is a pipeline iterator that returns a stored error on Init.

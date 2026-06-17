@@ -1005,6 +1005,7 @@ func cloneScan(s *logical.Scan) *logical.Scan {
 	newScan := &logical.Scan{
 		Sources:      s.Sources,
 		TimeRange:    s.TimeRange,
+		ViewRollup:   cloneViewRollup(s.ViewRollup),
 		Reverse:      s.Reverse,
 		OutputSchema: s.OutputSchema,
 		Pushdown: logical.Pushdown{
@@ -1022,6 +1023,16 @@ func cloneScan(s *logical.Scan) *logical.Scan {
 		newScan.Pushdown.TimeBounds = &tb
 	}
 	return newScan
+}
+
+func cloneViewRollup(v *logical.ViewRollup) *logical.ViewRollup {
+	if v == nil {
+		return nil
+	}
+	return &logical.ViewRollup{
+		GroupBy: cloneStrings(v.GroupBy),
+		Aggs:    append([]logical.ViewRollupAgg(nil), v.Aggs...),
+	}
 }
 
 func cloneExprs(in []ast.Expr) []ast.Expr {

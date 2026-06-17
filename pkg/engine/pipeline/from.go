@@ -12,6 +12,9 @@ type ViewResolver interface {
 	// ResolveView returns the events for the given view name.
 	// Events come from both flushed segments and the current memtable.
 	ResolveView(name string) ([]*event.Event, error)
+	// ResolveViewRollup returns finalized events from stored partial
+	// aggregation state, regrouped by the requested fields.
+	ResolveViewRollup(name string, groupBy []string, funcs []PartialAggFunc) ([]*event.Event, error)
 }
 
 // ViewInfo holds view metadata returned by ViewManager.ListViews.

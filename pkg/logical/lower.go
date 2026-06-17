@@ -915,6 +915,9 @@ func shallowClone(n Node) Node {
 			tr := *x.TimeRange
 			c.TimeRange = &tr
 		}
+		if x.ViewRollup != nil {
+			c.ViewRollup = cloneViewRollup(x.ViewRollup)
+		}
 		return &c
 	case *Filter:
 		c := *x
@@ -1004,6 +1007,16 @@ func shallowClone(n Node) Node {
 	}
 	// Fallback: return the original (should not happen for known types).
 	return n
+}
+
+func cloneViewRollup(v *ViewRollup) *ViewRollup {
+	if v == nil {
+		return nil
+	}
+	return &ViewRollup{
+		GroupBy: append([]string(nil), v.GroupBy...),
+		Aggs:    append([]ViewRollupAgg(nil), v.Aggs...),
+	}
 }
 
 // findScan walks down the chain and returns the first Scan node, or nil.

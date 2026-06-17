@@ -434,6 +434,7 @@ var aggNameMapping = map[string]string{
 	"corr":          "corr",
 	"covar":         "covar",
 	"linear_fit":    "linear_fit",
+	"sum_object":    "sum_object",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {

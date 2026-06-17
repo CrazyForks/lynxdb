@@ -47,6 +47,8 @@ type runningAggState struct {
 	sumSq     float64
 	sumY2     float64
 	sumXY     float64
+	objectSum map[string]float64
+	objectN   map[string]int64
 }
 
 type ringBuffer struct {
@@ -688,6 +690,8 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 		}
 	case aggCorr, aggCovar, aggLinFit:
 		addPairValueToRunning(st, agg, row)
+	case aggSumObj:
+		addObjectValueToRunning(st, agg, row, 1)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			if st.minVal.IsNull() || vm.CompareValues(v, st.minVal) < 0 {
@@ -755,6 +759,8 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 		}
 	case aggCorr, aggCovar, aggLinFit:
 		removePairValueFromRunning(st, agg, row)
+	case aggSumObj:
+		addObjectValueToRunning(st, agg, row, -1)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			st.count--
@@ -809,6 +815,8 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		return finalizeRunningCovar(st)
 	case aggLinFit:
 		return finalizeRunningLinearFit(st)
+	case aggSumObj:
+		return objectSumValue(st.objectSum)
 	case aggMin:
 		if st.minVal.IsNull() && st.count > 0 {
 			// Min was evicted — rescan window to find new minimum.
@@ -890,6 +898,35 @@ func pairValuesFromRow(agg AggFunc, row map[string]event.Value) (float64, float6
 		return 0, 0, false
 	}
 	return x, y, true
+}
+
+func addObjectValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Value, delta int64) {
+	val, ok := row[agg.Field]
+	if !ok {
+		return
+	}
+	obj, ok := val.TryAsObject()
+	if !ok {
+		return
+	}
+	if st.objectSum == nil {
+		st.objectSum = make(map[string]float64)
+	}
+	if st.objectN == nil {
+		st.objectN = make(map[string]int64)
+	}
+	for key, fieldVal := range obj {
+		f, ok := vm.ValueToFloat(fieldVal)
+		if !ok {
+			continue
+		}
+		st.objectSum[key] += float64(delta) * f
+		st.objectN[key] += delta
+		if st.objectN[key] <= 0 {
+			delete(st.objectSum, key)
+			delete(st.objectN, key)
+		}
+	}
 }
 
 func finalizeRunningCovar(st *runningAggState) event.Value {
@@ -1029,6 +1066,12 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 			return finalizeRunningLinearFit(&st)
 		}
 		return finalizeRunningCovar(&st)
+	case aggSumObj:
+		st := runningAggState{}
+		for _, item := range items {
+			addObjectValueToRunning(&st, agg, item, 1)
+		}
+		return objectSumValue(st.objectSum)
 	case aggMin:
 		var minVal event.Value
 		for _, item := range items {

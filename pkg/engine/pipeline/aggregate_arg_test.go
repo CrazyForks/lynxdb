@@ -25,6 +25,11 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 				"weight": event.IntValue(int64(score%5 + 1)),
 				"route":  event.StringValue(fmt.Sprintf("route-%d", score%3)),
 				"team":   event.StringValue(fmt.Sprintf("team-%d", group)),
+				"metrics": event.ObjectValue(map[string]event.Value{
+					"requests": event.IntValue(1),
+					"errors":   event.IntValue(int64(score % 2)),
+					"ignored":  event.StringValue("non-numeric"),
+				}),
 			})
 		}
 	}
@@ -50,6 +55,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "corr", Field: "score", WeightField: "weight", Alias: "score_weight_corr"},
 		{Name: "covar", Field: "score", WeightField: "weight", Alias: "score_weight_covar"},
 		{Name: "linear_fit", Field: "score", WeightField: "weight", Alias: "score_weight_fit"},
+		{Name: "sum_object", Field: "metrics", Alias: "metric_totals"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -94,6 +100,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventObjectFloat(t, row["score_weight_fit"], "slope", scoreWeightSlopeWant(), group+" fit slope")
 		assertEventObjectFloat(t, row["score_weight_fit"], "intercept", scoreWeightInterceptWant(), group+" fit intercept")
 		assertEventObjectFloat(t, row["score_weight_fit"], "r2", scoreWeightR2Want(), group+" fit r2")
+		assertEventObjectFloat(t, row["metric_totals"], "requests", 50, group+" object requests")
+		assertEventObjectFloat(t, row["metric_totals"], "errors", 25, group+" object errors")
 	}
 }
 

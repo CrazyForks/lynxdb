@@ -319,6 +319,11 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 			row[agg.Alias+"__sum_x2"] = event.FloatValue(s.sumSq)
 			row[agg.Alias+"__sum_y2"] = event.FloatValue(s.sumY2)
 			row[agg.Alias+"__sum_xy"] = event.FloatValue(s.sumXY)
+		case aggSumObj:
+			if len(s.objectSum) > 0 {
+				row[agg.Alias+"__object_sum"] = objectSumValue(s.objectSum)
+				row[agg.Alias+"__object_count"] = objectCountValue(s.objectN)
+			}
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
 		case aggRange:
@@ -444,6 +449,8 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeWeightedAvgFromRow(&group.states[j], row, agg.Alias)
 		case aggCorr, aggCovar, aggLinFit:
 			a.mergePairStatsFromRow(&group.states[j], row, agg.Alias)
+		case aggSumObj:
+			a.mergeObjectSumFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			sumVal := row[agg.Alias+"__sum"]
 			a.mergeSpilledValue(&group.states[j], agg.Name, sumVal)

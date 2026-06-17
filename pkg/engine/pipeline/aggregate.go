@@ -125,6 +125,7 @@ const (
 	aggCorr    = "corr"
 	aggCovar   = "covar"
 	aggLinFit  = "linear_fit"
+	aggSumObj  = "sum_object"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -172,6 +173,8 @@ type aggState struct {
 	weightSum float64
 	sumY2     float64
 	sumXY     float64
+	objectSum map[string]float64
+	objectN   map[string]int64
 }
 
 type topKItem struct {
@@ -729,6 +732,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		updateWeightedAvgState(s, val, weightVal)
 	case aggCorr, aggCovar, aggLinFit:
 		updatePairStatsState(s, val, weightVal)
+	case aggSumObj:
+		updateObjectSumState(s, val, 1)
 	case aggMin:
 		if !val.IsNull() {
 			if s.min.IsNull() || vm.CompareValues(val, s.min) < 0 {
@@ -991,6 +996,47 @@ func updatePairStatsState(s *aggState, val, otherVal event.Value) {
 	s.sumSq += x * x
 	s.sumY2 += y * y
 	s.sumXY += x * y
+}
+
+func updateObjectSumState(s *aggState, val event.Value, delta int64) {
+	obj, ok := val.TryAsObject()
+	if !ok {
+		return
+	}
+	if s.objectSum == nil {
+		s.objectSum = make(map[string]float64)
+	}
+	if s.objectN == nil {
+		s.objectN = make(map[string]int64)
+	}
+	for key, fieldVal := range obj {
+		f, ok := vm.ValueToFloat(fieldVal)
+		if !ok {
+			continue
+		}
+		s.objectSum[key] += float64(delta) * f
+		s.objectN[key] += delta
+		if s.objectN[key] <= 0 {
+			delete(s.objectSum, key)
+			delete(s.objectN, key)
+		}
+	}
+}
+
+func objectSumValue(sums map[string]float64) event.Value {
+	fields := make(map[string]event.Value, len(sums))
+	for key, sum := range sums {
+		fields[key] = event.FloatValue(sum)
+	}
+	return event.ObjectValue(fields)
+}
+
+func objectCountValue(counts map[string]int64) event.Value {
+	fields := make(map[string]event.Value, len(counts))
+	for key, count := range counts {
+		fields[key] = event.IntValue(count)
+	}
+	return event.ObjectValue(fields)
 }
 
 func finalizeCovar(s *aggState) event.Value {
@@ -1342,6 +1388,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeWeightedAvgFromRow(&group.states[j], row, agg.Alias)
 		case aggCorr, aggCovar, aggLinFit:
 			a.mergePairStatsFromRow(&group.states[j], row, agg.Alias)
+		case aggSumObj:
+			a.mergeObjectSumFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
@@ -1608,6 +1656,41 @@ func (a *AggregateIterator) mergePairStatsFromRow(s *aggState, row map[string]ev
 	}
 }
 
+func (a *AggregateIterator) mergeObjectSumFromRow(s *aggState, row map[string]event.Value, alias string) {
+	val, ok := row[alias+"__object_sum"]
+	if !ok || val.IsNull() {
+		return
+	}
+	sums, ok := val.TryAsObject()
+	if !ok {
+		return
+	}
+	counts := map[string]event.Value{}
+	if countVal, ok := row[alias+"__object_count"]; ok && !countVal.IsNull() {
+		counts, _ = countVal.TryAsObject()
+	}
+	if s.objectSum == nil {
+		s.objectSum = make(map[string]float64, len(sums))
+	}
+	if s.objectN == nil {
+		s.objectN = make(map[string]int64, len(sums))
+	}
+	for key, sumVal := range sums {
+		sum, ok := vm.ValueToFloat(sumVal)
+		if !ok {
+			continue
+		}
+		count := int64(1)
+		if countVal, ok := counts[key]; ok {
+			if countF, ok := vm.ValueToFloat(countVal); ok {
+				count = int64(countF)
+			}
+		}
+		s.objectSum[key] += sum
+		s.objectN[key] += count
+	}
+}
+
 func topKStateValue(s *aggState) event.Value {
 	return finalizeTopK(s, 0)
 }
@@ -1823,6 +1906,8 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		return finalizeCovar(s)
 	case aggLinFit:
 		return finalizeLinearFit(s)
+	case aggSumObj:
+		return objectSumValue(s.objectSum)
 	case aggMin:
 		return s.min
 	case aggMax:

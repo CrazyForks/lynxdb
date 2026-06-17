@@ -86,8 +86,11 @@ func boolV(b bool) event.Value              { return event.BoolValue(b) }
 func nullV() event.Value                    { return event.NullValue() }
 func tsV(t time.Time) event.Value           { return event.TimestampValue(t) }
 func arrV(elems ...event.Value) event.Value { return event.ArrayValue(elems) }
-func intPtr(n int64) *int64                 { return &n }
-func floatPtr(n float64) *float64           { return &n }
+func objV(fields map[string]event.Value) event.Value {
+	return event.ObjectValue(fields)
+}
+func intPtr(n int64) *int64       { return &n }
+func floatPtr(n float64) *float64 { return &n }
 
 func assertOptionalIntField(t *testing.T, row map[string]event.Value, field string, want *int64, rowIndex int) {
 	t.Helper()
@@ -430,6 +433,49 @@ func TestBuild_CorrCovarAggregates(t *testing.T) {
 	assertObjectFloatField(t, result[0], "fit", "slope", 2, 0)
 	assertObjectFloatField(t, result[0], "fit", "intercept", 0, 0)
 	assertObjectFloatField(t, result[0], "fit", "r2", 1, 0)
+}
+
+func TestBuild_ObjectSumAggregates(t *testing.T) {
+	rows := []map[string]event.Value{
+		{
+			"host":    strV("a"),
+			"metrics": objV(map[string]event.Value{"ok": intV(2), "err": intV(1), "zero": intV(2), "skip": strV("x")}),
+		},
+		{
+			"host":    strV("a"),
+			"metrics": objV(map[string]event.Value{"ok": intV(3), "latency": floatV(1.5), "zero": intV(-2)}),
+		},
+		{
+			"host":    strV("b"),
+			"metrics": objV(map[string]event.Value{"err": intV(4)}),
+		},
+	}
+
+	statsRows := drain(t, `from * | stats sum_object(metrics) as totals by host`, rows)
+	if len(statsRows) != 2 {
+		t.Fatalf("stats row count got %d, want 2", len(statsRows))
+	}
+	byHost := make(map[string]map[string]event.Value, len(statsRows))
+	for _, row := range statsRows {
+		byHost[row["host"].AsString()] = row
+	}
+	assertObjectFloatField(t, byHost["a"], "totals", "ok", 5, 0)
+	assertObjectFloatField(t, byHost["a"], "totals", "err", 1, 0)
+	assertObjectFloatField(t, byHost["a"], "totals", "latency", 1.5, 0)
+	assertObjectFloatField(t, byHost["a"], "totals", "zero", 0, 0)
+	assertObjectFloatField(t, byHost["b"], "totals", "err", 4, 0)
+
+	eventRows := drain(t, `from * | eventstats sum_object(metrics) as totals by host`, rows)
+	assertObjectFloatField(t, eventRows[0], "totals", "ok", 5, 0)
+	assertObjectFloatField(t, eventRows[1], "totals", "latency", 1.5, 1)
+	assertObjectFloatField(t, eventRows[2], "totals", "err", 4, 2)
+
+	streamRows := drain(t, `from * | streamstats window=2 sum_object(metrics) as totals by host`, rows)
+	assertObjectFloatField(t, streamRows[0], "totals", "ok", 2, 0)
+	assertObjectFloatField(t, streamRows[1], "totals", "ok", 5, 1)
+	assertObjectFloatField(t, streamRows[1], "totals", "latency", 1.5, 1)
+	assertObjectFloatField(t, streamRows[1], "totals", "zero", 0, 1)
+	assertObjectFloatField(t, streamRows[2], "totals", "err", 4, 2)
 }
 
 func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
@@ -1220,6 +1266,7 @@ func TestAggNameMapping(t *testing.T) {
 		"corr":         "corr",
 		"covar":        "covar",
 		"linear_fit":   "linear_fit",
+		"sum_object":   "sum_object",
 		"rate":         "rate",
 	}
 	for input, want := range expected {

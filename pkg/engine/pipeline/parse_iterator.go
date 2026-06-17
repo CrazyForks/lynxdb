@@ -376,6 +376,7 @@ func (p *ParseIterator) parseFirstOf(batch *Batch, rowIdx int, input string) err
 			outKey := p.prefixedKey(key)
 			if col, ok := batch.Columns[outKey]; ok && rowIdx < len(col) {
 				col[rowIdx] = event.NullValue()
+				batch.MarkAbsent(outKey, rowIdx)
 			}
 		}
 	}
@@ -417,6 +418,7 @@ func (p *ParseIterator) tryFirstOf(batch *Batch, rowIdx int, input string) (bool
 			outKey := p.prefixedKey(key)
 			if col, ok := batch.Columns[outKey]; ok && rowIdx < len(col) {
 				col[rowIdx] = event.NullValue()
+				batch.MarkAbsent(outKey, rowIdx)
 			}
 		}
 	}
@@ -526,6 +528,7 @@ func (p *ParseIterator) emitField(key string, val event.Value) bool {
 	if !exists {
 		col = make([]event.Value, p.curBatch.Len)
 		p.curBatch.Columns[outKey] = col
+		p.curBatch.MarkColumnAbsent(outKey)
 	} else if len(col) < p.curBatch.Len {
 		extended := make([]event.Value, p.curBatch.Len)
 		copy(extended, col)
@@ -554,6 +557,7 @@ func (p *ParseIterator) emitField(key string, val event.Value) bool {
 	} else {
 		col[p.curRowIdx] = val
 	}
+	p.curBatch.MarkPresent(outKey, p.curRowIdx)
 
 	p.curEmitted = append(p.curEmitted, key)
 	return true
@@ -580,6 +584,7 @@ func (p *ParseIterator) setColumn(batch *Batch, rowIdx int, colName string, val 
 	if !exists {
 		col = make([]event.Value, batch.Len)
 		batch.Columns[colName] = col
+		batch.MarkColumnAbsent(colName)
 	} else if len(col) < batch.Len {
 		extended := make([]event.Value, batch.Len)
 		copy(extended, col)
@@ -593,6 +598,7 @@ func (p *ParseIterator) setColumn(batch *Batch, rowIdx int, colName string, val 
 		return
 	}
 	col[rowIdx] = val
+	batch.MarkPresent(colName, rowIdx)
 }
 
 // applyCaptures coerces extracted fields to their declared types.

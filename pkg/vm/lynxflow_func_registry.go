@@ -709,7 +709,7 @@ func lfEmitNullIf(c *lfCompiler, call *lfast.Call) error {
 }
 
 func lfEmitExists(c *lfCompiler, call *lfast.Call) error {
-	// exists(field) -> true when field is present AND non-null.
+	// exists(field) -> true when field is present, even if it is null.
 	// For Ident args: use OpFieldExists.
 	// For non-Ident args: exists(expr) = expr is non-null.
 	if ident, ok := call.Args[0].(*lfast.Ident); ok {
@@ -733,13 +733,6 @@ func lfEmitIsNull(c *lfCompiler, call *lfast.Call) error {
 	// return event.NullValue() from OpLoadField. To distinguish, we check:
 	// field exists in the row map AND value is null.
 	if ident, ok := call.Args[0].(*lfast.Ident); ok {
-		// OpFieldExists returns false for missing fields (not in map) AND for null values
-		// in the old SPL2 implementation. But RFC-002 wants:
-		//   is_null: true when present with null value
-		// We need: field in map AND val.IsNull()
-		// OpFieldExists currently checks: ok && !val.IsNull(). So:
-		// is_null = !is_missing AND !exists = in_map AND is_null
-		// = NOT OpFieldMissing AND OpLoadField.IsNull
 		idx := c.prog.AddFieldName(ident.Name)
 		c.prog.EmitOp(OpFieldMissing, idx)
 		c.prog.EmitOp(OpNot3VL) // not(missing) = present

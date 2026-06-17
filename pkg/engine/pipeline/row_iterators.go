@@ -110,11 +110,13 @@ func (p *ProjectIterator) applyKeep(batch *Batch) *Batch {
 			for col, vals := range batch.Columns {
 				if matched, _ := path.Match(f, col); matched {
 					out.Columns[col] = vals
+					copyPresenceColumn(out, batch, col)
 				}
 			}
 		} else {
 			if vals, ok := batch.Columns[f]; ok {
 				out.Columns[f] = vals
+				copyPresenceColumn(out, batch, f)
 			} else {
 				nulls := make([]event.Value, batch.Len)
 				for i := range nulls {
@@ -144,6 +146,7 @@ func (p *ProjectIterator) applyRemove(batch *Batch) *Batch {
 		}
 		if !drop {
 			out.Columns[col] = vals
+			copyPresenceColumn(out, batch, col)
 		}
 	}
 	return out
@@ -344,12 +347,22 @@ func compactBatch(batch *Batch, mask []bool, matchCount int) *Batch {
 	result := &Batch{Columns: make(map[string][]event.Value, len(batch.Columns)), Len: matchCount}
 	for k, col := range batch.Columns {
 		out := make([]event.Value, 0, matchCount)
+		var outPres []bool
+		if _, ok := batch.Present[k]; ok {
+			outPres = make([]bool, 0, matchCount)
+		}
 		for i, v := range col {
 			if i < batch.Len && mask[i] {
 				out = append(out, v)
+				if outPres != nil {
+					outPres = append(outPres, batch.IsPresent(k, i))
+				}
 			}
 		}
 		result.Columns[k] = out
+		if outPres != nil {
+			setPresenceIfSparse(result, k, outPres)
+		}
 	}
 	copyBSIMetadataFilter(result, batch, mask)
 	return result

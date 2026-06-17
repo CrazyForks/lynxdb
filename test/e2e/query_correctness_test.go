@@ -97,8 +97,8 @@ func TestE2E_QueryCorrectness(t *testing.T) {
 		t.Run("IsNotNull_TargetUser_520", func(t *testing.T) {
 			requireAggValue(t, h.MustQuery(`from idx_ssh | parse regex r"Failed password for (?<target_user>\w+)" | where exists(target_user) | stats count() as count`), "count", 520)
 		})
-		t.Run("IsNull_TargetUser_1480", func(t *testing.T) {
-			requireAggValue(t, h.MustQuery(`from idx_ssh | parse regex r"Failed password for (?<target_user>\w+)" | where is_null(target_user) | stats count() as count`), "count", 1480)
+		t.Run("IsMissing_TargetUser_1480", func(t *testing.T) {
+			requireAggValue(t, h.MustQuery(`from idx_ssh | parse regex r"Failed password for (?<target_user>\w+)" | where is_missing(target_user) | stats count() as count`), "count", 1480)
 		})
 		t.Run("Match_IP", func(t *testing.T) {
 			r := h.MustQuery(`from idx_ssh | where matches(_raw, r"173\.234\.31\.186") | stats count() as count`)

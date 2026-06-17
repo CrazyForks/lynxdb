@@ -130,6 +130,7 @@ func (u *UnpackIterator) emitField(key string, val event.Value) bool {
 	if !exists {
 		col = make([]event.Value, u.curBatch.Len)
 		u.curBatch.Columns[outKey] = col
+		u.curBatch.MarkColumnAbsent(outKey)
 	} else if len(col) < u.curBatch.Len {
 		extended := make([]event.Value, u.curBatch.Len)
 		copy(extended, col)
@@ -161,6 +162,7 @@ func (u *UnpackIterator) emitField(key string, val event.Value) bool {
 	} else {
 		col[u.curRowIdx] = val
 	}
+	u.curBatch.MarkPresent(outKey, u.curRowIdx)
 
 	return true
 }

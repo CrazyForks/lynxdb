@@ -78,10 +78,20 @@ func filterBatchRows(src *Batch, indices []int) *Batch {
 	dst := NewBatch(len(indices))
 	for name, col := range src.Columns {
 		newCol := make([]event.Value, len(indices))
+		var newPres []bool
+		if _, ok := src.Present[name]; ok {
+			newPres = make([]bool, len(indices))
+		}
 		for j, idx := range indices {
 			newCol[j] = col[idx]
+			if newPres != nil {
+				newPres[j] = src.IsPresent(name, idx)
+			}
 		}
 		dst.Columns[name] = newCol
+		if newPres != nil {
+			setPresenceIfSparse(dst, name, newPres)
+		}
 	}
 	dst.Len = len(indices)
 

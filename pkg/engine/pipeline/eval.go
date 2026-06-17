@@ -50,12 +50,7 @@ func (e *EvalIterator) Next(ctx context.Context) (*Batch, error) {
 	// Reuse one map across all rows — update values in place.
 	row := make(map[string]event.Value, len(batch.Columns)+len(e.assignments))
 	for i := 0; i < batch.Len; i++ {
-		// Populate row from columnar data (reuses map buckets).
-		for k, col := range batch.Columns {
-			if i < len(col) {
-				row[k] = col[i]
-			}
-		}
+		batch.RowInto(i, row)
 		for _, assign := range e.assignments {
 			var result event.Value
 			var execErr error
@@ -72,6 +67,7 @@ func (e *EvalIterator) Next(ctx context.Context) (*Batch, error) {
 			}
 			row[assign.Field] = result
 			batch.Columns[assign.Field][i] = result
+			batch.MarkPresent(assign.Field, i)
 		}
 	}
 

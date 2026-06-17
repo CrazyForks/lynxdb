@@ -985,41 +985,7 @@ func TestConformance_ExistsNullMissing_Trichotomy(t *testing.T) {
 		rExists, _ := runLF(t, call("exists", ident("nullval")), fields)
 		rIsNull, _ := runLF(t, call("is_null", ident("nullval")), fields)
 		rIsMissing, _ := runLF(t, call("is_missing", ident("nullval")), fields)
-		// exists: field is present but value is null → RFC-002 says exists returns true
-		// when "field is present with a non-null value" → FALSE for null
-		// Wait, re-reading RFC-002 §5.2:
-		//   | field present, value null | null value | true | true | false |
-		// exists=true for null field. Let me re-read.
-		// Table: exists() column for "field present, value null" = true.
-		// But the doc for exists says "True when the field is present with a non-null value."
-		// There's a contradiction. The TABLE says exists=true for null.
-		// Let's follow the table (the formal spec).
-		// Actually re-reading: exists column for null = true. is_null = true. is_missing = false.
-		// So exists(null_field) = true. That means exists checks presence, not non-nullness.
-		// But the registry doc says "True when the field is present with a non-null value."
-		// I'll follow the §5.2 TABLE as normative.
-		// Hmm, this creates an issue with our implementation. OpFieldExists currently
-		// returns ok && !val.IsNull(). For LynxFlow, it should return ok (presence only).
-		// Since we're using OpFieldExists in the current implementation and it checks non-null,
-		// let's adjust: for exists(), check presence (not null) per the registry doc.
-		// The registry doc says "True when the field is present with a non-null value" which
-		// means exists(null_field)=false. The table in §5.2 says true.
-		// I'll follow the function doc from the registry since that's what the compiler uses.
-		// exists(null_field) = false (field is present but value IS null, so "non-null value" fails).
-		// Actually wait — the table header says "exists()" and for null value shows "true".
-		// This is the normative spec. Let me implement per the table.
-		// For this test, follow the table: exists(null_field) = true.
-		// Our implementation uses OpFieldExists which checks ok && !val.IsNull().
-		// For LynxFlow, we need: present in map (regardless of null).
-		// Fix: for exists(), use !OpFieldMissing instead of OpFieldExists.
-		// I already did this in the lfEmitExists function? Let me check.
-		// lfEmitExists for Ident: uses OpFieldExists. That checks ok && !val.IsNull().
-		// So exists(null_field) = false with our current impl.
-		// Per the registry: "True when the field is present with a non-null value."
-		// So exists(null_field) = false. That matches our impl.
-		// Per §5.2 table: exists=true for null value. CONTRADICTION.
-		// I'll follow the registry doc (more specific, closer to implementation).
-		assertBool(t, rExists, false, "exists(nullval)")
+		assertBool(t, rExists, true, "exists(nullval)")
 		assertBool(t, rIsNull, true, "is_null(nullval)")
 		assertBool(t, rIsMissing, false, "is_missing(nullval)")
 	})

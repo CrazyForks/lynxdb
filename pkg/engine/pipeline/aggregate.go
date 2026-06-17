@@ -387,12 +387,7 @@ func aggResultType(name string) string {
 func (a *AggregateIterator) processBatch(batch *Batch) error {
 	row := make(map[string]event.Value, len(batch.Columns))
 	for i := 0; i < batch.Len; i++ {
-		// Populate reusable row map from columnar data.
-		for k, col := range batch.Columns {
-			if i < len(col) {
-				row[k] = col[i]
-			}
-		}
+		batch.RowInto(i, row)
 
 		h := a.groupKeyHash(row)
 		group, err := a.findOrCreateGroup(h, row)

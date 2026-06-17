@@ -333,6 +333,19 @@ func TestVMFieldAccess(t *testing.T) {
 		}
 	})
 
+	t.Run("field exists with null value", func(t *testing.T) {
+		p := &Program{}
+		p.AddFieldName("nullval")
+		p.EmitOp(OpFieldExists, 0)
+		p.EmitOp(OpReturn)
+
+		withNull := map[string]event.Value{"nullval": event.NullValue()}
+		result := runProgram(t, p, withNull)
+		if !result.AsBool() {
+			t.Errorf("expected true for present null field")
+		}
+	})
+
 	t.Run("field not exists", func(t *testing.T) {
 		p := &Program{}
 		p.AddFieldName("missing")

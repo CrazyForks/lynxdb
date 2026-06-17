@@ -101,6 +101,7 @@ func (r *RexIterator) Next(ctx context.Context) (*Batch, error) {
 		}
 		if col, exists := batch.Columns[name]; !exists {
 			batch.Columns[name] = make([]event.Value, batch.Len)
+			batch.MarkColumnAbsent(name)
 		} else if len(col) < batch.Len {
 			extended := make([]event.Value, batch.Len)
 			copy(extended, col)
@@ -148,6 +149,7 @@ func (r *RexIterator) Next(ctx context.Context) (*Batch, error) {
 			// with s. If s is a 500-byte _raw and the match is 30 bytes, GC cannot
 			// free the 470 unused bytes while the substring is alive.
 			batch.Columns[name][i] = event.StringValue(strings.Clone(s[start:end]))
+			batch.MarkPresent(name, i)
 		}
 	}
 

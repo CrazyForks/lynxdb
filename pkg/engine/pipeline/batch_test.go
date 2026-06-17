@@ -144,6 +144,17 @@ func TestBatchAppendBatch_SparseColumns(t *testing.T) {
 	if cCol[1].AsInt() != 99 {
 		t.Errorf("c[1]: got %d, want 99", cCol[1].AsInt())
 	}
+	row0 := b1.Row(0)
+	if _, ok := row0["c"]; ok {
+		t.Fatalf("row 0 should not materialize absent column c: %#v", row0)
+	}
+	row1 := b1.Row(1)
+	if _, ok := row1["a"]; ok {
+		t.Fatalf("row 1 should not materialize absent column a: %#v", row1)
+	}
+	if _, ok := row1["c"]; !ok {
+		t.Fatalf("row 1 should materialize present column c: %#v", row1)
+	}
 }
 
 func TestBatchAppendBatch_EmptyOther(t *testing.T) {

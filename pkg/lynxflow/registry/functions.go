@@ -16,7 +16,7 @@ var functions = []Function{
 	{Name: "remap", Category: "conditional", Params: []Param{{Name: "x", Type: TAny}, {Name: "from", Type: TArray}, {Name: "to", Type: TArray}, {Name: "default", Type: TAny, Optional: true}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Map x through parallel from/to arrays; default is null."},
 	{Name: "coalesce", Category: "conditional", Params: []Param{{Name: "values", Type: TAny, Variadic: true}}, Result: TAny, Fallibility: Infallible, Doc: "First non-null, non-missing argument."},
 	{Name: "nullif", Category: "conditional", Params: []Param{{Name: "a", Type: TAny}, {Name: "b", Type: TAny}}, Result: TAny, Fallibility: Infallible, Doc: "Null when a == b, else a."},
-	{Name: "exists", Category: "conditional", Params: []Param{{Name: "field", Type: TAny}}, Result: TBool, Fallibility: Infallible, Doc: "True when the field is present with a non-null value."},
+	{Name: "exists", Category: "conditional", Params: []Param{{Name: "field", Type: TAny}}, Result: TBool, Fallibility: Infallible, Doc: "True when the field is present, even if the value is null."},
 	{Name: "is_null", Category: "conditional", Params: []Param{{Name: "field", Type: TAny}}, Result: TBool, Fallibility: Infallible, Doc: "True when present with an explicit null value."},
 	{Name: "is_missing", Category: "conditional", Params: []Param{{Name: "field", Type: TAny}}, Result: TBool, Fallibility: Infallible, Doc: "True when the field was never extracted."},
 	{Name: "typeof", Category: "conditional", Params: []Param{{Name: "x", Type: TAny}}, Result: TString, Fallibility: Infallible, Doc: "Type name: string, int, float, bool, timestamp, duration, array, object, null, missing."},

@@ -314,9 +314,9 @@ func (vm *VM) execFieldExists(prog *Program, ins []byte, ip int, fields map[stri
 	}
 
 	name := prog.FieldNames[idx]
-	val, ok := fields[name]
-	exists := ok && !val.IsNull()
-	if !exists {
+	_, ok := fields[name]
+	exists := ok
+	if !ok {
 		// JSON fallback: check if the field is extractable from _raw.
 		if rawVal, rawOk := fields["_raw"]; rawOk && !rawVal.IsNull() {
 			extracted := vm.jsonExtractCached(rawVal.String(), name)

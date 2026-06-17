@@ -68,8 +68,8 @@ func TestRegression_SSH(t *testing.T) {
 			rows := mustQuery(t, eng, `FROM main | parse regex r"Failed password for (?<target_user>\w+)" | WHERE exists(target_user) | STATS count() as count`)
 			requireAggValue(t, rows, "count", 520)
 		})
-		t.Run("IsNull_TargetUser_1480", func(t *testing.T) {
-			rows := mustQuery(t, eng, `FROM main | parse regex r"Failed password for (?<target_user>\w+)" | WHERE is_null(target_user) | STATS count() as count`)
+		t.Run("IsMissing_TargetUser_1480", func(t *testing.T) {
+			rows := mustQuery(t, eng, `FROM main | parse regex r"Failed password for (?<target_user>\w+)" | WHERE is_missing(target_user) | STATS count() as count`)
 			requireAggValue(t, rows, "count", 1480)
 		})
 		t.Run("Match_IP_Positive", func(t *testing.T) {

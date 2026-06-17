@@ -30,6 +30,9 @@ const DefaultBatchSize = 1024
 // Columnar layout for CPU cache efficiency.
 type Batch struct {
 	Columns map[string][]event.Value
+	// Present optionally tracks per-row field presence for sparse columns.
+	// Missing metadata for a column means every in-range cell is present.
+	Present map[string][]bool
 	Len     int
 
 	// BSIHandledRows marks batch rows that survived a range-BSI row mask.
@@ -54,15 +57,24 @@ func (b *Batch) AddRow(fields map[string]event.Value) {
 	for k, col := range b.Columns {
 		if _, ok := fields[k]; !ok {
 			b.Columns[k] = append(col, event.Value{})
+			pres := b.ensurePresence(k)
+			b.Present[k] = append(pres, false)
 		}
 	}
 	for k, v := range fields {
 		col := b.Columns[k]
+		_, exists := b.Columns[k]
 		// Pad new columns that didn't exist in previous rows.
 		for len(col) < b.Len {
 			col = append(col, event.Value{})
 		}
 		b.Columns[k] = append(col, v)
+		if exists {
+			pres := b.ensurePresence(k)
+			b.Present[k] = append(pres, true)
+		} else {
+			b.markSparsePrefixPresent(k)
+		}
 	}
 	b.Len++
 }
@@ -82,7 +94,7 @@ func (b *Batch) Value(column string, row int) event.Value {
 func (b *Batch) Row(i int) map[string]event.Value {
 	row := make(map[string]event.Value, len(b.Columns))
 	for k, col := range b.Columns {
-		if i < len(col) {
+		if i < len(col) && b.IsPresent(k, i) {
 			row[k] = col[i]
 		}
 	}
@@ -98,10 +110,130 @@ func (b *Batch) RowInto(i int, dst map[string]event.Value) {
 		delete(dst, k)
 	}
 	for k, col := range b.Columns {
-		if i < len(col) {
+		if i < len(col) && b.IsPresent(k, i) {
 			dst[k] = col[i]
 		}
 	}
+}
+
+// IsPresent reports whether column has a value in row. Columns without
+// explicit presence metadata are dense, so every in-range cell is present.
+func (b *Batch) IsPresent(column string, row int) bool {
+	if row < 0 || row >= b.Len {
+		return false
+	}
+	pres, ok := b.Present[column]
+	if !ok {
+		return true
+	}
+	return row < len(pres) && pres[row]
+}
+
+// MarkPresent marks a sparse cell as present. It is a no-op for dense columns.
+func (b *Batch) MarkPresent(column string, row int) {
+	if row < 0 || row >= b.Len {
+		return
+	}
+	pres, ok := b.Present[column]
+	if !ok {
+		return
+	}
+	for len(pres) < b.Len {
+		pres = append(pres, true)
+	}
+	pres[row] = true
+	b.Present[column] = pres
+}
+
+// MarkAbsent marks a cell as absent while leaving its padded column value null.
+func (b *Batch) MarkAbsent(column string, row int) {
+	if row < 0 || row >= b.Len {
+		return
+	}
+	pres := b.ensurePresence(column)
+	for len(pres) < b.Len {
+		pres = append(pres, true)
+	}
+	pres[row] = false
+	b.Present[column] = pres
+}
+
+func (b *Batch) MarkColumnAbsent(column string) {
+	if b.Len == 0 {
+		return
+	}
+	if b.Present == nil {
+		b.Present = make(map[string][]bool)
+	}
+	b.Present[column] = make([]bool, b.Len)
+}
+
+func (b *Batch) ensurePresence(column string) []bool {
+	if b.Present == nil {
+		b.Present = make(map[string][]bool)
+	}
+	if pres, ok := b.Present[column]; ok {
+		for len(pres) < b.Len {
+			pres = append(pres, true)
+		}
+		return pres
+	}
+	pres := make([]bool, b.Len)
+	for i := range pres {
+		pres[i] = true
+	}
+	return pres
+}
+
+func (b *Batch) markSparsePrefixPresent(column string) {
+	if b.Len == 0 {
+		return
+	}
+	if b.Present == nil {
+		b.Present = make(map[string][]bool)
+	}
+	pres := make([]bool, b.Len+1)
+	pres[b.Len] = true
+	b.Present[column] = pres
+}
+
+func setPresenceIfSparse(b *Batch, column string, pres []bool) {
+	if allPresent(pres) {
+		return
+	}
+	if b.Present == nil {
+		b.Present = make(map[string][]bool)
+	}
+	b.Present[column] = pres
+}
+
+func allPresent(pres []bool) bool {
+	for _, ok := range pres {
+		if !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func densePresence(n int) []bool {
+	pres := make([]bool, n)
+	for i := range pres {
+		pres[i] = true
+	}
+	return pres
+}
+
+func presenceFor(b *Batch, column string, n int) []bool {
+	if b == nil {
+		return nil
+	}
+	if pres, ok := b.Present[column]; ok {
+		out := make([]bool, n)
+		copy(out, pres)
+		return out
+	}
+	return densePresence(n)
 }
 
 // ColumnNames returns all column names in the batch in deterministic order:
@@ -156,6 +288,7 @@ func (b *Batch) Slice(start, end int) *Batch {
 		}
 		nb.Columns[k] = col[colStart:colEnd]
 	}
+	copyPresenceSlice(nb, b, start, end)
 	copyBSIMetadataSlice(nb, b, start, end)
 
 	return nb
@@ -226,59 +359,94 @@ func BatchFromEvents(events []*event.Event) *Batch {
 	}
 	if hasTime {
 		times := make([]event.Value, n)
+		pres := make([]bool, n)
 		for i, ev := range events {
-			times[i] = event.TimestampValue(ev.Time)
+			if !ev.Time.IsZero() {
+				times[i] = event.TimestampValue(ev.Time)
+				pres[i] = true
+			}
 		}
 		b.Columns["_time"] = times
+		setPresenceIfSparse(b, "_time", pres)
 	}
 	if hasRaw {
 		raws := make([]event.Value, n)
+		pres := make([]bool, n)
 		for i, ev := range events {
-			raws[i] = event.StringValue(ev.Raw)
+			if ev.Raw != "" {
+				raws[i] = event.StringValue(ev.Raw)
+				pres[i] = true
+			}
 		}
 		b.Columns["_raw"] = raws
+		setPresenceIfSparse(b, "_raw", pres)
 	}
 
 	if hasSource {
 		col := make([]event.Value, n)
+		pres := make([]bool, n)
 		for i, ev := range events {
-			col[i] = event.StringValue(ev.Source)
+			if ev.Source != "" {
+				col[i] = event.StringValue(ev.Source)
+				pres[i] = true
+			}
 		}
 		b.Columns["_source"] = col
 		b.Columns["source"] = col // alias: SPL2 queries use "source" without underscore
+		setPresenceIfSparse(b, "_source", pres)
+		setPresenceIfSparse(b, "source", pres)
 	}
 	if hasSourceType {
 		col := make([]event.Value, n)
+		pres := make([]bool, n)
 		for i, ev := range events {
-			col[i] = event.StringValue(ev.SourceType)
+			if ev.SourceType != "" {
+				col[i] = event.StringValue(ev.SourceType)
+				pres[i] = true
+			}
 		}
 		b.Columns["_sourcetype"] = col
 		b.Columns["sourcetype"] = col // alias
+		setPresenceIfSparse(b, "_sourcetype", pres)
+		setPresenceIfSparse(b, "sourcetype", pres)
 	}
 	if hasHost {
 		col := make([]event.Value, n)
+		pres := make([]bool, n)
 		for i, ev := range events {
-			col[i] = event.StringValue(ev.Host)
+			if ev.Host != "" {
+				col[i] = event.StringValue(ev.Host)
+				pres[i] = true
+			}
 		}
 		b.Columns["host"] = col
+		setPresenceIfSparse(b, "host", pres)
 	}
 	if hasIndex {
 		col := make([]event.Value, n)
+		pres := make([]bool, n)
 		for i, ev := range events {
-			col[i] = event.StringValue(ev.Index)
+			if ev.Index != "" {
+				col[i] = event.StringValue(ev.Index)
+				pres[i] = true
+			}
 		}
 		b.Columns["index"] = col
+		setPresenceIfSparse(b, "index", pres)
 	}
 
 	// User-defined fields: one pre-allocated column per field.
 	for field := range fieldSet {
 		col := make([]event.Value, n)
+		pres := make([]bool, n)
 		for i, ev := range events {
 			if v, ok := ev.Fields[field]; ok {
 				col[i] = v
+				pres[i] = true
 			}
 		}
 		b.Columns[field] = col
+		setPresenceIfSparse(b, field, pres)
 	}
 
 	return b
@@ -301,6 +469,9 @@ func (b *Batch) AppendBatch(other *Batch) {
 			extended := make([]event.Value, newLen)
 			copy(extended, col)
 			b.Columns[k] = extended
+			pres := presenceFor(b, k, b.Len)
+			pres = append(pres, make([]bool, other.Len)...)
+			setPresenceIfSparse(b, k, pres)
 		}
 	}
 
@@ -311,10 +482,16 @@ func (b *Batch) AppendBatch(other *Batch) {
 			copy(extended, col)
 			copy(extended[b.Len:], otherCol)
 			b.Columns[k] = extended
+			pres := presenceFor(b, k, b.Len)
+			pres = append(pres, presenceFor(other, k, other.Len)...)
+			setPresenceIfSparse(b, k, pres)
 		} else {
 			newCol := make([]event.Value, newLen)
 			copy(newCol[b.Len:], otherCol)
 			b.Columns[k] = newCol
+			pres := make([]bool, b.Len, newLen)
+			pres = append(pres, presenceFor(other, k, other.Len)...)
+			setPresenceIfSparse(b, k, pres)
 		}
 	}
 
@@ -338,6 +515,7 @@ func (b *Batch) PermuteSlice(indices []int) *Batch {
 		}
 		result.Columns[k] = newCol
 	}
+	copyPresencePermutation(result, b, indices)
 	copyBSIMetadataPermutation(result, b, indices)
 
 	return result
@@ -351,6 +529,64 @@ func BatchFromRows(rows []map[string]event.Value) *Batch {
 	}
 
 	return b
+}
+
+func copyPresenceSlice(dst, src *Batch, start, end int) {
+	if src == nil || dst == nil || len(src.Present) == 0 || start >= end {
+		return
+	}
+	dst.Present = make(map[string][]bool, len(src.Present))
+	for field, pres := range src.Present {
+		if start >= len(pres) {
+			continue
+		}
+		presEnd := end
+		if presEnd > len(pres) {
+			presEnd = len(pres)
+		}
+		out := make([]bool, end-start)
+		copy(out, pres[start:presEnd])
+		if !allPresent(out) {
+			dst.Present[field] = out
+		}
+	}
+	if len(dst.Present) == 0 {
+		dst.Present = nil
+	}
+}
+
+func copyPresencePermutation(dst, src *Batch, indices []int) {
+	if src == nil || dst == nil || len(src.Present) == 0 || len(indices) == 0 {
+		return
+	}
+	dst.Present = make(map[string][]bool, len(src.Present))
+	for field, pres := range src.Present {
+		out := make([]bool, len(indices))
+		for newRow, oldRow := range indices {
+			if oldRow >= 0 && oldRow < len(pres) {
+				out[newRow] = pres[oldRow]
+			}
+		}
+		if !allPresent(out) {
+			dst.Present[field] = out
+		}
+	}
+	if len(dst.Present) == 0 {
+		dst.Present = nil
+	}
+}
+
+func copyPresenceColumn(dst, src *Batch, column string) {
+	if src == nil || dst == nil {
+		return
+	}
+	pres, ok := src.Present[column]
+	if !ok {
+		return
+	}
+	out := make([]bool, len(pres))
+	copy(out, pres)
+	setPresenceIfSparse(dst, column, out)
 }
 
 func copyBSIMetadataSlice(dst, src *Batch, start, end int) {

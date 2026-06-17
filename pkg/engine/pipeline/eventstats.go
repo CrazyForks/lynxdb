@@ -544,6 +544,16 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal ev
 		updateArgState(s, val, orderVal, true)
 	case aggArgMin:
 		updateArgState(s, val, orderVal, false)
+	case aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		if f, ok := vm.ValueToFloat(val); ok {
+			if s.tdigest == nil {
+				s.tdigest = NewTDigest(defaultTDigestCompression)
+			}
+			s.tdigest.Add(f)
+			if len(s.all) < maxValuesPerGroup {
+				s.all = append(s.all, f)
+			}
+		}
 	}
 }
 
@@ -569,6 +579,20 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeLinearFit(s)
 	case aggSumObj:
 		return objectSumValue(s.objectSum)
+	case aggPerc:
+		return finalizePercentile(s, agg.Quantile)
+	case aggPerc25:
+		return finalizePercentile(s, 0.25)
+	case aggPerc50:
+		return finalizePercentile(s, 0.50)
+	case aggPerc75:
+		return finalizePercentile(s, 0.75)
+	case aggPerc90:
+		return finalizePercentile(s, 0.90)
+	case aggPerc95:
+		return finalizePercentile(s, 0.95)
+	case aggPerc99:
+		return finalizePercentile(s, 0.99)
 	case aggSkew:
 		return finalizeSkewness(s)
 	case aggKurt:

@@ -58,6 +58,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "sum_object", Field: "metrics", Alias: "metric_totals"},
 		{Name: "skewness", Field: "score", Alias: "score_skew"},
 		{Name: "kurtosis", Field: "score", Alias: "score_kurt"},
+		{Name: "perc", Field: "score", Quantile: 1, Alias: "score_p100"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -106,6 +107,7 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventObjectFloat(t, row["metric_totals"], "errors", 25, group+" object errors")
 		assertEventFloat(t, row["score_skew"], scoreSkewWant(), group+" skew")
 		assertEventFloat(t, row["score_kurt"], scoreKurtWant(), group+" kurt")
+		assertEventFloat(t, row["score_p100"], 49, group+" p100")
 	}
 }
 

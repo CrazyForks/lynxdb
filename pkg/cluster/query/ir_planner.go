@@ -65,7 +65,10 @@ func PlanDistributedQueryIR(plan *logical.Plan) (*IRDistributedPlan, error) {
 	// Check if the last shard node is Aggregate -- use partial aggregation.
 	lastShard := result.ShardNodes[len(result.ShardNodes)-1]
 	if agg, ok := lastShard.(*logical.Aggregate); ok {
-		spec := extractPartialAggSpecFromAggregate(agg)
+		spec, err := extractPartialAggSpecFromAggregate(agg)
+		if err != nil {
+			return nil, err
+		}
 		if spec != nil && allPushable(spec) {
 			result.PartialAggSpec = spec
 			result.Strategy = MergePartialAgg
@@ -177,7 +180,7 @@ func isPushableIR(n logical.Node) bool {
 
 // extractPartialAggSpecFromAggregate builds a PartialAggSpec from a logical
 // Aggregate node. This mirrors extractPartialAggSpecFromStats for SPL2.
-func extractPartialAggSpecFromAggregate(agg *logical.Aggregate) *pipeline.PartialAggSpec {
+func extractPartialAggSpecFromAggregate(agg *logical.Aggregate) (*pipeline.PartialAggSpec, error) {
 	groupBy := make([]string, len(agg.Keys))
 	for i, k := range agg.Keys {
 		groupBy[i] = k.Name
@@ -195,6 +198,11 @@ func extractPartialAggSpecFromAggregate(agg *logical.Aggregate) *pipeline.Partia
 					field = ident.Name
 				}
 			}
+			quantile, err := partialAggQuantile(funcName, call)
+			if err != nil {
+				return nil, err
+			}
+			funcs[i].Quantile = quantile
 		}
 
 		alias := a.Alias
@@ -206,16 +214,54 @@ func extractPartialAggSpecFromAggregate(agg *logical.Aggregate) *pipeline.Partia
 			}
 		}
 
-		funcs[i] = pipeline.PartialAggFunc{
-			Name:  funcName,
-			Field: field,
-			Alias: alias,
-		}
+		funcs[i].Name = funcName
+		funcs[i].Field = field
+		funcs[i].Alias = alias
 	}
 
 	return &pipeline.PartialAggSpec{
 		GroupBy: groupBy,
 		Funcs:   funcs,
+	}, nil
+}
+
+func partialAggQuantile(name string, call *ast.Call) (float64, error) {
+	if name != "perc" {
+		return 0, nil
+	}
+	if len(call.Args) < 2 {
+		return 0, fmt.Errorf("cluster query: perc requires a percentile")
+	}
+	p, err := astNumericLiteral(call.Args[1])
+	if err != nil {
+		return 0, fmt.Errorf("cluster query: perc percentile: %w", err)
+	}
+	if p < 0 || p > 100 {
+		return 0, fmt.Errorf("cluster query: perc percentile must be between 0 and 100")
+	}
+	return p / 100, nil
+}
+
+func astNumericLiteral(expr ast.Expr) (float64, error) {
+	lit, ok := expr.(*ast.Literal)
+	if !ok {
+		return 0, fmt.Errorf("expected numeric literal, got %T", expr)
+	}
+	switch lit.Kind {
+	case ast.LitInt:
+		n, ok := lit.Value.(int64)
+		if !ok {
+			return 0, fmt.Errorf("int literal has value %T", lit.Value)
+		}
+		return float64(n), nil
+	case ast.LitFloat:
+		f, ok := lit.Value.(float64)
+		if !ok {
+			return 0, fmt.Errorf("float literal has value %T", lit.Value)
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("expected numeric literal, got %s", lit.String())
 	}
 }
 

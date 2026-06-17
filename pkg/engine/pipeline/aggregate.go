@@ -33,6 +33,7 @@ type AggFunc struct {
 	WeightField   string      // optional weight field for weighted aggregates
 	WeightProgram *vm.Program // optional compiled weight expression for weighted aggregates
 	Limit         int         // optional per-function limit for top_k
+	Quantile      float64     // optional percentile quantile in [0,1] for perc(x, p)
 	Scale         float64     // optional multiplier applied at finalize time
 	Window        int         // optional per-function row window/offset for streamstats functions
 	// CondProgram is an optional compiled predicate for conditional aggregation.
@@ -101,6 +102,7 @@ const (
 	aggStdevP  = "stdevp"
 	aggVar     = "var"
 	aggVarP    = "varp"
+	aggPerc    = "perc"
 	aggPerc25  = "perc25"
 	aggPerc50  = "perc50"
 	aggPerc75  = "perc75"
@@ -192,7 +194,7 @@ func NewAggregateIterator(child Iterator, aggs []AggFunc, groupBy []string, acct
 	needsValues := make([]bool, len(aggs))
 	for i, a := range aggs {
 		switch strings.ToLower(a.Name) {
-		case aggDC, aggEstDCE, aggValues, aggList, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev, aggStdevP, aggVar, aggVarP:
+		case aggDC, aggEstDCE, aggValues, aggList, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev, aggStdevP, aggVar, aggVarP:
 			needsValues[i] = true
 		}
 	}
@@ -355,7 +357,7 @@ func aggResultType(name string) string {
 		return "int"
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
-		aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
+		aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
 		aggRunSum, aggMovAvg, aggDelta, aggAvgW, aggEntropy, aggCorr, aggCovar:
 		return "float"
 	case aggEarT, aggLatT:
@@ -818,7 +820,7 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		updateArgState(s, val, orderVal, true)
 	case aggArgMin:
 		updateArgState(s, val, orderVal, false)
-	case aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+	case aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if f, ok := vm.ValueToFloat(val); ok {
 			if s.tdigest == nil {
 				s.tdigest = NewTDigest(defaultTDigestCompression)
@@ -1104,6 +1106,14 @@ func finalizeLinearFit(s *aggState) event.Value {
 		fields["r2"] = event.FloatValue(corr * corr)
 	}
 	return event.ObjectValue(fields)
+}
+
+func finalizePercentile(s *aggState, quantile float64) event.Value {
+	if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
+		return event.FloatValue(s.tdigest.Quantile(quantile))
+	}
+
+	return percentile(s.all, quantile*100)
 }
 
 func centralMoments(s *aggState) (float64, float64, float64, bool) {
@@ -1485,7 +1495,7 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeRateFromRow(&group.states[j], row, agg.Alias)
 		case aggStdev, aggStdevP, aggVar, aggVarP:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
-		case aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		case aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 			a.mergePercFromRow(&group.states[j], row, agg.Alias)
 		default:
 			val, ok := row[agg.Alias]
@@ -2051,41 +2061,17 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		}
 		return event.FloatValue((last - first) / s.lastTS.Sub(s.firstTS).Seconds())
 	case aggPerc25:
-		if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
-			return event.FloatValue(s.tdigest.Quantile(0.25))
-		}
-
-		return percentile(s.all, 25)
+		return finalizePercentile(s, 0.25)
 	case aggPerc50:
-		if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
-			return event.FloatValue(s.tdigest.Quantile(0.50))
-		}
-
-		return percentile(s.all, 50)
+		return finalizePercentile(s, 0.50)
 	case aggPerc75:
-		if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
-			return event.FloatValue(s.tdigest.Quantile(0.75))
-		}
-
-		return percentile(s.all, 75)
+		return finalizePercentile(s, 0.75)
 	case aggPerc90:
-		if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
-			return event.FloatValue(s.tdigest.Quantile(0.90))
-		}
-
-		return percentile(s.all, 90)
+		return finalizePercentile(s, 0.90)
 	case aggPerc95:
-		if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
-			return event.FloatValue(s.tdigest.Quantile(0.95))
-		}
-
-		return percentile(s.all, 95)
+		return finalizePercentile(s, 0.95)
 	case aggPerc99:
-		if s.tdigest != nil && (len(s.all) == 0 || len(s.all) > hllPromotionThreshold) {
-			return event.FloatValue(s.tdigest.Quantile(0.99))
-		}
-
-		return percentile(s.all, 99)
+		return finalizePercentile(s, 0.99)
 	case aggStdev:
 		return finalizeVarianceState(s, false, true)
 	case aggStdevP:
@@ -2119,6 +2105,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeCovar(s)
 	case aggLinFit:
 		return finalizeLinearFit(s)
+	case aggPerc:
+		return finalizePercentile(s, agg.Quantile)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

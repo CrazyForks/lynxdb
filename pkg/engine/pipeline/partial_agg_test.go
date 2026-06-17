@@ -795,6 +795,36 @@ func TestPartialAgg_Perc99(t *testing.T) {
 	}
 }
 
+func TestPartialAgg_Perc(t *testing.T) {
+	var fieldSets []map[string]event.Value
+	for i := 1; i <= 100; i++ {
+		fieldSets = append(fieldSets, map[string]event.Value{
+			"latency": event.FloatValue(float64(i)),
+		})
+	}
+	events := makePartialAggEvents(fieldSets...)
+
+	spec := &PartialAggSpec{
+		Funcs: []PartialAggFunc{{Name: "perc", Field: "latency", Alias: "p999", Quantile: 0.999}},
+	}
+	partials := ComputePartialAgg(events, spec)
+	if len(partials) != 1 {
+		t.Fatalf("expected 1 group, got %d", len(partials))
+	}
+	if partials[0].States[0].Digest == nil {
+		t.Fatal("expected Digest to be non-nil")
+	}
+
+	rows := MergePartialAggs([][]*PartialAggGroup{partials}, spec)
+	if len(rows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(rows))
+	}
+	got := rows[0]["p999"].AsFloat()
+	if got < 95 || got > 100 {
+		t.Errorf("perc: expected high percentile near 100, got %f", got)
+	}
+}
+
 func TestMergePartialAggs_Perc99(t *testing.T) {
 	spec := &PartialAggSpec{
 		Funcs: []PartialAggFunc{{Name: "perc99", Field: "latency", Alias: "p99"}},

@@ -479,8 +479,8 @@ func (s *StreamStatsIterator) writeAggValue(
 ) {
 	var val event.Value
 	switch strings.ToLower(agg.Name) {
-	case aggValues, aggList:
-		// Values/list aggregates require full scan for order-sensitive output.
+	case aggValues, aggList, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		// These aggregates require full window scans for ordered or distributional output.
 		val = s.computeAgg(agg, rb.items())
 	case aggRowNum:
 		rowNumber := st.rowNumber
@@ -591,7 +591,8 @@ func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 	}
 	for _, agg := range aggs {
 		switch strings.ToLower(agg.Name) {
-		case aggValues, aggList, aggLag, aggLead, aggMovAvg, aggDelta:
+		case aggValues, aggList, aggLag, aggLead, aggMovAvg, aggDelta,
+			aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 			return true
 		}
 	}
@@ -1092,6 +1093,31 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return event.FloatValue(sum / float64(count))
+	case aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		var values []interface{}
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok {
+				if f, fok := vm.ValueToFloat(v); fok {
+					values = append(values, f)
+				}
+			}
+		}
+		switch strings.ToLower(agg.Name) {
+		case aggPerc:
+			return percentile(values, agg.Quantile*100)
+		case aggPerc25:
+			return percentile(values, 25)
+		case aggPerc50:
+			return percentile(values, 50)
+		case aggPerc75:
+			return percentile(values, 75)
+		case aggPerc90:
+			return percentile(values, 90)
+		case aggPerc95:
+			return percentile(values, 95)
+		case aggPerc99:
+			return percentile(values, 99)
+		}
 	case aggCorr, aggCovar, aggLinFit:
 		st := runningAggState{}
 		for _, item := range items {

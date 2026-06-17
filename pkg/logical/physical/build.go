@@ -384,6 +384,7 @@ var aggNameMapping = map[string]string{
 	"dc":            "dc",
 	"estdc":         "dc",
 	"estdc_error":   "estdc_error",
+	"perc":          "perc",
 	"p25":           "perc25",
 	"p50":           "perc50",
 	"p75":           "perc75",
@@ -555,6 +556,10 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 		if err != nil {
 			return nil, err
 		}
+		quantile, err := aggregateQuantile(name, call)
+		if err != nil {
+			return nil, err
+		}
 
 		// Conditional aggregation: count(x, where=predicate)
 		var condProg *vm.Program
@@ -576,6 +581,7 @@ func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {
 			WeightField:   weightField,
 			WeightProgram: weightProg,
 			Limit:         limit,
+			Quantile:      quantile,
 			Window:        window,
 			CondProgram:   condProg,
 		}
@@ -628,6 +634,23 @@ func aggregateLimit(name string, call *lfast.Call) (int, error) {
 	}
 }
 
+func aggregateQuantile(name string, call *lfast.Call) (float64, error) {
+	if name != "perc" {
+		return 0, nil
+	}
+	if len(call.Args) < 2 {
+		return 0, fmt.Errorf("physical.Build: perc requires a percentile")
+	}
+	p, err := numericLiteralArg(call.Args[1])
+	if err != nil {
+		return 0, fmt.Errorf("physical.Build: perc percentile: %w", err)
+	}
+	if p < 0 || p > 100 {
+		return 0, fmt.Errorf("physical.Build: perc percentile must be between 0 and 100")
+	}
+	return p / 100, nil
+}
+
 func streamstatsArgWindow(name string, call *lfast.Call) (int, error) {
 	switch name {
 	case "lag", "lead":
@@ -672,6 +695,29 @@ func intLiteralArg(expr lfast.Expr) (int, error) {
 		return 0, fmt.Errorf("int literal %d overflows int", n)
 	}
 	return int(n), nil
+}
+
+func numericLiteralArg(expr lfast.Expr) (float64, error) {
+	lit, ok := expr.(*lfast.Literal)
+	if !ok {
+		return 0, fmt.Errorf("expected numeric literal, got %T", expr)
+	}
+	switch lit.Kind {
+	case lfast.LitInt:
+		n, ok := lit.Value.(int64)
+		if !ok {
+			return 0, fmt.Errorf("int literal has value %T", lit.Value)
+		}
+		return float64(n), nil
+	case lfast.LitFloat:
+		f, ok := lit.Value.(float64)
+		if !ok {
+			return 0, fmt.Errorf("float literal has value %T", lit.Value)
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("expected numeric literal, got %s", lit.String())
+	}
 }
 
 // aggAutoAlias generates a default alias like "count()" or "sum(x)".

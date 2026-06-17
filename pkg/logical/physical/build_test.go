@@ -478,6 +478,30 @@ func TestBuild_ObjectSumAggregates(t *testing.T) {
 	assertObjectFloatField(t, streamRows[2], "totals", "err", 4, 2)
 }
 
+func TestBuild_PercAggregate(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(1)},
+		{"x": intV(2)},
+		{"x": intV(3)},
+		{"x": intV(4)},
+		{"x": intV(5)},
+	}
+
+	statsRows := drain(t, `from * | stats perc(x, 25) as p25, perc(x, 99.9) as p999`, rows)
+	if len(statsRows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(statsRows))
+	}
+	assertFloatField(t, statsRows[0], "p25", 2, 0)
+	assertFloatField(t, statsRows[0], "p999", 4.996, 0)
+
+	eventRows := drain(t, `from * | eventstats perc(x, 25) as p25`, rows)
+	assertFloatField(t, eventRows[0], "p25", 2, 0)
+	assertFloatField(t, eventRows[4], "p25", 2, 4)
+
+	streamRows := drain(t, `from * | streamstats perc(x, 25) as p25`, rows)
+	assertFloatField(t, streamRows[4], "p25", 2, 4)
+}
+
 func TestBuild_MomentAggregates(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"x": intV(1)},
@@ -1276,6 +1300,7 @@ func TestAggNameMapping(t *testing.T) {
 		"max":          "max",
 		"dc":           "dc",
 		"estdc":        "dc",
+		"perc":         "perc",
 		"p50":          "perc50",
 		"p95":          "perc95",
 		"p99":          "perc99",

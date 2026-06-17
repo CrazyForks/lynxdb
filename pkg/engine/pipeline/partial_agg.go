@@ -21,10 +21,11 @@ type PartialAggSpec struct {
 
 // PartialAggFunc describes a single aggregation function for partial aggregation.
 type PartialAggFunc struct {
-	Name   string `json:"name"`             // "count", "sum", "avg", "min", "max"
-	Field  string `json:"field"`            // field to aggregate (empty for count)
-	Alias  string `json:"alias"`            // output name
-	Hidden bool   `json:"hidden,omitempty"` // if true, omitted from finalized output (e.g., auto-injected count for avg)
+	Name     string  `json:"name"`               // "count", "sum", "avg", "min", "max"
+	Field    string  `json:"field"`              // field to aggregate (empty for count)
+	Alias    string  `json:"alias"`              // output name
+	Quantile float64 `json:"quantile,omitempty"` // perc(x, p) quantile in [0,1]
+	Hidden   bool    `json:"hidden,omitempty"`   // if true, omitted from finalized output (e.g., auto-injected count for avg)
 }
 
 // PartialAggGroup holds partial aggregation results for one group.
@@ -81,7 +82,7 @@ type PartialAggState struct {
 // into partial aggregation + merge.
 func IsPushableAgg(name string) bool {
 	switch strings.ToLower(name) {
-	case aggCount, aggSum, aggSumSq, aggAvg, aggMin, aggMax, aggRange, aggDC, aggEstDCE, aggMode,
+	case aggCount, aggSum, aggSumSq, aggAvg, aggMin, aggMax, aggRange, aggDC, aggEstDCE, aggMode, aggPerc,
 		aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
 		aggStdev, aggStdevP, aggVar, aggVarP:
 		return true
@@ -286,7 +287,7 @@ func MergePartialAggs(partials [][]*PartialAggGroup, spec *PartialAggSpec) []map
 				if fn.Hidden {
 					continue
 				}
-				row[fn.Alias] = finalizePartialState(&group.States[j], fn.Name)
+				row[fn.Alias] = finalizePartialState(&group.States[j], fn)
 			}
 			rows = append(rows, row)
 		}
@@ -302,7 +303,7 @@ func MergePartialAggs(partials [][]*PartialAggGroup, spec *PartialAggSpec) []map
 			row[fn.Alias] = finalizePartialState(&PartialAggState{
 				Min: event.NullValue(),
 				Max: event.NullValue(),
-			}, fn.Name)
+			}, fn)
 		}
 		rows = append(rows, row)
 	}
@@ -734,7 +735,7 @@ func updatePartialState(s *PartialAggState, fn string, val event.Value) {
 			}
 			s.ModeCounts[val.String()]++
 		}
-	case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+	case aggPerc, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if f, ok := vm.ValueToFloat(val); ok {
 			if s.Digest == nil {
 				s.Digest = NewTDigest(defaultTDigestCompression)
@@ -836,7 +837,7 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 		for value, count := range src.ModeCounts {
 			dst.ModeCounts[value] += count
 		}
-	case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+	case aggPerc, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		if src.Digest != nil {
 			if dst.Digest == nil {
 				dst.Digest = NewTDigest(defaultTDigestCompression)
@@ -864,8 +865,8 @@ func mergePartialState(dst, src *PartialAggState, fn string) {
 }
 
 // finalizePartialState produces the final value from a partial state.
-func finalizePartialState(s *PartialAggState, fn string) event.Value {
-	switch strings.ToLower(fn) {
+func finalizePartialState(s *PartialAggState, fn PartialAggFunc) event.Value {
+	switch strings.ToLower(fn.Name) {
 	case aggCount:
 		return event.IntValue(s.Count)
 	case aggSum, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
@@ -915,6 +916,8 @@ func finalizePartialState(s *PartialAggState, fn string) event.Value {
 		return event.FloatValue(0)
 	case aggMode:
 		return modeFromCounts(s.ModeCounts)
+	case aggPerc:
+		return finalizeTDigest(s, fn.Quantile)
 	case aggPerc50:
 		return finalizeTDigest(s, 0.50)
 	case aggPerc75:

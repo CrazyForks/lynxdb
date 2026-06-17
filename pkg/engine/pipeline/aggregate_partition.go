@@ -417,7 +417,7 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 				}
 			}
 			row[agg.Alias+"__sumsq"] = event.FloatValue(m2)
-		case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		case aggPerc, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 			if s.tdigest != nil {
 				row[agg.Alias+"__tdigest"] = event.StringValue(
 					encodeBase64(s.tdigest.MarshalBinary()))
@@ -490,7 +490,7 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeRateFromRow(&group.states[j], row, agg.Alias)
 		case aggStdev, aggStdevP, aggVar, aggVarP:
 			a.mergeStdevFromRow(&group.states[j], row, agg.Alias)
-		case aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+		case aggPerc, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 			a.mergePercFromRow(&group.states[j], row, agg.Alias)
 		default:
 			val, ok := row[agg.Alias]

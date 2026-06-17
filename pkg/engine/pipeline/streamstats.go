@@ -783,7 +783,7 @@ func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 	}
 	for _, agg := range aggs {
 		switch strings.ToLower(agg.Name) {
-		case aggValues, aggList, aggLag, aggLead, aggMovAvg, aggDelta,
+		case aggValues, aggList, aggLag, aggLead, aggMovAvg, aggDelta, aggDeltaSum,
 			aggMAD, aggTopKW, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
 			aggPercW:
 			return true
@@ -1080,6 +1080,8 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		return finalizeSkewness(momentAggState(st))
 	case aggKurt:
 		return finalizeKurtosis(momentAggState(st))
+	case aggDeltaSum:
+		return deltaSumRows(rb.items(), agg.Field)
 	case aggMin:
 		if st.minVal.IsNull() && st.count > 0 {
 			// Min was evicted — rescan window to find new minimum.
@@ -1432,6 +1434,8 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		}
 
 		return finalizeMAD(&st)
+	case aggDeltaSum:
+		return deltaSumRows(items, agg.Field)
 	case aggCorr, aggCovar, aggLinFit:
 		st := runningAggState{}
 		for _, item := range items {
@@ -1528,4 +1532,18 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 	}
 
 	return event.NullValue()
+}
+
+func deltaSumRows(items []map[string]event.Value, field string) event.Value {
+	var st aggState
+	for _, item := range items {
+		if v, ok := item[field]; ok {
+			updateDeltaSumState(&st, v)
+		}
+	}
+	if st.count == 0 {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(st.sum)
 }

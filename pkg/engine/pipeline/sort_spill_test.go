@@ -717,6 +717,70 @@ func TestAggregateSpillWithAvg(t *testing.T) {
 	}
 }
 
+func TestAggregateSpillWithDeltaSum(t *testing.T) {
+	numGroups := 100
+	steps := 50
+	rows := make([]map[string]event.Value, 0, numGroups*steps)
+	want := make(map[string]float64, numGroups)
+	last := make(map[string]float64, numGroups)
+	seen := make(map[string]bool, numGroups)
+
+	for step := 0; step < steps; step++ {
+		for groupIdx := 0; groupIdx < numGroups; groupIdx++ {
+			gkey := fmt.Sprintf("g%d", groupIdx)
+			val := float64(step)
+			if step >= 20 {
+				val = float64(step - 17)
+			}
+			if seen[gkey] && val > last[gkey] {
+				want[gkey] += val - last[gkey]
+			}
+			last[gkey] = val
+			seen[gkey] = true
+			rows = append(rows, map[string]event.Value{
+				"group": event.StringValue(gkey),
+				"val":   event.FloatValue(val),
+			})
+		}
+	}
+
+	child := NewRowScanIterator(rows, 128)
+	mgr, err := NewSpillManager(t.TempDir(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer mgr.CleanupAll()
+
+	acct := memgov.NewTestBudget("test", 8*1024).NewAccount("agg")
+	aggs := []AggFunc{
+		{Name: "delta_sum", Field: "val", Alias: "delta"},
+		{Name: "count", Alias: "cnt"},
+	}
+	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
+
+	ctx := context.Background()
+	result, err := CollectAll(ctx, iter)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if iter.spilledRows == 0 {
+		t.Fatal("expected aggregate to spill")
+	}
+	if len(result) != numGroups {
+		t.Fatalf("expected %d groups, got %d", numGroups, len(result))
+	}
+	for _, row := range result {
+		gkey := row["group"].AsString()
+		got, ok := row["delta"].TryAsFloat()
+		if !ok || math.Abs(got-want[gkey]) > 0.01 {
+			t.Fatalf("group %s: expected delta_sum=%f, got %s", gkey, want[gkey], row["delta"].String())
+		}
+		if cnt := row["cnt"].AsInt(); cnt != int64(steps) {
+			t.Fatalf("group %s: expected count=%d, got %d", gkey, steps, cnt)
+		}
+	}
+}
+
 func TestAggregateSpillWithDC(t *testing.T) {
 	// Test dc (distinct count) correctness across spill boundaries.
 	// 100 groups, each with 50 events. Each event has a unique "item" per group,

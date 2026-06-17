@@ -190,17 +190,15 @@ func (ps *aggPartitionSet) mergePartitioned(
 		a.groups = make(map[uint64][]*aggGroup)
 		a.groupCount = 0
 
-		// Restore in-memory groups for this partition first.
-		if hasInMem {
-			for h, chain := range inMemPartitions[p] {
-				a.groups[h] = chain
-				a.groupCount += len(chain)
-			}
-		}
-
 		// Read all spill files for this partition and merge into a.groups.
 		// Budget-exempt: partitioning already bounds peak memory to ~N/K.
 		ps.mergePartitionFiles(a, p)
+
+		// Merge the in-memory tail after older spill files to preserve row-order
+		// state for first(), last(), list(), and delta-style aggregates.
+		if hasInMem {
+			a.mergeInMemoryPartition(inMemPartitions[p])
+		}
 
 		// Warn if this partition is unusually large (>2x expected average).
 		// This indicates hash skew that may cause higher-than-expected memory.
@@ -335,6 +333,13 @@ func (a *AggregateIterator) serializeGroup(group *aggGroup, aggs []AggFunc) map[
 			if len(s.all) > 0 {
 				row[agg.Alias+"__madvals"] = event.StringValue(
 					joinAllFloats(s.all, "|"))
+			}
+		case aggDeltaSum:
+			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
+			row[agg.Alias+"__count"] = event.IntValue(s.count)
+			if s.hasFirst {
+				row[agg.Alias+"__first_value"] = s.first
+				row[agg.Alias+"__last_value"] = s.last
 			}
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			row[agg.Alias+"__sum"] = event.FloatValue(s.sum)
@@ -471,6 +476,8 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 			a.mergeMomentsFromRow(&group.states[j], row, agg.Alias)
 		case aggMAD:
 			a.mergeMADFromRow(&group.states[j], row, agg.Alias)
+		case aggDeltaSum:
+			a.mergeDeltaSumFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			sumVal := row[agg.Alias+"__sum"]
 			a.mergeSpilledValue(&group.states[j], agg.Name, sumVal)
@@ -512,6 +519,17 @@ func (a *AggregateIterator) mergeAggStateFromRow(group *aggGroup, row map[string
 				continue
 			}
 			a.mergeSpilledValue(&group.states[j], agg.Name, val)
+		}
+	}
+}
+
+func (a *AggregateIterator) mergeInMemoryPartition(groups map[uint64][]*aggGroup) {
+	for _, chain := range groups {
+		for _, group := range chain {
+			row := a.serializeGroup(group, a.aggs)
+			h := a.groupKeyHash(row)
+			merged := a.findOrCreateGroupMerge(h, row)
+			a.mergeAggStateFromRow(merged, row)
 		}
 	}
 }

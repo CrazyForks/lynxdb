@@ -80,63 +80,64 @@ const (
 
 // Aggregation function name constants.
 const (
-	aggCount   = "count"
-	aggSum     = "sum"
-	aggSumSq   = "sumsq"
-	aggAvg     = "avg"
-	aggMin     = "min"
-	aggMax     = "max"
-	aggRange   = "range"
-	aggValues  = "values"
-	aggList    = "list"
-	aggMode    = "mode"
-	aggPerSec  = "per_second"
-	aggPerMin  = "per_minute"
-	aggPerHr   = "per_hour"
-	aggPerDay  = "per_day"
-	aggEarT    = "earliest_time"
-	aggLatT    = "latest_time"
-	aggRate    = "rate"
-	aggDC      = "dc"
-	aggEstDCE  = "estdc_error"
-	aggStdev   = "stdev"
-	aggStdevP  = "stdevp"
-	aggVar     = "var"
-	aggVarP    = "varp"
-	aggPerc    = "perc"
-	aggPerc25  = "perc25"
-	aggPerc50  = "perc50"
-	aggPerc75  = "perc75"
-	aggPerc90  = "perc90"
-	aggPerc95  = "perc95"
-	aggPerc99  = "perc99"
-	aggPercW   = "perc_weighted"
-	aggLag     = "lag"
-	aggLead    = "lead"
-	aggRowNum  = "row_number"
-	aggRank    = "rank"
-	aggDense   = "dense_rank"
-	aggRunSum  = "running_sum"
-	aggMovAvg  = "moving_avg"
-	aggDelta   = "delta"
-	aggEMA     = "ema"
-	aggArgMax  = "arg_max"
-	aggArgMin  = "arg_min"
-	aggAnyVal  = "any_value"
-	aggTopK    = "top_k"
-	aggTopKW   = "top_k_weighted"
-	aggValCnt  = "value_counts"
-	aggAvgW    = "avg_weighted"
-	aggEntropy = "entropy"
-	aggMaxN    = "max_n"
-	aggMinN    = "min_n"
-	aggCorr    = "corr"
-	aggCovar   = "covar"
-	aggLinFit  = "linear_fit"
-	aggSumObj  = "sum_object"
-	aggSkew    = "skewness"
-	aggKurt    = "kurtosis"
-	aggMAD     = "mad"
+	aggCount    = "count"
+	aggSum      = "sum"
+	aggSumSq    = "sumsq"
+	aggAvg      = "avg"
+	aggMin      = "min"
+	aggMax      = "max"
+	aggRange    = "range"
+	aggValues   = "values"
+	aggList     = "list"
+	aggMode     = "mode"
+	aggPerSec   = "per_second"
+	aggPerMin   = "per_minute"
+	aggPerHr    = "per_hour"
+	aggPerDay   = "per_day"
+	aggEarT     = "earliest_time"
+	aggLatT     = "latest_time"
+	aggRate     = "rate"
+	aggDC       = "dc"
+	aggEstDCE   = "estdc_error"
+	aggStdev    = "stdev"
+	aggStdevP   = "stdevp"
+	aggVar      = "var"
+	aggVarP     = "varp"
+	aggPerc     = "perc"
+	aggPerc25   = "perc25"
+	aggPerc50   = "perc50"
+	aggPerc75   = "perc75"
+	aggPerc90   = "perc90"
+	aggPerc95   = "perc95"
+	aggPerc99   = "perc99"
+	aggPercW    = "perc_weighted"
+	aggLag      = "lag"
+	aggLead     = "lead"
+	aggRowNum   = "row_number"
+	aggRank     = "rank"
+	aggDense    = "dense_rank"
+	aggRunSum   = "running_sum"
+	aggMovAvg   = "moving_avg"
+	aggDelta    = "delta"
+	aggEMA      = "ema"
+	aggArgMax   = "arg_max"
+	aggArgMin   = "arg_min"
+	aggAnyVal   = "any_value"
+	aggTopK     = "top_k"
+	aggTopKW    = "top_k_weighted"
+	aggValCnt   = "value_counts"
+	aggAvgW     = "avg_weighted"
+	aggEntropy  = "entropy"
+	aggMaxN     = "max_n"
+	aggMinN     = "min_n"
+	aggCorr     = "corr"
+	aggCovar    = "covar"
+	aggLinFit   = "linear_fit"
+	aggSumObj   = "sum_object"
+	aggSkew     = "skewness"
+	aggKurt     = "kurtosis"
+	aggMAD      = "mad"
+	aggDeltaSum = "delta_sum"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -753,6 +754,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		updateMomentState(s, val)
 	case aggMAD:
 		updateMADState(s, val)
+	case aggDeltaSum:
+		updateDeltaSumState(s, val)
 	case aggMin:
 		if !val.IsNull() {
 			if s.min.IsNull() || vm.CompareValues(val, s.min) < 0 {
@@ -862,6 +865,28 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		a.updateChronoState(s, val, row, true)
 		a.updateChronoState(s, val, row, false)
 	}
+}
+
+func updateDeltaSumState(s *aggState, val event.Value) {
+	f, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	current := event.FloatValue(f)
+	if !s.hasFirst {
+		s.first = current
+		s.last = current
+		s.hasFirst = true
+		s.count = 1
+
+		return
+	}
+	last, ok := vm.ValueToFloat(s.last)
+	if ok && f > last {
+		s.sum += f - last
+	}
+	s.last = current
+	s.count++
 }
 
 func updateArgState(s *aggState, val, orderVal event.Value, maxOrder bool) {
@@ -1482,14 +1507,6 @@ func (a *AggregateIterator) mergeSpillFilesPartitioned() *Batch {
 		a.groups = make(map[uint64][]*aggGroup)
 		a.groupCount = 0
 
-		// Restore in-memory groups for this partition.
-		if len(inMemPartitions[partition]) > 0 {
-			for h, chain := range inMemPartitions[partition] {
-				a.groups[h] = chain
-				a.groupCount += len(chain)
-			}
-		}
-
 		// Read all spill files, only processing rows in this partition.
 		for _, path := range a.spillFiles {
 			sr, err := NewSpillReader(path)
@@ -1517,6 +1534,12 @@ func (a *AggregateIterator) mergeSpillFilesPartitioned() *Batch {
 				a.mergeAggStateFromSpillRow(group, row)
 			}
 			sr.Close()
+		}
+
+		// Merge the in-memory tail after older spill files to preserve row-order
+		// state for first(), last(), list(), and delta-style aggregates.
+		if len(inMemPartitions[partition]) > 0 {
+			a.mergeInMemoryPartition(inMemPartitions[partition])
 		}
 
 		// Emit finalized groups for this partition into the result batch.
@@ -1577,6 +1600,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeMomentsFromRow(&group.states[j], row, agg.Alias)
 		case aggMAD:
 			a.mergeMADFromRow(&group.states[j], row, agg.Alias)
+		case aggDeltaSum:
+			a.mergeDeltaSumFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
@@ -1681,6 +1706,37 @@ func (a *AggregateIterator) mergeSpilledValue(s *aggState, fn string, val event.
 			}
 		}
 	}
+}
+
+func (a *AggregateIterator) mergeDeltaSumFromRow(s *aggState, row map[string]event.Value, alias string) {
+	countF, ok := vm.ValueToFloat(row[alias+"__count"])
+	if !ok || countF == 0 {
+		return
+	}
+	firstVal := row[alias+"__first_value"]
+	lastVal := row[alias+"__last_value"]
+	firstF, firstOK := vm.ValueToFloat(firstVal)
+	lastF, lastOK := vm.ValueToFloat(lastVal)
+	if !firstOK || !lastOK {
+		return
+	}
+	segmentSum, _ := vm.ValueToFloat(row[alias+"__sum"])
+	segmentCount := int64(countF)
+	if !s.hasFirst {
+		s.sum = segmentSum
+		s.first = event.FloatValue(firstF)
+		s.last = event.FloatValue(lastF)
+		s.count = segmentCount
+		s.hasFirst = true
+
+		return
+	}
+	if currentLast, ok := vm.ValueToFloat(s.last); ok && firstF > currentLast {
+		s.sum += firstF - currentLast
+	}
+	s.sum += segmentSum
+	s.last = event.FloatValue(lastF)
+	s.count += segmentCount
 }
 
 // mergeDCFromRow merges distinct-count state from a spill row's suffixed columns.
@@ -2157,6 +2213,11 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		return finalizeKurtosis(s)
 	case aggMAD:
 		return finalizeMAD(s)
+	case aggDeltaSum:
+		if s.count == 0 {
+			return event.NullValue()
+		}
+		return event.FloatValue(s.sum)
 	case aggMin:
 		return s.min
 	case aggMax:

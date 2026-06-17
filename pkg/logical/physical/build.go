@@ -444,6 +444,7 @@ var aggNameMapping = map[string]string{
 	"skewness":       "skewness",
 	"kurtosis":       "kurtosis",
 	"mad":            "mad",
+	"delta_sum":      "delta_sum",
 	"rank":           "rank",
 	"dense_rank":     "dense_rank",
 }

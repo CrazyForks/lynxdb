@@ -36,6 +36,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `skewness` | (x: number) | `float` | Bias-corrected sample skewness. |
 | `kurtosis` | (x: number) | `float` | Bias-corrected sample excess kurtosis. |
 | `mad` | (x: number) | `float` | Median absolute deviation over numeric values. |
+| `delta_sum` | (x: number) | `float` | Sum positive deltas between consecutive numeric values, ignoring counter resets. |
 | `mode` | (x: any) | `any` | - |
 | `arg_max` | (value: any, order: any) | `any` | Value from the row with the greatest order expression. |
 | `arg_min` | (value: any, order: any) | `any` | Value from the row with the least order expression. |

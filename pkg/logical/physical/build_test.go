@@ -661,6 +661,40 @@ func TestBuild_MADAggregate(t *testing.T) {
 	assertFloatField(t, streamRows[6], "spread", 1, 6)
 }
 
+func TestBuild_DeltaSumAggregate(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"host": strV("a"), "bytes": intV(10)},
+		{"host": strV("a"), "bytes": intV(15)},
+		{"host": strV("a"), "bytes": intV(3)},
+		{"host": strV("a"), "bytes": intV(8)},
+		{"host": strV("a"), "bytes": event.NullValue()},
+		{"host": strV("a"), "bytes": intV(12)},
+		{"host": strV("b"), "bytes": intV(7)},
+	}
+
+	result := drain(t, `from * | stats delta_sum(bytes) as d by host`, rows)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(result))
+	}
+	byHost := make(map[string]map[string]event.Value, len(result))
+	for _, row := range result {
+		byHost[row["host"].AsString()] = row
+	}
+	assertFloatField(t, byHost["a"], "d", 14, 0)
+	assertFloatField(t, byHost["b"], "d", 0, 0)
+
+	eventRows := drain(t, `from * | eventstats delta_sum(bytes) as d by host`, rows)
+	assertFloatField(t, eventRows[0], "d", 14, 0)
+	assertFloatField(t, eventRows[5], "d", 14, 5)
+	assertFloatField(t, eventRows[6], "d", 0, 6)
+
+	streamRows := drain(t, `from * | streamstats delta_sum(bytes) as d by host`, rows)
+	expected := []float64{0, 5, 5, 10, 10, 14, 0}
+	for i, want := range expected {
+		assertFloatField(t, streamRows[i], "d", want, i)
+	}
+}
+
 func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"x": intV(1), "y": intV(2)},
@@ -1615,6 +1649,7 @@ func TestAggNameMapping(t *testing.T) {
 		"skewness":       "skewness",
 		"kurtosis":       "kurtosis",
 		"mad":            "mad",
+		"delta_sum":      "delta_sum",
 		"rank":           "rank",
 		"dense_rank":     "dense_rank",
 		"rate":           "rate",

@@ -504,6 +504,8 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal ev
 		updateMomentState(s, val)
 	case aggMAD:
 		updateMADState(s, val)
+	case aggDeltaSum:
+		updateDeltaSumState(s, val)
 	case aggMin:
 		if !val.IsNull() && (s.min.IsNull() || vm.CompareValues(val, s.min) < 0) {
 			s.min = val
@@ -609,6 +611,8 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeKurtosis(s)
 	case aggMAD:
 		return finalizeMAD(s)
+	case aggDeltaSum:
+		return finalizeAggState(s, agg.Name)
 	}
 	return finalizeAggState(s, agg.Name)
 }
@@ -635,6 +639,11 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 		return finalizeKurtosis(s)
 	case aggMAD:
 		return finalizeMAD(s)
+	case aggDeltaSum:
+		if s.count == 0 {
+			return event.NullValue()
+		}
+		return event.FloatValue(s.sum)
 	case aggMin:
 		return s.min
 	case aggMax:

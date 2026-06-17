@@ -34,18 +34,23 @@ func (q *Query) String() string {
 	return b.String()
 }
 
-// Let (CTE binding)
+// Let (CTE or scalar binding)
 
-// Let is a CTE binding: let $name = <pipeline>.
+// Let is either a CTE binding (`let $name = <pipeline>`) or a scalar binding
+// (`let $name = <expr>`). When Value is non-nil, Pipeline is ignored.
 type Let struct {
 	Name     string // without the $ prefix
 	NameSpan Span
 	Pipeline Pipeline
+	Value    Expr
 	Pos      Span // from 'let' keyword to end of pipeline (before ';')
 }
 
 // String returns a debug rendering.
 func (l *Let) String() string {
+	if l.Value != nil {
+		return "let $" + l.Name + " = " + l.Value.String()
+	}
 	return "let $" + l.Name + " = " + l.Pipeline.String()
 }
 

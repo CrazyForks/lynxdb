@@ -110,6 +110,16 @@ func TestBuild_InlineSource(t *testing.T) {
 	}
 }
 
+func TestBuild_ScalarLet(t *testing.T) {
+	got := drain(t, `let $slo = 250ms; from [{duration: 300ms}, {duration: 100ms}, {duration: 400ms}] | where duration > $slo | stats count() as n`, nil)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 row, got %d: %#v", len(got), got)
+	}
+	if n := got[0]["n"].AsInt(); n != 2 {
+		t.Fatalf("n = %d, want 2", n)
+	}
+}
+
 func TestBuild_Unpivot(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"service": strV("api"), "cpu_ms": intV(12), "db_ms": intV(7), "status": intV(200)},

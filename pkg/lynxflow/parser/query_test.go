@@ -210,6 +210,26 @@ func TestParseInlineSourceRejectsScalarRows(t *testing.T) {
 	}
 }
 
+func TestParseScalarLet(t *testing.T) {
+	input := `let $slo = 250ms; from nginx[-1h] | where duration > $slo | proportion duration > $slo as breach by service`
+	q, diags := Parse(input)
+	if len(diags) > 0 {
+		t.Fatalf("Parse returned diagnostics: %v", diags)
+	}
+	if len(q.Lets) != 1 {
+		t.Fatalf("lets len = %d, want 1", len(q.Lets))
+	}
+	if q.Lets[0].Value == nil {
+		t.Fatalf("let value is nil: %#v", q.Lets[0])
+	}
+
+	got := format.Query(q)
+	want := "let $slo = 250ms;\nfrom nginx[-1h]\n| where duration > 250ms\n| proportion duration > 250ms as breach by service"
+	if got != want {
+		t.Fatalf("format = %q, want %q", got, want)
+	}
+}
+
 // 3. Golden structure tests
 
 func TestGoldenStructure(t *testing.T) {

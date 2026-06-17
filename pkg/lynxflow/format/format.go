@@ -392,7 +392,11 @@ func formatLet(b *strings.Builder, l *ast.Let) {
 	b.WriteString("let $")
 	b.WriteString(l.Name)
 	b.WriteString(" = ")
-	formatPipelineInline(b, &l.Pipeline)
+	if l.Value != nil {
+		formatExpr(b, l.Value, precTop)
+	} else {
+		formatPipelineInline(b, &l.Pipeline)
+	}
 	b.WriteString(";\n")
 }
 

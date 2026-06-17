@@ -36,6 +36,9 @@ type parser struct {
 	// allowWhereArg is true only while parsing the direct arguments of a
 	// registered aggregate call at depth 1 inside an agg list.
 	allowWhereArg bool
+	// scalarLets stores scalar let bindings parsed before the current
+	// expression. CTE references remain source-only and are not stored here.
+	scalarLets map[string]ast.Expr
 }
 
 // ParseExpr parses a single expression from the input string and returns the
@@ -747,6 +750,28 @@ func (p *parser) parsePrimary() ast.Expr {
 	// Duration literal.
 	case p.cur.Kind == lexer.Duration:
 		return p.parseDurationLiteral()
+
+	// Scalar let reference.
+	case p.at(lexer.Dollar):
+		start := p.cur.Start
+		p.advance()
+		name, ok := p.parseCTEName()
+		if !ok {
+			return &ast.ErrorExpr{Message: "expected scalar let name", Pos: ast.Span{Start: start, End: p.prev.End}}
+		}
+		if p.scalarLets != nil {
+			if expr, ok := p.scalarLets[name]; ok {
+				return expr
+			}
+		}
+		span := ast.Span{Start: start, End: p.prev.End}
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    "unknown scalar let $" + name,
+			Span:       span,
+			Suggestion: "define it first with let $" + name + " = <expr>;",
+		})
+		return &ast.ErrorExpr{Message: "unknown scalar let", Pos: span}
 
 	// Boolean literals.
 	case p.cur.Kind == lexer.True:

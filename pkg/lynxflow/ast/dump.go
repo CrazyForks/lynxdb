@@ -52,7 +52,11 @@ func (d *dumper) dumpQuery(q *Query) {
 
 func (d *dumper) dumpLet(l *Let, depth int) {
 	d.line(depth, "Let $%s", l.Name)
-	d.dumpPipeline(&l.Pipeline, depth+1)
+	if l.Value != nil {
+		d.dumpExpr(l.Value, depth+1)
+	} else {
+		d.dumpPipeline(&l.Pipeline, depth+1)
+	}
 }
 
 func (d *dumper) dumpPipeline(p *Pipeline, depth int) {

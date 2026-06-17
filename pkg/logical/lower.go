@@ -37,6 +37,9 @@ func Lower(q *ast.Query, opts Options) (*Plan, []Diag) {
 
 	// Lower CTEs first.
 	for _, let := range q.Lets {
+		if let.Value != nil {
+			continue
+		}
 		letPlan, _ := l.lowerPipeline(let.Pipeline)
 		l.lets[let.Name] = &Plan{Root: letPlan}
 	}

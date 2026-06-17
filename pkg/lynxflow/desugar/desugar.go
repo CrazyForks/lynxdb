@@ -61,7 +61,9 @@ func (d *desugarer) addRewrite(before, after, reason string, span ast.Span) {
 func (d *desugarer) desugarQuery(q *ast.Query) *ast.Query {
 	out := &ast.Query{Pos: q.Pos}
 	for _, l := range q.Lets {
-		out.Lets = append(out.Lets, d.desugarLet(l))
+		if l.Value == nil {
+			out.Lets = append(out.Lets, d.desugarLet(l))
+		}
 	}
 	out.Pipeline = d.desugarPipeline(q.Pipeline, true)
 	return out

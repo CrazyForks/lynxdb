@@ -109,23 +109,40 @@ func (p *parser) parseLet() ast.Let {
 			"expected '=' after CTE name, got %s", kindName(p.cur.Kind))
 	}
 
-	pipeline := p.parsePipeline()
+	var pipeline ast.Pipeline
+	var value ast.Expr
+	if p.letValueStartsPipeline() {
+		pipeline = p.parsePipeline()
+	} else {
+		value = p.parseExpr()
+	}
 
 	end := p.prev.End
 	// Expect ;
 	if !p.consume(lexer.Semicolon) {
 		p.errorf(p.cur, CodeUnexpectedToken, []string{";"}, "",
-			"expected ';' after CTE pipeline, got %s", kindName(p.cur.Kind))
+			"expected ';' after let binding, got %s", kindName(p.cur.Kind))
 	} else {
 		end = p.prev.End
+	}
+	if value != nil {
+		if p.scalarLets == nil {
+			p.scalarLets = make(map[string]ast.Expr)
+		}
+		p.scalarLets[name] = value
 	}
 
 	return ast.Let{
 		Name:     name,
 		NameSpan: nameSpan,
 		Pipeline: pipeline,
+		Value:    value,
 		Pos:      ast.Span{Start: start, End: end},
 	}
+}
+
+func (p *parser) letValueStartsPipeline() bool {
+	return p.at(lexer.KwFrom) || p.at(lexer.Pipe) || p.isStageStart()
 }
 
 func (p *parser) parsePipeline() ast.Pipeline {

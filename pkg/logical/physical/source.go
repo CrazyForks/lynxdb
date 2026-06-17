@@ -13,6 +13,7 @@
 //     - BloomTerms: applied in-memory via substring containment check (bloom
 //     terms are literal substrings extracted from contains/glob/matches; in
 //     the absence of a bloom filter, we check _raw directly).
+//     - BloomAnyTerms: same substring check, but at least one term may match.
 //     - TokenGlobs: applied in-memory via whole-token glob matching (mirrors
 //     has_glob semantics; disk path expands them against the FST term
 //     dictionary).
@@ -69,8 +70,8 @@ type ScanStats struct {
 	TotalEvents atomic.Int64
 
 	// FilteredEvents is the number of events that survived pushdown filtering
-	// (RawTerms + RawAnyTerms + BloomTerms + FieldPredicates). This is the count fed into
-	// the pipeline iterator.
+	// (RawTerms + RawAnyTerms + BloomTerms + BloomAnyTerms +
+	// FieldPredicates). This is the count fed into the pipeline iterator.
 	FilteredEvents atomic.Int64
 
 	// PartsTotal is the number of parts considered (PartStore only).
@@ -182,6 +183,7 @@ func NewStorageSourceFromMapWithNow(events map[string][]*event.Event, defaultInd
 //     in the event's _raw field. Matches the tokenizer contract (§6.1).
 //   - RawAnyTerms: at least one term must be present as a whole token.
 //   - BloomTerms: each term must appear as a substring in _raw (CI).
+//   - BloomAnyTerms: at least one term must appear as a substring in _raw.
 //     In the disk path these are bloom-assisted candidates; here we verify
 //     directly since there is no bloom filter.
 //   - FieldPredicates: ast.Expr of shape (field op literal); evaluated via
@@ -193,10 +195,11 @@ func applyEphemeralPushdown(events []*event.Event, scan *logical.Scan) []*event.
 	hasRaw := len(pd.RawTerms) > 0
 	hasRawAny := len(pd.RawAnyTerms) > 0
 	hasBloom := len(pd.BloomTerms) > 0
+	hasBloomAny := len(pd.BloomAnyTerms) > 0
 	hasGlobs := len(pd.TokenGlobs) > 0
 	hasFP := len(pd.FieldPredicates) > 0
 
-	if !hasRaw && !hasRawAny && !hasBloom && !hasGlobs && !hasFP {
+	if !hasRaw && !hasRawAny && !hasBloom && !hasBloomAny && !hasGlobs && !hasFP {
 		return events
 	}
 
@@ -209,6 +212,9 @@ func applyEphemeralPushdown(events []*event.Event, scan *logical.Scan) []*event.
 			continue
 		}
 		if hasBloom && !matchBloomTerms(ev.Raw, pd.BloomTerms) {
+			continue
+		}
+		if hasBloomAny && !matchAnyBloomTerm(ev.Raw, pd.BloomAnyTerms) {
 			continue
 		}
 		if hasGlobs && !matchTokenGlobs(ev.Raw, pd.TokenGlobs) {
@@ -303,6 +309,19 @@ func matchBloomTerms(raw string, terms []string) bool {
 		}
 	}
 	return true
+}
+
+func matchAnyBloomTerm(raw string, terms []string) bool {
+	if raw == "" {
+		return false
+	}
+	rawLower := strings.ToLower(raw)
+	for _, term := range terms {
+		if strings.Contains(rawLower, term) {
+			return true
+		}
+	}
+	return false
 }
 
 // matchFieldPredicates evaluates field-comparison expressions against an event.

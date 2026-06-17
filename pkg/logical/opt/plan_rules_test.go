@@ -390,6 +390,22 @@ func TestPredicatePushdown_BloomTerms(t *testing.T) {
 			excludes: []string{`pushdown.bloom_term:`},
 		},
 		{
+			name:  "contains_any_raw",
+			query: `from main | where contains_any(_raw, ["connection refused", "timeout"])`,
+			contains: []string{
+				`pushdown.bloom_any_term: "connection"`,
+				`pushdown.bloom_any_term: "refused"`,
+				`pushdown.bloom_any_term: "timeout"`,
+				`Filter(contains_any(_raw, ["connection refused", "timeout"]))`,
+			},
+			excludes: []string{`pushdown.bloom_term:`},
+		},
+		{
+			name:     "contains_any_short_alternative_excluded",
+			query:    `from main | where contains_any(_raw, ["connection refused", "io"])`,
+			excludes: []string{`pushdown.bloom_any_term:`, `pushdown.bloom_term:`},
+		},
+		{
 			name:  "glob_literal_extraction",
 			query: `from main | where glob(_raw, "error*timeout")`,
 			contains: []string{
@@ -410,6 +426,21 @@ func TestPredicatePushdown_BloomTerms(t *testing.T) {
 				`pushdown.bloom_term: "error"`,
 				`pushdown.bloom_term: "timeout"`,
 			},
+		},
+		{
+			name:  "matches_any_literal_extraction",
+			query: `from main | where matches_any(_raw, [r"error\d+", r"warning"])`,
+			contains: []string{
+				`pushdown.bloom_any_term: "error"`,
+				`pushdown.bloom_any_term: "warning"`,
+				`Filter(matches_any(_raw, [r"error\d+", r"warning"]))`,
+			},
+			excludes: []string{`pushdown.bloom_term:`},
+		},
+		{
+			name:     "matches_any_regex_only_alternative_excluded",
+			query:    `from main | where matches_any(_raw, [r"error\d+", r"\d+"])`,
+			excludes: []string{`pushdown.bloom_any_term:`, `pushdown.bloom_term:`},
 		},
 		{
 			name:  "matches_no_literals_regex_only",

@@ -90,6 +90,7 @@ type Pushdown struct {
 	TimeBounds      *TimeBounds
 	FieldPredicates []ast.Expr
 	BloomTerms      []string
+	BloomAnyTerms   []string
 	RawTerms        []string
 	RawAnyTerms     []string
 	// TokenGlobs holds lowercased glob patterns from has_glob(_raw, pattern).

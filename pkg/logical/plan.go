@@ -79,6 +79,10 @@ func dumpPushdown(b *strings.Builder, pd *Pushdown, depth int) {
 		indent(b, depth)
 		fmt.Fprintf(b, "pushdown.bloom_term: %q\n", bt)
 	}
+	for _, bt := range pd.BloomAnyTerms {
+		indent(b, depth)
+		fmt.Fprintf(b, "pushdown.bloom_any_term: %q\n", bt)
+	}
 	for _, rt := range pd.RawTerms {
 		indent(b, depth)
 		fmt.Fprintf(b, "pushdown.raw_term: %q\n", rt)

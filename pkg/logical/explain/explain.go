@@ -152,6 +152,10 @@ func renderPushdown(b *strings.Builder, pd *logical.Pushdown, depth int, counter
 		indent(b, depth)
 		fmt.Fprintf(b, "bloom_term: %q\n", bt)
 	}
+	for _, bt := range pd.BloomAnyTerms {
+		indent(b, depth)
+		fmt.Fprintf(b, "bloom_any_term: %q\n", bt)
+	}
 	for _, fp := range pd.FieldPredicates {
 		indent(b, depth)
 		fmt.Fprintf(b, "field_predicate: %s\n", format.Expr(fp))

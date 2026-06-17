@@ -242,6 +242,25 @@ func TestEphemeralPushdown_BloomTerms(t *testing.T) {
 	}
 }
 
+func TestEphemeralPushdown_BloomAnyTerms(t *testing.T) {
+	events := map[string][]*event.Event{
+		"main": {
+			mkEvent("network timeout while reading"),
+			mkEvent("SPECIAL PHRASE appears"),
+			mkEvent("ordinary request completed"),
+		},
+	}
+
+	results, ss := drainWithStats(t, `from main | where contains_any(_raw, ["special phrase", "timeout"])`, events)
+
+	if len(results) != 2 {
+		t.Errorf("results: got %d, want 2", len(results))
+	}
+	if ss.FilteredEvents.Load() != 2 {
+		t.Errorf("FilteredEvents: got %d, want 2", ss.FilteredEvents.Load())
+	}
+}
+
 func TestEphemeralPushdown_FieldPredicates(t *testing.T) {
 	events := map[string][]*event.Event{
 		"main": {
@@ -475,6 +494,49 @@ func TestPartBackedPushdown_HasAnyRawTerms(t *testing.T) {
 	}
 	if len(results) != 3 {
 		t.Errorf("results: got %d, want 3", len(results))
+	}
+}
+
+func TestPartBackedPushdown_BloomAnyTerms(t *testing.T) {
+	dir := t.TempDir()
+
+	timeoutEvents := makeTestEvents(10, "app.log", func(i int) string {
+		return fmt.Sprintf("2026-06-01T00:00:00Z msg=network timeout item=%d", i)
+	})
+	writePartFile(t, dir, "main", timeoutEvents)
+
+	failureEvents := makeTestEvents(7, "app.log", func(i int) string {
+		return fmt.Sprintf("2026-06-01T00:01:00Z msg=payment failure item=%d", i)
+	})
+	writePartFile(t, dir, "main", failureEvents)
+
+	otherEvents := makeTestEvents(13, "app.log", func(i int) string {
+		return fmt.Sprintf("2026-06-01T00:02:00Z msg=ordinary request item=%d", i)
+	})
+	writePartFile(t, dir, "main", otherEvents)
+
+	lsgFiles := findPartFiles(t, dir)
+	var parts []PartHandle
+	for _, f := range lsgFiles {
+		parts = append(parts, openPartHandle(t, f, "main"))
+	}
+
+	results, ss := drainPartSource(
+		t,
+		`from main | where contains_any(_raw, ["network timeout", "payment failure"]) | stats count()`,
+		parts,
+	)
+	if len(results) != 1 {
+		t.Fatalf("expected 1 result row, got %d", len(results))
+	}
+	if results[0]["count()"].AsInt() != 17 {
+		t.Errorf("count(): got %d, want 17", results[0]["count()"].AsInt())
+	}
+	if ss.PartsTotal.Load() != 3 {
+		t.Errorf("PartsTotal: got %d, want 3", ss.PartsTotal.Load())
+	}
+	if ss.PartsSkipped.Load() < 1 {
+		t.Errorf("PartsSkipped: got %d, want >= 1", ss.PartsSkipped.Load())
 	}
 }
 

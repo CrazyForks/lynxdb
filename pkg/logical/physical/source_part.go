@@ -19,6 +19,8 @@
 //     They are less selective than RawTerms (may produce false positives at
 //     the row level) but still enable part-level skip when the inverted
 //     index returns an empty bitmap.
+//     BloomAnyTerms are OR'd into a candidate bitmap and then AND'd with
+//     other candidate filters.
 //
 //   - FieldPredicates: converted to []segment.Predicate{Field, Op, Value string}
 //     and passed to ReadEventsFiltered. The segment reader applies per-column
@@ -100,7 +102,9 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 		var searchTerms []string
 		searchTerms = append(searchTerms, pd.RawTerms...)
 		searchTerms = append(searchTerms, pd.BloomTerms...)
-		rawAnyTerms := pd.RawAnyTerms
+		var anyTerms []string
+		anyTerms = append(anyTerms, pd.RawAnyTerms...)
+		anyTerms = append(anyTerms, pd.BloomAnyTerms...)
 
 		hasTimeHints := minTime != nil || maxTime != nil
 
@@ -147,8 +151,8 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 				}
 			}
 
-			if !skipped && len(rawAnyTerms) > 0 && p.InvertedIdx != nil {
-				anyBitmap, ok := rawAnyBitmap(p.InvertedIdx, rawAnyTerms)
+			if !skipped && len(anyTerms) > 0 && p.InvertedIdx != nil {
+				anyBitmap, ok := anyTermBitmap(p.InvertedIdx, anyTerms)
 				if ok {
 					if searchBitmap == nil {
 						searchBitmap = anyBitmap
@@ -236,7 +240,7 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 	}
 }
 
-func rawAnyBitmap(idx *index.SerializedIndex, terms []string) (*roaring.Bitmap, bool) {
+func anyTermBitmap(idx *index.SerializedIndex, terms []string) (*roaring.Bitmap, bool) {
 	union := roaring.New()
 	for _, term := range terms {
 		bm, err := idx.Search(term)

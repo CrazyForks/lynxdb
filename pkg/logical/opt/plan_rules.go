@@ -265,6 +265,10 @@ func pushConjunct(scan *logical.Scan, expr ast.Expr) (pushed, consumed bool) {
 		scan.Pushdown.BloomTerms = append(scan.Pushdown.BloomTerms, terms...)
 		return true, false // KEEP in filter
 	}
+	if terms := extractBloomAnyTerms(expr); len(terms) > 0 {
+		scan.Pushdown.BloomAnyTerms = append(scan.Pushdown.BloomAnyTerms, terms...)
+		return true, false // KEEP in filter
+	}
 
 	return false, false
 }
@@ -348,6 +352,7 @@ func scanHasPushdown(s *logical.Scan) bool {
 	return pd.TimeBounds != nil ||
 		len(pd.FieldPredicates) > 0 ||
 		len(pd.BloomTerms) > 0 ||
+		len(pd.BloomAnyTerms) > 0 ||
 		len(pd.RawTerms) > 0 ||
 		len(pd.RawAnyTerms) > 0 ||
 		len(pd.TokenGlobs) > 0
@@ -587,6 +592,85 @@ func extractBloomTerms(expr ast.Expr) []string {
 		}
 	}
 	return result
+}
+
+// extractBloomAnyTerms extracts OR-shaped bloom candidates from list-style
+// _raw predicates. The original predicate remains in the Filter, so these
+// terms are candidate filters only. Extraction is all-or-nothing per call:
+// if any alternative has no safe term, we skip pushdown to avoid pruning rows
+// that match only that alternative.
+func extractBloomAnyTerms(expr ast.Expr) []string {
+	c, ok := expr.(*ast.Call)
+	if !ok || len(c.Args) != 2 {
+		return nil
+	}
+
+	id, ok := c.Args[0].(*ast.Ident)
+	if !ok || id.Name != "_raw" {
+		return nil
+	}
+
+	arr, ok := c.Args[1].(*ast.Array)
+	if !ok || len(arr.Elems) == 0 {
+		return nil
+	}
+
+	var allTerms []string
+	for _, elem := range arr.Elems {
+		lit, ok := elem.(*ast.Literal)
+		if !ok || (lit.Kind != ast.LitString && lit.Kind != ast.LitRawString) {
+			return nil
+		}
+		s, ok := lit.Value.(string)
+		if !ok {
+			return nil
+		}
+
+		var terms []string
+		switch c.Callee {
+		case "contains_any", "contains_any_cs":
+			terms = bloomTokensFromSubstrs([]string{s})
+		case "matches_any":
+			terms = bloomTokensFromSubstrs(extractRegexLiterals(s))
+		default:
+			return nil
+		}
+		if len(terms) == 0 {
+			return nil
+		}
+		allTerms = append(allTerms, terms...)
+	}
+	return dedupeStrings(allTerms)
+}
+
+func bloomTokensFromSubstrs(substrs []string) []string {
+	var result []string
+	seen := make(map[string]bool)
+	for _, s := range substrs {
+		tokens := tokenize(strings.ToLower(s))
+		for _, tok := range tokens {
+			if len(tok) >= 3 && !seen[tok] {
+				seen[tok] = true
+				result = append(result, tok)
+			}
+		}
+	}
+	return result
+}
+
+func dedupeStrings(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	seen := make(map[string]bool, len(in))
+	for _, s := range in {
+		if !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	return out
 }
 
 // extractGlobLiterals extracts the longest literal runs between glob
@@ -891,6 +975,7 @@ func cloneScan(s *logical.Scan) *logical.Scan {
 		Pushdown: logical.Pushdown{
 			FieldPredicates: cloneExprs(s.Pushdown.FieldPredicates),
 			BloomTerms:      cloneStrings(s.Pushdown.BloomTerms),
+			BloomAnyTerms:   cloneStrings(s.Pushdown.BloomAnyTerms),
 			RawTerms:        cloneStrings(s.Pushdown.RawTerms),
 			RawAnyTerms:     cloneStrings(s.Pushdown.RawAnyTerms),
 			TokenGlobs:      cloneStrings(s.Pushdown.TokenGlobs),

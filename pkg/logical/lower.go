@@ -861,6 +861,7 @@ func shallowClone(n Node) Node {
 		c.Pushdown = Pushdown{
 			FieldPredicates: append([]ast.Expr(nil), x.Pushdown.FieldPredicates...),
 			BloomTerms:      append([]string(nil), x.Pushdown.BloomTerms...),
+			BloomAnyTerms:   append([]string(nil), x.Pushdown.BloomAnyTerms...),
 			RawTerms:        append([]string(nil), x.Pushdown.RawTerms...),
 			RawAnyTerms:     append([]string(nil), x.Pushdown.RawAnyTerms...),
 			TokenGlobs:      append([]string(nil), x.Pushdown.TokenGlobs...),

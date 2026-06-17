@@ -507,6 +507,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "all", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayAll)},
 		{name: "filter", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayFilter)},
 		{name: "map", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayMap)},
+		{name: "reduce", minArgs: 3, maxArgs: 3, emit: lfEmitArrayReduce},
 		{name: "array_count", minArgs: 2, maxArgs: 2, emit: lfEmitArrayCount},
 		{name: "array_has_any", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAny)},
 		{name: "array_has_all", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAll)},
@@ -1401,6 +1402,9 @@ func lfEmitLambdaOp(op Opcode) func(*lfCompiler, *lfast.Call) error {
 		if !ok {
 			return fmt.Errorf("lynxflow.Compile: %s requires a lambda as second argument, got %T", call.Callee, call.Args[1])
 		}
+		if got := len(lambda.LambdaParams()); got != 1 {
+			return fmt.Errorf("lynxflow.Compile: %s lambda requires 1 parameter, got %d", call.Callee, got)
+		}
 		subIdx, err := c.compileLambdaBody(lambda)
 		if err != nil {
 			return err
@@ -1408,6 +1412,28 @@ func lfEmitLambdaOp(op Opcode) func(*lfCompiler, *lfast.Call) error {
 		c.prog.EmitOp(op, subIdx)
 		return nil
 	}
+}
+
+func lfEmitArrayReduce(c *lfCompiler, call *lfast.Call) error {
+	if err := c.compile(call.Args[0]); err != nil {
+		return err
+	}
+	if err := c.compile(call.Args[1]); err != nil {
+		return err
+	}
+	lambda, ok := call.Args[2].(*lfast.Lambda)
+	if !ok {
+		return fmt.Errorf("lynxflow.Compile: reduce requires a lambda as third argument, got %T", call.Args[2])
+	}
+	if got := len(lambda.LambdaParams()); got != 2 {
+		return fmt.Errorf("lynxflow.Compile: reduce lambda requires 2 parameters, got %d", got)
+	}
+	subIdx, err := c.compileLambdaBody(lambda)
+	if err != nil {
+		return err
+	}
+	c.prog.EmitOp(OpArrayReduce, subIdx)
+	return nil
 }
 
 func lfEmitArrayCount(c *lfCompiler, call *lfast.Call) error {

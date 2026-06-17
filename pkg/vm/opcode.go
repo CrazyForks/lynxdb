@@ -270,6 +270,7 @@ const (
 	OpHumanizeBytes   Opcode = 0x45 // pop number; push human-readable binary byte string
 	OpHumanizeCount   Opcode = 0x46 // pop number; push human-readable SI count string
 	OpHumanizeDur     Opcode = 0x47 // pop duration; push human-readable duration string
+	OpArrayReduce     Opcode = 0x3D // 2-byte operand: sub-program index; pop array and init, push folded value
 	OpLPad            Opcode = 0x64 // pop string, target width, pad string; push left-padded string
 	OpRPad            Opcode = 0x65 // pop string, target width, pad string; push right-padded string
 	OpTranslate       Opcode = 0x66 // pop string, from, to; push translated string
@@ -589,6 +590,7 @@ var definitions = map[Opcode]*Definition{
 	OpHumanizeBytes:   {"OpHumanizeBytes", nil},
 	OpHumanizeCount:   {"OpHumanizeCount", nil},
 	OpHumanizeDur:     {"OpHumanizeDur", nil},
+	OpArrayReduce:     {"OpArrayReduce", []int{2}},
 	OpBar:             {"OpBar", nil},
 	OpIndexOf:         {"OpIndexOf", nil},
 	OpSplitPart:       {"OpSplitPart", nil},

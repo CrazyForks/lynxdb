@@ -24,12 +24,26 @@ import (
 
 	"github.com/lynxbase/lynxdb/pkg/event"
 	lfast "github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
+	"github.com/lynxbase/lynxdb/pkg/lynxflow/parser"
 )
 
 // Helper: lambda constructor
 
 func lambda(param string, body lfast.Expr) *lfast.Lambda {
 	return &lfast.Lambda{Param: param, Body: body}
+}
+
+func lambdaN(params []string, body lfast.Expr) *lfast.Lambda {
+	return &lfast.Lambda{Param: params[0], Params: params, Body: body}
+}
+
+func mustParseExpr(t *testing.T, input string) lfast.Expr {
+	t.Helper()
+	expr, diags := parser.ParseExpr(input)
+	if len(diags) > 0 {
+		t.Fatalf("ParseExpr(%q): %v", input, diags)
+	}
+	return expr
 }
 
 // assertArray is a helper to check an array value's length.
@@ -1150,6 +1164,54 @@ func TestB2_Lambda_AccessesRowFields(t *testing.T) {
 	arr := assertArray(t, result, 2, "filter with row field")
 	assertInt(t, arr[0], 4, "filter field[0]")
 	assertInt(t, arr[1], 5, "filter field[1]")
+}
+
+func TestB2_Reduce_Sum(t *testing.T) {
+	expr := call("reduce",
+		array(litInt(1), litInt(2), litInt(3)),
+		litInt(0),
+		lambdaN([]string{"acc", "x"}, binOp(lfast.OpAdd, ident("acc"), ident("x"))),
+	)
+	result, _ := runLF(t, expr, nil)
+	assertInt(t, result, 6, "reduce sum")
+}
+
+func TestB2_Reduce_EmptyArrayReturnsInit(t *testing.T) {
+	expr := call("reduce",
+		array(),
+		litInt(42),
+		lambdaN([]string{"acc", "x"}, binOp(lfast.OpAdd, ident("acc"), ident("x"))),
+	)
+	result, _ := runLF(t, expr, nil)
+	assertInt(t, result, 42, "reduce empty")
+}
+
+func TestB2_Reduce_NullArray(t *testing.T) {
+	expr := call("reduce",
+		litNull(),
+		litInt(0),
+		lambdaN([]string{"acc", "x"}, binOp(lfast.OpAdd, ident("acc"), ident("x"))),
+	)
+	result, _ := runLF(t, expr, nil)
+	assertNull(t, result, "reduce null array")
+}
+
+func TestB2_Reduce_ParsesParenthesizedLambda(t *testing.T) {
+	expr := mustParseExpr(t, `reduce([1, 2, 3], 10, (acc, x) -> acc + x)`)
+	result, _ := runLF(t, expr, nil)
+	assertInt(t, result, 16, "reduce parsed")
+}
+
+func TestB2_Reduce_LambdaArityError(t *testing.T) {
+	expr := call("reduce",
+		array(litInt(1)),
+		litInt(0),
+		lambda("x", ident("x")),
+	)
+	_, err := CompileLynxFlow(expr)
+	if err == nil {
+		t.Fatal("expected error for one-parameter reduce lambda")
+	}
 }
 
 // Lambda: non-lambda arg error

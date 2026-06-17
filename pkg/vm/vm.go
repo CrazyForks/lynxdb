@@ -2340,6 +2340,25 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.stack[vm.sp] = result
 			vm.sp++
 
+		case OpArrayReduce:
+			subIdx, opErr := readIndexSafe(ins, ip, len(prog.SubPrograms), "sub-program")
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			init := vm.stack[vm.sp-1]
+			arr := vm.stack[vm.sp-2]
+			vm.sp -= 2
+			result, execErr := vm.execArrayReduce(prog, subIdx, arr, init, fields)
+			if execErr != nil {
+				return event.NullValue(), execErr
+			}
+			if vm.sp >= StackSize {
+				return event.NullValue(), ErrStackOverflow
+			}
+			vm.stack[vm.sp] = result
+			vm.sp++
+
 		case OpSlice:
 			vm.execSlice()
 

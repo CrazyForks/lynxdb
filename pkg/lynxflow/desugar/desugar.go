@@ -1676,7 +1676,7 @@ func cloneExpr(e ast.Expr) ast.Expr {
 	case *ast.Slice:
 		return &ast.Slice{Object: cloneExpr(x.Object), Start: cloneExpr(x.Start), End: cloneExpr(x.End), Pos: x.Pos}
 	case *ast.Lambda:
-		return &ast.Lambda{Param: x.Param, Body: cloneExpr(x.Body), Pos: x.Pos}
+		return &ast.Lambda{Param: x.Param, Params: append([]string(nil), x.Params...), Body: cloneExpr(x.Body), Pos: x.Pos}
 	case *ast.Paren:
 		return &ast.Paren{Inner: cloneExpr(x.Inner), Pos: x.Pos}
 	case *ast.Array:

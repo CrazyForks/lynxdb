@@ -399,16 +399,32 @@ func (n *Slice) String() string {
 
 // Lambda
 
-// Lambda is a lambda expression: param -> body.
+// Lambda is a lambda expression: param -> body or (param, ...) -> body.
 type Lambda struct {
-	Param string // parameter name
-	Body  Expr
-	Pos   Span // from param ident to end of body
+	Param  string   // legacy single parameter name
+	Params []string // parameter names; empty means Param
+	Body   Expr
+	Pos    Span // from param ident to end of body
 }
 
 func (n *Lambda) ExprSpan() Span { return n.Pos }
 func (n *Lambda) String() string {
-	return "(" + n.Param + " -> " + n.Body.String() + ")"
+	params := n.LambdaParams()
+	if len(params) == 1 {
+		return "(" + params[0] + " -> " + n.Body.String() + ")"
+	}
+	return "((" + strings.Join(params, ", ") + ") -> " + n.Body.String() + ")"
+}
+
+// LambdaParams returns the effective lambda parameter list.
+func (n *Lambda) LambdaParams() []string {
+	if len(n.Params) > 0 {
+		return n.Params
+	}
+	if n.Param != "" {
+		return []string{n.Param}
+	}
+	return nil
 }
 
 // Paren

@@ -826,14 +826,13 @@ func (c *lfCompiler) compileLambdaBody(lambda *lfast.Lambda) (int, error) {
 
 	c.prog.Instructions = nil
 
-	// Push lambda param into scope
-	c.lambdaParams = append(c.lambdaParams, lambda.Param)
+	params := lambda.LambdaParams()
+	c.lambdaParams = append(c.lambdaParams, params...)
 
 	// Compile the body
 	err := c.compile(lambda.Body)
 
-	// Pop lambda param
-	c.lambdaParams = c.lambdaParams[:len(c.lambdaParams)-1]
+	c.lambdaParams = c.lambdaParams[:len(c.lambdaParams)-len(params)]
 
 	if err != nil {
 		c.prog.Instructions = parentInstructions

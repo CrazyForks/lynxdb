@@ -628,8 +628,9 @@ func (p *parser) parseArgList() []Expr {
 }
 
 // parseArgExpr parses a single argument expression. If the current position
-// is an identifier followed by ->, it parses a lambda. If it starts with
-// 'where', it parses a conditional aggregate argument (RFC-002 §4.2: arg ::= expr | 'where' expr).
+// is an identifier followed by ->, or a parenthesized parameter list followed
+// by ->, it parses a lambda. If it starts with 'where', it parses a conditional
+// aggregate argument (RFC-002 §4.2: arg ::= expr | 'where' expr).
 func (p *parser) parseArgExpr() ast.Expr {
 	// Conditional aggregate: where <predicate>
 	// count(where p) or sum(x, where p)
@@ -677,6 +678,10 @@ func (p *parser) parseArgExpr() ast.Expr {
 	if name, ok := p.identLike(); ok && p.peekIsArrow() {
 		return p.parseLambda(name)
 	}
+	// Lambda lookahead: (a, b) -> expr
+	if p.at(lexer.LParen) && p.peekParenLambdaArrow() {
+		return p.parseParenLambda()
+	}
 	return p.parseExpr()
 }
 
@@ -697,6 +702,59 @@ func (p *parser) peekIsArrow() bool {
 	return false
 }
 
+func (p *parser) peekParenLambdaArrow() bool {
+	pos := p.cur.End
+	pos = skipASCIIWhitespace(p.src, pos)
+	if pos >= len(p.src) || !isIdentStartByte(p.src[pos]) {
+		return false
+	}
+	for {
+		pos = readIdentBytes(p.src, pos)
+		pos = skipASCIIWhitespace(p.src, pos)
+		if pos < len(p.src) && p.src[pos] == ',' {
+			pos++
+			pos = skipASCIIWhitespace(p.src, pos)
+			if pos >= len(p.src) || !isIdentStartByte(p.src[pos]) {
+				return false
+			}
+			continue
+		}
+		if pos >= len(p.src) || p.src[pos] != ')' {
+			return false
+		}
+		pos++
+		pos = skipASCIIWhitespace(p.src, pos)
+		return pos+1 < len(p.src) && p.src[pos] == '-' && p.src[pos+1] == '>'
+	}
+}
+
+func skipASCIIWhitespace(src string, pos int) int {
+	for pos < len(src) {
+		switch src[pos] {
+		case ' ', '\t', '\n', '\r':
+			pos++
+		default:
+			return pos
+		}
+	}
+	return pos
+}
+
+func isIdentStartByte(b byte) bool {
+	return b == '_' || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
+}
+
+func isIdentContinueByte(b byte) bool {
+	return isIdentStartByte(b) || (b >= '0' && b <= '9')
+}
+
+func readIdentBytes(src string, pos int) int {
+	for pos < len(src) && isIdentContinueByte(src[pos]) {
+		pos++
+	}
+	return pos
+}
+
 // parseLambda parses `ident -> expr`. The caller has already verified the
 // current token is an ident-like token and the next is ->.
 func (p *parser) parseLambda(param string) *ast.Lambda {
@@ -705,10 +763,48 @@ func (p *parser) parseLambda(param string) *ast.Lambda {
 	p.advance() // consume ->
 	body := p.parseExpr()
 	return &ast.Lambda{
-		Param: param,
-		Body:  body,
-		Pos:   ast.Span{Start: start, End: body.ExprSpan().End},
+		Param:  param,
+		Params: []string{param},
+		Body:   body,
+		Pos:    ast.Span{Start: start, End: body.ExprSpan().End},
 	}
+}
+
+func (p *parser) parseParenLambda() *ast.Lambda {
+	start := p.cur.Start
+	p.advance() // consume (
+
+	var params []string
+	for {
+		name, ok := p.identLike()
+		if !ok {
+			p.errorf(p.cur, CodeUnexpectedToken, []string{"lambda parameter"}, "",
+				"expected lambda parameter")
+			break
+		}
+		params = append(params, name)
+		p.advance()
+		if !p.consume(lexer.Comma) {
+			break
+		}
+	}
+
+	p.expect(lexer.RParen)
+	p.expect(lexer.Arrow)
+	body := p.parseExpr()
+	return &ast.Lambda{
+		Param:  firstString(params),
+		Params: params,
+		Body:   body,
+		Pos:    ast.Span{Start: start, End: body.ExprSpan().End},
+	}
+}
+
+func firstString(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[0]
 }
 
 // Primary

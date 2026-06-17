@@ -713,6 +713,10 @@ func (e *ErrStrictCast) Error() string {
 // lambda parameter value pushed onto the lambda param stack. Pool lookups
 // (constants, field names, regex, sub-programs) use the root program.
 func (vm *VM) execLambdaForElement(rootProg *Program, subIdx int, elem event.Value, fields map[string]event.Value) (event.Value, error) {
+	return vm.execLambdaWithParams(rootProg, subIdx, []event.Value{elem}, fields)
+}
+
+func (vm *VM) execLambdaWithParams(rootProg *Program, subIdx int, params []event.Value, fields map[string]event.Value) (event.Value, error) {
 	sub := rootProg.SubPrograms[subIdx]
 	// Build an execution program that uses the sub's instructions but the
 	// root's pools. This avoids copying pools to every sub-program.
@@ -724,15 +728,13 @@ func (vm *VM) execLambdaForElement(rootProg *Program, subIdx int, elem event.Val
 		CIDRNets:      rootProg.CIDRNets,
 		SubPrograms:   rootProg.SubPrograms,
 	}
-	// Push lambda param
-	vm.lambdaParams = append(vm.lambdaParams, elem)
+	vm.lambdaParams = append(vm.lambdaParams, params...)
 	// Save and reset SP for sub-program execution
 	savedSP := vm.sp
 	vm.sp = 0
 	result, err := vm.ExecuteWithContext(execProg, fields, vm.predicateCtx)
 	vm.sp = savedSP
-	// Pop lambda param
-	vm.lambdaParams = vm.lambdaParams[:len(vm.lambdaParams)-1]
+	vm.lambdaParams = vm.lambdaParams[:len(vm.lambdaParams)-len(params)]
 	return result, err
 }
 
@@ -860,6 +862,24 @@ func (vm *VM) execArrayMap(prog *Program, subIdx int, arrVal event.Value, fields
 		result[i] = mapped
 	}
 	return event.ArrayValue(result), nil
+}
+
+func (vm *VM) execArrayReduce(prog *Program, subIdx int, arrVal, init event.Value, fields map[string]event.Value) (event.Value, error) {
+	if arrVal.IsNull() {
+		return event.NullValue(), nil
+	}
+	if arrVal.Type() != event.FieldTypeArray {
+		return event.NullValue(), nil
+	}
+	acc := init
+	for _, elem := range arrVal.AsArray() {
+		next, err := vm.execLambdaWithParams(prog, subIdx, []event.Value{acc, elem}, fields)
+		if err != nil {
+			return event.NullValue(), err
+		}
+		acc = next
+	}
+	return acc, nil
 }
 
 // Slice, ArrayConcat, ArrayDistinct, ArraySort, Flatten

@@ -642,7 +642,7 @@ func (d *dumper) dumpExpr(e Expr, depth int) {
 			d.dumpExpr(n.End, depth+2)
 		}
 	case *Lambda:
-		d.line(depth, "Lambda %s", n.Param)
+		d.line(depth, "Lambda %s", strings.Join(n.LambdaParams(), ", "))
 		d.dumpExpr(n.Body, depth+1)
 	case *Paren:
 		d.line(depth, "Paren")

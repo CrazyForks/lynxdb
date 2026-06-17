@@ -393,6 +393,22 @@ func TestLambda_NestedDouble(t *testing.T) {
 	}
 }
 
+func TestLambda_ParenthesizedParams(t *testing.T) {
+	expr, diags := ParseExpr("reduce(nums, 0, (acc, x) -> acc + x)")
+	if len(diags) > 0 {
+		t.Fatalf("unexpected diags: %v", diagMessages(diags))
+	}
+	want := "reduce(nums, 0, ((acc, x) -> (acc + x)))"
+	if expr.String() != want {
+		t.Errorf("got %s, want %s", expr.String(), want)
+	}
+
+	formatted := format.Expr(expr)
+	if formatted != "reduce(nums, 0, (acc, x) -> acc + x)" {
+		t.Errorf("formatted = %q", formatted)
+	}
+}
+
 func TestStrictCastBang(t *testing.T) {
 	expr, diags := ParseExpr("int!(x)")
 	if len(diags) > 0 {

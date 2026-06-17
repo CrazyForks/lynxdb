@@ -262,7 +262,14 @@ func formatExpr(b *strings.Builder, e ast.Expr, parentPrec prec) {
 		if needParens {
 			b.WriteByte('(')
 		}
-		b.WriteString(n.Param)
+		params := n.LambdaParams()
+		if len(params) == 1 {
+			b.WriteString(params[0])
+		} else {
+			b.WriteByte('(')
+			b.WriteString(strings.Join(params, ", "))
+			b.WriteByte(')')
+		}
 		b.WriteString(" -> ")
 		formatExpr(b, n.Body, precTop)
 		if needParens {

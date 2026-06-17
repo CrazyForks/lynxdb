@@ -172,6 +172,7 @@ var functions = []Function{
 	{Name: "all", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "filter", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TArray, Fallibility: NullOnFailure},
 	{Name: "map", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "fn", Type: TLambda}}, Result: TArray, Fallibility: NullOnFailure},
+	{Name: "reduce", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "init", Type: TAny}, {Name: "fn", Type: TLambda}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Fold array elements with (acc, x) -> expr."},
 	{Name: "array_count", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Count elements matching a predicate."},
 	{Name: "array_has_any", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "array_has_all", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},

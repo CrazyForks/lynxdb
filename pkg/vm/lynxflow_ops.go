@@ -1165,6 +1165,9 @@ func execGenerateSeries(values []event.Value) event.Value {
 	if len(values) != 2 && len(values) != 3 {
 		return event.NullValue()
 	}
+	if values[0].Type() == event.FieldTypeTimestamp || values[1].Type() == event.FieldTypeTimestamp {
+		return execTimestampGenerateSeries(values)
+	}
 	start, ok := values[0].TryAsInt()
 	if !ok {
 		return event.NullValue()
@@ -1207,6 +1210,50 @@ func execGenerateSeries(values []event.Value) event.Value {
 			return event.NullValue()
 		}
 		current += step
+	}
+
+	return event.ArrayValue(result)
+}
+
+func execTimestampGenerateSeries(values []event.Value) event.Value {
+	start, ok := values[0].TryAsTimestamp()
+	if !ok {
+		return event.NullValue()
+	}
+	stop, ok := values[1].TryAsTimestamp()
+	if !ok {
+		return event.NullValue()
+	}
+	if len(values) != 3 {
+		return event.NullValue()
+	}
+	step, ok := values[2].TryAsDuration()
+	if !ok || step == 0 {
+		return event.NullValue()
+	}
+	if step > 0 && !start.Before(stop) || step < 0 && !start.After(stop) {
+		return event.ArrayValue(nil)
+	}
+
+	result := make([]event.Value, 0)
+	for current := start; ; {
+		if step > 0 {
+			if !current.Before(stop) {
+				break
+			}
+		} else if !current.After(stop) {
+			break
+		}
+		if len(result) >= maxGenerateSeriesElements {
+			return event.NullValue()
+		}
+		result = append(result, event.TimestampValue(current))
+
+		next := current.Add(step)
+		if step > 0 && !next.After(current) || step < 0 && !next.Before(current) {
+			return event.NullValue()
+		}
+		current = next
 	}
 
 	return event.ArrayValue(result)

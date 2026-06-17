@@ -20,6 +20,7 @@ package vm
 
 import (
 	"testing"
+	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/event"
 	lfast "github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
@@ -588,6 +589,27 @@ func TestB2_GenerateSeries(t *testing.T) {
 
 	result, _ = runLF(t, call("generate_series", litInt(1), litInt(5), litInt(0)), nil)
 	assertNull(t, result, "generate_series zero step")
+
+	start := time.Date(2026, 6, 16, 0, 0, 0, 0, time.UTC)
+	stop := start.Add(3 * time.Hour)
+	fields := map[string]event.Value{
+		"start": event.TimestampValue(start),
+		"stop":  event.TimestampValue(stop),
+		"step":  event.DurationValue(time.Hour),
+	}
+	result, _ = runLF(t, call("generate_series", ident("start"), ident("stop"), ident("step")), fields)
+	arr = assertArray(t, result, 3, "generate_series timestamp")
+	assertTimestamp(t, arr[0], start, "generate_series timestamp[0]")
+	assertTimestamp(t, arr[2], start.Add(2*time.Hour), "generate_series timestamp[2]")
+
+	fields["step"] = event.DurationValue(-time.Hour)
+	result, _ = runLF(t, call("generate_series", ident("stop"), ident("start"), ident("step")), fields)
+	arr = assertArray(t, result, 3, "generate_series timestamp descending")
+	assertTimestamp(t, arr[0], stop, "generate_series timestamp descending[0]")
+	assertTimestamp(t, arr[2], stop.Add(-2*time.Hour), "generate_series timestamp descending[2]")
+
+	result, _ = runLF(t, call("generate_series", ident("start"), ident("stop")), fields)
+	assertNull(t, result, "generate_series timestamp requires duration step")
 }
 
 func TestB2_ZipEntries(t *testing.T) {

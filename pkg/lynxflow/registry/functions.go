@@ -165,7 +165,7 @@ var functions = []Function{
 	{Name: "array_compact", Category: "array", Params: []Param{{Name: "arr", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Remove consecutive duplicate elements."},
 	{Name: "array_deltas", Category: "array", Params: []Param{{Name: "arr", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Adjacent differences with leading null."},
 	{Name: "array_cumsum", Category: "array", Params: []Param{{Name: "arr", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Cumulative sums across array elements."},
-	{Name: "generate_series", Category: "array", Params: []Param{{Name: "start", Type: TInt}, {Name: "stop", Type: TInt}, {Name: "step", Type: TInt, Optional: true}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Integer series from start to stop, excluding stop; default step is 1."},
+	{Name: "generate_series", Category: "array", Params: []Param{{Name: "start", Type: TAny}, {Name: "stop", Type: TAny}, {Name: "step", Type: TAny, Optional: true}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Series from start to stop, excluding stop. Integers use integer steps; timestamps require a duration step."},
 	{Name: "zip", Category: "array", Params: []Param{{Name: "arrays", Type: TArray, Variadic: true}}, Result: TArray, Fallibility: NullOnFailure, Doc: "Zip equal-length arrays into arrays of tuples."},
 	{Name: "flatten", Category: "array", Params: []Param{{Name: "arr", Type: TArray}}, Result: TArray, Fallibility: NullOnFailure, Doc: "One level."},
 	{Name: "any", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TBool, Fallibility: NullOnFailure, Doc: "any(tags, t -> t.name == \"vip\")"},

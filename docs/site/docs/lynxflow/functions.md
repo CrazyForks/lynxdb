@@ -205,7 +205,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `array_compact` | (arr: array) | `array` | null_on_failure | - | Remove consecutive duplicate elements. |
 | `array_deltas` | (arr: array) | `array` | null_on_failure | - | Adjacent differences with leading null. |
 | `array_cumsum` | (arr: array) | `array` | null_on_failure | - | Cumulative sums across array elements. |
-| `generate_series` | (start: int, stop: int, step: int?) | `array` | null_on_failure | - | Integer series from start to stop, excluding stop; default step is 1. |
+| `generate_series` | (start: any, stop: any, step: any?) | `array` | null_on_failure | - | Series from start to stop, excluding stop. Integers use integer steps; timestamps require a duration step. |
 | `zip` | (arrays: array...) | `array` | null_on_failure | - | Zip equal-length arrays into arrays of tuples. |
 | `flatten` | (arr: array) | `array` | null_on_failure | - | One level. |
 | `any` | (arr: array, pred: lambda) | `bool` | null_on_failure | - | any(tags, t -&gt; t.name == "vip") |

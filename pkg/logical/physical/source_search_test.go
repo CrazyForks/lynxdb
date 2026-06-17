@@ -261,6 +261,26 @@ func TestEphemeralPushdown_BloomAnyTerms(t *testing.T) {
 	}
 }
 
+func TestEphemeralPushdown_RegexAlternationDoesNotRequireAllTerms(t *testing.T) {
+	events := map[string][]*event.Event{
+		"main": {
+			mkEvent("service emitted error"),
+			mkEvent("service emitted warning"),
+			mkEvent("service emitted error warning"),
+			mkEvent("service emitted info"),
+		},
+	}
+
+	results, ss := drainWithStats(t, `from main | where matches(_raw, r"error|warning")`, events)
+
+	if len(results) != 3 {
+		t.Errorf("results: got %d, want 3", len(results))
+	}
+	if ss.FilteredEvents.Load() != 4 {
+		t.Errorf("FilteredEvents: got %d, want 4", ss.FilteredEvents.Load())
+	}
+}
+
 func TestEphemeralPushdown_FieldPredicates(t *testing.T) {
 	events := map[string][]*event.Event{
 		"main": {

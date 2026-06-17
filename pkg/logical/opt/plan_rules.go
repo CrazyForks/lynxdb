@@ -559,6 +559,9 @@ func extractBloomTerms(expr ast.Expr) []string {
 		if !ok {
 			return nil
 		}
+		if hasRegexAlternation(s) {
+			return nil
+		}
 		literalStr = s
 		isPattern = true
 
@@ -631,6 +634,9 @@ func extractBloomAnyTerms(expr ast.Expr) []string {
 		case "contains_any", "contains_any_cs":
 			terms = bloomTokensFromSubstrs([]string{s})
 		case "matches_any":
+			if hasRegexAlternation(s) {
+				return nil
+			}
 			terms = bloomTokensFromSubstrs(extractRegexLiterals(s))
 		default:
 			return nil
@@ -878,6 +884,35 @@ func extractRegexLiterals(pattern string) []string {
 	}
 	flush()
 	return result
+}
+
+func hasRegexAlternation(pattern string) bool {
+	inClass := false
+	escaped := false
+	for _, r := range pattern {
+		if escaped {
+			escaped = false
+			continue
+		}
+		if r == '\\' {
+			escaped = true
+			continue
+		}
+		if inClass {
+			if r == ']' {
+				inClass = false
+			}
+			continue
+		}
+		if r == '[' {
+			inClass = true
+			continue
+		}
+		if r == '|' {
+			return true
+		}
+	}
+	return false
 }
 
 func isQuantifier(r rune) bool {

@@ -449,15 +449,10 @@ func TestPredicatePushdown_BloomTerms(t *testing.T) {
 			excludes: []string{`pushdown.bloom_term:`},
 		},
 		{
-			name:  "matches_alternation_safe",
+			name:  "matches_alternation_excluded",
 			query: `from main | where matches(_raw, r"error|warning")`,
-			// Alternation: can't require literals from either branch
-			// individually. But each side is flushed. The result should
-			// include both as separate runs.
-			contains: []string{
-				`pushdown.bloom_term: "error"`,
-				`pushdown.bloom_term: "warning"`,
-			},
+			// Alternation: can't require literals from either branch.
+			excludes: []string{`pushdown.bloom_term:`, `pushdown.bloom_any_term:`},
 		},
 		{
 			name:  "contains_non_raw_field_ignored",

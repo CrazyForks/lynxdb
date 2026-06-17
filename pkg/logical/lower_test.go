@@ -67,6 +67,22 @@ func TestLower_StatsByStarExpandsInputSchema(t *testing.T) {
 	}
 }
 
+func TestLower_ColumnsMacroExpandsAggregateArgs(t *testing.T) {
+	plan, diags := parseDesugarLower(t, `from app | parse json into (db_ms as int, api_ms as int, level as string) | stats max(columns("*_ms"))`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Aggregate](t, plan.Root, "root should be Aggregate")
+	agg := plan.Root.(*Aggregate)
+	if len(agg.Aggs) != 2 {
+		t.Fatalf("aggs len = %d, want 2", len(agg.Aggs))
+	}
+	wantAliases := []string{"max_db_ms", "max_api_ms"}
+	for i, want := range wantAliases {
+		if agg.Aggs[i].Alias != want {
+			t.Fatalf("agg %d alias = %q, want %q", i, agg.Aggs[i].Alias, want)
+		}
+	}
+}
+
 func TestLower_SortStarExpandsInputSchema(t *testing.T) {
 	plan, diags := parseDesugarLower(t, `from app | sort -*`)
 	assertNoDiagErrors(t, diags)

@@ -144,6 +144,23 @@ func TestBuild_StatsByStar(t *testing.T) {
 	}
 }
 
+func TestBuild_ColumnsMacroInStats(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"_raw": strV(`{"db_ms":12,"api_ms":7}`)},
+		{"_raw": strV(`{"db_ms":5,"api_ms":20}`)},
+	}
+	got := drain(t, `from * | parse json into (db_ms as int, api_ms as int, level as string) | stats max(columns("*_ms"))`, rows)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 row, got %d: %#v", len(got), got)
+	}
+	if maxDB := got[0]["max_db_ms"].AsInt(); maxDB != 12 {
+		t.Fatalf("max_db_ms = %d, want 12", maxDB)
+	}
+	if maxAPI := got[0]["max_api_ms"].AsInt(); maxAPI != 20 {
+		t.Fatalf("max_api_ms = %d, want 20", maxAPI)
+	}
+}
+
 func TestBuild_Unpivot(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"service": strV("api"), "cpu_ms": intV(12), "db_ms": intV(7), "status": intV(200)},

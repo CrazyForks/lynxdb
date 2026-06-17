@@ -296,11 +296,7 @@ func (l *lowerer) lowerStats(input Node, sp *ast.StatsPayload, window *WindowSpe
 
 	var aggs []Agg
 	for _, a := range sp.Aggs {
-		aggs = append(aggs, Agg{
-			Func:      a.Func,
-			WhereCond: a.WhereCond,
-			Alias:     a.Alias,
-		})
+		aggs = append(aggs, expandColumnsAgg(input, a)...)
 	}
 
 	var keys []Key
@@ -335,6 +331,57 @@ func (l *lowerer) lowerStats(input Node, sp *ast.StatsPayload, window *WindowSpe
 		TimeBin:   timeBin,
 		Window:    window,
 	}
+}
+
+func expandColumnsAgg(input Node, agg ast.AggExpr) []Agg {
+	call, ok := agg.Func.(*ast.Call)
+	if !ok {
+		return []Agg{{Func: agg.Func, WhereCond: agg.WhereCond, Alias: agg.Alias}}
+	}
+	argIndex, pattern, ok := columnsArg(call)
+	if !ok {
+		return []Agg{{Func: agg.Func, WhereCond: agg.WhereCond, Alias: agg.Alias}}
+	}
+
+	var out []Agg
+	for _, field := range input.Schema() {
+		if !matchGlob(pattern, field.Name) {
+			continue
+		}
+		args := append([]ast.Expr(nil), call.Args...)
+		args[argIndex] = &ast.Ident{Name: field.Name, Pos: call.Args[argIndex].ExprSpan()}
+		expanded := *call
+		expanded.Args = args
+		aliasPrefix := agg.Alias
+		if aliasPrefix == "" {
+			aliasPrefix = call.Callee
+		}
+		out = append(out, Agg{
+			Func:      &expanded,
+			WhereCond: agg.WhereCond,
+			Alias:     aliasPrefix + "_" + field.Name,
+		})
+	}
+	if len(out) == 0 {
+		return []Agg{{Func: agg.Func, WhereCond: agg.WhereCond, Alias: agg.Alias}}
+	}
+	return out
+}
+
+func columnsArg(call *ast.Call) (int, string, bool) {
+	for i, arg := range call.Args {
+		colCall, ok := arg.(*ast.Call)
+		if !ok || colCall.Callee != "columns" || len(colCall.Args) != 1 {
+			continue
+		}
+		lit, ok := colCall.Args[0].(*ast.Literal)
+		if !ok || (lit.Kind != ast.LitString && lit.Kind != ast.LitRawString) {
+			return 0, "", false
+		}
+		pattern, ok := lit.Value.(string)
+		return i, pattern, ok
+	}
+	return 0, "", false
 }
 
 func (l *lowerer) lowerSort(input Node, s ast.Stage) Node {

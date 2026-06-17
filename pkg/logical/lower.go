@@ -257,12 +257,32 @@ func (l *lowerer) lowerGapfill(input Node, s ast.Stage) Node {
 	if s.Gapfill == nil {
 		return input
 	}
+	var bounds *TimeBounds
+	if scan := findScan(input); scan != nil {
+		bounds = copyEffectiveTimeBounds(scan)
+	}
 	return &Gapfill{
 		unaryNode: unaryNode{Input: input},
 		Span:      s.Gapfill.Span,
 		Fill:      s.Gapfill.Fill,
 		By:        s.Gapfill.By,
+		Bounds:    bounds,
 	}
+}
+
+func copyEffectiveTimeBounds(scan *Scan) *TimeBounds {
+	if scan.Pushdown.TimeBounds != nil {
+		return copyTimeBounds(scan.Pushdown.TimeBounds)
+	}
+	return copyTimeBounds(scan.TimeRange)
+}
+
+func copyTimeBounds(tb *TimeBounds) *TimeBounds {
+	if tb == nil {
+		return nil
+	}
+	out := *tb
+	return &out
 }
 
 func (l *lowerer) lowerWhere(input Node, s ast.Stage) Node {

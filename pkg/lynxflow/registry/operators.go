@@ -197,7 +197,7 @@ var operators = []Operator{
 			{Name: "fill", Type: ArgExpr, Required: true},
 			{Name: "by", Type: ArgFieldList},
 		},
-		Doc:      "Insert missing observed _time buckets per group and fill aggregate columns.",
+		Doc:      "Insert missing _time buckets per group across the query range when available, else the observed range.",
 		Examples: []string{`gapfill span=5m fill=0 by service`},
 	},
 	{

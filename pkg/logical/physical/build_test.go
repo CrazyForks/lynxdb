@@ -48,6 +48,16 @@ func drain(t *testing.T, query string, rows []map[string]event.Value) []map[stri
 
 func drainWithBatchSize(t *testing.T, query string, rows []map[string]event.Value, batchSize int) []map[string]event.Value {
 	t.Helper()
+	return drainWithBuildOptions(t, query, rows, BuildOptions{BatchSize: batchSize})
+}
+
+func drainAt(t *testing.T, query string, rows []map[string]event.Value, now time.Time) []map[string]event.Value {
+	t.Helper()
+	return drainWithBuildOptions(t, query, rows, BuildOptions{Now: now})
+}
+
+func drainWithBuildOptions(t *testing.T, query string, rows []map[string]event.Value, opts BuildOptions) []map[string]event.Value {
+	t.Helper()
 	q, diags := parser.Parse(query)
 	for _, d := range diags {
 		if d.Severity == parser.SeverityError {
@@ -63,10 +73,8 @@ func drainWithBatchSize(t *testing.T, query string, rows []map[string]event.Valu
 	}
 	plan, _ = opt.Optimize(plan)
 
-	iter, err := Build(plan, BuildOptions{
-		Source:    sourceFromRows(rows),
-		BatchSize: batchSize,
-	})
+	opts.Source = sourceFromRows(rows)
+	iter, err := Build(plan, opts)
 	if err != nil {
 		t.Fatalf("Build: %v", err)
 	}
@@ -613,6 +621,47 @@ func TestBuild_EveryFillGapfill(t *testing.T) {
 	count, ok := gap["count"].TryAsInt()
 	if !ok || count != 0 {
 		t.Fatalf("gap count: got %s, want 0", gap["count"].String())
+	}
+}
+
+func TestBuild_EveryFillUsesSourceRange(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	now := base.Add(20 * time.Minute)
+	rows := []map[string]event.Value{
+		{"_time": tsV(base.Add(5 * time.Minute)), "service": strV("api")},
+		{"_time": tsV(base.Add(15 * time.Minute)), "service": strV("api")},
+	}
+
+	result := drainAt(t, `from *[-20m..0s] | every 5m by service stats count() as count fill=0`, rows, now)
+	if len(result) != 5 {
+		t.Fatalf("expected 5 rows, got %d: %#v", len(result), result)
+	}
+
+	wantCounts := map[time.Time]int64{
+		base:                       0,
+		base.Add(5 * time.Minute):  1,
+		base.Add(10 * time.Minute): 0,
+		base.Add(15 * time.Minute): 1,
+		base.Add(20 * time.Minute): 0,
+	}
+	for _, row := range result {
+		ts, ok := row["_time"].TryAsTimestamp()
+		if !ok {
+			t.Fatalf("row without _time: %#v", row)
+		}
+		bucket := ts.UTC()
+		want, ok := wantCounts[bucket]
+		if !ok {
+			t.Fatalf("unexpected bucket %v in %#v", ts, result)
+		}
+		got, ok := row["count"].TryAsInt()
+		if !ok || got != want {
+			t.Fatalf("bucket %v count = %s, want %d", ts, row["count"].String(), want)
+		}
+		delete(wantCounts, bucket)
+	}
+	if len(wantCounts) != 0 {
+		t.Fatalf("missing buckets: %#v", wantCounts)
 	}
 }
 

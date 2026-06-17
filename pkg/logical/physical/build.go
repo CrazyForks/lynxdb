@@ -1098,7 +1098,12 @@ func (b *builder) buildGapfill(nd *logical.Gapfill) (pipeline.Iterator, error) {
 		by[i] = name
 	}
 
-	return pipeline.NewGapfillIterator(child, span, fill, by, b.opts.batchSize()), nil
+	now := b.opts.Now
+	if now.IsZero() {
+		now = time.Now()
+	}
+	start, end := resolveTimeBoundsToAbsolute(nd.Bounds, now)
+	return pipeline.NewGapfillIteratorWithBounds(child, span, fill, by, b.opts.batchSize(), start, end), nil
 }
 
 func (b *builder) buildSample(nd *logical.Sample) (pipeline.Iterator, error) {

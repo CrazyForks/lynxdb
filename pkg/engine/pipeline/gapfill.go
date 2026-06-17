@@ -11,25 +11,41 @@ import (
 
 const maxGapfillRows = 1_000_000
 
-// GapfillIterator inserts missing _time buckets between observed min/max per group.
+// GapfillIterator inserts missing _time buckets between query or observed bounds per group.
 type GapfillIterator struct {
 	child     Iterator
 	span      time.Duration
 	fill      event.Value
 	by        []string
 	batchSize int
+	start     *time.Time
+	end       *time.Time
 
 	output []map[string]event.Value
 	offset int
 }
 
 func NewGapfillIterator(child Iterator, span time.Duration, fill event.Value, by []string, batchSize int) *GapfillIterator {
+	return NewGapfillIteratorWithBounds(child, span, fill, by, batchSize, nil, nil)
+}
+
+func NewGapfillIteratorWithBounds(
+	child Iterator,
+	span time.Duration,
+	fill event.Value,
+	by []string,
+	batchSize int,
+	start *time.Time,
+	end *time.Time,
+) *GapfillIterator {
 	return &GapfillIterator{
 		child:     child,
 		span:      span,
 		fill:      fill,
 		by:        append([]string(nil), by...),
 		batchSize: batchSize,
+		start:     cloneTimePtr(start),
+		end:       cloneTimePtr(end),
 	}
 }
 
@@ -160,7 +176,8 @@ func (g *GapfillIterator) buildRows(groups map[string]*gapfillGroup, columns []s
 	rows := make([]map[string]event.Value, 0)
 	for _, key := range keys {
 		group := groups[key]
-		for t := group.minTime; !t.After(group.maxTime); t = t.Add(g.span) {
+		start, end := g.groupBounds(group)
+		for t := start; !t.After(end); t = t.Add(g.span) {
 			if len(rows) >= maxGapfillRows {
 				return nil
 			}
@@ -181,6 +198,18 @@ func (g *GapfillIterator) buildRows(groups map[string]*gapfillGroup, columns []s
 		return ti.Before(tj)
 	})
 	return rows
+}
+
+func (g *GapfillIterator) groupBounds(group *gapfillGroup) (time.Time, time.Time) {
+	start := group.minTime
+	end := group.maxTime
+	if g.start != nil {
+		start = *g.start
+	}
+	if g.end != nil {
+		end = *g.end
+	}
+	return start, end
 }
 
 func (g *GapfillIterator) syntheticRow(group *gapfillGroup, columns []string, t time.Time) map[string]event.Value {
@@ -215,4 +244,12 @@ func containsString(values []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func cloneTimePtr(t *time.Time) *time.Time {
+	if t == nil {
+		return nil
+	}
+	out := *t
+	return &out
 }

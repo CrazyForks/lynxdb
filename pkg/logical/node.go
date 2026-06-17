@@ -605,6 +605,9 @@ type Gapfill struct {
 	Span ast.Expr
 	Fill ast.Expr
 	By   []ast.Expr
+	// Bounds carries the source query range when statically available. When nil,
+	// gapfill falls back to the observed min/max bucket range.
+	Bounds *TimeBounds
 }
 
 func (n *Gapfill) Schema() []sema.Field { return n.inputSchema() }

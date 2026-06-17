@@ -1056,6 +1056,8 @@ func (b *builder) buildHelper(nd *logical.Helper) (pipeline.Iterator, error) {
 		return b.buildHelperRollup(child, nd)
 	case "sessionize":
 		return b.buildHelperSessionize(child, nd)
+	case "unpivot":
+		return b.buildHelperUnpivot(child, nd)
 	default:
 		return nil, &NotYetImplementedError{Feature: fmt.Sprintf("helper %q", nd.Name)}
 	}
@@ -1069,6 +1071,19 @@ func (b *builder) buildHelperXYSeries(child pipeline.Iterator, nd *logical.Helpe
 	y := exprFieldName(nd.Positional[1])
 	v := exprFieldName(nd.Positional[2])
 	return pipeline.NewXYSeriesIterator(child, x, y, v, b.opts.batchSize()), nil
+}
+
+func (b *builder) buildHelperUnpivot(child pipeline.Iterator, nd *logical.Helper) (pipeline.Iterator, error) {
+	if len(nd.Positional) < 3 {
+		return nil, fmt.Errorf("physical.Build: unpivot requires selected fields plus name and value args, got %d", len(nd.Positional))
+	}
+	nameField := exprFieldName(nd.Positional[len(nd.Positional)-2])
+	valueField := exprFieldName(nd.Positional[len(nd.Positional)-1])
+	fields := make([]string, 0, len(nd.Positional)-2)
+	for _, expr := range nd.Positional[:len(nd.Positional)-2] {
+		fields = append(fields, exprFieldName(expr))
+	}
+	return pipeline.NewUnpivotIterator(child, fields, nameField, valueField, b.opts.batchSize()), nil
 }
 
 func (b *builder) buildHelperTransaction(child pipeline.Iterator, nd *logical.Helper) (pipeline.Iterator, error) {

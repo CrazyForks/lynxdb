@@ -344,6 +344,7 @@ type Stage struct {
 	Topology    *GenericOptionsPayload
 	Correlate   *CorrelatePayload
 	Rollup      *RollupPayload
+	Unpivot     *UnpivotPayload
 	Xyseries    *XYSeriesPayload
 	Generic     *GenericOptionsPayload // fallback for unknown-but-recovered stages
 	Pos         Span                   // from stage name to end of stage
@@ -466,6 +467,9 @@ func (s *Stage) String() string {
 	case s.Rollup != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Rollup.String())
+	case s.Unpivot != nil:
+		b.WriteByte(' ')
+		b.WriteString(s.Unpivot.String())
 	case s.Xyseries != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Xyseries.String())
@@ -1303,6 +1307,40 @@ func (r *RollupPayload) String() string {
 			}
 			b.WriteString(k.String())
 		}
+	}
+	return b.String()
+}
+
+// UnpivotPayload is the typed payload for unpivot.
+type UnpivotPayload struct {
+	Fields     []Expr
+	NameField  Expr
+	ValueField Expr
+}
+
+func (u *UnpivotPayload) String() string {
+	var b strings.Builder
+	for i, field := range u.Fields {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if field == nil {
+			b.WriteString("<nil>")
+			continue
+		}
+		b.WriteString(field.String())
+	}
+	b.WriteString(" as ")
+	if u.NameField != nil {
+		b.WriteString(u.NameField.String())
+	} else {
+		b.WriteString("<nil>")
+	}
+	b.WriteString(", ")
+	if u.ValueField != nil {
+		b.WriteString(u.ValueField.String())
+	} else {
+		b.WriteString("<nil>")
 	}
 	return b.String()
 }

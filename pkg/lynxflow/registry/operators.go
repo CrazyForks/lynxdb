@@ -365,6 +365,18 @@ var operators = []Operator{
 		Doc:      "Pivot rows into a matrix (x rows, y columns).",
 		Examples: []string{`stats count() by service, level | xyseries service level count`},
 	},
+	{
+		Name: "unpivot", Class: ClassHelper, Streaming: StreamingRow,
+		Positionals: []Positional{
+			{Name: "fields", Type: ArgFieldList, Required: true},
+			{Name: "name", Type: ArgField, Required: true, Doc: "metric-name output field"},
+			{Name: "value", Type: ArgField, Required: true, Doc: "metric-value output field"},
+		},
+		Syntax:   "unpivot <fields> as <name>, <value>",
+		Grammar:  "'unpivot' field_list 'as' field ',' field",
+		Doc:      "Convert selected wide fields into name/value rows.",
+		Examples: []string{`unpivot cpu_ms, db_ms as metric, value`},
+	},
 
 	// management
 	{

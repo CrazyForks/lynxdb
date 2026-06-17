@@ -1034,6 +1034,8 @@ func (p *parser) parseStageBody(s *ast.Stage) {
 		p.parseCorrelateBody(s)
 	case "rollup":
 		p.parseRollupBody(s)
+	case "unpivot":
+		p.parseUnpivotBody(s)
 	case "xyseries":
 		p.parseXYSeriesBody(s)
 	case "patterns", "outliers", "sessionize", "trace", "topology":
@@ -2076,6 +2078,39 @@ func (p *parser) parseRollupBody(s *ast.Stage) {
 	}
 
 	s.Rollup = payload
+}
+
+func (p *parser) parseUnpivotBody(s *ast.Stage) {
+	payload := &ast.UnpivotPayload{}
+
+	for {
+		if p.at(lexer.KwAs) || p.atStageBoundary() {
+			break
+		}
+		payload.Fields = append(payload.Fields, p.parseExprSafe())
+		if !p.consume(lexer.Comma) {
+			break
+		}
+		if p.at(lexer.KwAs) || p.atStageBoundary() {
+			break
+		}
+	}
+
+	if !p.consume(lexer.KwAs) {
+		p.errorf(p.cur, CodeStageError, []string{"as"}, "",
+			"expected 'as' in unpivot, got %s", kindName(p.cur.Kind))
+		s.Unpivot = payload
+		return
+	}
+	payload.NameField = p.parseExprSafe()
+	if !p.consume(lexer.Comma) {
+		p.errorf(p.cur, CodeStageError, []string{","}, "",
+			"expected comma after unpivot name field, got %s", kindName(p.cur.Kind))
+		s.Unpivot = payload
+		return
+	}
+	payload.ValueField = p.parseExprSafe()
+	s.Unpivot = payload
 }
 
 func (p *parser) parseXYSeriesBody(s *ast.Stage) {

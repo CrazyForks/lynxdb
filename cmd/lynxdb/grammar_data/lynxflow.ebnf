@@ -73,6 +73,7 @@ stage       ::= baseline_stage
               | trace_stage
               | transaction_stage
               | union_stage
+              | unpivot_stage
               | use_stage
               | where_stage
               | xyseries_stage ;
@@ -121,6 +122,7 @@ topology_stage   ::= 'topology' ['source_field' '=' field] ['dest_field' '=' fie
 trace_stage      ::= 'trace' ['trace_id' '=' field] ['span_id' '=' field] ['parent_id' '=' field] ;
 transaction_stage ::= 'transaction' field_list ['maxspan' '=' duration] ['startswith' '=' expr] ['endswith' '=' expr] ;
 union_stage      ::= 'union' sub_pipeline... ;
+unpivot_stage    ::= 'unpivot' field_list 'as' field ',' field ;
 use_stage        ::= 'use' string ;
 where_stage      ::= 'where' expr ;
 xyseries_stage   ::= 'xyseries' field field field ;

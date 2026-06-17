@@ -90,6 +90,39 @@ func arrV(elems ...event.Value) event.Value { return event.ArrayValue(elems) }
 func objV(fields map[string]event.Value) event.Value {
 	return event.ObjectValue(fields)
 }
+
+func TestBuild_Unpivot(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"service": strV("api"), "cpu_ms": intV(12), "db_ms": intV(7), "status": intV(200)},
+		{"service": strV("web"), "cpu_ms": intV(5), "status": intV(500)},
+	}
+
+	got := drain(t, `from * | unpivot cpu_ms, db_ms as metric, value`, rows)
+
+	want := []map[string]event.Value{
+		{"service": strV("api"), "status": intV(200), "metric": strV("cpu_ms"), "value": intV(12)},
+		{"service": strV("api"), "status": intV(200), "metric": strV("db_ms"), "value": intV(7)},
+		{"service": strV("web"), "status": intV(500), "metric": strV("cpu_ms"), "value": intV(5)},
+		{"service": strV("web"), "status": intV(500), "metric": strV("db_ms"), "value": nullV()},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("row count: got %d want %d rows: %#v", len(got), len(want), got)
+	}
+	for i := range want {
+		for field, wantValue := range want[i] {
+			if gotValue := got[i][field]; gotValue != wantValue {
+				t.Fatalf("row %d field %s: got %v want %v", i, field, gotValue, wantValue)
+			}
+		}
+		if _, ok := got[i]["cpu_ms"]; ok {
+			t.Fatalf("row %d retained cpu_ms: %#v", i, got[i])
+		}
+		if _, ok := got[i]["db_ms"]; ok {
+			t.Fatalf("row %d retained db_ms: %#v", i, got[i])
+		}
+	}
+}
+
 func intPtr(n int64) *int64       { return &n }
 func floatPtr(n float64) *float64 { return &n }
 

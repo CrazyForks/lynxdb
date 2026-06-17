@@ -727,7 +727,7 @@ func (n *Describe) String() string { return "Describe()" }
 
 // Helper is a passthrough node for investigation operators (patterns, compare,
 // outliers, sessionize, transaction, trace, topology, correlate, rollup,
-// xyseries) that are preserved as-is for the physical planner.
+// unpivot, xyseries) that are preserved as-is for the physical planner.
 type Helper struct {
 	unaryNode
 	Name       string
@@ -743,6 +743,24 @@ func (n *Helper) Schema() []sema.Field {
 		return n.cachedSchema
 	}
 	base := copySchema(n.inputSchema())
+	if n.Name == "unpivot" && len(n.Positional) >= 3 {
+		selected := make(map[string]struct{}, len(n.Positional)-2)
+		for _, expr := range n.Positional[:len(n.Positional)-2] {
+			selected[exprFieldName(expr)] = struct{}{}
+		}
+		out := base[:0]
+		for _, field := range base {
+			if _, ok := selected[field.Name]; !ok {
+				out = append(out, field)
+			}
+		}
+		nameField := exprFieldName(n.Positional[len(n.Positional)-2])
+		valueField := exprFieldName(n.Positional[len(n.Positional)-1])
+		out = addField(out, nameField, sema.TypeString)
+		out = addField(out, valueField, sema.TypeAny)
+		n.cachedSchema = out
+		return n.cachedSchema
+	}
 	for _, f := range n.extraFields {
 		base = addField(base, f.Name, f.Type)
 	}

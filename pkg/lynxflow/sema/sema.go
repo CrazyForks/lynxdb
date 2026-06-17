@@ -290,6 +290,8 @@ func (a *analyzer) analyzeStage(s ast.Stage) {
 		a.analyzeCorrelate(s)
 	case "rollup":
 		a.analyzeRollup(s)
+	case "unpivot":
+		a.analyzeUnpivot(s)
 	case "xyseries":
 		a.analyzeXyseries(s)
 	// Management stages: schema unchanged.
@@ -637,6 +639,18 @@ func (a *analyzer) analyzeCorrelate(_ ast.Stage) {
 
 func (a *analyzer) analyzeRollup(_ ast.Stage) {
 	a.schema.add("_resolution", TypeDuration)
+}
+
+func (a *analyzer) analyzeUnpivot(s ast.Stage) {
+	if s.Unpivot == nil || len(s.Unpivot.Fields) == 0 ||
+		s.Unpivot.NameField == nil || s.Unpivot.ValueField == nil {
+		return
+	}
+	for _, field := range s.Unpivot.Fields {
+		a.schema.remove(exprFieldName(field))
+	}
+	a.schema.add(exprFieldName(s.Unpivot.NameField), TypeString)
+	a.schema.add(exprFieldName(s.Unpivot.ValueField), TypeAny)
 }
 
 func (a *analyzer) analyzeXyseries(_ ast.Stage) {

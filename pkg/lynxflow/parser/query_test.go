@@ -242,6 +242,11 @@ func TestGoldenStructure(t *testing.T) {
 			input: `| streamstats window=5m sum(bytes) as recent_bytes`,
 			want:  `streamstats window=5m sum(bytes) as recent_bytes`,
 		},
+		{
+			name:  "unpivot",
+			input: `| unpivot cpu_ms, db_ms as metric, value`,
+			want:  `unpivot cpu_ms, db_ms as metric, value`,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

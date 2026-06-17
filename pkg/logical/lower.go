@@ -231,6 +231,8 @@ func (l *lowerer) lowerStage(input Node, s ast.Stage) Node {
 		return l.lowerHelper(input, s, helperExtraFields(s.Name))
 	case "rollup":
 		return l.lowerHelper(input, s, helperExtraFields(s.Name))
+	case "unpivot":
+		return l.lowerHelper(input, s, helperExtraFields(s.Name))
 	case "xyseries":
 		return l.lowerHelper(input, s, helperExtraFields(s.Name))
 	case "keep", "drop", "rename":
@@ -940,6 +942,11 @@ func (l *lowerer) lowerHelper(input Node, s ast.Stage, extra []sema.Field) Node 
 	case "rollup":
 		if s.Rollup != nil {
 			positional = s.Rollup.Resolutions
+		}
+	case "unpivot":
+		if s.Unpivot != nil {
+			positional = append(positional, s.Unpivot.Fields...)
+			positional = append(positional, s.Unpivot.NameField, s.Unpivot.ValueField)
 		}
 	case "xyseries":
 		if s.Xyseries != nil {

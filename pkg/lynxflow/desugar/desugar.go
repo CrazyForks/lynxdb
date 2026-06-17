@@ -1342,6 +1342,8 @@ func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 		out.Correlate = cloneCorrelatePayload(s.Correlate)
 	case s.Rollup != nil:
 		out.Rollup = cloneRollupPayload(s.Rollup)
+	case s.Unpivot != nil:
+		out.Unpivot = cloneUnpivotPayload(s.Unpivot)
 	case s.Xyseries != nil:
 		out.Xyseries = cloneXYSeriesPayload(s.Xyseries)
 	case s.Patterns != nil:
@@ -1683,6 +1685,14 @@ func cloneRollupPayload(rp *ast.RollupPayload) *ast.RollupPayload {
 	return &ast.RollupPayload{
 		Resolutions: cloneExprs(rp.Resolutions),
 		By:          cloneExprs(rp.By),
+	}
+}
+
+func cloneUnpivotPayload(up *ast.UnpivotPayload) *ast.UnpivotPayload {
+	return &ast.UnpivotPayload{
+		Fields:     cloneExprs(up.Fields),
+		NameField:  cloneExpr(up.NameField),
+		ValueField: cloneExpr(up.ValueField),
 	}
 }
 

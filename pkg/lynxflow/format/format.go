@@ -763,6 +763,9 @@ func formatStage(b *strings.Builder, s *ast.Stage) {
 	case s.Rollup != nil:
 		b.WriteByte(' ')
 		formatRollupPayload(b, s.Rollup)
+	case s.Unpivot != nil:
+		b.WriteByte(' ')
+		formatUnpivotPayload(b, s.Unpivot)
 	case s.Xyseries != nil:
 		b.WriteByte(' ')
 		formatXYSeriesPayload(b, s.Xyseries)
@@ -1257,6 +1260,19 @@ func formatXYSeriesPayload(b *strings.Builder, p *ast.XYSeriesPayload) {
 	formatExpr(b, p.Y, precTop)
 	b.WriteByte(' ')
 	formatExpr(b, p.Value, precTop)
+}
+
+func formatUnpivotPayload(b *strings.Builder, p *ast.UnpivotPayload) {
+	for i, field := range p.Fields {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		formatExpr(b, field, precTop)
+	}
+	b.WriteString(" as ")
+	formatExpr(b, p.NameField, precTop)
+	b.WriteString(", ")
+	formatExpr(b, p.ValueField, precTop)
 }
 
 func formatGenericPayload(b *strings.Builder, p *ast.GenericOptionsPayload) {

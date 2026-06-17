@@ -83,6 +83,12 @@ type Operator struct {
 	Streaming   Streaming
 	Positionals []Positional
 	Options     []Option
+	// Syntax is an optional human-readable stage signature after the pipe.
+	// Empty means derive a signature from positionals and options.
+	Syntax string
+	// Grammar is an optional EBNF right-hand side for the stage production.
+	// Empty means derive grammar from positionals and options.
+	Grammar string
 	// DesugarsTo is the human-readable expansion template for ClassSugar
 	// operators (RFC-002 §9.1). Empty for all other classes.
 	DesugarsTo string

@@ -83,22 +83,26 @@ func renderOperatorPage(op registry.Operator) string {
 
 	// Signature
 	b.WriteString("## Signature\n\n```\n")
-	b.WriteString("| " + op.Name)
-	for _, p := range op.Positionals {
-		if p.Required {
-			fmt.Fprintf(&b, " <%s>", p.Name)
-		} else {
-			fmt.Fprintf(&b, " [%s]", p.Name)
+	if op.Syntax != "" {
+		b.WriteString("| " + op.Syntax)
+	} else {
+		b.WriteString("| " + op.Name)
+		for _, p := range op.Positionals {
+			if p.Required {
+				fmt.Fprintf(&b, " <%s>", p.Name)
+			} else {
+				fmt.Fprintf(&b, " [%s]", p.Name)
+			}
+			if p.Variadic {
+				b.WriteString("...")
+			}
 		}
-		if p.Variadic {
-			b.WriteString("...")
-		}
-	}
-	for _, o := range op.Options {
-		if o.Required {
-			fmt.Fprintf(&b, " %s=<%s>", o.Name, o.Type)
-		} else {
-			fmt.Fprintf(&b, " [%s=<%s>]", o.Name, o.Type)
+		for _, o := range op.Options {
+			if o.Required {
+				fmt.Fprintf(&b, " %s=<%s>", o.Name, o.Type)
+			} else {
+				fmt.Fprintf(&b, " [%s=<%s>]", o.Name, o.Type)
+			}
 		}
 	}
 	b.WriteString("\n```\n\n")
@@ -419,6 +423,10 @@ func renderStageProduction(op registry.Operator) string {
 
 	var b strings.Builder
 	name := op.Name + "_stage"
+	if op.Grammar != "" {
+		fmt.Fprintf(&b, "%-16s ::= %s ;\n", name, op.Grammar)
+		return b.String()
+	}
 	fmt.Fprintf(&b, "%-16s ::= '%s'", name, op.Name)
 
 	for _, p := range op.Positionals {

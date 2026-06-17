@@ -173,6 +173,7 @@ var functions = []Function{
 	{Name: "filter", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TArray, Fallibility: NullOnFailure},
 	{Name: "map", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "fn", Type: TLambda}}, Result: TArray, Fallibility: NullOnFailure},
 	{Name: "reduce", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "init", Type: TAny}, {Name: "fn", Type: TLambda}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Fold array elements with (acc, x) -> expr."},
+	{Name: "array_reduce", Category: "array", Params: []Param{{Name: "agg", Type: TString}, {Name: "arr", Type: TArray}}, Result: TAny, Fallibility: NullOnFailure, Doc: "Apply a supported aggregate name to an array; duplicate names such as sum use array_sum instead."},
 	{Name: "array_count", Category: "array", Params: []Param{{Name: "arr", Type: TArray}, {Name: "pred", Type: TLambda}}, Result: TInt, Fallibility: NullOnFailure, Doc: "Count elements matching a predicate."},
 	{Name: "array_has_any", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},
 	{Name: "array_has_all", Category: "array", Params: []Param{{Name: "a", Type: TArray}, {Name: "b", Type: TArray}}, Result: TBool, Fallibility: NullOnFailure},

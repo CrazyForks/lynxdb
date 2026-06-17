@@ -508,6 +508,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "filter", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayFilter)},
 		{name: "map", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayMap)},
 		{name: "reduce", minArgs: 3, maxArgs: 3, emit: lfEmitArrayReduce},
+		{name: "array_reduce", minArgs: 2, maxArgs: 2, emit: lfEmitArrayAggReduce},
 		{name: "array_count", minArgs: 2, maxArgs: 2, emit: lfEmitArrayCount},
 		{name: "array_has_any", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAny)},
 		{name: "array_has_all", minArgs: 2, maxArgs: 2, emit: lfEmitBinary(OpArrayHasAll)},
@@ -1436,12 +1437,55 @@ func lfEmitArrayReduce(c *lfCompiler, call *lfast.Call) error {
 	return nil
 }
 
+func lfEmitArrayAggReduce(c *lfCompiler, call *lfast.Call) error {
+	aggName, err := arrayReduceAggName(call.Args[0])
+	if err != nil {
+		return err
+	}
+	if err := c.compile(call.Args[1]); err != nil {
+		return err
+	}
+	nameIdx := c.prog.AddConstant(event.StringValue(aggName))
+	c.prog.EmitOp(OpArrayAggReduce, nameIdx)
+	return nil
+}
+
 func lfEmitArrayCount(c *lfCompiler, call *lfast.Call) error {
 	if err := lfEmitLambdaOp(OpArrayFilter)(c, call); err != nil {
 		return err
 	}
 	c.prog.EmitOp(OpLen)
 	return nil
+}
+
+func arrayReduceAggName(expr lfast.Expr) (string, error) {
+	lit, ok := expr.(*lfast.Literal)
+	if !ok || (lit.Kind != lfast.LitString && lit.Kind != lfast.LitRawString) {
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce aggregate name must be a string literal")
+	}
+	name, ok := lit.Value.(string)
+	if !ok {
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce aggregate name must be a string literal")
+	}
+	name = strings.ToLower(name)
+	switch name {
+	case "sum":
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce(%q, arr) duplicates array_sum; use array_sum(arr)", name)
+	case "avg":
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce(%q, arr) duplicates array_avg; use array_avg(arr)", name)
+	case "min":
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce(%q, arr) duplicates array_min; use array_min(arr)", name)
+	case "max":
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce(%q, arr) duplicates array_max; use array_max(arr)", name)
+	case "count":
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce(%q, arr) duplicates len; use len(arr)", name)
+	case "p50", "p75", "p90", "p95", "p99", "dc", "value_counts", "entropy", "mode", "stdev", "var", "mad":
+		return name, nil
+	case "perc", "top_k", "top_k_weighted", "perc_weighted", "max_n", "min_n", "histogram", "arg_max", "arg_min", "corr", "covar", "linear_fit", "avg_weighted":
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce(%q, arr) needs aggregate parameters and is not supported", name)
+	default:
+		return "", fmt.Errorf("lynxflow.Compile: array_reduce does not support aggregate %q", name)
+	}
 }
 
 // lfExprToString extracts a string from a LynxFlow expression literal.

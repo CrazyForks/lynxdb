@@ -213,6 +213,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | `filter` | (arr: array, pred: lambda) | `array` | null_on_failure | - | - |
 | `map` | (arr: array, fn: lambda) | `array` | null_on_failure | - | - |
 | `reduce` | (arr: array, init: any, fn: lambda) | `any` | null_on_failure | - | Fold array elements with (acc, x) -&gt; expr. |
+| `array_reduce` | (agg: string, arr: array) | `any` | null_on_failure | - | Apply a supported aggregate name to an array; duplicate names such as sum use array_sum instead. |
 | `array_count` | (arr: array, pred: lambda) | `int` | null_on_failure | - | Count elements matching a predicate. |
 | `array_has_any` | (a: array, b: array) | `bool` | null_on_failure | - | - |
 | `array_has_all` | (a: array, b: array) | `bool` | null_on_failure | - | - |

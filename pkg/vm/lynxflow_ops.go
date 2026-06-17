@@ -882,6 +882,217 @@ func (vm *VM) execArrayReduce(prog *Program, subIdx int, arrVal, init event.Valu
 	return acc, nil
 }
 
+func execArrayAggReduce(name string, arrVal event.Value) event.Value {
+	if arrVal.IsNull() || arrVal.Type() != event.FieldTypeArray {
+		return event.NullValue()
+	}
+	arr := arrVal.AsArray()
+	switch strings.ToLower(name) {
+	case "p50":
+		return arrayPercentile(arr, 50)
+	case "p75":
+		return arrayPercentile(arr, 75)
+	case "p90":
+		return arrayPercentile(arr, 90)
+	case "p95":
+		return arrayPercentile(arr, 95)
+	case "p99":
+		return arrayPercentile(arr, 99)
+	case "dc":
+		return event.IntValue(arrayDistinctCount(arr))
+	case "value_counts":
+		return arrayValueCounts(arr)
+	case "entropy":
+		return arrayEntropy(arr)
+	case "mode":
+		return arrayMode(arr)
+	case "stdev":
+		return arrayVariance(arr, true)
+	case "var":
+		return arrayVariance(arr, false)
+	case "mad":
+		return arrayMAD(arr)
+	default:
+		return event.NullValue()
+	}
+}
+
+func arrayPercentile(arr []event.Value, pct float64) event.Value {
+	values := numericArrayValues(arr)
+	if len(values) == 0 {
+		return event.NullValue()
+	}
+	sort.Float64s(values)
+	idx := pct / 100 * float64(len(values)-1)
+	lower := int(idx)
+	if lower >= len(values)-1 {
+		return event.FloatValue(values[len(values)-1])
+	}
+	frac := idx - float64(lower)
+	return event.FloatValue(values[lower] + frac*(values[lower+1]-values[lower]))
+}
+
+func arrayDistinctCount(arr []event.Value) int64 {
+	seen := map[string]struct{}{}
+	for _, elem := range arr {
+		if elem.IsNull() {
+			continue
+		}
+		seen[elem.String()] = struct{}{}
+	}
+	return int64(len(seen))
+}
+
+type arrayCountItem struct {
+	value event.Value
+	count int64
+}
+
+func arrayValueCounts(arr []event.Value) event.Value {
+	counts := map[string]arrayCountItem{}
+	for _, elem := range arr {
+		if elem.IsNull() {
+			continue
+		}
+		key := arrayAggKey(elem)
+		item := counts[key]
+		if item.count == 0 {
+			item.value = elem
+		}
+		item.count++
+		counts[key] = item
+	}
+	if len(counts) == 0 {
+		return event.ArrayValue(nil)
+	}
+	items := make([]arrayCountItem, 0, len(counts))
+	for _, item := range counts {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		if items[i].count != items[j].count {
+			return items[i].count > items[j].count
+		}
+		return items[i].value.String() < items[j].value.String()
+	})
+
+	result := make([]event.Value, 0, len(items))
+	for _, item := range items {
+		result = append(result, event.ObjectValue(map[string]event.Value{
+			"value": item.value,
+			"count": event.IntValue(item.count),
+		}))
+	}
+	return event.ArrayValue(result)
+}
+
+func arrayEntropy(arr []event.Value) event.Value {
+	counts := map[string]int64{}
+	var total int64
+	for _, elem := range arr {
+		if elem.IsNull() {
+			continue
+		}
+		counts[arrayAggKey(elem)]++
+		total++
+	}
+	if total == 0 {
+		return event.NullValue()
+	}
+	var entropy float64
+	for _, count := range counts {
+		p := float64(count) / float64(total)
+		entropy -= p * math.Log2(p)
+	}
+	return event.FloatValue(entropy)
+}
+
+func arrayMode(arr []event.Value) event.Value {
+	counts := map[string]int64{}
+	for _, elem := range arr {
+		if elem.IsNull() {
+			continue
+		}
+		counts[elem.String()]++
+	}
+
+	var best string
+	var bestCount int64
+	hasBest := false
+	for value, count := range counts {
+		if !hasBest || count > bestCount || (count == bestCount && value < best) {
+			best = value
+			bestCount = count
+			hasBest = true
+		}
+	}
+	if !hasBest {
+		return event.NullValue()
+	}
+	return event.StringValue(best)
+}
+
+func arrayVariance(arr []event.Value, root bool) event.Value {
+	values := numericArrayValues(arr)
+	if len(values) < 2 {
+		return event.NullValue()
+	}
+	var sum float64
+	for _, value := range values {
+		sum += value
+	}
+	mean := sum / float64(len(values))
+
+	var sumSq float64
+	for _, value := range values {
+		diff := value - mean
+		sumSq += diff * diff
+	}
+	variance := sumSq / float64(len(values)-1)
+	if root {
+		return event.FloatValue(math.Sqrt(variance))
+	}
+	return event.FloatValue(variance)
+}
+
+func arrayMAD(arr []event.Value) event.Value {
+	values := numericArrayValues(arr)
+	if len(values) == 0 {
+		return event.NullValue()
+	}
+	sort.Float64s(values)
+	median := medianSorted(values)
+
+	deviations := make([]float64, len(values))
+	for i, value := range values {
+		deviations[i] = math.Abs(value - median)
+	}
+	sort.Float64s(deviations)
+	return event.FloatValue(medianSorted(deviations))
+}
+
+func numericArrayValues(arr []event.Value) []float64 {
+	values := make([]float64, 0, len(arr))
+	for _, elem := range arr {
+		if f, ok := ValueToFloat(elem); ok {
+			values = append(values, f)
+		}
+	}
+	return values
+}
+
+func medianSorted(values []float64) float64 {
+	mid := len(values) / 2
+	if len(values)%2 == 1 {
+		return values[mid]
+	}
+	return (values[mid-1] + values[mid]) / 2
+}
+
+func arrayAggKey(value event.Value) string {
+	return value.Type().String() + "\x00" + value.String()
+}
+
 // Slice, ArrayConcat, ArrayDistinct, ArraySort, Flatten
 
 // execSlice implements slice(arr|string, start[, end]).

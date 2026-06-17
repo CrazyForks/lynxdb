@@ -105,6 +105,7 @@ const (
 	OpBase64URLDecode Opcode = 0x88 // pop string; push raw URL-safe base64 decoded string or null
 	OpBase64URLEncode Opcode = 0x89 // pop string; push raw URL-safe base64 encoded string
 	OpBinOrigin       Opcode = 0x8A // pop value, width/span, origin; snap using origin when non-null
+	OpArrayAggReduce  Opcode = 0x8B // 2-byte aggregate-name const; pop array, push scalar aggregate result
 
 	// Math Functions.
 	OpRound      Opcode = 0x90
@@ -425,6 +426,7 @@ var definitions = map[Opcode]*Definition{
 	OpToFloat:        {"OpToFloat", nil},
 	OpToString:       {"OpToString", nil},
 	OpToBool:         {"OpToBool", nil},
+	OpArrayAggReduce: {"OpArrayAggReduce", []int{2}},
 	OpURLETLD1:       {"OpURLETLD1", nil},
 	OpURLTLD:         {"OpURLTLD", nil},
 	OpGenerateSeries: {"OpGenerateSeries", []int{2}},

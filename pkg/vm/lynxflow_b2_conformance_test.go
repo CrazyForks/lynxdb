@@ -1214,6 +1214,73 @@ func TestB2_Reduce_LambdaArityError(t *testing.T) {
 	}
 }
 
+func TestB2_ArrayReduce_Percentile(t *testing.T) {
+	expr := mustParseExpr(t, `array_reduce("p95", [1, 2, 3, 4, 5])`)
+	result, _ := runLF(t, expr, nil)
+	assertFloat(t, result, 4.8, "array_reduce p95")
+}
+
+func TestB2_ArrayReduce_DistinctCount(t *testing.T) {
+	expr := mustParseExpr(t, `array_reduce("dc", ["a", "a", "b", null])`)
+	result, _ := runLF(t, expr, nil)
+	assertInt(t, result, 2, "array_reduce dc")
+}
+
+func TestB2_ArrayReduce_ValueCounts(t *testing.T) {
+	expr := mustParseExpr(t, `array_reduce("value_counts", ["b", "a", "b"])`)
+	result, _ := runLF(t, expr, nil)
+	counts := assertArray(t, result, 2, "array_reduce value_counts")
+
+	first := assertObject(t, counts[0], "value_counts[0]")
+	assertString(t, first["value"], "b", "value_counts[0].value")
+	assertInt(t, first["count"], 2, "value_counts[0].count")
+
+	second := assertObject(t, counts[1], "value_counts[1]")
+	assertString(t, second["value"], "a", "value_counts[1].value")
+	assertInt(t, second["count"], 1, "value_counts[1].count")
+}
+
+func TestB2_ArrayReduce_Entropy(t *testing.T) {
+	expr := mustParseExpr(t, `array_reduce("entropy", ["a", "a", "b", "b"])`)
+	result, _ := runLF(t, expr, nil)
+	assertFloat(t, result, 1, "array_reduce entropy")
+}
+
+func TestB2_ArrayReduce_Stats(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  float64
+	}{
+		{name: "stdev", query: `array_reduce("stdev", [1, 2, 3])`, want: 1},
+		{name: "var", query: `array_reduce("var", [1, 2, 3])`, want: 1},
+		{name: "mad", query: `array_reduce("mad", [1, 2, 100])`, want: 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			expr := mustParseExpr(t, tt.query)
+			result, _ := runLF(t, expr, nil)
+			assertFloat(t, result, tt.want, tt.name)
+		})
+	}
+}
+
+func TestB2_ArrayReduce_DuplicateNameError(t *testing.T) {
+	expr := mustParseExpr(t, `array_reduce("sum", [1, 2, 3])`)
+	_, err := CompileLynxFlow(expr)
+	if err == nil {
+		t.Fatal("expected duplicate spelling error")
+	}
+}
+
+func TestB2_ArrayReduce_RequiresLiteralName(t *testing.T) {
+	expr := mustParseExpr(t, `array_reduce(name, [1, 2, 3])`)
+	_, err := CompileLynxFlow(expr)
+	if err == nil {
+		t.Fatal("expected literal aggregate name error")
+	}
+}
+
 // Lambda: non-lambda arg error
 
 func TestB2_Lambda_NonLambdaArg_Error(t *testing.T) {

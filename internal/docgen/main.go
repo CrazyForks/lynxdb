@@ -363,7 +363,7 @@ call_args   ::= '(' [arg (',' arg)*] ')' ;
 arg         ::= expr | 'where' expr ;
 primary     ::= literal | ident | backtick_ident | '(' expr ')' | lambda
               | array_lit | object_lit ;
-lambda      ::= ident '->' expr ;
+lambda      ::= ident '->' expr | '(' ident { ',' ident } ')' '->' expr ;
 array_lit   ::= '[' [expr (',' expr)*] ']' ;
 object_lit  ::= '{' [obj_entry (',' obj_entry)*] '}' ;
 obj_entry   ::= (ident | string) ':' expr ;
@@ -392,7 +392,7 @@ obj_entry   ::= (ident | string) ':' expr ;
 	b.WriteString("field       ::= ident | backtick_ident ;\n")
 	b.WriteString("field_list  ::= field { ',' field } ;\n")
 	b.WriteString("sort_list   ::= sort_key { ',' sort_key } ;\n")
-	b.WriteString("sort_key    ::= ['+' | '-'] field ;\n")
+	b.WriteString("sort_key    ::= ['+' | '-'] (field | '*') ;\n")
 	b.WriteString("window      ::= number | duration ;\n")
 	b.WriteString("agg_list    ::= agg_call { ',' agg_call } ;\n")
 	b.WriteString("agg_call    ::= ident '(' [expr_list] [',']? ['where' expr]? ')' ['as' ident] ;\n")

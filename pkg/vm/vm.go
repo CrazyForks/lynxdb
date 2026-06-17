@@ -1051,6 +1051,16 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = toBoolValue(a)
 
+		case OpArrayAggReduce:
+			nameIdx, opErr := readIndexSafe(ins, ip, len(prog.Constants), "constant")
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			aggName := valueToString(prog.Constants[nameIdx])
+			arr := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execArrayAggReduce(aggName, arr)
+
 		case OpRound:
 			decimals := vm.stack[vm.sp-1]
 			num := vm.stack[vm.sp-2]

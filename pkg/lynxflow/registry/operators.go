@@ -141,7 +141,7 @@ var operators = []Operator{
 	},
 	{
 		Name: "describe", Class: ClassCore, Streaming: StreamingAcc,
-		Doc:      "Stream schema/coverage summary: field, type, coverage, distinct_est, top_values (RFC-002 §7.4).",
+		Doc:      "Stream schema/coverage summary: field, type, coverage, distinct_est, top_values, min, max, avg, p50 (RFC-002 §7.4).",
 		Examples: []string{`parse json | describe`},
 	},
 

@@ -3,6 +3,7 @@ package physical
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 
 	"github.com/lynxbase/lynxdb/pkg/engine/pipeline"
@@ -10,7 +11,8 @@ import (
 )
 
 // DescribeSummaryIterator drains its input and emits one row per field with
-// field name, type, coverage, estimated distinct count, and top values.
+// field name, type, coverage, estimated distinct count, top values, and numeric
+// profile fields.
 // This implements the RFC-002 §7.4 describe semantics.
 type DescribeSummaryIterator struct {
 	child     pipeline.Iterator
@@ -41,6 +43,53 @@ type descFieldState struct {
 	total   int
 	types   map[string]int
 	values  map[string]int
+	nums    descNumericState
+}
+
+type descNumericState struct {
+	count int64
+	min   float64
+	max   float64
+	sum   float64
+	p50   *pipeline.TDigest
+}
+
+func (s *descNumericState) add(v event.Value) {
+	n, ok := describeNumber(v)
+	if !ok || math.IsNaN(n) || math.IsInf(n, 0) {
+		return
+	}
+	if s.count == 0 {
+		s.min = n
+		s.max = n
+		s.p50 = pipeline.NewTDigest(100)
+	} else {
+		if n < s.min {
+			s.min = n
+		}
+		if n > s.max {
+			s.max = n
+		}
+	}
+	s.count++
+	s.sum += n
+	s.p50.Add(n)
+}
+
+func describeNumber(v event.Value) (float64, bool) {
+	switch v.Type() {
+	case event.FieldTypeInt:
+		n, ok := v.TryAsInt()
+		if !ok {
+			return 0, false
+		}
+		return float64(n), true
+	case event.FieldTypeFloat:
+		n, ok := v.TryAsFloat()
+		return n, ok
+	default:
+		return 0, false
+	}
 }
 
 func (d *DescribeSummaryIterator) Next(ctx context.Context) (*pipeline.Batch, error) {
@@ -76,11 +125,13 @@ func (d *DescribeSummaryIterator) Next(ctx context.Context) (*pipeline.Batch, er
 				}
 				fs.total++
 				if i < len(col) && !col[i].IsNull() {
+					val := col[i]
 					fs.nonNull++
-					fs.types[col[i].Type().String()]++
+					fs.types[val.Type().String()]++
 					if len(fs.values) < maxDistinctCap {
-						fs.values[col[i].String()]++
+						fs.values[val.String()]++
 					}
+					fs.nums.add(val)
 				}
 			}
 		}
@@ -150,6 +201,16 @@ func (d *DescribeSummaryIterator) Next(ctx context.Context) (*pipeline.Batch, er
 			"coverage":     event.FloatValue(coverage),
 			"distinct_est": event.IntValue(distinctEst),
 			"top_values":   event.ArrayValue(topVals),
+			"min":          event.NullValue(),
+			"max":          event.NullValue(),
+			"avg":          event.NullValue(),
+			"p50":          event.NullValue(),
+		}
+		if fs.nums.count > 0 {
+			row["min"] = event.FloatValue(fs.nums.min)
+			row["max"] = event.FloatValue(fs.nums.max)
+			row["avg"] = event.FloatValue(fs.nums.sum / float64(fs.nums.count))
+			row["p50"] = event.FloatValue(fs.nums.p50.Quantile(0.5))
 		}
 		result.AddRow(row)
 	}
@@ -168,5 +229,9 @@ func (d *DescribeSummaryIterator) Schema() []pipeline.FieldInfo {
 		{Name: "coverage", Type: "float"},
 		{Name: "distinct_est", Type: "int"},
 		{Name: "top_values", Type: "array"},
+		{Name: "min", Type: "float"},
+		{Name: "max", Type: "float"},
+		{Name: "avg", Type: "float"},
+		{Name: "p50", Type: "float"},
 	}
 }

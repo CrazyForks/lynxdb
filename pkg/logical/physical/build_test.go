@@ -1550,16 +1550,16 @@ func TestBuild_Describe(t *testing.T) {
 	if len(result) == 0 {
 		t.Fatal("expected at least 1 describe output row")
 	}
-	// Each row should have field, type, coverage, distinct_est, top_values.
+	// Each row should have describe output columns.
+	wantCols := []string{
+		"field", "type", "coverage", "distinct_est", "top_values",
+		"min", "max", "avg", "p50",
+	}
 	for i, r := range result {
-		if _, ok := r["field"]; !ok {
-			t.Errorf("row %d: missing 'field'", i)
-		}
-		if _, ok := r["type"]; !ok {
-			t.Errorf("row %d: missing 'type'", i)
-		}
-		if _, ok := r["coverage"]; !ok {
-			t.Errorf("row %d: missing 'coverage'", i)
+		for _, col := range wantCols {
+			if _, ok := r[col]; !ok {
+				t.Errorf("row %d: missing %q", i, col)
+			}
 		}
 	}
 }
@@ -1922,7 +1922,7 @@ func TestDescribeSummaryIterator(t *testing.T) {
 	}
 
 	// Verify expected columns.
-	for _, col := range []string{"field", "type", "coverage", "distinct_est", "top_values"} {
+	for _, col := range []string{"field", "type", "coverage", "distinct_est", "top_values", "min", "max", "avg", "p50"} {
 		if _, ok := batch.Columns[col]; !ok {
 			t.Errorf("missing column %q in describe output", col)
 		}
@@ -1942,20 +1942,71 @@ func TestDescribeSummaryIterator(t *testing.T) {
 	}
 }
 
+func TestDescribeSummaryIterator_NumericProfile(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"service": strV("api"), "latency": intV(10)},
+		{"service": strV("api"), "latency": floatV(20)},
+		{"service": strV("web"), "latency": event.NullValue()},
+		{"service": strV("web"), "latency": intV(30)},
+	}
+	source := sliceSource(rows, 1024)
+	iter := NewDescribeSummaryIterator(source, 1024)
+
+	if err := iter.Init(context.Background()); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+	batch, err := iter.Next(context.Background())
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if batch == nil {
+		t.Fatal("expected non-nil batch from describe")
+	}
+
+	rowsByField := make(map[string]map[string]event.Value)
+	for i := 0; i < batch.Len; i++ {
+		field := batch.Value("field", i).AsString()
+		row := make(map[string]event.Value)
+		for name, col := range batch.Columns {
+			row[name] = col[i]
+		}
+		rowsByField[field] = row
+	}
+
+	latency, ok := rowsByField["latency"]
+	if !ok {
+		t.Fatalf("missing latency row: %#v", rowsByField)
+	}
+	assertFloatField(t, latency, "min", 10, 0)
+	assertFloatField(t, latency, "max", 30, 0)
+	assertFloatField(t, latency, "avg", 20, 0)
+	assertFloatField(t, latency, "p50", 20, 0)
+
+	service, ok := rowsByField["service"]
+	if !ok {
+		t.Fatalf("missing service row: %#v", rowsByField)
+	}
+	for _, field := range []string{"min", "max", "avg", "p50"} {
+		if !service[field].IsNull() {
+			t.Fatalf("service %s: got %s, want null", field, service[field].String())
+		}
+	}
+}
+
 // Tests: Schema on DescribeSummaryIterator
 
 func TestDescribeSummaryIterator_Schema(t *testing.T) {
 	source := sliceSource(nil, 1024)
 	iter := NewDescribeSummaryIterator(source, 1024)
 	schema := iter.Schema()
-	if len(schema) != 5 {
-		t.Fatalf("expected 5 schema fields, got %d", len(schema))
+	if len(schema) != 9 {
+		t.Fatalf("expected 9 schema fields, got %d", len(schema))
 	}
 	names := make(map[string]bool)
 	for _, f := range schema {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"field", "type", "coverage", "distinct_est", "top_values"} {
+	for _, want := range []string{"field", "type", "coverage", "distinct_est", "top_values", "min", "max", "avg", "p50"} {
 		if !names[want] {
 			t.Errorf("missing schema field %q", want)
 		}

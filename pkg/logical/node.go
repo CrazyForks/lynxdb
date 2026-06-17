@@ -722,6 +722,10 @@ func (n *Describe) Schema() []sema.Field {
 		{Name: "coverage", Type: sema.TypeFloat},
 		{Name: "distinct_est", Type: sema.TypeInt},
 		{Name: "top_values", Type: sema.TypeArray},
+		{Name: "min", Type: sema.TypeFloat},
+		{Name: "max", Type: sema.TypeFloat},
+		{Name: "avg", Type: sema.TypeFloat},
+		{Name: "p50", Type: sema.TypeFloat},
 	}
 }
 

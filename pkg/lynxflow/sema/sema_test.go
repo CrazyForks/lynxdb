@@ -354,7 +354,7 @@ func TestSchemaFlow_Describe(t *testing.T) {
 	cat := MapCatalog{"status": TypeInt}
 	r := parseAndAnalyze(t, "| describe", cat)
 	names := schemaFieldNames(r)
-	expected := []string{"field", "type", "coverage", "distinct_est", "top_values"}
+	expected := []string{"field", "type", "coverage", "distinct_est", "top_values", "min", "max", "avg", "p50"}
 	if len(names) != len(expected) {
 		t.Errorf("describe schema: got %v, want %v", names, expected)
 	}

@@ -570,6 +570,10 @@ func (a *analyzer) analyzeDescribe(_ ast.Stage) {
 		{Name: "coverage", Type: TypeFloat},
 		{Name: "distinct_est", Type: TypeInt},
 		{Name: "top_values", Type: TypeArray},
+		{Name: "min", Type: TypeFloat},
+		{Name: "max", Type: TypeFloat},
+		{Name: "avg", Type: TypeFloat},
+		{Name: "p50", Type: TypeFloat},
 	}
 	a.schema.open = false
 }

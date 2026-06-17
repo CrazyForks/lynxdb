@@ -50,6 +50,8 @@ var aggregates = []Aggregate{
 	{Name: "lag", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt, Optional: true}}, WindowOnly: true, Result: TAny, Doc: "Value n rows back (default 1)."},
 	{Name: "lead", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt, Optional: true}}, WindowOnly: true, Result: TAny, Doc: "Value n rows ahead (default 1)."},
 	{Name: "row_number", WindowOnly: true, Result: TInt, Doc: "1-based row index within the group."},
+	{Name: "rank", WindowOnly: true, Result: TInt, Doc: "1-based rank within the group using the preceding sort key, with gaps after ties."},
+	{Name: "dense_rank", WindowOnly: true, Result: TInt, Doc: "1-based rank within the group using the preceding sort key, without gaps after ties."},
 	{Name: "running_sum", Params: []Param{{Name: "x", Type: TNumber}}, WindowOnly: true, Result: TNumber},
 	{Name: "moving_avg", Params: []Param{{Name: "x", Type: TNumber}, {Name: "n", Type: TInt}}, WindowOnly: true, Result: TFloat},
 	{Name: "delta", Params: []Param{{Name: "x", Type: TNumber}}, WindowOnly: true, Result: TFloat, Doc: "Difference between the current value and previous group value."},

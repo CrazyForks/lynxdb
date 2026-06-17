@@ -36,6 +36,7 @@ type AggFunc struct {
 	Quantile      float64     // optional percentile quantile in [0,1] for perc(x, p)
 	Scale         float64     // optional multiplier applied at finalize time
 	Window        int         // optional per-function row window/offset for streamstats functions
+	RankFields    []string    // sort-key fields used by rank/dense_rank streamstats functions
 	// CondProgram is an optional compiled predicate for conditional aggregation.
 	// When non-nil, it is evaluated per row BEFORE extracting the value. If the
 	// predicate returns false or null, the row is skipped for this aggregate
@@ -113,6 +114,8 @@ const (
 	aggLag     = "lag"
 	aggLead    = "lead"
 	aggRowNum  = "row_number"
+	aggRank    = "rank"
+	aggDense   = "dense_rank"
 	aggRunSum  = "running_sum"
 	aggMovAvg  = "moving_avg"
 	aggDelta   = "delta"

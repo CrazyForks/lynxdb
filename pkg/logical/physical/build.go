@@ -444,6 +444,8 @@ var aggNameMapping = map[string]string{
 	"skewness":       "skewness",
 	"kurtosis":       "kurtosis",
 	"mad":            "mad",
+	"rank":           "rank",
+	"dense_rank":     "dense_rank",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -502,6 +504,15 @@ func (b *builder) buildWindowAggregate(child pipeline.Iterator, nd *logical.Aggr
 		acct := b.operatorAccount("EventStats", pipeline.ReservationEventStats)
 		return pipeline.NewEventStatsIteratorWithBudget(child, aggs, groupBy, b.opts.batchSize(), acct), nil
 	case logical.WindowStreamstats:
+		rankFields, err := streamstatsRankFields(nd, aggs, groupBy)
+		if err != nil {
+			return nil, err
+		}
+		for i := range aggs {
+			if aggs[i].Name == "rank" || aggs[i].Name == "dense_rank" {
+				aggs[i].RankFields = rankFields
+			}
+		}
 		window := 0
 		if nd.Window.Window != nil {
 			window = *nd.Window.Window
@@ -521,6 +532,41 @@ func (b *builder) buildWindowAggregate(child pipeline.Iterator, nd *logical.Aggr
 	default:
 		return nil, fmt.Errorf("physical.Build: unknown window variant %d", nd.Window.Variant)
 	}
+}
+
+func streamstatsRankFields(nd *logical.Aggregate, aggs []pipeline.AggFunc, groupBy []string) ([]string, error) {
+	needsRank := false
+	for _, agg := range aggs {
+		if agg.Name == "rank" || agg.Name == "dense_rank" {
+			needsRank = true
+			break
+		}
+	}
+	if !needsRank {
+		return nil, nil
+	}
+
+	sortNode, ok := nd.Input.(*logical.Sort)
+	if !ok {
+		return nil, fmt.Errorf("physical.Build: streamstats rank requires a preceding sort")
+	}
+	groupSet := make(map[string]struct{}, len(groupBy))
+	for _, field := range groupBy {
+		groupSet[field] = struct{}{}
+	}
+	fields := make([]string, 0, len(sortNode.Keys))
+	for _, key := range sortNode.Keys {
+		field := exprFieldName(key.Expr)
+		if _, grouped := groupSet[field]; grouped {
+			continue
+		}
+		fields = append(fields, field)
+	}
+	if len(fields) == 0 {
+		return nil, fmt.Errorf("physical.Build: streamstats rank requires a non-group sort key")
+	}
+
+	return fields, nil
 }
 
 func (b *builder) convertAggs(aggs []logical.Agg) ([]pipeline.AggFunc, error) {

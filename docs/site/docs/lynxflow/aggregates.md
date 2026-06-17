@@ -63,6 +63,8 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `lag` | (x: any, n: int?) | `any` | Value n rows back (default 1). |
 | `lead` | (x: any, n: int?) | `any` | Value n rows ahead (default 1). |
 | `row_number` | () | `int` | 1-based row index within the group. |
+| `rank` | () | `int` | 1-based rank within the group using the preceding sort key, with gaps after ties. |
+| `dense_rank` | () | `int` | 1-based rank within the group using the preceding sort key, without gaps after ties. |
 | `running_sum` | (x: number) | `number` | - |
 | `moving_avg` | (x: number, n: int) | `float` | - |
 | `delta` | (x: number) | `float` | Difference between the current value and previous group value. |

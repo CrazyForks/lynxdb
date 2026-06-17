@@ -827,6 +827,64 @@ func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
 	}
 }
 
+func TestBuild_StreamStatsRank(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"service": strV("api"), "route": strV("/a"), "n": intV(10)},
+		{"service": strV("api"), "route": strV("/b"), "n": intV(10)},
+		{"service": strV("api"), "route": strV("/c"), "n": intV(7)},
+		{"service": strV("web"), "route": strV("/x"), "n": intV(9)},
+		{"service": strV("web"), "route": strV("/y"), "n": intV(5)},
+		{"service": strV("web"), "route": strV("/z"), "n": intV(5)},
+	}
+	result := drain(t, `from * | sort +service, -n | streamstats rank() as r, dense_rank() as dr by service`, rows)
+	if len(result) != 6 {
+		t.Fatalf("expected 6 rows, got %d", len(result))
+	}
+	expected := []struct {
+		route string
+		rank  int64
+		dense int64
+	}{
+		{route: "/a", rank: 1, dense: 1},
+		{route: "/b", rank: 1, dense: 1},
+		{route: "/c", rank: 3, dense: 2},
+		{route: "/x", rank: 1, dense: 1},
+		{route: "/y", rank: 2, dense: 2},
+		{route: "/z", rank: 2, dense: 2},
+	}
+	for i, want := range expected {
+		gotRoute, _ := result[i]["route"].TryAsString()
+		if gotRoute != want.route {
+			t.Fatalf("row %d route = %q, want %q", i, gotRoute, want.route)
+		}
+		assertIntField(t, result[i], "r", want.rank, i)
+		assertIntField(t, result[i], "dr", want.dense, i)
+	}
+}
+
+func TestBuild_StreamStatsRankRequiresSortKey(t *testing.T) {
+	q, diags := parser.Parse(`from * | streamstats rank() as r`)
+	for _, d := range diags {
+		if d.Severity == parser.SeverityError {
+			t.Fatalf("parse error: %s", d.Message)
+		}
+	}
+	desugared, _ := desugar.Desugar(q, desugar.Options{DefaultSource: "main"})
+	plan, lowerDiags := logical.Lower(desugared, logical.Options{DefaultSource: "main"})
+	for _, d := range lowerDiags {
+		if d.Severity == parser.SeverityError {
+			t.Fatalf("lower error: %s", d.Message)
+		}
+	}
+	_, err := Build(plan, BuildOptions{Source: sourceFromRows(idRows(1))})
+	if err == nil {
+		t.Fatal("expected rank without sort to fail")
+	}
+	if !strings.Contains(err.Error(), "rank requires a preceding sort") {
+		t.Fatalf("expected rank sort error, got %v", err)
+	}
+}
+
 func TestBuild_StreamStatsEMA_CurrentFalse(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"val": intV(10)},
@@ -1557,6 +1615,8 @@ func TestAggNameMapping(t *testing.T) {
 		"skewness":       "skewness",
 		"kurtosis":       "kurtosis",
 		"mad":            "mad",
+		"rank":           "rank",
+		"dense_rank":     "dense_rank",
 		"rate":           "rate",
 	}
 	for input, want := range expected {

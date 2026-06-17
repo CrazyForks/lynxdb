@@ -55,6 +55,11 @@ type runningAggState struct {
 	sumFourth float64
 	ema       float64
 	emaSet    bool
+	rankRows  int64
+	rank      int64
+	denseRank int64
+	rankKey   []event.Value
+	rankSet   bool
 }
 
 type ringBuffer struct {
@@ -460,6 +465,10 @@ func (s *StreamStatsIterator) materializedAggValue(
 		return v
 	case aggRowNum:
 		return event.IntValue(int64(groupPos + 1))
+	case aggRank:
+		return materializedRank(rows, indexes, groupPos, agg, false)
+	case aggDense:
+		return materializedRank(rows, indexes, groupPos, agg, true)
 	case aggRunSum:
 		return materializedSum(rows, indexes[:groupPos+1], agg.Field)
 	case aggMovAvg:
@@ -484,6 +493,30 @@ func materializedSum(rows []map[string]event.Value, indexes []int, field string)
 	}
 
 	return event.FloatValue(sum)
+}
+
+func materializedRank(
+	rows []map[string]event.Value,
+	indexes []int,
+	groupPos int,
+	agg AggFunc,
+	dense bool,
+) event.Value {
+	var previous []event.Value
+	var rank int64
+	var denseRank int64
+	for i, rowIndex := range indexes[:groupPos+1] {
+		key := rankKey(rows[rowIndex], agg.RankFields)
+		if i == 0 || !sameRankKey(previous, key) {
+			rank = int64(i + 1)
+			denseRank++
+			previous = key
+		}
+	}
+	if dense {
+		return event.IntValue(denseRank)
+	}
+	return event.IntValue(rank)
 }
 
 func materializedMovingAvg(
@@ -606,6 +639,10 @@ func (s *StreamStatsIterator) writeAggValue(
 			rowNumber++
 		}
 		val = event.IntValue(rowNumber)
+	case aggRank:
+		val = readRank(row, st, agg, false)
+	case aggDense:
+		val = readRank(row, st, agg, true)
 	case aggLag:
 		val = s.readLag(agg, rb)
 	case aggMovAvg:
@@ -622,6 +659,41 @@ func (s *StreamStatsIterator) writeAggValue(
 		batch.Columns[agg.Alias] = make([]event.Value, batch.Len)
 	}
 	batch.Columns[agg.Alias][rowIndex] = val
+}
+
+func readRank(row map[string]event.Value, st *runningAggState, agg AggFunc, dense bool) event.Value {
+	st.rankRows++
+	key := rankKey(row, agg.RankFields)
+	if !st.rankSet || !sameRankKey(st.rankKey, key) {
+		st.rank = st.rankRows
+		st.denseRank++
+		st.rankKey = key
+		st.rankSet = true
+	}
+	if dense {
+		return event.IntValue(st.denseRank)
+	}
+	return event.IntValue(st.rank)
+}
+
+func rankKey(row map[string]event.Value, fields []string) []event.Value {
+	key := make([]event.Value, len(fields))
+	for i, field := range fields {
+		key[i] = row[field]
+	}
+	return key
+}
+
+func sameRankKey(a, b []event.Value) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if vm.CompareValues(a[i], b[i]) != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *StreamStatsIterator) readLag(agg AggFunc, rb *ringBuffer) event.Value {

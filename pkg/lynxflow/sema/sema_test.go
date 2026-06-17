@@ -398,6 +398,16 @@ func TestSchemaFlow_Join(t *testing.T) {
 	if !schemaHasField(r, "user_id") {
 		t.Error("join should include user_id from both sides")
 	}
+
+	for _, joinType := range []string{"semi", "anti"} {
+		r := parseAndAnalyze(t, `| join type=`+joinType+` on user_id with [from main | extend right_name = name | keep user_id, right_name]`, cat)
+		if !schemaHasField(r, "user_id") {
+			t.Errorf("%s join should keep left field user_id", joinType)
+		}
+		if schemaHasField(r, "right_name") {
+			t.Errorf("%s join should not add right-side field right_name", joinType)
+		}
+	}
 }
 
 func TestSchemaFlow_StatsBinTime(t *testing.T) {

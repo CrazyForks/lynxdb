@@ -507,10 +507,12 @@ func (a *analyzer) analyzeJoin(s ast.Stage) {
 			schema:        a.initialSchema(),
 		}
 		rightAnalyzer.analyzePipeline(*s.Join.Right.Pipeline)
-		// Merge right pipeline's output schema into current.
-		for _, f := range rightAnalyzer.schema.fields {
-			if _, exists := a.schema.lookup(f.Name); !exists {
-				a.schema.add(f.Name, f.Type)
+		if !strings.EqualFold(s.Join.Type, "semi") && !strings.EqualFold(s.Join.Type, "anti") {
+			// Merge right pipeline's output schema into current.
+			for _, f := range rightAnalyzer.schema.fields {
+				if _, exists := a.schema.lookup(f.Name); !exists {
+					a.schema.add(f.Name, f.Type)
+				}
 			}
 		}
 		// Propagate any diags from the right side.

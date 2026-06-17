@@ -1296,6 +1296,73 @@ func TestBuild_Join_Left(t *testing.T) {
 	}
 }
 
+func TestBuild_Join_SemiAnti(t *testing.T) {
+	tests := []struct {
+		name     string
+		joinType string
+		wantKeys []string
+	}{
+		{name: "semi", joinType: "semi", wantKeys: []string{"a", "c"}},
+		{name: "anti", joinType: "anti", wantKeys: []string{"b"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			left := &logical.Scan{OutputSchema: nil}
+			right := &logical.Scan{OutputSchema: nil}
+			join := &logical.Join{
+				Type:  tt.joinType,
+				On:    []string{"key"},
+				Right: right,
+			}
+			join.SetChildren([]logical.Node{left})
+
+			leftRows := []map[string]event.Value{
+				{"key": strV("a"), "val": intV(1)},
+				{"key": strV("b"), "val": intV(2)},
+				{"key": strV("c"), "val": intV(3)},
+			}
+			rightRows := []map[string]event.Value{
+				{"key": strV("a"), "extra": strV("x")},
+				{"key": strV("a"), "extra": strV("dupe")},
+				{"key": strV("c"), "extra": strV("z")},
+			}
+
+			callCount := 0
+			sourceFunc := func(scan *logical.Scan) (pipeline.Iterator, error) {
+				callCount++
+				if callCount == 1 {
+					return sliceSource(leftRows, 1024), nil
+				}
+				return sliceSource(rightRows, 1024), nil
+			}
+
+			iter, err := Build(&logical.Plan{Root: join}, BuildOptions{
+				Source:    sourceFunc,
+				BatchSize: 1024,
+			})
+			if err != nil {
+				t.Fatalf("Build: %v", err)
+			}
+			result, err := pipeline.CollectAll(context.Background(), iter)
+			if err != nil {
+				t.Fatalf("CollectAll: %v", err)
+			}
+			if len(result) != len(tt.wantKeys) {
+				t.Fatalf("expected %d rows, got %d: %#v", len(tt.wantKeys), len(result), result)
+			}
+			for i, wantKey := range tt.wantKeys {
+				if got := result[i]["key"]; got != strV(wantKey) {
+					t.Fatalf("row %d key: got %s want %s", i, got.String(), wantKey)
+				}
+				if _, ok := result[i]["extra"]; ok {
+					t.Fatalf("row %d retained right-side field: %#v", i, result[i])
+				}
+			}
+		})
+	}
+}
+
 func TestBuild_Join_Outer(t *testing.T) {
 	left := &logical.Scan{OutputSchema: nil}
 	right := &logical.Scan{OutputSchema: nil}

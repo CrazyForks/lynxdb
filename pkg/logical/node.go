@@ -614,7 +614,7 @@ func (n *Dedup) String() string {
 // Join combines the left input with a right sub-plan.
 type Join struct {
 	unaryNode             // Left input
-	Type         string   // "inner", "left", "outer"
+	Type         string   // "inner", "left", "outer", "semi", "anti"
 	On           []string // join key field names
 	Right        Node     // right-side sub-plan
 	cachedSchema []sema.Field
@@ -625,6 +625,10 @@ func (n *Join) Schema() []sema.Field {
 		return n.cachedSchema
 	}
 	left := copySchema(n.inputSchema())
+	if strings.EqualFold(n.Type, "semi") || strings.EqualFold(n.Type, "anti") {
+		n.cachedSchema = left
+		return n.cachedSchema
+	}
 	if n.Right != nil {
 		for _, f := range n.Right.Schema() {
 			left = addFieldIfAbsent(left, f.Name, f.Type)

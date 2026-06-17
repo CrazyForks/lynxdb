@@ -118,11 +118,11 @@ var operators = []Operator{
 		Name: "join", Class: ClassCore, Streaming: StreamingAcc,
 		Positionals: []Positional{{Name: "right", Type: ArgSubPipeline, Required: true, Doc: "with $cte or with [ <pipeline> ]"}},
 		Options: []Option{
-			{Name: "type", Type: ArgEnum, Default: "inner", Enum: []string{"inner", "left", "outer"}},
+			{Name: "type", Type: ArgEnum, Default: "inner", Enum: []string{"inner", "left", "outer", "semi", "anti"}},
 			{Name: "on", Type: ArgFieldList, Required: true},
 		},
 		Doc:      "Hash join. Default type=inner is a plain inner join (never innerunique).",
-		Examples: []string{`join type=left on user_id with [from users]`},
+		Examples: []string{`join type=left on user_id with [from users]`, `join type=anti on user_id with [from allowlist]`},
 	},
 	{
 		Name: "union", Class: ClassCore, Streaming: StreamingRow,

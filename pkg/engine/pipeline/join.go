@@ -35,7 +35,7 @@ type JoinIterator struct {
 	left      Iterator
 	right     Iterator
 	field     string
-	joinType  string // "inner", "left", or "outer"
+	joinType  string // "inner", "left", "outer", "semi", or "anti"
 	strategy  string // "hash" (default), "in_list", "bloom_semi"
 	hashMap   map[string][]map[string]event.Value
 	bloomKeys map[uint64]bool // for bloom_semi pre-filter
@@ -151,6 +151,8 @@ func (j *JoinIterator) Next(ctx context.Context) (*Batch, error) {
 
 	isLeftOrOuter := strings.EqualFold(j.joinType, "left") || strings.EqualFold(j.joinType, "outer")
 	isOuter := strings.EqualFold(j.joinType, "outer")
+	isSemi := strings.EqualFold(j.joinType, "semi")
+	isAnti := strings.EqualFold(j.joinType, "anti")
 
 	for {
 		if err := ctx.Err(); err != nil {
@@ -206,7 +208,7 @@ func (j *JoinIterator) Next(ctx context.Context) (*Batch, error) {
 				h := fnv.New64a()
 				h.Write([]byte(key))
 				if !j.bloomKeys[h.Sum64()] {
-					if isLeftOrOuter {
+					if isLeftOrOuter || isAnti {
 						result.AddRow(row)
 					}
 
@@ -219,11 +221,19 @@ func (j *JoinIterator) Next(ctx context.Context) (*Batch, error) {
 				if isOuter {
 					j.rightMatched[key] = true
 				}
+				if isSemi {
+					result.AddRow(row)
+
+					continue
+				}
+				if isAnti {
+					continue
+				}
 				for _, match := range matches {
 					merged := mergeRows(row, match)
 					result.AddRow(merged)
 				}
-			} else if isLeftOrOuter {
+			} else if isLeftOrOuter || isAnti {
 				result.AddRow(row)
 			}
 		}
@@ -846,8 +856,10 @@ func (j *JoinIterator) loadPartition(idx int) error {
 	}
 
 	if len(hashMap) == 0 {
-		// Empty right partition — for left/outer join, we still need to emit left rows.
-		if !strings.EqualFold(j.joinType, "left") && !strings.EqualFold(j.joinType, "outer") {
+		// Empty right partition: left, outer, and anti joins still emit left rows.
+		if !strings.EqualFold(j.joinType, "left") &&
+			!strings.EqualFold(j.joinType, "outer") &&
+			!strings.EqualFold(j.joinType, "anti") {
 			return nil
 		}
 	}
@@ -882,6 +894,8 @@ func (j *JoinIterator) loadPartition(idx int) error {
 func (j *JoinIterator) probePartition() (*Batch, error) {
 	isLeftOrOuter := strings.EqualFold(j.joinType, "left") || strings.EqualFold(j.joinType, "outer")
 	isOuter := strings.EqualFold(j.joinType, "outer")
+	isSemi := strings.EqualFold(j.joinType, "semi")
+	isAnti := strings.EqualFold(j.joinType, "anti")
 
 	result := NewBatch(DefaultBatchSize)
 
@@ -922,11 +936,19 @@ func (j *JoinIterator) probePartition() (*Batch, error) {
 			if isOuter {
 				j.gracePartMatched[key] = true
 			}
+			if isSemi {
+				result.AddRow(row)
+
+				continue
+			}
+			if isAnti {
+				continue
+			}
 			for _, match := range matches {
 				merged := mergeRows(row, match)
 				result.AddRow(merged)
 			}
-		} else if isLeftOrOuter {
+		} else if isLeftOrOuter || isAnti {
 			result.AddRow(row)
 		}
 	}

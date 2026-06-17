@@ -508,6 +508,7 @@ func FuzzParse(f *testing.F) {
 		`let $a = from x; from $a | head 1`,
 		`| union [from a | head 1], [from b | head 1]`,
 		`| join type=left on user_id with [from users]`,
+		`| join type=anti on user_id with [from allowlist]`,
 		`| stats count(where status >= 500) as errors`,
 	}
 	for _, ex := range examples {

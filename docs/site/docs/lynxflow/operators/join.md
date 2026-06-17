@@ -25,13 +25,17 @@ Hash join. Default type=inner is a plain inner join (never innerunique).
 
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
-| `type` | `enum` | `inner` | - Values: `inner`, `left`, `outer`. |
+| `type` | `enum` | `inner` | - Values: `inner`, `left`, `outer`, `semi`, `anti`. |
 | `on` | `field_list` | `-` | - |
 
 ## Examples
 
 ```
 join type=left on user_id with [from users]
+```
+
+```
+join type=anti on user_id with [from allowlist]
 ```
 
 ---

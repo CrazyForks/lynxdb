@@ -766,7 +766,7 @@ func (f *FieldPattern) String() string { return f.Name }
 
 // JoinPayload is the typed payload for join.
 type JoinPayload struct {
-	Type     string // "inner", "left", "outer" (default "inner")
+	Type     string // "inner", "left", "outer", "semi", "anti" (default "inner")
 	TypeSpan Span
 	On       []Expr
 	Right    *SubPipeline

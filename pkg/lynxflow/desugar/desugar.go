@@ -99,7 +99,16 @@ func (d *desugarer) desugarPipeline(p ast.Pipeline, topLevel bool) ast.Pipeline 
 		)
 	} else if p.Source != nil {
 		// Desugar from: strip sugar terms and insert a where stage.
-		out.Source = d.desugarFrom(p.Source)
+		source := p.Source
+		if len(source.Sources) == 0 && topLevel && d.opts.DefaultSource != "" {
+			source = d.withDefaultSource(source)
+			d.addRewrite("",
+				source.String(),
+				"implicit-source",
+				source.Pos,
+			)
+		}
+		out.Source = d.desugarFrom(source)
 		sugarWhere := d.desugarFromSugarTerms(p.Source)
 		out.Stages = append(out.Stages, sugarWhere...)
 	}
@@ -112,6 +121,20 @@ func (d *desugarer) desugarPipeline(p ast.Pipeline, topLevel bool) ast.Pipeline 
 		out.Stages = append(out.Stages, expanded...)
 	}
 
+	return out
+}
+
+func (d *desugarer) withDefaultSource(f *ast.FromStage) *ast.FromStage {
+	out := &ast.FromStage{
+		Sources: []ast.SourceAtom{{
+			Kind: ast.SourceName,
+			Name: d.opts.DefaultSource,
+			Pos:  ast.Span{Start: f.Pos.Start, End: f.Pos.Start},
+		}},
+		TimeRanges: cloneTimeRanges(f.TimeRanges),
+		SugarTerms: f.SugarTerms,
+		Pos:        f.Pos,
+	}
 	return out
 }
 

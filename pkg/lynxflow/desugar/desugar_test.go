@@ -375,6 +375,12 @@ func TestGoldenExpansions(t *testing.T) {
 			wantPipe:   `from main | stats count()`,
 			wantReason: "implicit-source",
 		},
+		{
+			name:       "freehand_search",
+			input:      `timeout`,
+			wantPipe:   `from main | where has(_raw, "timeout")`,
+			wantReason: "implicit-source",
+		},
 
 		// --- RFC-002 §13 sugar examples ---
 		{

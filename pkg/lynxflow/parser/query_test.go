@@ -88,6 +88,8 @@ func TestCorpusParse(t *testing.T) {
 
 func TestRFC002Examples(t *testing.T) {
 	examples := []string{
+		// 0. free-hand search sugar
+		`timeout`,
 		// 1. search sugar
 		`from app[-1h] error timeout`,
 		// 2. search sugar with comparisons
@@ -141,6 +143,26 @@ func TestRFC002Examples(t *testing.T) {
 			}
 			_ = q.String()
 		})
+	}
+}
+
+func TestFreehandSearch(t *testing.T) {
+	q, diags := Parse(`timeout`)
+	if len(diags) != 0 {
+		t.Fatalf("Parse: %v", diags)
+	}
+	if q.Pipeline.Source == nil || q.Pipeline.Source.SugarTerms == nil {
+		t.Fatalf("expected freehand search sugar source")
+	}
+}
+
+func TestFreehandSearchRejectsLeadingComparison(t *testing.T) {
+	_, diags := Parse(`index=main timeformat="%b %d %Y" starttime="Mar 23 2025"`)
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostic for leading comparison without from")
+	}
+	if diags[0].Code != CodeUnknownStage {
+		t.Fatalf("diag code: got %s, want %s", diags[0].Code, CodeUnknownStage)
 	}
 }
 

@@ -23,6 +23,22 @@ func makeRawEvents(rawLines ...string) map[string][]*event.Event {
 	return map[string][]*event.Event{"main": events}
 }
 
+func TestExecute_FreehandSearch(t *testing.T) {
+	events := makeRawEvents(
+		"request timeout from api",
+		"request completed",
+		"TIMEOUT from worker",
+	)
+
+	rows, err := Execute(context.Background(), `timeout`, events, Options{})
+	if err != nil {
+		t.Fatalf("Execute: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("expected 2 rows, got %d", len(rows))
+	}
+}
+
 // Test: parse json on_error=propagate (default)
 
 func TestExecute_ParseJSON_MixedValidity_Propagate(t *testing.T) {

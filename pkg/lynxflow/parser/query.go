@@ -159,11 +159,12 @@ func (p *parser) parsePipeline() ast.Pipeline {
 		// it's also implicit from.
 		if p.isStageStart() {
 			// Implicit source: from <default>
-		} else {
+		} else if p.startsFreehandSearch() {
 			// Could be freehand search: treat as from <default> with search sugar.
-			// Actually, for corpus compatibility let's check: the query starts
-			// with something that is not a stage keyword or |. This is unusual
-			// and we leave Source=nil for the desugarer.
+			pip.Source = &ast.FromStage{
+				SugarTerms: p.parseSearchSugar(),
+				Pos:        ast.Span{Start: start, End: p.prev.End},
+			}
 		}
 	}
 
@@ -518,6 +519,35 @@ func (p *parser) isSearchSugarStart() bool {
 	// If at a stage keyword, it's not sugar — it's the next stage.
 	// But not if it looks like key=value (e.g., status>=500).
 	return true
+}
+
+func (p *parser) startsFreehandSearch() bool {
+	if !p.isSearchSugarStart() {
+		return false
+	}
+	if _, ok := p.identLike(); !ok {
+		return true
+	}
+	pos := p.cur.End
+	for pos < len(p.src) && (p.src[pos] == ' ' || p.src[pos] == '\t' || p.src[pos] == '\n' || p.src[pos] == '\r') {
+		pos++
+	}
+	if pos >= len(p.src) {
+		return true
+	}
+	switch p.src[pos] {
+	case '=', '!', '<', '>':
+		return false
+	}
+	rest := strings.ToLower(p.src[pos:])
+	if strings.HasPrefix(rest, "in") && (pos+2 >= len(p.src) || !isParserIdentContinue(p.src[pos+2])) {
+		return false
+	}
+	return true
+}
+
+func isParserIdentContinue(b byte) bool {
+	return b == '_' || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
 }
 
 // parseSearchSugar parses search sugar terms with standard precedence:

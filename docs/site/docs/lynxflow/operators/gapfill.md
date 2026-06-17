@@ -7,7 +7,7 @@ sidebar_label: "gapfill"
 
 **Class:** `core` &middot; **Streaming:** accumulating
 
-Insert missing observed _time buckets per group and fill aggregate columns.
+Insert missing _time buckets per group across the query range when available, else the observed range.
 
 ## Signature
 

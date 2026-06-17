@@ -456,6 +456,20 @@ func TestLynxFlowBase64Functions(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected base64_decode! to fail on invalid input")
 	}
+
+	result, _ = runLF(t, call("base64url_encode", litStr("hello?")), nil)
+	assertString(t, result, "aGVsbG8_", "base64url_encode")
+
+	result, _ = runLF(t, call("base64url_decode", litStr("aGVsbG8_")), nil)
+	assertString(t, result, "hello?", "base64url_decode")
+
+	result, _ = runLF(t, call("base64url_decode", litStr("aGVsbG8=")), nil)
+	assertNull(t, result, "base64url_decode rejects padded input")
+
+	err = runLFErr(t, callBang("base64url_decode", litStr("not base64url")), nil)
+	if err == nil {
+		t.Fatal("expected base64url_decode! to fail on invalid input")
+	}
 }
 
 func TestLynxFlowHexFunctions(t *testing.T) {

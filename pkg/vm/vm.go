@@ -1477,6 +1477,14 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execBase64Encode(v)
 
+		case OpBase64URLDecode:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execBase64URLDecode(v)
+
+		case OpBase64URLEncode:
+			v := vm.stack[vm.sp-1]
+			vm.stack[vm.sp-1] = execBase64URLEncode(v)
+
 		case OpHex:
 			v := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execHex(v)

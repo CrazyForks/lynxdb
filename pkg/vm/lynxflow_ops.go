@@ -1880,6 +1880,26 @@ func execBase64Encode(v event.Value) event.Value {
 	return event.StringValue(base64.StdEncoding.EncodeToString([]byte(v.AsString())))
 }
 
+func execBase64URLDecode(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(v.AsString())
+	if err != nil {
+		return event.NullValue()
+	}
+
+	return event.StringValue(string(decoded))
+}
+
+func execBase64URLEncode(v event.Value) event.Value {
+	if v.IsNull() || v.Type() != event.FieldTypeString {
+		return event.NullValue()
+	}
+
+	return event.StringValue(base64.RawURLEncoding.EncodeToString([]byte(v.AsString())))
+}
+
 func execHex(v event.Value) event.Value {
 	if v.IsNull() || v.Type() != event.FieldTypeString {
 		return event.NullValue()

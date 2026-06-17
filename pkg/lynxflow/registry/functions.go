@@ -55,6 +55,8 @@ var functions = []Function{
 	{Name: "punycode_decode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Decode an IDNA punycode domain name."},
 	{Name: "base64_decode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Decode standard base64; null on invalid input."},
 	{Name: "base64_encode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Encode a string as standard base64."},
+	{Name: "base64url_decode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Decode raw URL-safe base64; null on invalid input."},
+	{Name: "base64url_encode", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Encode a string as raw URL-safe base64."},
 	{Name: "hex", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, Doc: "Encode a string as lowercase hexadecimal."},
 	{Name: "unhex", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TString, Fallibility: NullOnFailure, StrictVariant: true, Doc: "Decode hexadecimal bytes; null on invalid input."},
 	{Name: "url_parse", Category: "string", Params: []Param{{Name: "s", Type: TString}}, Result: TObject, Fallibility: NullOnFailure, Doc: "Parse a URL into {scheme, host, port, path, query, fragment}."},

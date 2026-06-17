@@ -95,13 +95,15 @@ const (
 	OpJumpIfTrue  Opcode = 0x72
 
 	// Type Conversion.
-	OpToInt          Opcode = 0x80
-	OpToFloat        Opcode = 0x81
-	OpToString       Opcode = 0x82
-	OpToBool         Opcode = 0x83
-	OpURLETLD1       Opcode = 0x85
-	OpURLTLD         Opcode = 0x86
-	OpGenerateSeries Opcode = 0x87 // 2-byte count; pop start, stop[, step]; push int array
+	OpToInt           Opcode = 0x80
+	OpToFloat         Opcode = 0x81
+	OpToString        Opcode = 0x82
+	OpToBool          Opcode = 0x83
+	OpURLETLD1        Opcode = 0x85
+	OpURLTLD          Opcode = 0x86
+	OpGenerateSeries  Opcode = 0x87 // 2-byte count; pop start, stop[, step]; push int array
+	OpBase64URLDecode Opcode = 0x88 // pop string; push raw URL-safe base64 decoded string or null
+	OpBase64URLEncode Opcode = 0x89 // pop string; push raw URL-safe base64 encoded string
 
 	// Math Functions.
 	OpRound      Opcode = 0x90
@@ -590,6 +592,8 @@ var definitions = map[Opcode]*Definition{
 	OpSplitPart:       {"OpSplitPart", nil},
 	OpBase64Decode:    {"OpBase64Decode", nil},
 	OpBase64Encode:    {"OpBase64Encode", nil},
+	OpBase64URLDecode: {"OpBase64URLDecode", nil},
+	OpBase64URLEncode: {"OpBase64URLEncode", nil},
 	OpRepeat:          {"OpRepeat", nil},
 	OpLPad:            {"OpLPad", nil},
 	OpRPad:            {"OpRPad", nil},

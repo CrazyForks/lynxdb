@@ -114,15 +114,17 @@ const (
 	SourceNegated                       // !-prefixed exclude: !logs-debug*
 	SourceStar                          // * (all sources)
 	SourceCTE                           // $name CTE reference
+	SourceInline                        // inline row source: [{x: 1}, {x: 2}]
 )
 
 // SourceAtom is a single source reference inside a from stage.
 type SourceAtom struct {
-	Kind    SourceAtomKind
-	Name    string // resolved name (without $, !, backticks)
-	Pattern string // original pattern text (for globs)
-	Quoted  bool   // true when backtick-quoted
-	Pos     Span
+	Kind       SourceAtomKind
+	Name       string // resolved name (without $, !, backticks)
+	Pattern    string // original pattern text (for globs)
+	InlineRows []Object
+	Quoted     bool // true when backtick-quoted
+	Pos        Span
 }
 
 // String returns a debug rendering.
@@ -132,6 +134,17 @@ func (s *SourceAtom) String() string {
 		return "*"
 	case SourceCTE:
 		return "$" + s.Name
+	case SourceInline:
+		var b strings.Builder
+		b.WriteByte('[')
+		for i, row := range s.InlineRows {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(row.String())
+		}
+		b.WriteByte(']')
+		return b.String()
 	case SourceNegated:
 		if s.Pattern != "" {
 			return "!" + s.Pattern

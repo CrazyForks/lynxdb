@@ -69,9 +69,10 @@ func (u *unaryNode) inputSchema() []sema.Field {
 
 // SourcePattern is a single source reference in a Scan node.
 type SourcePattern struct {
-	Kind    ast.SourceAtomKind
-	Name    string
-	Pattern string
+	Kind       ast.SourceAtomKind
+	Name       string
+	Pattern    string
+	InlineRows []ast.Object
 }
 
 // TimeBounds represents a time range constraint. Start/End store the ORIGINAL
@@ -130,6 +131,8 @@ func (n *Scan) String() string {
 			b.WriteByte('*')
 		case ast.SourceCTE:
 			b.WriteString("$" + s.Name)
+		case ast.SourceInline:
+			b.WriteString("inline")
 		case ast.SourceNegated:
 			b.WriteString("!" + s.Pattern)
 		case ast.SourceGlob:

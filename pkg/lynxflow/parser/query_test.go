@@ -173,6 +173,43 @@ func TestParseJoinAsofTolerance(t *testing.T) {
 	}
 }
 
+func TestParseInlineSource(t *testing.T) {
+	input := `from [{level:"ERROR", w:3}, {level:"WARN", w:2}] | stats sum(w) as total by level`
+	q, diags := Parse(input)
+	if len(diags) > 0 {
+		t.Fatalf("Parse returned diagnostics: %v", diags)
+	}
+	if q == nil || q.Pipeline.Source == nil {
+		t.Fatalf("unexpected query: %#v", q)
+	}
+	sources := q.Pipeline.Source.Sources
+	if len(sources) != 1 {
+		t.Fatalf("sources len = %d, want 1", len(sources))
+	}
+	if sources[0].Kind != ast.SourceInline {
+		t.Fatalf("source kind = %v, want SourceInline", sources[0].Kind)
+	}
+	if len(sources[0].InlineRows) != 2 {
+		t.Fatalf("inline rows len = %d, want 2", len(sources[0].InlineRows))
+	}
+
+	got := format.Query(q)
+	want := "from [{level: \"ERROR\", w: 3}, {level: \"WARN\", w: 2}]\n| stats sum(w) as total by level"
+	if got != want {
+		t.Fatalf("format = %q, want %q", got, want)
+	}
+}
+
+func TestParseInlineSourceRejectsScalarRows(t *testing.T) {
+	_, diags := Parse(`from [1]`)
+	if len(diags) == 0 {
+		t.Fatal("Parse returned no diagnostics")
+	}
+	if diags[0].Message != "inline source rows must be object literals" {
+		t.Fatalf("diag message = %q", diags[0].Message)
+	}
+}
+
 // 3. Golden structure tests
 
 func TestGoldenStructure(t *testing.T) {

@@ -85,6 +85,11 @@ func (d *dumper) dumpSourceAtom(s *SourceAtom, depth int) {
 		d.line(depth, "Source *")
 	case SourceCTE:
 		d.line(depth, "Source $%s", s.Name)
+	case SourceInline:
+		d.line(depth, "Source inline")
+		for i := range s.InlineRows {
+			d.dumpExpr(&s.InlineRows[i], depth+1)
+		}
 	case SourceNegated:
 		if s.Pattern != "" {
 			d.line(depth, "Source !%s", s.Pattern)

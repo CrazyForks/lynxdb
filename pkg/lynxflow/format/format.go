@@ -468,6 +468,15 @@ func formatSourceAtom(b *strings.Builder, s *ast.SourceAtom) {
 	case ast.SourceCTE:
 		b.WriteByte('$')
 		b.WriteString(s.Name)
+	case ast.SourceInline:
+		b.WriteByte('[')
+		for i := range s.InlineRows {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			formatExpr(b, &s.InlineRows[i], precTop)
+		}
+		b.WriteByte(']')
 	case ast.SourceNegated:
 		b.WriteByte('!')
 		if s.Pattern != "" {

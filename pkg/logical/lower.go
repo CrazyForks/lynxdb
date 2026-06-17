@@ -142,9 +142,10 @@ func (l *lowerer) lowerFrom(f *ast.FromStage) Node {
 	sources := make([]SourcePattern, len(f.Sources))
 	for i, s := range f.Sources {
 		sources[i] = SourcePattern{
-			Kind:    s.Kind,
-			Name:    s.Name,
-			Pattern: s.Pattern,
+			Kind:       s.Kind,
+			Name:       s.Name,
+			Pattern:    s.Pattern,
+			InlineRows: s.InlineRows,
 		}
 	}
 

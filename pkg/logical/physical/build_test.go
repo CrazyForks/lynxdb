@@ -91,6 +91,25 @@ func objV(fields map[string]event.Value) event.Value {
 	return event.ObjectValue(fields)
 }
 
+func TestBuild_InlineSource(t *testing.T) {
+	got := drain(t, `from [{level: "ERROR", w: 3, tags: ["hot"], meta: {zone: "a"}}, {level: "WARN", w: 2}, {level: "ERROR", w: 4}] | stats sum(w) as total by level | sort level`, nil)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows, got %d: %#v", len(got), got)
+	}
+	if level := got[0]["level"].AsString(); level != "ERROR" {
+		t.Fatalf("row 0 level = %q, want ERROR", level)
+	}
+	if total := got[0]["total"].AsFloat(); total != 7 {
+		t.Fatalf("row 0 total = %g, want 7", total)
+	}
+	if level := got[1]["level"].AsString(); level != "WARN" {
+		t.Fatalf("row 1 level = %q, want WARN", level)
+	}
+	if total := got[1]["total"].AsFloat(); total != 2 {
+		t.Fatalf("row 1 total = %g, want 2", total)
+	}
+}
+
 func TestBuild_Unpivot(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"service": strV("api"), "cpu_ms": intV(12), "db_ms": intV(7), "status": intV(200)},

@@ -6,10 +6,10 @@ var operators = []Operator{
 	{
 		Name: "from", Class: ClassSource, Streaming: StreamingRow,
 		Positionals: []Positional{
-			{Name: "sources", Type: ArgFieldPatterns, Required: true, Doc: "source names, globs, !-excludes, *, or $cte refs; optional [range] suffix; optional trailing search-sugar terms"},
+			{Name: "sources", Type: ArgFieldPatterns, Required: true, Doc: "source names, globs, !-excludes, *, $cte refs, or inline row objects; optional [range] suffix; optional trailing search-sugar terms"},
 		},
 		Doc:      "Scan stage. Only valid first in a pipeline. Accepts bracket time ranges and search-sugar terms (RFC-002 §3.1).",
-		Examples: []string{`from nginx[-1h] timeout status>=500`, `from logs*,!logs-debug*[-7d..-1d]`, `from $errs`},
+		Examples: []string{`from nginx[-1h] timeout status>=500`, `from logs*,!logs-debug*[-7d..-1d]`, `from $errs`, `from [{level: "ERROR", w: 3}, {level: "WARN", w: 2}]`},
 	},
 
 	// core

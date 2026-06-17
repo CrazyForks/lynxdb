@@ -204,6 +204,15 @@ func renderScan(n *Scan) string {
 				b.WriteByte('*')
 			case ast.SourceCTE:
 				b.WriteString("$" + s.Name)
+			case ast.SourceInline:
+				b.WriteByte('[')
+				for j := range s.InlineRows {
+					if j > 0 {
+						b.WriteString(", ")
+					}
+					b.WriteString(format.Expr(&s.InlineRows[j]))
+				}
+				b.WriteByte(']')
 			case ast.SourceNegated:
 				b.WriteString("!" + s.Pattern)
 			case ast.SourceGlob:

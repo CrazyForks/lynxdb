@@ -235,6 +235,30 @@ func (p *parser) parseSourceAtom() ast.SourceAtom {
 		return ast.SourceAtom{Kind: ast.SourceStar, Pos: ast.Span{Start: start, End: end}}
 	}
 
+	// Inline row source: from [{level: "ERROR", w: 3}, ...]
+	if p.at(lexer.LBracket) {
+		rowsLit := p.parseArrayLiteral()
+		arr, ok := rowsLit.(*ast.Array)
+		if !ok {
+			return ast.SourceAtom{Kind: SourceAtomEmpty}
+		}
+		rows := make([]ast.Object, 0, len(arr.Elems))
+		for _, elem := range arr.Elems {
+			row, ok := elem.(*ast.Object)
+			if !ok {
+				p.diags = append(p.diags, Diag{
+					Code:       CodeStageError,
+					Message:    "inline source rows must be object literals",
+					Span:       elem.ExprSpan(),
+					Suggestion: `write rows like from [{field: "value"}]`,
+				})
+				continue
+			}
+			rows = append(rows, *row)
+		}
+		return ast.SourceAtom{Kind: ast.SourceInline, InlineRows: rows, Pos: arr.Pos}
+	}
+
 	// $cte reference
 	if p.at(lexer.Dollar) {
 		p.advance() // consume $

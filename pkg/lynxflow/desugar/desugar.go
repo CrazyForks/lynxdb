@@ -1711,7 +1711,24 @@ func cloneSourceAtoms(atoms []ast.SourceAtom) []ast.SourceAtom {
 		return nil
 	}
 	out := make([]ast.SourceAtom, len(atoms))
-	copy(out, atoms)
+	for i, atom := range atoms {
+		out[i] = atom
+		out[i].InlineRows = cloneInlineRows(atom.InlineRows)
+	}
+	return out
+}
+
+func cloneInlineRows(rows []ast.Object) []ast.Object {
+	if rows == nil {
+		return nil
+	}
+	out := make([]ast.Object, len(rows))
+	for i := range rows {
+		clone := cloneExpr(&rows[i])
+		if obj, ok := clone.(*ast.Object); ok {
+			out[i] = *obj
+		}
+	}
 	return out
 }
 

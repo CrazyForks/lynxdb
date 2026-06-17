@@ -259,10 +259,101 @@ func (b *builder) buildScan(nd *logical.Scan) (pipeline.Iterator, error) {
 		return pipeline.NewRowScanIterator(rows, b.opts.batchSize()), nil
 	}
 
+	if len(nd.Sources) == 1 && nd.Sources[0].Kind == lfast.SourceInline {
+		rows, err := inlineSourceRows(nd.Sources[0].InlineRows)
+		if err != nil {
+			return nil, fmt.Errorf("physical.Build: inline source: %w", err)
+		}
+		return pipeline.NewRowScanIterator(rows, b.opts.batchSize()), nil
+	}
+	for _, src := range nd.Sources {
+		if src.Kind == lfast.SourceInline {
+			return nil, fmt.Errorf("physical.Build: inline source cannot be mixed with named sources")
+		}
+	}
+
 	if b.opts.Source == nil {
 		return nil, fmt.Errorf("physical.Build: no Source hook provided for scan %s", nd)
 	}
 	return b.opts.Source(nd)
+}
+
+func inlineSourceRows(objs []lfast.Object) ([]map[string]event.Value, error) {
+	rows := make([]map[string]event.Value, len(objs))
+	for i := range objs {
+		row := make(map[string]event.Value, len(objs[i].Entries))
+		for _, ent := range objs[i].Entries {
+			val, err := inlineSourceValue(ent.Value)
+			if err != nil {
+				return nil, fmt.Errorf("row %d field %s: %w", i, ent.Key, err)
+			}
+			row[ent.Key] = val
+		}
+		rows[i] = row
+	}
+	return rows, nil
+}
+
+func inlineSourceValue(expr lfast.Expr) (event.Value, error) {
+	switch x := expr.(type) {
+	case *lfast.Literal:
+		return eventLiteralArg(x)
+	case *lfast.Unary:
+		if x.Op != lfast.OpNeg {
+			break
+		}
+		return negatedInlineSourceValue(x.Operand)
+	case *lfast.Array:
+		elems := make([]event.Value, len(x.Elems))
+		for i, elem := range x.Elems {
+			val, err := inlineSourceValue(elem)
+			if err != nil {
+				return event.NullValue(), fmt.Errorf("array element %d: %w", i, err)
+			}
+			elems[i] = val
+		}
+		return event.ArrayValue(elems), nil
+	case *lfast.Object:
+		fields := make(map[string]event.Value, len(x.Entries))
+		for _, ent := range x.Entries {
+			val, err := inlineSourceValue(ent.Value)
+			if err != nil {
+				return event.NullValue(), fmt.Errorf("object field %s: %w", ent.Key, err)
+			}
+			fields[ent.Key] = val
+		}
+		return event.ObjectValue(fields), nil
+	}
+	return event.NullValue(), fmt.Errorf("expected literal, array, or object, got %T", expr)
+}
+
+func negatedInlineSourceValue(expr lfast.Expr) (event.Value, error) {
+	lit, ok := expr.(*lfast.Literal)
+	if !ok {
+		return event.NullValue(), fmt.Errorf("expected numeric literal after '-', got %T", expr)
+	}
+	switch lit.Kind {
+	case lfast.LitInt:
+		v, ok := lit.Value.(int64)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("int literal has value %T", lit.Value)
+		}
+		return event.IntValue(-v), nil
+	case lfast.LitFloat:
+		v, ok := lit.Value.(float64)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("float literal has value %T", lit.Value)
+		}
+		return event.FloatValue(-v), nil
+	case lfast.LitDuration:
+		v, ok := lit.Value.(time.Duration)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("duration literal has value %T", lit.Value)
+		}
+		return event.DurationValue(-v), nil
+	default:
+		return event.NullValue(), fmt.Errorf("expected numeric literal after '-', got %s", lit.String())
+	}
 }
 
 // Filter
@@ -893,7 +984,7 @@ func eventLiteralArg(expr lfast.Expr) (event.Value, error) {
 			return event.NullValue(), fmt.Errorf("float literal has value %T", lit.Value)
 		}
 		return event.FloatValue(v), nil
-	case lfast.LitString:
+	case lfast.LitString, lfast.LitRawString:
 		v, ok := lit.Value.(string)
 		if !ok {
 			return event.NullValue(), fmt.Errorf("string literal has value %T", lit.Value)

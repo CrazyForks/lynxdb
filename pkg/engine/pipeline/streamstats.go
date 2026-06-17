@@ -479,7 +479,7 @@ func (s *StreamStatsIterator) writeAggValue(
 ) {
 	var val event.Value
 	switch strings.ToLower(agg.Name) {
-	case aggValues, aggList, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+	case aggValues, aggList, aggMAD, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 		// These aggregates require full window scans for ordered or distributional output.
 		val = s.computeAgg(agg, rb.items())
 	case aggRowNum:
@@ -592,7 +592,7 @@ func streamStatsNeedsRows(aggs []AggFunc, window int) bool {
 	for _, agg := range aggs {
 		switch strings.ToLower(agg.Name) {
 		case aggValues, aggList, aggLag, aggLead, aggMovAvg, aggDelta,
-			aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
+			aggMAD, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99:
 			return true
 		}
 	}
@@ -1118,6 +1118,15 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 		case aggPerc99:
 			return percentile(values, 99)
 		}
+	case aggMAD:
+		st := aggState{}
+		for _, item := range items {
+			if v, ok := item[agg.Field]; ok {
+				updateMADState(&st, v)
+			}
+		}
+
+		return finalizeMAD(&st)
 	case aggCorr, aggCovar, aggLinFit:
 		st := runningAggState{}
 		for _, item := range items {

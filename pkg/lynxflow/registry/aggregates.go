@@ -24,6 +24,7 @@ var aggregates = []Aggregate{
 	{Name: "sum_object", Params: []Param{{Name: "obj", Type: TObject}}, SupportsWhere: true, Result: TObject, Doc: "Per-key sums for numeric object values."},
 	{Name: "skewness", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Bias-corrected sample skewness."},
 	{Name: "kurtosis", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Bias-corrected sample excess kurtosis."},
+	{Name: "mad", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Median absolute deviation over numeric values."},
 	{Name: "mode", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny},
 	{Name: "arg_max", Params: []Param{{Name: "value", Type: TAny}, {Name: "order", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the greatest order expression."},
 	{Name: "arg_min", Params: []Param{{Name: "value", Type: TAny}, {Name: "order", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the least order expression."},

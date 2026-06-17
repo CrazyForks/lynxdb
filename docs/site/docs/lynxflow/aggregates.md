@@ -34,6 +34,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `sum_object` | (obj: object) | `object` | Per-key sums for numeric object values. |
 | `skewness` | (x: number) | `float` | Bias-corrected sample skewness. |
 | `kurtosis` | (x: number) | `float` | Bias-corrected sample excess kurtosis. |
+| `mad` | (x: number) | `float` | Median absolute deviation over numeric values. |
 | `mode` | (x: any) | `any` | - |
 | `arg_max` | (value: any, order: any) | `any` | Value from the row with the greatest order expression. |
 | `arg_min` | (value: any, order: any) | `any` | Value from the row with the least order expression. |

@@ -43,7 +43,7 @@ func batch3PlanRules() []PlanRule {
 //	(row pick), values (distinct set merge), rate/per_second (sum merge),
 //	mode (count-map merge).
 //
-// Non-decomposable: list (order-dependent).
+// Non-decomposable: list (order-dependent), mad (requires global median).
 func partialAgg(root logical.Node) (logical.Node, bool) {
 	return rewritePlanBottomUp(root, func(n logical.Node) (logical.Node, bool) {
 		agg, ok := n.(*logical.Aggregate)

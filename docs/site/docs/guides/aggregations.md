@@ -137,6 +137,14 @@ lynxdb query 'from nginx | stats avg(duration_ms) as avg_lat, stdev(duration_ms)
 
 `stdev()` is the sample standard deviation; `var()` is the sample variance.
 
+### Robust spread
+
+Use `mad()` for median absolute deviation, an exact robust spread measure over numeric values:
+
+```bash
+lynxdb query 'from nginx | stats mad(duration_ms) as latency_spread by uri'
+```
+
 ### Collect values
 
 The `values()` function collects all distinct non-null values of a field into an array:

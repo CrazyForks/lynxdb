@@ -471,7 +471,7 @@ The native LynxDB command set is intentionally smaller than Splunk Enterprise. F
 Functions are available in `eval`, `where`, `from ... WHERE`, and in `stats`/`eventstats`/`streamstats`/`timechart` aggregate contexts where appropriate. Names are case-insensitive.
 
 #### Aggregate / statistical and charting functions
-`avg`, `count`, `distinct_count` / `dc`, `estdc`, `estdc_error`, `first`, `last`, `list`, `max`, `mean`, `median`, `min`, `mode`, `range`, `stdev`, `stdevp`, `sum`, `sumsq`, `var`, `varp`, `values`.
+`avg`, `count`, `distinct_count` / `dc`, `estdc`, `estdc_error`, `first`, `last`, `list`, `mad`, `max`, `mean`, `median`, `min`, `mode`, `range`, `stdev`, `stdevp`, `sum`, `sumsq`, `var`, `varp`, `values`.
 
 Time/statistical functions: `earliest`, `earliest_time`, `latest`, `latest_time`, `per_second`, `per_minute`, `per_hour`, `per_day`, `rate`, `span`, `sparkline`.
 

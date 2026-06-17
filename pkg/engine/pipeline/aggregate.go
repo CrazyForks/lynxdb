@@ -130,6 +130,7 @@ const (
 	aggSumObj  = "sum_object"
 	aggSkew    = "skewness"
 	aggKurt    = "kurtosis"
+	aggMAD     = "mad"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -194,7 +195,7 @@ func NewAggregateIterator(child Iterator, aggs []AggFunc, groupBy []string, acct
 	needsValues := make([]bool, len(aggs))
 	for i, a := range aggs {
 		switch strings.ToLower(a.Name) {
-		case aggDC, aggEstDCE, aggValues, aggList, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev, aggStdevP, aggVar, aggVarP:
+		case aggDC, aggEstDCE, aggValues, aggList, aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99, aggStdev, aggStdevP, aggVar, aggVarP, aggMAD:
 			needsValues[i] = true
 		}
 	}
@@ -358,7 +359,8 @@ func aggResultType(name string) string {
 	case aggAvg, aggRate, aggPerSec, aggPerMin, aggPerHr, aggPerDay,
 		aggStdev, aggStdevP, aggVar, aggVarP, aggEstDCE,
 		aggPerc, aggPerc25, aggPerc50, aggPerc75, aggPerc90, aggPerc95, aggPerc99,
-		aggRunSum, aggMovAvg, aggDelta, aggAvgW, aggEntropy, aggCorr, aggCovar:
+		aggRunSum, aggMovAvg, aggDelta, aggAvgW, aggEntropy, aggCorr, aggCovar,
+		aggMAD:
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
@@ -742,6 +744,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		updateObjectSumState(s, val, 1)
 	case aggSkew, aggKurt:
 		updateMomentState(s, val)
+	case aggMAD:
+		updateMADState(s, val)
 	case aggMin:
 		if !val.IsNull() {
 			if s.min.IsNull() || vm.CompareValues(val, s.min) < 0 {
@@ -1044,6 +1048,17 @@ func updateMomentState(s *aggState, val event.Value) {
 	s.sumFourth += x2 * x2
 }
 
+func updateMADState(s *aggState, val event.Value) {
+	x, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	s.count++
+	if len(s.all) < maxValuesPerGroup {
+		s.all = append(s.all, x)
+	}
+}
+
 func objectSumValue(sums map[string]float64) event.Value {
 	fields := make(map[string]event.Value, len(sums))
 	for key, sum := range sums {
@@ -1156,6 +1171,23 @@ func finalizeKurtosis(s *aggState) event.Value {
 	n := float64(s.count)
 	g2 := m4/(m2*m2) - 3
 	return event.FloatValue((n - 1) / ((n - 2) * (n - 3)) * ((n+1)*g2 + 6))
+}
+
+func finalizeMAD(s *aggState) event.Value {
+	if s.count == 0 || int64(len(s.all)) != s.count {
+		return event.NullValue()
+	}
+	values := float64SliceFromAll(s.all)
+	sort.Float64s(values)
+	median := medianSortedFloat64(values)
+
+	deviations := make([]float64, len(values))
+	for i, value := range values {
+		deviations[i] = math.Abs(value - median)
+	}
+	sort.Float64s(deviations)
+
+	return event.FloatValue(medianSortedFloat64(deviations))
 }
 
 func finalizeEntropy(s *aggState) event.Value {
@@ -1463,6 +1495,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeObjectSumFromRow(&group.states[j], row, agg.Alias)
 		case aggSkew, aggKurt:
 			a.mergeMomentsFromRow(&group.states[j], row, agg.Alias)
+		case aggMAD:
+			a.mergeMADFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
@@ -1972,6 +2006,20 @@ func (a *AggregateIterator) mergePercFromRow(s *aggState, row map[string]event.V
 	}
 }
 
+func (a *AggregateIterator) mergeMADFromRow(s *aggState, row map[string]event.Value, alias string) {
+	if countF, ok := vm.ValueToFloat(row[alias+"__count"]); ok {
+		s.count += int64(countF)
+	}
+	if valuesVal, ok := row[alias+"__madvals"]; ok && !valuesVal.IsNull() {
+		valuesStr, _ := valuesVal.TryAsString()
+		for _, f := range parseFloatList(valuesStr, "|") {
+			if len(s.all) < maxValuesPerGroup {
+				s.all = append(s.all, f)
+			}
+		}
+	}
+}
+
 func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 	switch strings.ToLower(fn) {
 	case aggCount:
@@ -2003,6 +2051,8 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		return finalizeSkewness(s)
 	case aggKurt:
 		return finalizeKurtosis(s)
+	case aggMAD:
+		return finalizeMAD(s)
 	case aggMin:
 		return s.min
 	case aggMax:
@@ -2107,6 +2157,8 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeLinearFit(s)
 	case aggPerc:
 		return finalizePercentile(s, agg.Quantile)
+	case aggMAD:
+		return finalizeMAD(s)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {
@@ -2152,10 +2204,7 @@ func percentile(all []interface{}, pct float64) event.Value {
 	if len(all) == 0 {
 		return event.NullValue()
 	}
-	floats := make([]float64, len(all))
-	for i, v := range all {
-		floats[i] = v.(float64)
-	}
+	floats := float64SliceFromAll(all)
 	sort.Float64s(floats)
 	idx := pct / 100.0 * float64(len(floats)-1)
 	lower := int(idx)
@@ -2165,6 +2214,24 @@ func percentile(all []interface{}, pct float64) event.Value {
 	frac := idx - float64(lower)
 
 	return event.FloatValue(floats[lower] + frac*(floats[lower+1]-floats[lower]))
+}
+
+func float64SliceFromAll(all []interface{}) []float64 {
+	floats := make([]float64, len(all))
+	for i, v := range all {
+		floats[i] = v.(float64)
+	}
+
+	return floats
+}
+
+func medianSortedFloat64(values []float64) float64 {
+	mid := len(values) / 2
+	if len(values)%2 == 1 {
+		return values[mid]
+	}
+
+	return (values[mid-1] + values[mid]) / 2
 }
 
 // encodeBase64 encodes binary data to a base64 string for safe spill storage.

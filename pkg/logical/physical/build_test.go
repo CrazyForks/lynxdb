@@ -532,6 +532,32 @@ func TestBuild_MomentAggregates(t *testing.T) {
 	assertFloatField(t, streamRows[3], "kurt", 3.228, 3)
 }
 
+func TestBuild_MADAggregate(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(1)},
+		{"x": intV(1)},
+		{"x": intV(2)},
+		{"x": intV(2)},
+		{"x": intV(4)},
+		{"x": intV(6)},
+		{"x": intV(9)},
+	}
+
+	statsRows := drain(t, `from * | stats mad(x) as spread`, rows)
+	if len(statsRows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(statsRows))
+	}
+	assertFloatField(t, statsRows[0], "spread", 1, 0)
+
+	eventRows := drain(t, `from * | eventstats mad(x) as spread`, rows)
+	assertFloatField(t, eventRows[0], "spread", 1, 0)
+	assertFloatField(t, eventRows[6], "spread", 1, 6)
+
+	streamRows := drain(t, `from * | streamstats mad(x) as spread`, rows)
+	assertFloatField(t, streamRows[0], "spread", 0, 0)
+	assertFloatField(t, streamRows[6], "spread", 1, 6)
+}
+
 func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"x": intV(1), "y": intV(2)},
@@ -1324,6 +1350,7 @@ func TestAggNameMapping(t *testing.T) {
 		"sum_object":   "sum_object",
 		"skewness":     "skewness",
 		"kurtosis":     "kurtosis",
+		"mad":          "mad",
 		"rate":         "rate",
 	}
 	for input, want := range expected {

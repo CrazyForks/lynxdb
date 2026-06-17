@@ -264,7 +264,7 @@ func buildAggSpecFromIR(agg *logical.Aggregate) (*pipeline.PartialAggSpec, []str
 			return nil, nil, fmt.Errorf("views.AnalyzeLynxFlow: agg func must be *ast.Call, got %T", a.Func)
 		}
 
-		name := strings.ToLower(call.Callee)
+		name := normalizeAggNameForMV(strings.ToLower(call.Callee))
 		if err := validateAggFuncForMV(name); err != nil {
 			return nil, nil, err
 		}
@@ -291,11 +291,28 @@ func buildAggSpecFromIR(agg *logical.Aggregate) (*pipeline.PartialAggSpec, []str
 					"pre-compute with extend: | extend err = if(status >= 500, 1, 0) | stats sum(err) as errors", name)
 			}
 		}
+		weightField := ""
+		if name == "perc_weighted" {
+			if len(call.Args) < 3 {
+				return nil, nil, fmt.Errorf("views.AnalyzeLynxFlow: perc_weighted() requires value, weight, percentile")
+			}
+			ident, ok := call.Args[1].(*ast.Ident)
+			if !ok {
+				return nil, nil, fmt.Errorf("views.AnalyzeLynxFlow: materialized views do not support expression weight arguments in perc_weighted(); pre-compute with extend")
+			}
+			weightField = ident.Name
+		}
+		quantile, err := mvAggQuantile(name, call)
+		if err != nil {
+			return nil, nil, err
+		}
 
 		funcs = append(funcs, pipeline.PartialAggFunc{
-			Name:  name,
-			Field: field,
-			Alias: alias,
+			Name:        name,
+			Field:       field,
+			WeightField: weightField,
+			Alias:       alias,
+			Quantile:    quantile,
 		})
 	}
 
@@ -338,19 +355,83 @@ func buildAggSpecFromIR(agg *logical.Aggregate) (*pipeline.PartialAggSpec, []str
 // for materialized view partial state.
 func validateAggFuncForMV(name string) error {
 	switch name {
-	case "count", "sum", "avg", "min", "max", "dc":
+	case "count", "sum", "avg", "min", "max", "dc",
+		"stdev", "stdevp", "var", "varp",
+		"perc", "perc50", "perc75", "perc90", "perc95", "perc99",
+		"perc_weighted":
 		return nil
 	case "values", "list":
 		return fmt.Errorf("views.AnalyzeLynxFlow: values()/list() not supported for MV (unbounded memory)")
 	case "earliest", "latest":
 		return fmt.Errorf("views.AnalyzeLynxFlow: earliest()/latest() not supported for MV")
-	case "stdev", "stdevp", "var", "varp":
-		return fmt.Errorf("views.AnalyzeLynxFlow: stdev/var not supported for MV")
-	case "perc25", "perc50", "perc75", "perc90", "perc95", "perc99",
-		"p25", "p50", "p75", "p90", "p95", "p99",
-		"perc_weighted":
-		return fmt.Errorf("views.AnalyzeLynxFlow: percentile functions not supported for MV")
+	case "perc25":
+		return fmt.Errorf("views.AnalyzeLynxFlow: p25/perc25 not supported for MV")
 	default:
 		return fmt.Errorf("views.AnalyzeLynxFlow: unsupported aggregation function %q for MV", name)
+	}
+}
+
+func normalizeAggNameForMV(name string) string {
+	switch name {
+	case "p25":
+		return "perc25"
+	case "p50":
+		return "perc50"
+	case "p75":
+		return "perc75"
+	case "p90":
+		return "perc90"
+	case "p95":
+		return "perc95"
+	case "p99":
+		return "perc99"
+	default:
+		return name
+	}
+}
+
+func mvAggQuantile(name string, call *ast.Call) (float64, error) {
+	argIndex := -1
+	switch name {
+	case "perc":
+		argIndex = 1
+	case "perc_weighted":
+		argIndex = 2
+	default:
+		return 0, nil
+	}
+	if len(call.Args) <= argIndex {
+		return 0, fmt.Errorf("views.AnalyzeLynxFlow: %s requires a percentile", call.Callee)
+	}
+	p, err := mvNumericLiteral(call.Args[argIndex])
+	if err != nil {
+		return 0, fmt.Errorf("views.AnalyzeLynxFlow: %s percentile: %w", call.Callee, err)
+	}
+	if p < 0 || p > 100 {
+		return 0, fmt.Errorf("views.AnalyzeLynxFlow: %s percentile must be between 0 and 100", call.Callee)
+	}
+	return p / 100, nil
+}
+
+func mvNumericLiteral(expr ast.Expr) (float64, error) {
+	lit, ok := expr.(*ast.Literal)
+	if !ok {
+		return 0, fmt.Errorf("expected numeric literal, got %T", expr)
+	}
+	switch lit.Kind {
+	case ast.LitInt:
+		n, ok := lit.Value.(int64)
+		if !ok {
+			return 0, fmt.Errorf("int literal has value %T", lit.Value)
+		}
+		return float64(n), nil
+	case ast.LitFloat:
+		f, ok := lit.Value.(float64)
+		if !ok {
+			return 0, fmt.Errorf("float literal has value %T", lit.Value)
+		}
+		return f, nil
+	default:
+		return 0, fmt.Errorf("expected numeric literal, got %s", lit.String())
 	}
 }

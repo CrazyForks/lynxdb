@@ -38,12 +38,23 @@ const (
 	defaultInsertMaxMemoryBytes int64 = 128 << 20
 
 	// Aggregation function name constants shared across serialization and merge.
-	aggFnCount = "count"
-	aggFnSum   = "sum"
-	aggFnAvg   = "avg"
-	aggFnMin   = "min"
-	aggFnMax   = "max"
-	aggFnDC    = "dc"
+	aggFnCount  = "count"
+	aggFnSum    = "sum"
+	aggFnAvg    = "avg"
+	aggFnMin    = "min"
+	aggFnMax    = "max"
+	aggFnDC     = "dc"
+	aggFnPerc   = "perc"
+	aggFnPercW  = "perc_weighted"
+	aggFnPerc50 = "perc50"
+	aggFnPerc75 = "perc75"
+	aggFnPerc90 = "perc90"
+	aggFnPerc95 = "perc95"
+	aggFnPerc99 = "perc99"
+	aggFnStdev  = "stdev"
+	aggFnStdevP = "stdevp"
+	aggFnVar    = "var"
+	aggFnVarP   = "varp"
 )
 
 // activeView holds the runtime state for a single materialized view.
@@ -1076,6 +1087,14 @@ func serializePartialState(ev *event.Event, fn pipeline.PartialAggFunc, s *pipel
 		// On deserialization we prefer len(DistinctSet) when non-empty,
 		// DistinctHLL when present, falling back to dc_count otherwise.
 		ev.Fields[prefix+"dc_count"] = event.IntValue(s.Count)
+	case aggFnStdev, aggFnStdevP, aggFnVar, aggFnVarP:
+		ev.Fields[prefix+"stdev_count"] = event.IntValue(s.Count)
+		ev.Fields[prefix+"stdev_mean"] = event.FloatValue(s.StdevMean)
+		ev.Fields[prefix+"stdev_m2"] = event.FloatValue(s.StdevM2)
+	case aggFnPerc, aggFnPercW, aggFnPerc50, aggFnPerc75, aggFnPerc90, aggFnPerc95, aggFnPerc99:
+		if s.Digest != nil {
+			ev.Fields[prefix+"tdigest"] = event.StringValue(base64.StdEncoding.EncodeToString(s.Digest.MarshalBinary()))
+		}
 	}
 }
 
@@ -1161,6 +1180,23 @@ func deserializePartialState(ev *event.Event, fn pipeline.PartialAggFunc) pipeli
 		// (backfill path where exact set is lost), use that as the count.
 		if v, ok := ev.Fields[prefix+"dc_count"]; ok {
 			s.Count = toInt64(v)
+		}
+	case aggFnStdev, aggFnStdevP, aggFnVar, aggFnVarP:
+		if v, ok := ev.Fields[prefix+"stdev_count"]; ok {
+			s.Count = toInt64(v)
+		}
+		if v, ok := ev.Fields[prefix+"stdev_mean"]; ok {
+			s.StdevMean = toFloat64(v)
+		}
+		if v, ok := ev.Fields[prefix+"stdev_m2"]; ok {
+			s.StdevM2 = toFloat64(v)
+		}
+	case aggFnPerc, aggFnPercW, aggFnPerc50, aggFnPerc75, aggFnPerc90, aggFnPerc95, aggFnPerc99:
+		if v, ok := ev.Fields[prefix+"tdigest"]; ok && !v.IsNull() {
+			str, _ := v.TryAsString()
+			if data, err := base64.StdEncoding.DecodeString(str); err == nil {
+				s.Digest = pipeline.UnmarshalTDigest(data)
+			}
 		}
 	}
 

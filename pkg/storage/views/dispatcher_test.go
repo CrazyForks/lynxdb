@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -871,6 +872,49 @@ func TestDispatcher_ViewRollupMergesPartialStates(t *testing.T) {
 	}
 	if got := worker.GetField("users").AsInt(); got != 1 {
 		t.Errorf("worker users: got %d, want 1", got)
+	}
+}
+
+func TestDispatcher_ViewRollupMergesSketchStates(t *testing.T) {
+	d, reg, _ := setupDispatcher(t)
+	def := createLynxFlowAggView(
+		t,
+		reg,
+		"mv_sketch_rollup",
+		`from main | stats stdev(duration) as sd, p50(duration) as p50 by service, host`,
+	)
+	d.ActivateView(def)
+
+	events := []*event.Event{
+		makeRollupEvent("api", "web1", "alice", 10),
+		makeRollupEvent("api", "web1", "bob", 20),
+		makeRollupEvent("api", "web2", "carol", 30),
+		makeRollupEvent("api", "web2", "dana", 40),
+	}
+	if err := d.Dispatch(events[:2]); err != nil {
+		t.Fatalf("Dispatch batch 1: %v", err)
+	}
+	d.FlushView("mv_sketch_rollup")
+	if err := d.Dispatch(events[2:]); err != nil {
+		t.Fatalf("Dispatch batch 2: %v", err)
+	}
+
+	got, err := d.ViewRollup("mv_sketch_rollup", []string{"service"}, []pipeline.PartialAggFunc{
+		{Name: "stdev", Field: "duration", Alias: "sd"},
+		{Name: "perc50", Field: "duration", Alias: "p50"},
+	})
+	if err != nil {
+		t.Fatalf("ViewRollup: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("ViewRollup rows: got %d, want 1", len(got))
+	}
+
+	if sd := got[0].GetField("sd").AsFloat(); math.Abs(sd-12.909944487) > 0.000001 {
+		t.Errorf("sd: got %f, want sample stdev of 10,20,30,40", sd)
+	}
+	if p50 := got[0].GetField("p50").AsFloat(); math.Abs(p50-25) > 0.000001 {
+		t.Errorf("p50: got %f, want 25", p50)
 	}
 }
 

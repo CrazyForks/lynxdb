@@ -499,7 +499,8 @@ func extractAggInfos(agg *logical.Aggregate) []aggMatch {
 		if !ok {
 			continue
 		}
-		name := strings.ToLower(call.Callee)
+		rawName := strings.ToLower(call.Callee)
+		name := normalizeAggName(rawName)
 		field := ""
 		if len(call.Args) > 0 {
 			if ident, ok := call.Args[0].(*ast.Ident); ok {
@@ -516,9 +517,9 @@ func extractAggInfos(agg *logical.Aggregate) []aggMatch {
 		alias := a.Alias
 		if alias == "" {
 			if field != "" {
-				alias = name + "(" + field + ")"
+				alias = rawName + "(" + field + ")"
 			} else {
-				alias = name + "()"
+				alias = rawName + "()"
 			}
 		}
 		result = append(result, aggMatch{
@@ -544,6 +545,25 @@ func buildViewAggMap(aggs []AggInfo) map[string]string {
 func aggInfoKey(a AggInfo) string {
 	return strings.ToLower(a.Func) + "\x00" + a.Arg + "\x00" + a.WeightField + "\x00" +
 		strconv.FormatFloat(a.Quantile, 'g', -1, 64)
+}
+
+func normalizeAggName(name string) string {
+	switch name {
+	case "p25":
+		return "perc25"
+	case "p50":
+		return "perc50"
+	case "p75":
+		return "perc75"
+	case "p90":
+		return "perc90"
+	case "p95":
+		return "perc95"
+	case "p99":
+		return "perc99"
+	default:
+		return name
+	}
 }
 
 func aggregateQuantile(name string, call *ast.Call) float64 {

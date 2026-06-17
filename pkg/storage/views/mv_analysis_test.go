@@ -68,8 +68,6 @@ func TestAnalyzeLynxFlow_RejectsUnsupportedAgg(t *testing.T) {
 		query string
 	}{
 		{"values", `from main | stats values(host)`},
-		{"stdev", `from main | stats stdev(duration)`},
-		{"percentile", `from main | stats p99(duration)`},
 		{"earliest", `from main | stats earliest(msg)`},
 	}
 	for _, tt := range tests {
@@ -79,6 +77,29 @@ func TestAnalyzeLynxFlow_RejectsUnsupportedAgg(t *testing.T) {
 				t.Fatalf("expected error for unsupported agg %q", tt.name)
 			}
 		})
+	}
+}
+
+func TestAnalyzeLynxFlow_MergeableStateAggs(t *testing.T) {
+	an, err := AnalyzeLynxFlow(`from main | stats stdev(duration) as sd, p99(duration) as p99, perc_weighted(duration, weight, 95) as p95w by host`)
+	if err != nil {
+		t.Fatalf("AnalyzeLynxFlow: %v", err)
+	}
+	if an.AggSpec == nil {
+		t.Fatal("AggSpec is nil")
+	}
+	if len(an.AggSpec.Funcs) != 3 {
+		t.Fatalf("AggSpec.Funcs: got %d, want 3", len(an.AggSpec.Funcs))
+	}
+
+	if fn := an.AggSpec.Funcs[0]; fn.Name != "stdev" || fn.Field != "duration" || fn.Alias != "sd" {
+		t.Fatalf("stdev func: got %+v", fn)
+	}
+	if fn := an.AggSpec.Funcs[1]; fn.Name != "perc99" || fn.Field != "duration" || fn.Alias != "p99" {
+		t.Fatalf("p99 func: got %+v", fn)
+	}
+	if fn := an.AggSpec.Funcs[2]; fn.Name != "perc_weighted" || fn.Field != "duration" || fn.WeightField != "weight" || fn.Quantile != 0.95 {
+		t.Fatalf("perc_weighted func: got %+v", fn)
 	}
 }
 

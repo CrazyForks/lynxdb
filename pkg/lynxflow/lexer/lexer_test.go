@@ -38,12 +38,16 @@ func TestTokenKinds(t *testing.T) {
 		{"0", []Kind{Int, EOF}},
 		{"0x2A", []Kind{Int, EOF}},
 		{"0xff", []Kind{Int, EOF}},
+		{"1_000", []Kind{Int, EOF}},
+		{"0xFF_FF", []Kind{Int, EOF}},
 
 		// Floats.
 		{"3.14", []Kind{Float, EOF}},
 		{"1e-6", []Kind{Float, EOF}},
 		{"2.5e3", []Kind{Float, EOF}},
 		{"1E10", []Kind{Float, EOF}},
+		{"1_000.25", []Kind{Float, EOF}},
+		{"1.25e1_0", []Kind{Float, EOF}},
 
 		// Durations.
 		{"30s", []Kind{Duration, EOF}},
@@ -55,6 +59,7 @@ func TestTokenKinds(t *testing.T) {
 		{"50us", []Kind{Duration, EOF}},
 		{"200ns", []Kind{Duration, EOF}},
 		{"1.5h", []Kind{Duration, EOF}},
+		{"5_000ms", []Kind{Duration, EOF}},
 
 		// Keywords (case-insensitive).
 		{"from", []Kind{KwFrom, EOF}},

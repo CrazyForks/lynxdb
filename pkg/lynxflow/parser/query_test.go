@@ -248,6 +248,22 @@ func TestGoldenStructure(t *testing.T) {
 	}
 }
 
+func TestTrailingCommasInStageLists(t *testing.T) {
+	input := `| extend x = 1_000, y = coalesce(a, b,), | stats count(), sum(bytes), by service, | sort -count, service, | head 1_000`
+	q, diags := Parse(input)
+	if len(diags) > 0 {
+		t.Fatalf("unexpected diags: %v", diagMessages(diags))
+	}
+	if q == nil {
+		t.Fatal("nil Query")
+	}
+
+	want := `extend x = 1000, y = coalesce(a, b) | stats count(), sum(bytes) by service | sort -count, service | head 1000`
+	if got := q.String(); got != want {
+		t.Fatalf("String():\n  got  %q\n  want %q", got, want)
+	}
+}
+
 // 4. Error recovery tests
 
 func TestErrorRecovery_MultiStageErrors(t *testing.T) {

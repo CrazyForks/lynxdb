@@ -3,6 +3,7 @@ package parser
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/ast"
 	"github.com/lynxbase/lynxdb/pkg/lynxflow/format"
@@ -159,6 +160,55 @@ func TestError_WhereNotOk(t *testing.T) {
 	}
 	if expr.String() != "(not a)" {
 		t.Errorf("got %s, want (not a)", expr.String())
+	}
+}
+
+func TestNumericSeparators(t *testing.T) {
+	tests := []struct {
+		input string
+		want  string
+		value interface{}
+	}{
+		{"1_000", "1000", int64(1000)},
+		{"0xFF_FF", "65535", int64(65535)},
+		{"1_000.25", "1000.25", float64(1000.25)},
+		{"5_000ms", "5s", 5 * time.Second},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			expr, diags := ParseExpr(tt.input)
+			if len(diags) > 0 {
+				t.Fatalf("unexpected diags: %v", diagMessages(diags))
+			}
+			if expr.String() != tt.want {
+				t.Fatalf("String() = %q, want %q", expr.String(), tt.want)
+			}
+			lit, ok := expr.(*ast.Literal)
+			if !ok {
+				t.Fatalf("got %T, want *ast.Literal", expr)
+			}
+			if lit.Value != tt.value {
+				t.Fatalf("Value = %#v, want %#v", lit.Value, tt.value)
+			}
+		})
+	}
+}
+
+func TestTrailingCommaInCallArgs(t *testing.T) {
+	expr, diags := ParseExpr("coalesce(a, b,)")
+	if len(diags) > 0 {
+		t.Fatalf("unexpected diags: %v", diagMessages(diags))
+	}
+	call, ok := expr.(*ast.Call)
+	if !ok {
+		t.Fatalf("got %T, want *ast.Call", expr)
+	}
+	if len(call.Args) != 2 {
+		t.Fatalf("len(args) = %d, want 2", len(call.Args))
+	}
+	if expr.String() != "coalesce(a, b)" {
+		t.Fatalf("String() = %q", expr.String())
 	}
 }
 

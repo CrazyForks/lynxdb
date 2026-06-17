@@ -302,16 +302,12 @@ func (l *Lexer) lexNumber() Token {
 			return Token{Kind: Error, Start: start, End: l.pos,
 				Text: "invalid hex literal: expected hex digits after 0x"}
 		}
-		for l.pos < len(l.src) && isHexDigit(l.src[l.pos]) {
-			l.pos++
-		}
+		l.scanDigitRun(isHexDigit)
 		return Token{Kind: Int, Start: start, End: l.pos, Text: l.src[start:l.pos]}
 	}
 
 	// Decimal digits.
-	for l.pos < len(l.src) && l.src[l.pos] >= '0' && l.src[l.pos] <= '9' {
-		l.pos++
-	}
+	l.scanDigitRun(isDecimalDigit)
 
 	isFloat := false
 
@@ -324,9 +320,7 @@ func (l *Lexer) lexNumber() Token {
 			// 3.14 -- consume dot and fractional digits.
 			isFloat = true
 			l.pos++ // consume '.'
-			for l.pos < len(l.src) && l.src[l.pos] >= '0' && l.src[l.pos] <= '9' {
-				l.pos++
-			}
+			l.scanDigitRun(isDecimalDigit)
 		}
 		// else: bare "1." without following digit or ".." -- leave as int, dot is separate token.
 	}
@@ -341,9 +335,7 @@ func (l *Lexer) lexNumber() Token {
 		if ep < len(l.src) && l.src[ep] >= '0' && l.src[ep] <= '9' {
 			isFloat = true
 			l.pos = ep
-			for l.pos < len(l.src) && l.src[l.pos] >= '0' && l.src[l.pos] <= '9' {
-				l.pos++
-			}
+			l.scanDigitRun(isDecimalDigit)
 		}
 		// else: "1e" without digits -- the 'e' is not part of this number.
 	}
@@ -358,6 +350,23 @@ func (l *Lexer) lexNumber() Token {
 		return Token{Kind: Float, Start: start, End: l.pos, Text: l.src[start:l.pos]}
 	}
 	return Token{Kind: Int, Start: start, End: l.pos, Text: l.src[start:l.pos]}
+}
+
+// scanDigitRun consumes digits and numeric separators. Separators are accepted
+// only between two digits, so cases like 1_foo continue to lex as Int + Ident.
+func (l *Lexer) scanDigitRun(isDigit func(byte) bool) {
+	for l.pos < len(l.src) {
+		if isDigit(l.src[l.pos]) {
+			l.pos++
+			continue
+		}
+		if l.src[l.pos] == '_' && l.pos+1 < len(l.src) && isDigit(l.src[l.pos+1]) &&
+			l.pos > 0 && isDigit(l.src[l.pos-1]) {
+			l.pos += 2
+			continue
+		}
+		return
+	}
 }
 
 // tryDurationUnit checks whether the current position begins a duration unit
@@ -500,6 +509,10 @@ func isIdentStart(b byte) bool {
 // ASCII letters, digits, and underscore.
 func isIdentContinue(b byte) bool {
 	return isIdentStart(b) || (b >= '0' && b <= '9')
+}
+
+func isDecimalDigit(b byte) bool {
+	return b >= '0' && b <= '9'
 }
 
 // isHexDigit reports whether b is a valid hexadecimal digit.

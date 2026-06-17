@@ -585,6 +585,9 @@ func (p *parser) parseArgList() []Expr {
 	args = append(args, p.parseArgExpr())
 
 	for p.consume(lexer.Comma) {
+		if p.at(lexer.RParen) {
+			break
+		}
 		args = append(args, p.parseArgExpr())
 	}
 
@@ -844,7 +847,7 @@ func (p *parser) parseIntLiteral() *ast.Literal {
 func (p *parser) parseFloatLiteral() *ast.Literal {
 	tok := p.cur
 	p.advance()
-	val, err := strconv.ParseFloat(tok.Text, 64)
+	val, err := strconv.ParseFloat(normalizeNumericLiteral(tok.Text), 64)
 	if err != nil {
 		p.errorf(tok, CodeUnexpectedToken, nil, "",
 			"invalid float literal: %v", err)
@@ -993,6 +996,7 @@ func (p *parser) recoverTo(kind lexer.Kind) {
 
 // parseInt parses an integer literal (decimal or hex).
 func parseInt(s string) (int64, error) {
+	s = normalizeNumericLiteral(s)
 	if len(s) >= 2 && s[0] == '0' && (s[1] == 'x' || s[1] == 'X') {
 		return strconv.ParseInt(s[2:], 16, 64)
 	}
@@ -1001,6 +1005,7 @@ func parseInt(s string) (int64, error) {
 
 // parseDuration parses a duration literal like "30s", "1.5h", "100ms".
 func parseDuration(s string) (time.Duration, error) {
+	s = normalizeNumericLiteral(s)
 	// Find the boundary between number and unit.
 	i := 0
 	for i < len(s) && (s[i] >= '0' && s[i] <= '9' || s[i] == '.' || s[i] == 'e' || s[i] == 'E' || s[i] == '+' || s[i] == '-') {
@@ -1043,6 +1048,10 @@ func parseDuration(s string) (time.Duration, error) {
 	}
 
 	return time.Duration(num * float64(mult)), nil
+}
+
+func normalizeNumericLiteral(s string) string {
+	return strings.ReplaceAll(s, "_", "")
 }
 
 // interpretString interprets a double-quoted string literal with escape

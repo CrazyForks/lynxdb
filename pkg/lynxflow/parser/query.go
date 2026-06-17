@@ -662,6 +662,9 @@ func (p *parser) parseSearchPrimary() ast.SearchExpr {
 				if !p.at(lexer.RParen) {
 					vals = append(vals, p.parseExpr())
 					for p.consume(lexer.Comma) {
+						if p.at(lexer.RParen) {
+							break
+						}
 						vals = append(vals, p.parseExpr())
 					}
 				}
@@ -1057,6 +1060,9 @@ func (p *parser) parseRenameBody(s *ast.Stage) {
 		if !p.consume(lexer.Comma) {
 			break
 		}
+		if p.atStageBoundary() {
+			break
+		}
 	}
 	s.Rename = &ast.RenamePayload{Renames: renames}
 }
@@ -1166,6 +1172,9 @@ func (p *parser) parseSortBody(s *ast.Stage) {
 		k := p.parseSortKey()
 		keys = append(keys, k)
 		if !p.consume(lexer.Comma) {
+			break
+		}
+		if p.atStageBoundary() {
 			break
 		}
 	}
@@ -1295,6 +1304,9 @@ func (p *parser) parseFieldPatternsBody(s *ast.Stage, isKeep bool) {
 		if !p.consume(lexer.Comma) {
 			break
 		}
+		if p.atStageBoundary() {
+			break
+		}
 	}
 
 	if isKeep {
@@ -1397,6 +1409,9 @@ func (p *parser) parseUnionBody(s *ast.Stage) {
 		if !p.consume(lexer.Comma) {
 			break
 		}
+		if p.atStageBoundary() {
+			break
+		}
 	}
 	s.Union = payload
 }
@@ -1465,6 +1480,9 @@ func (p *parser) parseParseBody(s *ast.Stage) {
 				if !p.consume(lexer.Comma) {
 					break
 				}
+				if p.at(lexer.RParen) {
+					break
+				}
 			}
 			p.expect(lexer.RParen)
 		}
@@ -1503,6 +1521,9 @@ func (p *parser) parseParseBody(s *ast.Stage) {
 						cf := p.parseCaptureField()
 						payload.Into = append(payload.Into, cf)
 						if !p.consume(lexer.Comma) {
+							break
+						}
+						if p.at(lexer.RParen) {
 							break
 						}
 					}
@@ -1911,6 +1932,9 @@ func (p *parser) parseTransactionBody(s *ast.Stage) {
 		if !p.consume(lexer.Comma) {
 			break
 		}
+		if p.atStageBoundary() {
+			break
+		}
 	}
 
 	for {
@@ -1969,6 +1993,9 @@ func (p *parser) parseRollupBody(s *ast.Stage) {
 		}
 		payload.Resolutions = append(payload.Resolutions, p.parseExprSafe())
 		if !p.consume(lexer.Comma) {
+			break
+		}
+		if p.atStageBoundary() || p.at(lexer.KwBy) {
 			break
 		}
 	}
@@ -2070,6 +2097,9 @@ func (p *parser) parseAggList() []ast.AggExpr {
 		agg := p.parseAggExpr()
 		aggs = append(aggs, agg)
 		if !p.consume(lexer.Comma) {
+			break
+		}
+		if p.atStageBoundary() || p.at(lexer.KwBy) {
 			break
 		}
 	}
@@ -2194,6 +2224,9 @@ func (p *parser) parseAssignList() []ast.Assignment {
 		if !p.consume(lexer.Comma) {
 			break
 		}
+		if p.atStageBoundary() {
+			break
+		}
 	}
 	return assigns
 }
@@ -2240,6 +2273,9 @@ func (p *parser) parseFieldList() []ast.Expr {
 		if !p.consume(lexer.Comma) {
 			break
 		}
+		if p.atStageBoundary() || p.at(lexer.KwBy) || p.at(lexer.KwWith) {
+			break
+		}
 	}
 	return fields
 }
@@ -2252,6 +2288,9 @@ func (p *parser) parseGroupByList() []ast.Expr {
 		}
 		keys = append(keys, p.parseExprSafe())
 		if !p.consume(lexer.Comma) {
+			break
+		}
+		if p.atStageBoundary() {
 			break
 		}
 	}

@@ -206,6 +206,25 @@ func TestEphemeralPushdown_HasAllRawTerms(t *testing.T) {
 	}
 }
 
+func TestEphemeralPushdown_HasAnyRawTerms(t *testing.T) {
+	events := map[string][]*event.Event{
+		"main": {
+			mkEvent("payment failed for card"),
+			mkEvent("payment succeeded"),
+			mkEvent("login failed"),
+			mkEvent("request completed"),
+		},
+	}
+
+	results, ss := drainWithStats(t, `from main | where has_any(_raw, ["payment", "failed"])`, events)
+	if ss.TotalEvents.Load() != 4 {
+		t.Errorf("TotalEvents: got %d, want 4", ss.TotalEvents.Load())
+	}
+	if len(results) != 3 {
+		t.Errorf("results: got %d, want 3", len(results))
+	}
+}
+
 func TestEphemeralPushdown_BloomTerms(t *testing.T) {
 	// contains(_raw, "special_phrase") should be pushed as a bloom term.
 	events := map[string][]*event.Event{
@@ -430,6 +449,32 @@ func TestCaseRule_HasIsCaseInsensitive_PartBacked(t *testing.T) {
 	}
 	if results[0]["count()"].AsInt() != 5 {
 		t.Errorf("count(): got %d, want 5 (events with ERROR)", results[0]["count()"].AsInt())
+	}
+}
+
+func TestPartBackedPushdown_HasAnyRawTerms(t *testing.T) {
+	dir := t.TempDir()
+
+	events := []*event.Event{
+		mkEvent("payment failed for card"),
+		mkEvent("payment succeeded"),
+		mkEvent("login failed"),
+		mkEvent("request completed"),
+	}
+	writePartFile(t, dir, "main", events)
+
+	lsgFiles := findPartFiles(t, dir)
+	var parts []PartHandle
+	for _, f := range lsgFiles {
+		parts = append(parts, openPartHandle(t, f, "main"))
+	}
+
+	results, ss := drainPartSource(t, `from main | where has_any(_raw, ["payment", "failed"])`, parts)
+	if ss.PartsTotal.Load() != 1 {
+		t.Errorf("PartsTotal: got %d, want 1", ss.PartsTotal.Load())
+	}
+	if len(results) != 3 {
+		t.Errorf("results: got %d, want 3", len(results))
 	}
 }
 

@@ -229,12 +229,17 @@ func pushConjunct(scan *logical.Scan, expr ast.Expr) (pushed, consumed bool) {
 	}
 
 	// 2. has(_raw, "lit") and has_all(_raw, ["lit", ...]) -> RawTerms.
+	// has_any(_raw, ["lit", ...]) -> RawAnyTerms.
 	if terms, ok := extractHasRawTerms(expr); ok {
 		scan.Pushdown.RawTerms = append(scan.Pushdown.RawTerms, terms...)
 		return true, false // KEEP in filter
 	}
 	if terms, ok := extractHasAllRawTerms(expr); ok {
 		scan.Pushdown.RawTerms = append(scan.Pushdown.RawTerms, terms...)
+		return true, false // KEEP in filter
+	}
+	if terms, ok := extractHasAnyRawTerms(expr); ok {
+		scan.Pushdown.RawAnyTerms = append(scan.Pushdown.RawAnyTerms, terms...)
 		return true, false // KEEP in filter
 	}
 
@@ -344,6 +349,7 @@ func scanHasPushdown(s *logical.Scan) bool {
 		len(pd.FieldPredicates) > 0 ||
 		len(pd.BloomTerms) > 0 ||
 		len(pd.RawTerms) > 0 ||
+		len(pd.RawAnyTerms) > 0 ||
 		len(pd.TokenGlobs) > 0
 }
 
@@ -386,6 +392,37 @@ func extractHasRawTerms(expr ast.Expr) ([]string, bool) {
 func extractHasAllRawTerms(expr ast.Expr) ([]string, bool) {
 	c, ok := expr.(*ast.Call)
 	if !ok || c.Callee != "has_all" || len(c.Args) != 2 {
+		return nil, false
+	}
+	id, ok := c.Args[0].(*ast.Ident)
+	if !ok || id.Name != "_raw" {
+		return nil, false
+	}
+	arr, ok := c.Args[1].(*ast.Array)
+	if !ok {
+		return nil, false
+	}
+	var terms []string
+	for _, elem := range arr.Elems {
+		lit, ok := elem.(*ast.Literal)
+		if !ok || (lit.Kind != ast.LitString && lit.Kind != ast.LitRawString) {
+			return nil, false
+		}
+		s, ok := lit.Value.(string)
+		if !ok {
+			return nil, false
+		}
+		terms = append(terms, tokenize(strings.ToLower(s))...)
+	}
+	if len(terms) == 0 {
+		return nil, false
+	}
+	return terms, true
+}
+
+func extractHasAnyRawTerms(expr ast.Expr) ([]string, bool) {
+	c, ok := expr.(*ast.Call)
+	if !ok || c.Callee != "has_any" || len(c.Args) != 2 {
 		return nil, false
 	}
 	id, ok := c.Args[0].(*ast.Ident)
@@ -855,6 +892,7 @@ func cloneScan(s *logical.Scan) *logical.Scan {
 			FieldPredicates: cloneExprs(s.Pushdown.FieldPredicates),
 			BloomTerms:      cloneStrings(s.Pushdown.BloomTerms),
 			RawTerms:        cloneStrings(s.Pushdown.RawTerms),
+			RawAnyTerms:     cloneStrings(s.Pushdown.RawAnyTerms),
 			TokenGlobs:      cloneStrings(s.Pushdown.TokenGlobs),
 			Columns:         cloneStrings(s.Pushdown.Columns),
 		},

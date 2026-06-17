@@ -9,6 +9,8 @@
 //
 //   - RawTerms: each term is looked up in the part's inverted index
 //     (SerializedIndex.Search). All terms are AND'd into a searchBitmap.
+//     RawAnyTerms are OR'd into a candidate bitmap and then AND'd with other
+//     candidate filters.
 //     If the resulting bitmap is empty, the part is skipped entirely.
 //     This is the SAME mechanism as the old path's SearchTerms -> searchBitmap.
 //
@@ -98,6 +100,7 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 		var searchTerms []string
 		searchTerms = append(searchTerms, pd.RawTerms...)
 		searchTerms = append(searchTerms, pd.BloomTerms...)
+		rawAnyTerms := pd.RawAnyTerms
 
 		hasTimeHints := minTime != nil || maxTime != nil
 
@@ -140,6 +143,23 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 					skipped = true
 					if stats != nil {
 						stats.PartsSkipped.Add(1)
+					}
+				}
+			}
+
+			if !skipped && len(rawAnyTerms) > 0 && p.InvertedIdx != nil {
+				anyBitmap, ok := rawAnyBitmap(p.InvertedIdx, rawAnyTerms)
+				if ok {
+					if searchBitmap == nil {
+						searchBitmap = anyBitmap
+					} else {
+						searchBitmap.And(anyBitmap)
+					}
+					if searchBitmap.GetCardinality() == 0 {
+						skipped = true
+						if stats != nil {
+							stats.PartsSkipped.Add(1)
+						}
 					}
 				}
 			}
@@ -214,6 +234,18 @@ func NewPartSource(parts []PartHandle, defaultIndex string, now time.Time, stats
 
 		return pipeline.NewRowScanIterator(allRows, pipeline.DefaultBatchSize), nil
 	}
+}
+
+func rawAnyBitmap(idx *index.SerializedIndex, terms []string) (*roaring.Bitmap, bool) {
+	union := roaring.New()
+	for _, term := range terms {
+		bm, err := idx.Search(term)
+		if err != nil {
+			return nil, false
+		}
+		union.Or(bm)
+	}
+	return union, true
 }
 
 // filterEventsByAbsoluteTime filters events by already-resolved absolute time

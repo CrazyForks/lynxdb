@@ -140,6 +140,10 @@ func renderPushdown(b *strings.Builder, pd *logical.Pushdown, depth int, counter
 		indent(b, depth)
 		fmt.Fprintf(b, "raw_term: %q via FST\n", rt)
 	}
+	for _, rt := range pd.RawAnyTerms {
+		indent(b, depth)
+		fmt.Fprintf(b, "raw_any_term: %q via FST union\n", rt)
+	}
 	for _, tg := range pd.TokenGlobs {
 		indent(b, depth)
 		fmt.Fprintf(b, "token_glob: %q via FST expansion\n", tg)

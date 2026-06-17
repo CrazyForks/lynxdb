@@ -7,6 +7,7 @@
 //     Pushdown mapping:
 //     - RawTerms: applied in-memory via hasToken matching (same tokenizer
 //     contract as §6.1) to pre-filter events before pipeline.
+//     - RawAnyTerms: same token matching, but any term may match.
 //     - FieldPredicates: applied in-memory via ast.Expr evaluation (converted
 //     to field==literal string comparison for the v1 contract).
 //     - BloomTerms: applied in-memory via substring containment check (bloom
@@ -30,7 +31,8 @@
 //     in .lsg part files on disk. Pushdown mapping:
 //     - RawTerms -> inverted index term lookup (SerializedIndex.Search),
 //     producing a roaring bitmap of matching event IDs. Multiple terms are
-//     AND'd. If bitmap is empty, the part is skipped entirely.
+//     AND'd. RawAnyTerms are OR'd, then AND'd with other candidate filters.
+//     If bitmap is empty, the part is skipped entirely.
 //     - BloomTerms -> same inverted index path but with less-selective terms
 //     (substring-derived). Used as candidate filter before full verification.
 //     - FieldPredicates -> segment.Predicate{Field, Op, Value} for the
@@ -67,7 +69,7 @@ type ScanStats struct {
 	TotalEvents atomic.Int64
 
 	// FilteredEvents is the number of events that survived pushdown filtering
-	// (RawTerms + BloomTerms + FieldPredicates). This is the count fed into
+	// (RawTerms + RawAnyTerms + BloomTerms + FieldPredicates). This is the count fed into
 	// the pipeline iterator.
 	FilteredEvents atomic.Int64
 
@@ -178,6 +180,7 @@ func NewStorageSourceFromMapWithNow(events map[string][]*event.Event, defaultInd
 //
 //   - RawTerms: each term must be present as a whole token (case-insensitive)
 //     in the event's _raw field. Matches the tokenizer contract (§6.1).
+//   - RawAnyTerms: at least one term must be present as a whole token.
 //   - BloomTerms: each term must appear as a substring in _raw (CI).
 //     In the disk path these are bloom-assisted candidates; here we verify
 //     directly since there is no bloom filter.
@@ -188,17 +191,21 @@ func NewStorageSourceFromMapWithNow(events map[string][]*event.Event, defaultInd
 func applyEphemeralPushdown(events []*event.Event, scan *logical.Scan) []*event.Event {
 	pd := scan.Pushdown
 	hasRaw := len(pd.RawTerms) > 0
+	hasRawAny := len(pd.RawAnyTerms) > 0
 	hasBloom := len(pd.BloomTerms) > 0
 	hasGlobs := len(pd.TokenGlobs) > 0
 	hasFP := len(pd.FieldPredicates) > 0
 
-	if !hasRaw && !hasBloom && !hasGlobs && !hasFP {
+	if !hasRaw && !hasRawAny && !hasBloom && !hasGlobs && !hasFP {
 		return events
 	}
 
 	result := make([]*event.Event, 0, len(events))
 	for _, ev := range events {
 		if hasRaw && !matchRawTerms(ev.Raw, pd.RawTerms) {
+			continue
+		}
+		if hasRawAny && !matchAnyRawTerm(ev.Raw, pd.RawAnyTerms) {
 			continue
 		}
 		if hasBloom && !matchBloomTerms(ev.Raw, pd.BloomTerms) {
@@ -236,6 +243,26 @@ func matchRawTerms(raw string, terms []string) bool {
 		}
 	}
 	return true
+}
+
+// matchAnyRawTerm checks that at least one term appears as a whole token
+// (case-insensitive) in the raw string, per the tokenizer contract (§6.1).
+func matchAnyRawTerm(raw string, terms []string) bool {
+	if raw == "" {
+		return false
+	}
+	rawLower := strings.ToLower(raw)
+	tokens := tokenizeString(rawLower)
+	set := make(map[string]struct{}, len(tokens))
+	for _, t := range tokens {
+		set[t] = struct{}{}
+	}
+	for _, term := range terms {
+		if _, ok := set[term]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 // matchTokenGlobs checks that every glob pattern matches at least one whole
@@ -609,12 +636,13 @@ func filterByTimeBounds(events []*event.Event, scan *logical.Scan, now time.Time
 // StorageSourceInfo documents pushdown mapping status.
 var StorageSourceInfo = fmt.Sprintf(
 	"v2 pushdown mapping: raw_terms=YES(ephemeral:in-memory-hasToken), " +
+		"raw_any_terms=YES(ephemeral:in-memory-hasAnyToken), " +
 		"bloom_terms=YES(ephemeral:in-memory-substring), " +
 		"field_predicates=YES(ephemeral:in-memory-eval), " +
 		"columns=NO(ephemeral:full-events), " +
 		"time_bounds=YES(ephemeral:filterByTimeBounds, part:QueryHints.MinTime/MaxTime), " +
 		"reverse=NO(ephemeral:no-sorted-guarantee). " +
 		"Part-backed mapping via NewPartSource: raw_terms=inverted-index, " +
-		"bloom_terms=inverted-index, field_predicates=segment.Predicate, " +
+		"raw_any_terms=inverted-index-union, bloom_terms=inverted-index, field_predicates=segment.Predicate, " +
 		"columns=projection, time_bounds=YES(QueryHints.MinTime/MaxTime), " +
 		"reverse=UNSUPPORTED.")

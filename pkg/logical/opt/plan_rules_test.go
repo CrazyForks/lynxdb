@@ -284,6 +284,15 @@ func TestPredicatePushdown_HasRawTerms(t *testing.T) {
 				`Filter(has_all(_raw, ["payment", "failed"]))`,
 			},
 		},
+		{
+			name:  "has_any_raw_terms",
+			query: `from main | where has_any(_raw, ["payment", "failed"])`,
+			contains: []string{
+				`pushdown.raw_any_term: "payment"`,
+				`pushdown.raw_any_term: "failed"`,
+				`Filter(has_any(_raw, ["payment", "failed"]))`,
+			},
+		},
 	}
 
 	for _, tt := range tests {

@@ -156,7 +156,7 @@ All scalar functions available in LynxFlow expressions. Functions marked **null_
 | Function | Params | Result | Fallibility | Strict | Description |
 |----------|--------|--------|-------------|--------|-------------|
 | `now` | () | `timestamp` | infallible | - | Query start time (stable within one query). |
-| `bin` | (x: any, width: any) | `any` | null_on_failure | - | Snap a timestamp to a duration boundary or a number to a numeric width; time by-lists emit as _time. |
+| `bin` | (x: any, width: any, origin: any?) | `any` | null_on_failure | - | Snap a timestamp or number to a bucket boundary; optional origin shifts the bucket grid. |
 | `strftime` | (ts: timestamp, format: string, tz: string?) | `string` | null_on_failure | - | Format a timestamp in UTC or an IANA timezone. |
 | `strptime` | (s: string, format: any) | `timestamp` | null_on_failure | `strptime!` | Parse with one layout or the first matching layout in an array. |
 | `time_of_day` | (ts: timestamp, tz: string?) | `duration` | null_on_failure | - | Duration since midnight in UTC or an IANA timezone. |

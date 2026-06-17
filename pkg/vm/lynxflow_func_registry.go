@@ -461,7 +461,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 
 		// ---- Time (§10) ----
 		{name: "now", minArgs: 0, maxArgs: 0, emit: lfEmitNow},
-		{name: "bin", minArgs: 2, maxArgs: 2, emit: lfEmitBin},
+		{name: "bin", minArgs: 2, maxArgs: 3, emit: lfEmitBin},
 		{name: "strftime", minArgs: 2, maxArgs: 3, emit: lfEmitStrftime},
 		{name: "strptime", minArgs: 2, maxArgs: 2, strict: true, emit: lfEmitBinary(OpStrptime),
 			emitStrict: lfStrictCast("strptime", OpStrptime)},
@@ -1187,6 +1187,7 @@ func lfEmitNow(c *lfCompiler, _ *lfast.Call) error {
 func lfEmitBin(c *lfCompiler, call *lfast.Call) error {
 	// bin(ts, dur) → snap timestamp to duration boundary.
 	// bin(x, width) → snap number to numeric width.
+	// bin(x, width, origin) → snap relative to origin.
 	// Coercion rule (RFC-002 §10):
 	//   - number + number → snap to numeric width
 	//   - timestamp input → snap directly
@@ -1199,7 +1200,14 @@ func lfEmitBin(c *lfCompiler, call *lfast.Call) error {
 	if err := c.compile(call.Args[1]); err != nil {
 		return err
 	}
-	c.prog.EmitOp(OpBin)
+	if len(call.Args) == 3 {
+		if err := c.compile(call.Args[2]); err != nil {
+			return err
+		}
+		c.prog.EmitOp(OpBinOrigin)
+	} else {
+		c.prog.EmitOp(OpBin)
+	}
 	return nil
 }
 

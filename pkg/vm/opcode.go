@@ -104,6 +104,7 @@ const (
 	OpGenerateSeries  Opcode = 0x87 // 2-byte count; pop start, stop[, step]; push int array
 	OpBase64URLDecode Opcode = 0x88 // pop string; push raw URL-safe base64 decoded string or null
 	OpBase64URLEncode Opcode = 0x89 // pop string; push raw URL-safe base64 encoded string
+	OpBinOrigin       Opcode = 0x8A // pop value, width/span, origin; snap using origin when non-null
 
 	// Math Functions.
 	OpRound      Opcode = 0x90
@@ -577,6 +578,7 @@ var definitions = map[Opcode]*Definition{
 	OpIPParseObj:      {"OpIPParseObj", nil},
 	OpFromJSONNative:  {"OpFromJSONNative", nil},
 	OpBin:             {"OpBin", nil},
+	OpBinOrigin:       {"OpBinOrigin", nil},
 	OpBucket:          {"OpBucket", nil},
 	OpPathNormalize:   {"OpPathNormalize", nil},
 	OpUserAgentParse:  {"OpUserAgentParse", nil},

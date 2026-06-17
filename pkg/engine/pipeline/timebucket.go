@@ -10,10 +10,12 @@ import (
 
 // BinIterator implements BIN timestamp bucketing.
 type BinIterator struct {
-	child   Iterator
-	field   string
-	alias   string
-	spanDur time.Duration
+	child     Iterator
+	field     string
+	alias     string
+	spanDur   time.Duration
+	origin    time.Time
+	hasOrigin bool
 }
 
 // NewBinIterator creates a time bucketing operator.
@@ -23,6 +25,14 @@ func NewBinIterator(child Iterator, field, alias string, span time.Duration) *Bi
 	}
 
 	return &BinIterator{child: child, field: field, alias: alias, spanDur: span}
+}
+
+// NewBinIteratorWithOrigin creates a time bucketing operator with an explicit origin.
+func NewBinIteratorWithOrigin(child Iterator, field, alias string, span time.Duration, origin time.Time) *BinIterator {
+	iter := NewBinIterator(child, field, alias, span)
+	iter.origin = origin.UTC()
+	iter.hasOrigin = true
+	return iter
 }
 
 func (b *BinIterator) Init(ctx context.Context) error {
@@ -103,7 +113,7 @@ func (b *BinIterator) Next(ctx context.Context) (*Batch, error) {
 
 			continue
 		}
-		bucketNano := (ts.UnixNano() / spanNanos) * spanNanos
+		bucketNano := bucketTimestampNano(ts.UnixNano(), spanNanos, b.origin.UnixNano(), b.hasOrigin)
 		aliasCol[i] = event.TimestampValue(time.Unix(0, bucketNano).UTC())
 	}
 	batch.Columns[b.alias] = aliasCol
@@ -114,3 +124,15 @@ func (b *BinIterator) Next(ctx context.Context) (*Batch, error) {
 func (b *BinIterator) Close() error { return b.child.Close() }
 
 func (b *BinIterator) Schema() []FieldInfo { return b.child.Schema() }
+
+func bucketTimestampNano(tsNanos, spanNanos, originNanos int64, hasOrigin bool) int64 {
+	if !hasOrigin {
+		return (tsNanos / spanNanos) * spanNanos
+	}
+	offset := tsNanos - originNanos
+	q := offset / spanNanos
+	if r := offset % spanNanos; r != 0 && offset < 0 {
+		q--
+	}
+	return originNanos + q*spanNanos
+}

@@ -304,9 +304,12 @@ func (l *lowerer) lowerStats(input Node, sp *ast.StatsPayload, window *WindowSpe
 
 	for _, byExpr := range sp.By {
 		// Check for bin(_time, d) -> extract TimeBin.
-		if call, ok := byExpr.(*ast.Call); ok && call.Callee == "bin" && len(call.Args) >= 2 {
+		if call, ok := byExpr.(*ast.Call); ok && call.Callee == "bin" && len(call.Args) >= 2 && len(call.Args) <= 3 {
 			if ident, ok := call.Args[0].(*ast.Ident); ok && ident.Name == "_time" {
 				timeBin = &TimeBin{Duration: call.Args[1]}
+				if len(call.Args) == 3 {
+					timeBin.Origin = call.Args[2]
+				}
 				continue // extracted, not added to Keys
 			}
 		}

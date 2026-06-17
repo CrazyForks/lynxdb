@@ -463,6 +463,35 @@ func TestBuild_Stats_TimeBin(t *testing.T) {
 	}
 }
 
+func TestBuild_Stats_TimeBinOrigin(t *testing.T) {
+	base := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	rows := []map[string]event.Value{
+		{"_time": tsV(base), "val": intV(1)},
+		{"_time": tsV(base.Add(2 * time.Minute)), "val": intV(2)},
+		{"_time": tsV(base.Add(6 * time.Minute)), "val": intV(3)},
+	}
+	result := drain(t, `from * | stats count() by bin(_time, 5m, "2026-01-01T10:01:00Z")`, rows)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 shifted time buckets, got %d: %#v", len(result), result)
+	}
+	slices.SortFunc(result, func(a, b map[string]event.Value) int {
+		ta, _ := a["_time"].TryAsTimestamp()
+		tb, _ := b["_time"].TryAsTimestamp()
+		return ta.Compare(tb)
+	})
+	want := []time.Time{
+		base.Add(-4 * time.Minute),
+		base.Add(1 * time.Minute),
+		base.Add(6 * time.Minute),
+	}
+	for i := range want {
+		got, ok := result[i]["_time"].TryAsTimestamp()
+		if !ok || !got.Equal(want[i]) {
+			t.Fatalf("bucket %d = %v, want %v", i, result[i]["_time"], want[i])
+		}
+	}
+}
+
 func TestBuild_EveryFillGapfill(t *testing.T) {
 	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	rows := []map[string]event.Value{

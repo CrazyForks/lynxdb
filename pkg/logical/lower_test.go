@@ -101,6 +101,14 @@ func TestFusion_Stats_BinExtracted(t *testing.T) {
 	if len(agg.Keys) != 1 || agg.Keys[0].Name != "service" {
 		t.Errorf("Keys should be [service], got %v", agg.Keys)
 	}
+
+	plan, diags = parseDesugarLower(t,
+		`from app | stats count() by service, bin(_time, 5m, "2026-01-01T00:01:00Z")`)
+	assertNoDiagErrors(t, diags)
+	agg = plan.Root.(*Aggregate)
+	if agg.TimeBin == nil || agg.TimeBin.Origin == nil {
+		t.Fatal("TimeBin should retain origin from bin(_time, span, origin)")
+	}
 }
 
 func TestFusion_Stats_NoBin_NoTimeBin(t *testing.T) {

@@ -469,7 +469,15 @@ func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, erro
 		if err != nil {
 			return nil, fmt.Errorf("physical.Build: aggregate time bin: %w", err)
 		}
-		child = pipeline.NewBinIterator(child, "_time", "_time", dur)
+		if nd.TimeBin.Origin != nil {
+			origin, err := timestampLiteralArg(nd.TimeBin.Origin)
+			if err != nil {
+				return nil, fmt.Errorf("physical.Build: aggregate time bin origin: %w", err)
+			}
+			child = pipeline.NewBinIteratorWithOrigin(child, "_time", "_time", dur, origin)
+		} else {
+			child = pipeline.NewBinIterator(child, "_time", "_time", dur)
+		}
 	}
 
 	aggs, err := b.convertAggs(nd.Aggs)
@@ -812,6 +820,51 @@ func durationLiteralArg(expr lfast.Expr) (time.Duration, error) {
 		return 0, fmt.Errorf("duration literal has value %T", lit.Value)
 	}
 	return d, nil
+}
+
+func timestampLiteralArg(expr lfast.Expr) (time.Time, error) {
+	lit, ok := expr.(*lfast.Literal)
+	if !ok {
+		return time.Time{}, fmt.Errorf("expected timestamp origin literal, got %T", expr)
+	}
+	switch lit.Kind {
+	case lfast.LitString, lfast.LitRawString:
+		s, ok := lit.Value.(string)
+		if !ok {
+			return time.Time{}, fmt.Errorf("string literal has value %T", lit.Value)
+		}
+		ts, ok := parseBuildTimestamp(s)
+		if !ok {
+			return time.Time{}, fmt.Errorf("invalid timestamp origin %q", s)
+		}
+		return ts, nil
+	case lfast.LitInt:
+		n, ok := lit.Value.(int64)
+		if !ok {
+			return time.Time{}, fmt.Errorf("int literal has value %T", lit.Value)
+		}
+		return time.Unix(0, n).UTC(), nil
+	default:
+		return time.Time{}, fmt.Errorf("expected timestamp origin literal, got %s", lit.String())
+	}
+}
+
+func parseBuildTimestamp(s string) (time.Time, bool) {
+	for _, layout := range []string{
+		time.RFC3339Nano,
+		time.RFC3339,
+		"2006-01-02T15:04:05.000-0700",
+		"2006-01-02T15:04:05-0700",
+		"2006-01-02T15:04:05.000Z",
+		"2006-01-02 15:04:05",
+		"2006-01-02 15:04:05.000",
+	} {
+		ts, err := time.Parse(layout, s)
+		if err == nil {
+			return ts.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func eventLiteralArg(expr lfast.Expr) (event.Value, error) {

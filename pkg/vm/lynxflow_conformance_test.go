@@ -1981,6 +1981,10 @@ func TestConformance_BinFunction(t *testing.T) {
 		result, _ := runLF(t, call("bin", litFloat(12.75), litFloat(0.5)), nil)
 		assertFloat(t, result, 12.5, "bin float")
 	})
+	t.Run("numeric origin", func(t *testing.T) {
+		result, _ := runLF(t, call("bin", litInt(137), litInt(50), litInt(10)), nil)
+		assertInt(t, result, 110, "bin int origin")
+	})
 	t.Run("invalid width", func(t *testing.T) {
 		result, _ := runLF(t, call("bin", litInt(10), litInt(0)), nil)
 		assertNull(t, result, "bin zero width")
@@ -1990,6 +1994,12 @@ func TestConformance_BinFunction(t *testing.T) {
 		fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
 		result, _ := runLF(t, call("bin", ident("ts"), litDur(time.Hour)), fields)
 		assertTimestamp(t, result, time.Date(2026, 6, 16, 14, 0, 0, 0, time.UTC), "bin timestamp")
+	})
+	t.Run("timestamp origin", func(t *testing.T) {
+		ts := time.Date(2026, 6, 16, 14, 37, 55, 0, time.UTC)
+		fields := map[string]event.Value{"ts": event.TimestampValue(ts)}
+		result, _ := runLF(t, call("bin", ident("ts"), litDur(time.Hour), litStr("2026-06-16T00:15:00Z")), fields)
+		assertTimestamp(t, result, time.Date(2026, 6, 16, 14, 15, 0, 0, time.UTC), "bin timestamp origin")
 	})
 }
 

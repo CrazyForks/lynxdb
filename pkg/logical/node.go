@@ -364,6 +364,7 @@ type Key struct {
 // TimeBin is an extracted bin(_time, d) from the group-by list.
 type TimeBin struct {
 	Duration ast.Expr // the duration expression
+	Origin   ast.Expr // optional bucket origin expression
 }
 
 // WindowVariant distinguishes plain stats from eventstats/streamstats.

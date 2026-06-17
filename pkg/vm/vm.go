@@ -1347,6 +1347,13 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 			vm.sp--
 			vm.stack[vm.sp-1] = binValue(tsVal, durVal)
 
+		case OpBinOrigin:
+			originVal := vm.stack[vm.sp-1]
+			widthVal := vm.stack[vm.sp-2]
+			xVal := vm.stack[vm.sp-3]
+			vm.sp -= 2
+			vm.stack[vm.sp-1] = binValueWithOrigin(xVal, widthVal, originVal)
+
 		case OpFromUnix:
 			unit := vm.stack[vm.sp-1]
 			n := vm.stack[vm.sp-2]
@@ -3713,6 +3720,19 @@ func binValue(xVal, widthVal event.Value) event.Value {
 	return binTimestampValue(xVal, widthVal)
 }
 
+func binValueWithOrigin(xVal, widthVal, originVal event.Value) event.Value {
+	if xVal.IsNull() || widthVal.IsNull() {
+		return event.NullValue()
+	}
+	if originVal.IsNull() {
+		return binValue(xVal, widthVal)
+	}
+	if isNumericType(xVal.Type()) && isNumericType(widthVal.Type()) && isNumericType(originVal.Type()) {
+		return binNumberValueWithOrigin(xVal, widthVal, originVal)
+	}
+	return binTimestampValueWithOrigin(xVal, widthVal, originVal)
+}
+
 func binNumberValue(xVal, widthVal event.Value) event.Value {
 	if xVal.Type() == event.FieldTypeInt && widthVal.Type() == event.FieldTypeInt {
 		x := xVal.AsInt()
@@ -3738,6 +3758,38 @@ func binNumberValue(xVal, widthVal event.Value) event.Value {
 	return event.FloatValue(math.Floor(x/width) * width)
 }
 
+func binNumberValueWithOrigin(xVal, widthVal, originVal event.Value) event.Value {
+	if xVal.Type() == event.FieldTypeInt && widthVal.Type() == event.FieldTypeInt &&
+		originVal.Type() == event.FieldTypeInt {
+		x := xVal.AsInt()
+		width := widthVal.AsInt()
+		origin := originVal.AsInt()
+		if width <= 0 {
+			return event.NullValue()
+		}
+		offset := x - origin
+		q := offset / width
+		if r := offset % width; r != 0 && offset < 0 {
+			q--
+		}
+		return event.IntValue(origin + q*width)
+	}
+
+	x, ok := numericValue(xVal)
+	if !ok {
+		return event.NullValue()
+	}
+	width, ok := numericValue(widthVal)
+	if !ok || width <= 0 || math.IsNaN(width) || math.IsInf(width, 0) || math.IsNaN(x) || math.IsInf(x, 0) {
+		return event.NullValue()
+	}
+	origin, ok := numericValue(originVal)
+	if !ok || math.IsNaN(origin) || math.IsInf(origin, 0) {
+		return event.NullValue()
+	}
+	return event.FloatValue(origin + math.Floor((x-origin)/width)*width)
+}
+
 func numericValue(v event.Value) (float64, bool) {
 	switch v.Type() {
 	case event.FieldTypeInt:
@@ -3761,45 +3813,76 @@ func binTimestampValue(tsVal, durVal event.Value) event.Value {
 		return event.NullValue()
 	}
 
-	// Extract the span duration in nanoseconds.
-	var spanNanos int64
-	switch durVal.Type() {
-	case event.FieldTypeDuration:
-		d, _ := durVal.TryAsDuration()
-		spanNanos = d.Nanoseconds()
-	case event.FieldTypeInt:
-		spanNanos = durVal.AsInt()
-	default:
-		return event.NullValue()
-	}
-	if spanNanos <= 0 {
+	spanNanos, ok := spanNanosFromValue(durVal)
+	if !ok {
 		return event.NullValue()
 	}
 
-	// Extract the timestamp to snap.
-	var tsNanos int64
-	switch tsVal.Type() {
-	case event.FieldTypeTimestamp:
-		ts, _ := tsVal.TryAsTimestamp()
-		tsNanos = ts.UnixNano()
-	case event.FieldTypeInt:
-		tsNanos = tsVal.AsInt()
-	case event.FieldTypeString:
-		s, _ := tsVal.TryAsString()
-		parsed, ok := tryParseTimestampVM(s)
-		if !ok {
-			return event.NullValue()
-		}
-		tsNanos = parsed.UnixNano()
-	case event.FieldTypeDuration:
-		d, _ := tsVal.TryAsDuration()
-		tsNanos = d.Nanoseconds()
-	default:
+	tsNanos, ok := timestampNanosFromValue(tsVal)
+	if !ok {
 		return event.NullValue()
 	}
 
 	bucketNano := (tsNanos / spanNanos) * spanNanos
 	return event.TimestampValue(time.Unix(0, bucketNano).UTC())
+}
+
+func binTimestampValueWithOrigin(tsVal, durVal, originVal event.Value) event.Value {
+	spanNanos, ok := spanNanosFromValue(durVal)
+	if !ok {
+		return event.NullValue()
+	}
+	tsNanos, ok := timestampNanosFromValue(tsVal)
+	if !ok {
+		return event.NullValue()
+	}
+	originNanos, ok := timestampNanosFromValue(originVal)
+	if !ok {
+		return event.NullValue()
+	}
+	offset := tsNanos - originNanos
+	q := offset / spanNanos
+	if r := offset % spanNanos; r != 0 && offset < 0 {
+		q--
+	}
+	bucketNano := originNanos + q*spanNanos
+	return event.TimestampValue(time.Unix(0, bucketNano).UTC())
+}
+
+func spanNanosFromValue(v event.Value) (int64, bool) {
+	var spanNanos int64
+	switch v.Type() {
+	case event.FieldTypeDuration:
+		d, _ := v.TryAsDuration()
+		spanNanos = d.Nanoseconds()
+	case event.FieldTypeInt:
+		spanNanos = v.AsInt()
+	default:
+		return 0, false
+	}
+	return spanNanos, spanNanos > 0
+}
+
+func timestampNanosFromValue(v event.Value) (int64, bool) {
+	switch v.Type() {
+	case event.FieldTypeTimestamp:
+		ts, _ := v.TryAsTimestamp()
+		return ts.UnixNano(), true
+	case event.FieldTypeInt:
+		return v.AsInt(), true
+	case event.FieldTypeString:
+		s, _ := v.TryAsString()
+		parsed, ok := tryParseTimestampVM(s)
+		if !ok {
+			return 0, false
+		}
+		return parsed.UnixNano(), true
+	case event.FieldTypeDuration:
+		d, _ := v.TryAsDuration()
+		return d.Nanoseconds(), true
+	default:
+		return 0, false
+	}
 }
 
 // tryParseTimestampVM tries to parse s as a timestamp using common formats.

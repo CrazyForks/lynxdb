@@ -21,10 +21,11 @@ import (
 //
 // Non-array values pass through unchanged.
 type UnrollIterator struct {
-	child     Iterator
-	fields    []string
-	batchSize int
-	limit     int
+	child        Iterator
+	fields       []string
+	outputFields []string
+	batchSize    int
+	limit        int
 
 	// Buffer for expanded rows from the current batch.
 	buffer []map[string]event.Value
@@ -38,15 +39,23 @@ func NewUnrollIterator(child Iterator, fields []string, batchSize int) *UnrollIt
 }
 
 func NewUnrollIteratorWithLimit(child Iterator, fields []string, batchSize int, limit int) *UnrollIterator {
+	return NewUnrollIteratorWithAliases(child, fields, fields, batchSize, limit)
+}
+
+func NewUnrollIteratorWithAliases(child Iterator, fields []string, outputFields []string, batchSize int, limit int) *UnrollIterator {
 	if batchSize <= 0 {
 		batchSize = DefaultBatchSize
 	}
+	if len(outputFields) != len(fields) {
+		outputFields = fields
+	}
 
 	return &UnrollIterator{
-		child:     child,
-		fields:    fields,
-		batchSize: batchSize,
-		limit:     limit,
+		child:        child,
+		fields:       fields,
+		outputFields: outputFields,
+		batchSize:    batchSize,
+		limit:        limit,
 	}
 }
 
@@ -83,7 +92,7 @@ func (u *UnrollIterator) Next(ctx context.Context) (*Batch, error) {
 			row := childBatch.Row(i)
 
 			if len(u.fields) == 1 {
-				u.unrollSingle(row, u.fields[0])
+				u.unrollSingle(row, u.fields[0], u.outputFields[0])
 			} else {
 				u.unrollMulti(row)
 			}
@@ -92,7 +101,7 @@ func (u *UnrollIterator) Next(ctx context.Context) (*Batch, error) {
 }
 
 // unrollSingle is the original single-field expansion logic.
-func (u *UnrollIterator) unrollSingle(row map[string]event.Value, field string) {
+func (u *UnrollIterator) unrollSingle(row map[string]event.Value, field string, outputField string) {
 	fieldVal, ok := row[field]
 	if !ok || fieldVal.IsNull() {
 		u.buffer = append(u.buffer, row)
@@ -130,16 +139,16 @@ func (u *UnrollIterator) unrollSingle(row map[string]event.Value, field string) 
 		if len(elemStr) > 0 && elemStr[0] == '{' {
 			var obj map[string]json.RawMessage
 			if err := json.Unmarshal(elem, &obj); err == nil {
-				newRow[field] = event.StringValue(elemStr)
+				newRow[outputField] = event.StringValue(elemStr)
 				for k, v := range obj {
-					dotKey := field + "." + k
+					dotKey := outputField + "." + k
 					newRow[dotKey] = jsonRawToValue(v)
 				}
 			} else {
-				newRow[field] = event.StringValue(elemStr)
+				newRow[outputField] = event.StringValue(elemStr)
 			}
 		} else {
-			newRow[field] = jsonRawToValue(elem)
+			newRow[outputField] = jsonRawToValue(elem)
 		}
 
 		u.buffer = append(u.buffer, newRow)
@@ -200,23 +209,24 @@ func (u *UnrollIterator) unrollMulti(row map[string]event.Value) {
 	for idx := 0; idx < arrLen; idx++ {
 		newRow := cloneRow(row)
 
-		for fi, field := range u.fields {
+		for fi := range u.fields {
+			outputField := u.outputFields[fi]
 			elem := arrays[fi][idx]
 			elemStr := strings.TrimSpace(string(elem))
 
 			if len(elemStr) > 0 && elemStr[0] == '{' {
 				var obj map[string]json.RawMessage
 				if err := json.Unmarshal(elem, &obj); err == nil {
-					newRow[field] = event.StringValue(elemStr)
+					newRow[outputField] = event.StringValue(elemStr)
 					for k, v := range obj {
-						dotKey := field + "." + k
+						dotKey := outputField + "." + k
 						newRow[dotKey] = jsonRawToValue(v)
 					}
 				} else {
-					newRow[field] = event.StringValue(elemStr)
+					newRow[outputField] = event.StringValue(elemStr)
 				}
 			} else {
-				newRow[field] = jsonRawToValue(elem)
+				newRow[outputField] = jsonRawToValue(elem)
 			}
 		}
 

@@ -230,6 +230,18 @@ func TestGoldenExpansions(t *testing.T) {
 			wantReason: "sugar:rare",
 		},
 		{
+			name:       "hist_default_bins",
+			input:      `from app | hist duration_ms`,
+			wantPipe:   `from app | stats histogram(duration_ms, 20) as _h | explode _h as bin | extend lo = bin.lo, hi = bin.hi, count = bin.count | eventstats max(count) as _m | extend chart = bar(count, 0, _m, 40) | drop _h, _m, bin | sort lo`,
+			wantReason: "sugar:hist",
+		},
+		{
+			name:       "hist_bins",
+			input:      `from app | hist duration_ms bins=5`,
+			wantPipe:   `from app | stats histogram(duration_ms, 5) as _h | explode _h as bin | extend lo = bin.lo, hi = bin.hi, count = bin.count | eventstats max(count) as _m | extend chart = bar(count, 0, _m, 40) | drop _h, _m, bin | sort lo`,
+			wantReason: "sugar:hist",
+		},
+		{
 			name:       "count_bare",
 			input:      `from app | count`,
 			wantPipe:   `from app | stats count() as count`,

@@ -340,6 +340,8 @@ func (d *desugarer) expandSugar(s ast.Stage, pip ast.Pipeline, stageIdx int) []a
 		return d.expandTopRare(s, true)
 	case "rare":
 		return d.expandTopRare(s, false)
+	case "hist":
+		return d.expandHist(s)
 	case "count":
 		return d.expandCount(s)
 	case "every":
@@ -571,6 +573,105 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 		reason = "sugar:rare"
 	}
 	d.addRewrite(s.String(), renderStages(result), reason, s.Pos)
+	return result
+}
+
+func (d *desugarer) expandHist(s ast.Stage) []ast.Stage {
+	if s.Hist == nil {
+		return []ast.Stage{d.cloneStage(s)}
+	}
+
+	field := cloneExpr(s.Hist.Field)
+	bins := cloneExpr(s.Hist.Bins)
+	if bins == nil {
+		bins = &ast.Literal{Kind: ast.LitInt, Raw: "20", Value: int64(20), Pos: s.Pos}
+	}
+
+	statsStage := ast.Stage{
+		Name:    "stats",
+		NamePos: s.NamePos,
+		Stats: &ast.StatsPayload{
+			Aggs: []ast.AggExpr{{
+				Func:  &ast.Call{Callee: "histogram", Args: []ast.Expr{field, bins}, Pos: s.Pos},
+				Alias: "_h",
+				Pos:   s.Pos,
+			}},
+		},
+		Pos: s.Pos,
+	}
+	explodeStage := ast.Stage{
+		Name:    "explode",
+		NamePos: s.NamePos,
+		Explode: &ast.ExplodePayload{
+			Array: &ast.Ident{Name: "_h", Pos: s.Pos},
+			As:    "bin",
+		},
+		Pos: s.Pos,
+	}
+	extendBinsStage := ast.Stage{
+		Name:    "extend",
+		NamePos: s.NamePos,
+		Extend: &ast.AssignPayload{Assignments: []ast.Assignment{
+			{Name: "lo", Value: &ast.Member{Object: &ast.Ident{Name: "bin", Pos: s.Pos}, Field: "lo", Pos: s.Pos}, Pos: s.Pos},
+			{Name: "hi", Value: &ast.Member{Object: &ast.Ident{Name: "bin", Pos: s.Pos}, Field: "hi", Pos: s.Pos}, Pos: s.Pos},
+			{Name: "count", Value: &ast.Member{Object: &ast.Ident{Name: "bin", Pos: s.Pos}, Field: "count", Pos: s.Pos}, Pos: s.Pos},
+		}},
+		Pos: s.Pos,
+	}
+	maxStage := ast.Stage{
+		Name:    "eventstats",
+		NamePos: s.NamePos,
+		Eventstats: &ast.StatsPayload{
+			Aggs: []ast.AggExpr{{
+				Func:  &ast.Call{Callee: "max", Args: []ast.Expr{&ast.Ident{Name: "count", Pos: s.Pos}}, Pos: s.Pos},
+				Alias: "_m",
+				Pos:   s.Pos,
+			}},
+		},
+		Pos: s.Pos,
+	}
+	chartStage := ast.Stage{
+		Name:    "extend",
+		NamePos: s.NamePos,
+		Extend: &ast.AssignPayload{Assignments: []ast.Assignment{{
+			Name: "chart",
+			Value: &ast.Call{
+				Callee: "bar",
+				Args: []ast.Expr{
+					&ast.Ident{Name: "count", Pos: s.Pos},
+					&ast.Literal{Kind: ast.LitInt, Raw: "0", Value: int64(0), Pos: s.Pos},
+					&ast.Ident{Name: "_m", Pos: s.Pos},
+					&ast.Literal{Kind: ast.LitInt, Raw: "40", Value: int64(40), Pos: s.Pos},
+				},
+				Pos: s.Pos,
+			},
+			Pos: s.Pos,
+		}}},
+		Pos: s.Pos,
+	}
+	dropStage := ast.Stage{
+		Name:    "drop",
+		NamePos: s.NamePos,
+		Drop: &ast.FieldPatternsPayload{Patterns: []ast.FieldPattern{
+			{Name: "_h", Pos: s.Pos},
+			{Name: "_m", Pos: s.Pos},
+			{Name: "bin", Pos: s.Pos},
+		}},
+		Pos: s.Pos,
+	}
+	sortStage := ast.Stage{
+		Name:    "sort",
+		NamePos: s.NamePos,
+		Sort: &ast.SortPayload{Keys: []ast.SortKey{{
+			Field: &ast.Ident{Name: "lo", Pos: s.Pos},
+			Desc:  false,
+			Pos:   s.Pos,
+		}}},
+		Pos: s.Pos,
+	}
+
+	result := []ast.Stage{statsStage, explodeStage, extendBinsStage, maxStage, chartStage, dropStage, sortStage}
+	d.addRewrite(s.String(), renderStages(result), "sugar:hist", s.Pos)
 	return result
 }
 
@@ -1386,6 +1487,8 @@ func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 		out.Top = cloneTopRarePayload(s.Top)
 	case s.Rare != nil:
 		out.Rare = cloneTopRarePayload(s.Rare)
+	case s.Hist != nil:
+		out.Hist = cloneHistPayload(s.Hist)
 	case s.Materialize != nil:
 		out.Materialize = cloneMaterializePayload(s.Materialize)
 	case s.Tee != nil:
@@ -1713,6 +1816,13 @@ func cloneTopRarePayload(tp *ast.TopRarePayload) *ast.TopRarePayload {
 		N:     cloneInt64Ptr(tp.N),
 		Field: cloneExpr(tp.Field),
 		By:    cloneExprs(tp.By),
+	}
+}
+
+func cloneHistPayload(h *ast.HistPayload) *ast.HistPayload {
+	return &ast.HistPayload{
+		Field: cloneExpr(h.Field),
+		Bins:  cloneExpr(h.Bins),
 	}
 }
 

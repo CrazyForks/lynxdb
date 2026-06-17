@@ -321,6 +321,7 @@ type Stage struct {
 	Parse       *ParsePayload
 	Top         *TopRarePayload
 	Rare        *TopRarePayload
+	Hist        *HistPayload
 	Count       *CountPayload
 	Every       *EveryPayload
 	Rate        *RatePayload
@@ -416,6 +417,9 @@ func (s *Stage) String() string {
 	case s.Rare != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Rare.String())
+	case s.Hist != nil:
+		b.WriteByte(' ')
+		b.WriteString(s.Hist.String())
 	case s.Every != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Every.String())
@@ -957,6 +961,26 @@ func (t *TopRarePayload) String() string {
 			}
 			b.WriteString(by.String())
 		}
+	}
+	return b.String()
+}
+
+// HistPayload is the typed payload for hist.
+type HistPayload struct {
+	Field Expr
+	Bins  Expr
+}
+
+func (h *HistPayload) String() string {
+	field := "<nil>"
+	if h.Field != nil {
+		field = h.Field.String()
+	}
+	var b strings.Builder
+	b.WriteString(field)
+	if h.Bins != nil {
+		b.WriteString(" bins=")
+		b.WriteString(h.Bins.String())
 	}
 	return b.String()
 }

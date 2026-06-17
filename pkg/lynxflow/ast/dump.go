@@ -237,6 +237,13 @@ func (d *dumper) dumpStage(s *Stage, depth int) {
 		d.dumpTopRare(s.Top, depth+1)
 	case s.Rare != nil:
 		d.dumpTopRare(s.Rare, depth+1)
+	case s.Hist != nil:
+		d.line(depth+1, "Field")
+		d.dumpExpr(s.Hist.Field, depth+2)
+		if s.Hist.Bins != nil {
+			d.line(depth+1, "Bins")
+			d.dumpExpr(s.Hist.Bins, depth+2)
+		}
 	case s.Every != nil:
 		d.line(depth+1, "Span")
 		d.dumpExpr(s.Every.Span, depth+2)

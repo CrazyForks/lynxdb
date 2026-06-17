@@ -702,6 +702,9 @@ func formatStage(b *strings.Builder, s *ast.Stage) {
 	case s.Rare != nil:
 		b.WriteByte(' ')
 		formatTopRarePayload(b, s.Rare)
+	case s.Hist != nil:
+		b.WriteByte(' ')
+		formatHistPayload(b, s.Hist)
 	case s.Count != nil:
 		if len(s.Count.By) > 0 {
 			b.WriteString(" by ")
@@ -1194,6 +1197,14 @@ func formatExemplarsPayload(b *strings.Builder, p *ast.ExemplarsPayload) {
 			}
 			formatExpr(b, k, precTop)
 		}
+	}
+}
+
+func formatHistPayload(b *strings.Builder, p *ast.HistPayload) {
+	formatExpr(b, p.Field, precTop)
+	if p.Bins != nil {
+		b.WriteString(" bins=")
+		formatExpr(b, p.Bins, precTop)
 	}
 }
 

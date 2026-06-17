@@ -47,6 +47,7 @@ stage       ::= baseline_stage
               | facets_stage
               | from_stage
               | head_stage
+              | hist_stage
               | impact_stage
               | join_stage
               | keep_stage
@@ -96,6 +97,7 @@ extend_stage     ::= 'extend' assign_list ;
 facets_stage     ::= 'facets' field_list ['limit' '=' number] ;
 from_stage       ::= 'from' field_patterns ;
 head_stage       ::= 'head' number ;
+hist_stage       ::= 'hist' field ['bins' '=' number] ;
 impact_stage     ::= 'impact' [agg_list] ['by' '=' field_list] ;
 join_stage       ::= 'join' sub_pipeline ['type' '=' ident] ['on' '=' field_list] ;
 keep_stage       ::= 'keep' field_patterns ;

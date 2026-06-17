@@ -952,7 +952,11 @@ func (b *builder) buildExplode(nd *logical.Explode) (pipeline.Iterator, error) {
 		return nil, err
 	}
 	fields := []string{nd.Field}
-	return pipeline.NewUnrollIterator(child, fields, b.opts.batchSize()), nil
+	outputFields := fields
+	if nd.As != "" {
+		outputFields = []string{nd.As}
+	}
+	return pipeline.NewUnrollIteratorWithAliases(child, fields, outputFields, b.opts.batchSize(), 0), nil
 }
 
 // Describe

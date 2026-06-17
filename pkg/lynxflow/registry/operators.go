@@ -171,6 +171,18 @@ var operators = []Operator{
 		Examples:   []string{`rare 3 service`, `rare 2 status by host`},
 	},
 	{
+		Name: "hist", Class: ClassSugar, Streaming: StreamingAcc,
+		Positionals: []Positional{
+			{Name: "field", Type: ArgField, Required: true},
+		},
+		Options:    []Option{{Name: "bins", Type: ArgInt, Default: "20"}},
+		Syntax:     "hist <field> [bins=<n>]",
+		Grammar:    "'hist' field ['bins' '=' number]",
+		DesugarsTo: "stats histogram(<field>, <bins>) as _h | explode _h as bin | extend lo = bin.lo, hi = bin.hi, count = bin.count | eventstats max(count) as _m | extend chart = bar(count, 0, _m, 40) | drop _h, _m, bin | sort lo",
+		Doc:        "Histogram rows with lo, hi, count, and chart columns.",
+		Examples:   []string{`hist duration_ms bins=20`},
+	},
+	{
 		Name: "count", Class: ClassSugar, Streaming: StreamingAcc,
 		Options:    []Option{{Name: "by", Type: ArgFieldList}},
 		DesugarsTo: "stats count() as count [by <fields>]",

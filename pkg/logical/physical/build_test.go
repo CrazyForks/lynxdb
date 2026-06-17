@@ -789,6 +789,47 @@ func TestBuild_HistogramAggregate(t *testing.T) {
 	assertHistogramCounts(t, streamRows[3]["h"], []int64{2, 2})
 }
 
+func TestBuild_HistSugar(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(0)},
+		{"x": intV(1)},
+		{"x": intV(2)},
+		{"x": intV(3)},
+	}
+
+	got := drain(t, `from * | hist x bins=2`, rows)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 histogram rows, got %d: %#v", len(got), got)
+	}
+	for i, row := range got {
+		assertIntField(t, row, "count", 2, i)
+		if !isNumericValue(row["lo"]) {
+			t.Fatalf("row %d lo got %s, want numeric", i, row["lo"].String())
+		}
+		if !isNumericValue(row["hi"]) {
+			t.Fatalf("row %d hi got %s, want numeric", i, row["hi"].String())
+		}
+		if _, ok := row["chart"].TryAsString(); !ok {
+			t.Fatalf("row %d chart got %s, want string", i, row["chart"].String())
+		}
+		for _, temp := range []string{"_h", "_m", "bin"} {
+			if _, ok := row[temp]; ok {
+				t.Fatalf("row %d retained temp field %s: %#v", i, temp, row)
+			}
+		}
+	}
+}
+
+func isNumericValue(v event.Value) bool {
+	if _, ok := v.TryAsInt(); ok {
+		return true
+	}
+	if _, ok := v.TryAsFloat(); ok {
+		return true
+	}
+	return false
+}
+
 func assertHistogramCounts(t *testing.T, value event.Value, want []int64) {
 	t.Helper()
 	bins, ok := value.TryAsArray()
@@ -1485,6 +1526,14 @@ func TestBuild_Explode(t *testing.T) {
 	// Row 1 expands to 3, Row 2 expands to 1 -> 4 total.
 	if len(result) != 4 {
 		t.Fatalf("expected 4 rows, got %d", len(result))
+	}
+
+	aliased := drain(t, `from * | explode tags as tag`, rows)
+	if len(aliased) != 4 {
+		t.Fatalf("expected 4 aliased rows, got %d", len(aliased))
+	}
+	if got := aliased[0]["tag"]; got != strV("a") {
+		t.Fatalf("aliased tag: got %s, want a", got.String())
 	}
 }
 

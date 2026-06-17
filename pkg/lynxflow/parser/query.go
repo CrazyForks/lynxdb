@@ -998,6 +998,8 @@ func (p *parser) parseStageBody(s *ast.Stage) {
 		p.parseTopRareBody(s, true)
 	case "rare":
 		p.parseTopRareBody(s, false)
+	case "hist":
+		p.parseHistBody(s)
 	case "count":
 		p.parseCountBody(s)
 	case "every":
@@ -1710,6 +1712,20 @@ func (p *parser) parseTopRareBody(s *ast.Stage, isTop bool) {
 	} else {
 		s.Rare = payload
 	}
+}
+
+func (p *parser) parseHistBody(s *ast.Stage) {
+	payload := &ast.HistPayload{
+		Field: p.parseExprSafe(),
+	}
+
+	if n, ok := p.identLike(); ok && n == "bins" && p.peekIsEq() {
+		p.advance() // consume bins
+		p.advance() // consume =
+		payload.Bins = p.parseExprSafe()
+	}
+
+	s.Hist = payload
 }
 
 // parseCountBody parses `count [()] [by <fields>]`. Empty parens are

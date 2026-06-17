@@ -51,7 +51,7 @@ type descNumericState struct {
 	min   float64
 	max   float64
 	sum   float64
-	p50   *pipeline.TDigest
+	q     *pipeline.TDigest
 }
 
 func (s *descNumericState) add(v event.Value) {
@@ -62,7 +62,7 @@ func (s *descNumericState) add(v event.Value) {
 	if s.count == 0 {
 		s.min = n
 		s.max = n
-		s.p50 = pipeline.NewTDigest(100)
+		s.q = pipeline.NewTDigest(100)
 	} else {
 		if n < s.min {
 			s.min = n
@@ -73,7 +73,7 @@ func (s *descNumericState) add(v event.Value) {
 	}
 	s.count++
 	s.sum += n
-	s.p50.Add(n)
+	s.q.Add(n)
 }
 
 func describeNumber(v event.Value) (float64, bool) {
@@ -167,6 +167,10 @@ func (d *DescribeSummaryIterator) Next(ctx context.Context) (*pipeline.Batch, er
 		if totalRows > 0 {
 			coverage = float64(fs.nonNull) / float64(totalRows)
 		}
+		nullPct := 0.0
+		if totalRows > 0 {
+			nullPct = float64(totalRows-fs.nonNull) / float64(totalRows)
+		}
 
 		// Distinct estimate.
 		distinctEst := int64(len(fs.values))
@@ -204,13 +208,18 @@ func (d *DescribeSummaryIterator) Next(ctx context.Context) (*pipeline.Batch, er
 			"min":          event.NullValue(),
 			"max":          event.NullValue(),
 			"avg":          event.NullValue(),
+			"p25":          event.NullValue(),
 			"p50":          event.NullValue(),
+			"p75":          event.NullValue(),
+			"null_pct":     event.FloatValue(nullPct),
 		}
 		if fs.nums.count > 0 {
 			row["min"] = event.FloatValue(fs.nums.min)
 			row["max"] = event.FloatValue(fs.nums.max)
 			row["avg"] = event.FloatValue(fs.nums.sum / float64(fs.nums.count))
-			row["p50"] = event.FloatValue(fs.nums.p50.Quantile(0.5))
+			row["p25"] = event.FloatValue(fs.nums.q.Quantile(0.25))
+			row["p50"] = event.FloatValue(fs.nums.q.Quantile(0.5))
+			row["p75"] = event.FloatValue(fs.nums.q.Quantile(0.75))
 		}
 		result.AddRow(row)
 	}
@@ -232,6 +241,9 @@ func (d *DescribeSummaryIterator) Schema() []pipeline.FieldInfo {
 		{Name: "min", Type: "float"},
 		{Name: "max", Type: "float"},
 		{Name: "avg", Type: "float"},
+		{Name: "p25", Type: "float"},
 		{Name: "p50", Type: "float"},
+		{Name: "p75", Type: "float"},
+		{Name: "null_pct", Type: "float"},
 	}
 }

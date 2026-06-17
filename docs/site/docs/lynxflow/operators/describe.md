@@ -7,7 +7,7 @@ sidebar_label: "describe"
 
 **Class:** `core` &middot; **Streaming:** accumulating
 
-Stream schema/coverage summary: field, type, coverage, distinct_est, top_values, min, max, avg, p50 (RFC-002 §7.4).
+Stream schema/coverage summary: field, type, coverage, distinct_est, top_values, min, max, avg, p25, p50, p75, null_pct (RFC-002 §7.4).
 
 ## Signature
 

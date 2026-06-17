@@ -1602,7 +1602,7 @@ func TestBuild_Describe(t *testing.T) {
 	// Each row should have describe output columns.
 	wantCols := []string{
 		"field", "type", "coverage", "distinct_est", "top_values",
-		"min", "max", "avg", "p50",
+		"min", "max", "avg", "p25", "p50", "p75", "null_pct",
 	}
 	for i, r := range result {
 		for _, col := range wantCols {
@@ -1971,7 +1971,7 @@ func TestDescribeSummaryIterator(t *testing.T) {
 	}
 
 	// Verify expected columns.
-	for _, col := range []string{"field", "type", "coverage", "distinct_est", "top_values", "min", "max", "avg", "p50"} {
+	for _, col := range []string{"field", "type", "coverage", "distinct_est", "top_values", "min", "max", "avg", "p25", "p50", "p75", "null_pct"} {
 		if _, ok := batch.Columns[col]; !ok {
 			t.Errorf("missing column %q in describe output", col)
 		}
@@ -2029,17 +2029,21 @@ func TestDescribeSummaryIterator_NumericProfile(t *testing.T) {
 	assertFloatField(t, latency, "min", 10, 0)
 	assertFloatField(t, latency, "max", 30, 0)
 	assertFloatField(t, latency, "avg", 20, 0)
+	assertFloatField(t, latency, "p25", 12.5, 0)
 	assertFloatField(t, latency, "p50", 20, 0)
+	assertFloatField(t, latency, "p75", 27.5, 0)
+	assertFloatField(t, latency, "null_pct", 0.25, 0)
 
 	service, ok := rowsByField["service"]
 	if !ok {
 		t.Fatalf("missing service row: %#v", rowsByField)
 	}
-	for _, field := range []string{"min", "max", "avg", "p50"} {
+	for _, field := range []string{"min", "max", "avg", "p25", "p50", "p75"} {
 		if !service[field].IsNull() {
 			t.Fatalf("service %s: got %s, want null", field, service[field].String())
 		}
 	}
+	assertFloatField(t, service, "null_pct", 0, 0)
 }
 
 // Tests: Schema on DescribeSummaryIterator
@@ -2048,14 +2052,14 @@ func TestDescribeSummaryIterator_Schema(t *testing.T) {
 	source := sliceSource(nil, 1024)
 	iter := NewDescribeSummaryIterator(source, 1024)
 	schema := iter.Schema()
-	if len(schema) != 9 {
-		t.Fatalf("expected 9 schema fields, got %d", len(schema))
+	if len(schema) != 12 {
+		t.Fatalf("expected 12 schema fields, got %d", len(schema))
 	}
 	names := make(map[string]bool)
 	for _, f := range schema {
 		names[f.Name] = true
 	}
-	for _, want := range []string{"field", "type", "coverage", "distinct_est", "top_values", "min", "max", "avg", "p50"} {
+	for _, want := range []string{"field", "type", "coverage", "distinct_est", "top_values", "min", "max", "avg", "p25", "p50", "p75", "null_pct"} {
 		if !names[want] {
 			t.Errorf("missing schema field %q", want)
 		}

@@ -573,7 +573,10 @@ func (a *analyzer) analyzeDescribe(_ ast.Stage) {
 		{Name: "min", Type: TypeFloat},
 		{Name: "max", Type: TypeFloat},
 		{Name: "avg", Type: TypeFloat},
+		{Name: "p25", Type: TypeFloat},
 		{Name: "p50", Type: TypeFloat},
+		{Name: "p75", Type: TypeFloat},
+		{Name: "null_pct", Type: TypeFloat},
 	}
 	a.schema.open = false
 }

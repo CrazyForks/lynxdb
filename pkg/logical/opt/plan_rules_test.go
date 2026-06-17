@@ -390,6 +390,15 @@ func TestPredicatePushdown_BloomTerms(t *testing.T) {
 			excludes: []string{`pushdown.bloom_term:`},
 		},
 		{
+			name:  "contains_phrase_raw",
+			query: `from main | where contains_phrase(_raw, "connection refused")`,
+			contains: []string{
+				`pushdown.bloom_term: "connection"`,
+				`pushdown.bloom_term: "refused"`,
+				`Filter(contains_phrase(_raw, "connection refused"))`,
+			},
+		},
+		{
 			name:  "contains_any_raw",
 			query: `from main | where contains_any(_raw, ["connection refused", "timeout"])`,
 			contains: []string{

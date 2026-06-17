@@ -507,9 +507,9 @@ func isFieldCmpLiteral(expr ast.Expr) bool {
 
 // Bloom term extraction (contains/glob/matches)
 
-// extractBloomTerms extracts required literal substrings from contains, glob,
-// and matches calls on _raw, tokenizes them, and returns tokens >= 3 chars
-// suitable for bloom filter lookup.
+// extractBloomTerms extracts required literal substrings from contains,
+// contains_phrase, glob, and matches calls on _raw, tokenizes them, and returns
+// tokens >= 3 chars suitable for bloom filter lookup.
 func extractBloomTerms(expr ast.Expr) []string {
 	c, ok := expr.(*ast.Call)
 	if !ok || len(c.Args) < 2 {
@@ -526,7 +526,7 @@ func extractBloomTerms(expr ast.Expr) []string {
 	var isPattern bool
 
 	switch c.Callee {
-	case "contains", "contains_cs":
+	case "contains", "contains_cs", "contains_phrase":
 		lit, ok := c.Args[1].(*ast.Literal)
 		if !ok || (lit.Kind != ast.LitString && lit.Kind != ast.LitRawString) {
 			return nil

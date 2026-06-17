@@ -242,6 +242,26 @@ func TestEphemeralPushdown_BloomTerms(t *testing.T) {
 	}
 }
 
+func TestEphemeralPushdown_ContainsPhraseBloomTerms(t *testing.T) {
+	events := map[string][]*event.Event{
+		"main": {
+			mkEvent("connection refused by upstream"),
+			mkEvent("refused connection by upstream"),
+			mkEvent("connection accepted by upstream"),
+			mkEvent("ordinary request completed"),
+		},
+	}
+
+	results, ss := drainWithStats(t, `from main | where contains_phrase(_raw, "connection refused")`, events)
+
+	if len(results) != 1 {
+		t.Errorf("results: got %d, want 1", len(results))
+	}
+	if ss.FilteredEvents.Load() != 2 {
+		t.Errorf("FilteredEvents: got %d, want 2", ss.FilteredEvents.Load())
+	}
+}
+
 func TestEphemeralPushdown_BloomAnyTerms(t *testing.T) {
 	events := map[string][]*event.Event{
 		"main": {

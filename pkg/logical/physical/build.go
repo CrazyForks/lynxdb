@@ -424,6 +424,7 @@ var aggNameMapping = map[string]string{
 	"running_sum":    "running_sum",
 	"moving_avg":     "moving_avg",
 	"delta":          "delta",
+	"ema":            "ema",
 	"arg_max":        "arg_max",
 	"arg_min":        "arg_min",
 	"any_value":      "any_value",
@@ -687,16 +688,16 @@ func streamstatsArgWindow(name string, call *lfast.Call) (int, error) {
 			return 0, fmt.Errorf("physical.Build: %s offset must be positive", name)
 		}
 		return n, nil
-	case "moving_avg":
+	case "moving_avg", "ema":
 		if len(call.Args) < 2 {
-			return 0, fmt.Errorf("physical.Build: moving_avg requires a row count")
+			return 0, fmt.Errorf("physical.Build: %s requires a row count", name)
 		}
 		n, err := intLiteralArg(call.Args[1])
 		if err != nil {
-			return 0, fmt.Errorf("physical.Build: moving_avg row count: %w", err)
+			return 0, fmt.Errorf("physical.Build: %s row count: %w", name, err)
 		}
 		if n <= 0 {
-			return 0, fmt.Errorf("physical.Build: moving_avg row count must be positive")
+			return 0, fmt.Errorf("physical.Build: %s row count must be positive", name)
 		}
 		return n, nil
 	default:

@@ -116,6 +116,7 @@ const (
 	aggRunSum  = "running_sum"
 	aggMovAvg  = "moving_avg"
 	aggDelta   = "delta"
+	aggEMA     = "ema"
 	aggArgMax  = "arg_max"
 	aggArgMin  = "arg_min"
 	aggAnyVal  = "any_value"

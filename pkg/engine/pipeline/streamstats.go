@@ -51,6 +51,8 @@ type runningAggState struct {
 	objectN   map[string]int64
 	sumCube   float64
 	sumFourth float64
+	ema       float64
+	emaSet    bool
 }
 
 type ringBuffer struct {
@@ -396,6 +398,8 @@ func (s *StreamStatsIterator) materializedAggValue(
 		return materializedMovingAvg(rows, indexes, groupPos, agg)
 	case aggDelta:
 		return materializedDelta(rows, indexes, groupPos, agg.Field)
+	case aggEMA:
+		return materializedEMA(rows, indexes, groupPos, agg, s.current)
 	default:
 		return s.computeAgg(agg, windowRows)
 	}
@@ -469,6 +473,52 @@ func materializedDelta(rows []map[string]event.Value, indexes []int, groupPos in
 	return event.FloatValue(currentNum - previousNum)
 }
 
+func materializedEMA(
+	rows []map[string]event.Value,
+	indexes []int,
+	groupPos int,
+	agg AggFunc,
+	current bool,
+) event.Value {
+	if agg.Window <= 0 {
+		return event.NullValue()
+	}
+	end := groupPos
+	if current {
+		end++
+	}
+	ema, ok := computeEMA(rows, indexes[:end], agg.Field, agg.Window)
+	if !ok {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(ema)
+}
+
+func computeEMA(rows []map[string]event.Value, indexes []int, field string, n int) (float64, bool) {
+	alpha := 2.0 / float64(n+1)
+	ema := 0.0
+	seen := false
+	for _, rowIndex := range indexes {
+		v, ok := rows[rowIndex][field]
+		if !ok {
+			continue
+		}
+		f, ok := vm.ValueToFloat(v)
+		if !ok {
+			continue
+		}
+		if !seen {
+			ema = f
+			seen = true
+			continue
+		}
+		ema = alpha*f + (1-alpha)*ema
+	}
+
+	return ema, seen
+}
+
 func (s *StreamStatsIterator) writeAggValue(
 	batch *Batch,
 	row map[string]event.Value,
@@ -494,6 +544,8 @@ func (s *StreamStatsIterator) writeAggValue(
 		val = s.readMovingAvg(agg, rb)
 	case aggDelta:
 		val = s.readDelta(row, agg, rb)
+	case aggEMA:
+		val = readRunningEMA(st)
 	default:
 		val = readRunningAgg(st, agg, rb)
 	}
@@ -698,6 +750,8 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 		addObjectValueToRunning(st, agg, row, 1)
 	case aggSkew, aggKurt:
 		addMomentValueToRunning(st, agg, row, 1)
+	case aggEMA:
+		addEMAValueToRunning(st, agg, row)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			if st.minVal.IsNull() || vm.CompareValues(v, st.minVal) < 0 {
@@ -729,6 +783,8 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 	switch strings.ToLower(agg.Name) {
 	case aggRowNum:
 		// row_number is a partition ordinal, not a sliding aggregate.
+	case aggEMA:
+		// EMA is recursive and cannot be updated by subtracting evicted rows.
 	case aggRunSum:
 		if v, ok := row[agg.Field]; ok {
 			if f, fok := vm.ValueToFloat(v); fok {
@@ -861,9 +917,40 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		return event.FloatValue(0)
 	case aggMode:
 		return modeFromCounts(st.freq)
+	case aggEMA:
+		return readRunningEMA(st)
 	}
 
 	return event.NullValue()
+}
+
+func addEMAValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Value) {
+	if agg.Window <= 0 {
+		return
+	}
+	v, ok := row[agg.Field]
+	if !ok {
+		return
+	}
+	f, ok := vm.ValueToFloat(v)
+	if !ok {
+		return
+	}
+	if !st.emaSet {
+		st.ema = f
+		st.emaSet = true
+		return
+	}
+	alpha := 2.0 / float64(agg.Window+1)
+	st.ema = alpha*f + (1-alpha)*st.ema
+}
+
+func readRunningEMA(st *runningAggState) event.Value {
+	if !st.emaSet {
+		return event.NullValue()
+	}
+
+	return event.FloatValue(st.ema)
 }
 
 func addPairValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Value) {

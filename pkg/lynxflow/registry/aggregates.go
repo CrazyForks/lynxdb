@@ -53,4 +53,5 @@ var aggregates = []Aggregate{
 	{Name: "running_sum", Params: []Param{{Name: "x", Type: TNumber}}, WindowOnly: true, Result: TNumber},
 	{Name: "moving_avg", Params: []Param{{Name: "x", Type: TNumber}, {Name: "n", Type: TInt}}, WindowOnly: true, Result: TFloat},
 	{Name: "delta", Params: []Param{{Name: "x", Type: TNumber}}, WindowOnly: true, Result: TFloat, Doc: "Difference between the current value and previous group value."},
+	{Name: "ema", Params: []Param{{Name: "x", Type: TNumber}, {Name: "n", Type: TInt}}, WindowOnly: true, Result: TFloat, Doc: "Exponential moving average with alpha = 2/(n+1)."},
 }

@@ -746,7 +746,7 @@ func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
 		{"host": strV("a"), "val": intV(30)},
 		{"host": strV("b"), "val": intV(7)},
 	}
-	result := drain(t, `from * | streamstats lag(val) as prev, lead(val) as next, row_number() as rn, running_sum(val) as total, moving_avg(val, 2) as avg2, delta(val) as d by host`, rows)
+	result := drain(t, `from * | streamstats lag(val) as prev, lead(val) as next, row_number() as rn, running_sum(val) as total, moving_avg(val, 2) as avg2, delta(val) as d, ema(val, 3) as ema3 by host`, rows)
 	if len(result) != 5 {
 		t.Fatalf("expected 5 rows, got %d", len(result))
 	}
@@ -758,12 +758,13 @@ func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
 		total float64
 		avg2  float64
 		d     *float64
+		ema3  float64
 	}{
-		{prev: nil, next: intPtr(20), rn: 1, total: 10, avg2: 10, d: nil},
-		{prev: intPtr(10), next: intPtr(30), rn: 2, total: 30, avg2: 15, d: floatPtr(10)},
-		{prev: nil, next: intPtr(7), rn: 1, total: 5, avg2: 5, d: nil},
-		{prev: intPtr(20), next: nil, rn: 3, total: 60, avg2: 25, d: floatPtr(10)},
-		{prev: intPtr(5), next: nil, rn: 2, total: 12, avg2: 6, d: floatPtr(2)},
+		{prev: nil, next: intPtr(20), rn: 1, total: 10, avg2: 10, d: nil, ema3: 10},
+		{prev: intPtr(10), next: intPtr(30), rn: 2, total: 30, avg2: 15, d: floatPtr(10), ema3: 15},
+		{prev: nil, next: intPtr(7), rn: 1, total: 5, avg2: 5, d: nil, ema3: 5},
+		{prev: intPtr(20), next: nil, rn: 3, total: 60, avg2: 25, d: floatPtr(10), ema3: 22.5},
+		{prev: intPtr(5), next: nil, rn: 2, total: 12, avg2: 6, d: floatPtr(2), ema3: 6},
 	}
 	for i, r := range result {
 		assertOptionalIntField(t, r, "prev", expected[i].prev, i)
@@ -772,7 +773,24 @@ func TestBuild_StreamStats_WindowOnlyFunctions(t *testing.T) {
 		assertFloatField(t, r, "total", expected[i].total, i)
 		assertFloatField(t, r, "avg2", expected[i].avg2, i)
 		assertOptionalFloatField(t, r, "d", expected[i].d, i)
+		assertFloatField(t, r, "ema3", expected[i].ema3, i)
 	}
+}
+
+func TestBuild_StreamStatsEMA_CurrentFalse(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"val": intV(10)},
+		{"val": intV(20)},
+		{"val": intV(30)},
+	}
+	result := drain(t, `from * | streamstats current=false ema(val, 3) as prev_ema`, rows)
+	if len(result) != 3 {
+		t.Fatalf("expected 3 rows, got %d", len(result))
+	}
+
+	assertOptionalFloatField(t, result[0], "prev_ema", nil, 0)
+	assertOptionalFloatField(t, result[1], "prev_ema", floatPtr(10), 1)
+	assertOptionalFloatField(t, result[2], "prev_ema", floatPtr(15), 2)
 }
 
 func TestBuild_StreamStatsDelta(t *testing.T) {

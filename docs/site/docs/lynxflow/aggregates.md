@@ -66,6 +66,7 @@ All standard aggregates support `where` clauses for conditional aggregation: `co
 | `running_sum` | (x: number) | `number` | - |
 | `moving_avg` | (x: number, n: int) | `float` | - |
 | `delta` | (x: number) | `float` | Difference between the current value and previous group value. |
+| `ema` | (x: number, n: int) | `float` | Exponential moving average with alpha = 2/(n+1). |
 
 ---
 

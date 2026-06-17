@@ -228,8 +228,12 @@ func pushConjunct(scan *logical.Scan, expr ast.Expr) (pushed, consumed bool) {
 		return false, false
 	}
 
-	// 2. has(_raw, "lit") -> RawTerms.
+	// 2. has(_raw, "lit") and has_all(_raw, ["lit", ...]) -> RawTerms.
 	if terms, ok := extractHasRawTerms(expr); ok {
+		scan.Pushdown.RawTerms = append(scan.Pushdown.RawTerms, terms...)
+		return true, false // KEEP in filter
+	}
+	if terms, ok := extractHasAllRawTerms(expr); ok {
 		scan.Pushdown.RawTerms = append(scan.Pushdown.RawTerms, terms...)
 		return true, false // KEEP in filter
 	}
@@ -377,6 +381,37 @@ func extractHasRawTerms(expr ast.Expr) ([]string, bool) {
 		return nil, false
 	}
 	return tokens, true
+}
+
+func extractHasAllRawTerms(expr ast.Expr) ([]string, bool) {
+	c, ok := expr.(*ast.Call)
+	if !ok || c.Callee != "has_all" || len(c.Args) != 2 {
+		return nil, false
+	}
+	id, ok := c.Args[0].(*ast.Ident)
+	if !ok || id.Name != "_raw" {
+		return nil, false
+	}
+	arr, ok := c.Args[1].(*ast.Array)
+	if !ok {
+		return nil, false
+	}
+	var terms []string
+	for _, elem := range arr.Elems {
+		lit, ok := elem.(*ast.Literal)
+		if !ok || (lit.Kind != ast.LitString && lit.Kind != ast.LitRawString) {
+			return nil, false
+		}
+		s, ok := lit.Value.(string)
+		if !ok {
+			return nil, false
+		}
+		terms = append(terms, tokenize(strings.ToLower(s))...)
+	}
+	if len(terms) == 0 {
+		return nil, false
+	}
+	return terms, true
 }
 
 // extractHasGlobPattern checks if expr is has_glob(_raw, "pattern") and

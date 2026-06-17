@@ -187,6 +187,25 @@ func TestEphemeralPushdown_RawTerms(t *testing.T) {
 	}
 }
 
+func TestEphemeralPushdown_HasAllRawTerms(t *testing.T) {
+	events := map[string][]*event.Event{
+		"main": {
+			mkEvent("payment failed for card"),
+			mkEvent("payment succeeded"),
+			mkEvent("login failed"),
+			mkEvent("FAILED payment retry"),
+		},
+	}
+
+	results, ss := drainWithStats(t, `from main | where has_all(_raw, ["payment", "failed"])`, events)
+	if ss.TotalEvents.Load() != 4 {
+		t.Errorf("TotalEvents: got %d, want 4", ss.TotalEvents.Load())
+	}
+	if len(results) != 2 {
+		t.Errorf("results: got %d, want 2", len(results))
+	}
+}
+
 func TestEphemeralPushdown_BloomTerms(t *testing.T) {
 	// contains(_raw, "special_phrase") should be pushed as a bloom term.
 	events := map[string][]*event.Event{

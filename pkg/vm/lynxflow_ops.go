@@ -1161,6 +1161,57 @@ func execArrayCumSum(v event.Value, warnings *WarningCounters) event.Value {
 	return event.ArrayValue(result)
 }
 
+func execGenerateSeries(values []event.Value) event.Value {
+	if len(values) != 2 && len(values) != 3 {
+		return event.NullValue()
+	}
+	start, ok := values[0].TryAsInt()
+	if !ok {
+		return event.NullValue()
+	}
+	stop, ok := values[1].TryAsInt()
+	if !ok {
+		return event.NullValue()
+	}
+	step := int64(1)
+	if len(values) == 3 {
+		step, ok = values[2].TryAsInt()
+		if !ok || step == 0 {
+			return event.NullValue()
+		}
+	}
+	if step > 0 && start >= stop || step < 0 && start <= stop {
+		return event.ArrayValue(nil)
+	}
+
+	const maxInt64 = int64(^uint64(0) >> 1)
+	const minInt64 = -maxInt64 - 1
+
+	result := make([]event.Value, 0)
+	for current := start; ; {
+		if step > 0 {
+			if current >= stop {
+				break
+			}
+		} else if current <= stop {
+			break
+		}
+		if len(result) >= maxGenerateSeriesElements {
+			return event.NullValue()
+		}
+		result = append(result, event.IntValue(current))
+		if step > 0 && current > maxInt64-step {
+			return event.NullValue()
+		}
+		if step < 0 && current < minInt64-step {
+			return event.NullValue()
+		}
+		current += step
+	}
+
+	return event.ArrayValue(result)
+}
+
 func execZip(values []event.Value) event.Value {
 	if len(values) == 0 {
 		return event.ArrayValue(nil)

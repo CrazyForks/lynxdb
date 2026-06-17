@@ -567,6 +567,29 @@ func TestB2_ArrayTransforms(t *testing.T) {
 	assertNull(t, result, "array_deltas incompatible")
 }
 
+func TestB2_GenerateSeries(t *testing.T) {
+	result, _ := runLF(t, call("generate_series", litInt(1), litInt(5)), nil)
+	arr := assertArray(t, result, 4, "generate_series ascending")
+	assertInt(t, arr[0], 1, "generate_series ascending[0]")
+	assertInt(t, arr[3], 4, "generate_series ascending[3]")
+
+	result, _ = runLF(t, call("generate_series", litInt(1), litInt(8), litInt(2)), nil)
+	arr = assertArray(t, result, 4, "generate_series step")
+	assertInt(t, arr[0], 1, "generate_series step[0]")
+	assertInt(t, arr[3], 7, "generate_series step[3]")
+
+	result, _ = runLF(t, call("generate_series", litInt(5), litInt(1), litInt(-2)), nil)
+	arr = assertArray(t, result, 2, "generate_series descending")
+	assertInt(t, arr[0], 5, "generate_series descending[0]")
+	assertInt(t, arr[1], 3, "generate_series descending[1]")
+
+	result, _ = runLF(t, call("generate_series", litInt(5), litInt(1), litInt(1)), nil)
+	assertArray(t, result, 0, "generate_series empty direction")
+
+	result, _ = runLF(t, call("generate_series", litInt(1), litInt(5), litInt(0)), nil)
+	assertNull(t, result, "generate_series zero step")
+}
+
 func TestB2_ZipEntries(t *testing.T) {
 	result, _ := runLF(t, call("zip",
 		array(litStr("k1"), litStr("k2")),

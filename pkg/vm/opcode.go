@@ -95,12 +95,13 @@ const (
 	OpJumpIfTrue  Opcode = 0x72
 
 	// Type Conversion.
-	OpToInt    Opcode = 0x80
-	OpToFloat  Opcode = 0x81
-	OpToString Opcode = 0x82
-	OpToBool   Opcode = 0x83
-	OpURLETLD1 Opcode = 0x85
-	OpURLTLD   Opcode = 0x86
+	OpToInt          Opcode = 0x80
+	OpToFloat        Opcode = 0x81
+	OpToString       Opcode = 0x82
+	OpToBool         Opcode = 0x83
+	OpURLETLD1       Opcode = 0x85
+	OpURLTLD         Opcode = 0x86
+	OpGenerateSeries Opcode = 0x87 // 2-byte count; pop start, stop[, step]; push int array
 
 	// Math Functions.
 	OpRound      Opcode = 0x90
@@ -416,12 +417,13 @@ var definitions = map[Opcode]*Definition{
 	OpJumpIfFalse: {"OpJumpIfFalse", []int{2}},
 	OpJumpIfTrue:  {"OpJumpIfTrue", []int{2}},
 
-	OpToInt:    {"OpToInt", nil},
-	OpToFloat:  {"OpToFloat", nil},
-	OpToString: {"OpToString", nil},
-	OpToBool:   {"OpToBool", nil},
-	OpURLETLD1: {"OpURLETLD1", nil},
-	OpURLTLD:   {"OpURLTLD", nil},
+	OpToInt:          {"OpToInt", nil},
+	OpToFloat:        {"OpToFloat", nil},
+	OpToString:       {"OpToString", nil},
+	OpToBool:         {"OpToBool", nil},
+	OpURLETLD1:       {"OpURLETLD1", nil},
+	OpURLTLD:         {"OpURLTLD", nil},
+	OpGenerateSeries: {"OpGenerateSeries", []int{2}},
 
 	OpRound:      {"OpRound", nil},
 	OpLn:         {"OpLn", nil},

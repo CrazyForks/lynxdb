@@ -497,6 +497,7 @@ func buildLFFuncSpecs() []lfFuncSpec {
 		{name: "array_compact", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpArrayCompact)},
 		{name: "array_deltas", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpArrayDeltas)},
 		{name: "array_cumsum", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpArrayCumSum)},
+		{name: "generate_series", minArgs: 2, maxArgs: 3, emit: lfEmitVariadicOp(OpGenerateSeries)},
 		{name: "zip", minArgs: 1, maxArgs: -1, emit: lfEmitVariadicOp(OpZip)},
 		{name: "flatten", minArgs: 1, maxArgs: 1, emit: lfEmitUnary(OpFlatten)},
 		{name: "any", minArgs: 2, maxArgs: 2, emit: lfEmitLambdaOp(OpArrayAny)},

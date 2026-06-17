@@ -28,6 +28,8 @@ import (
 
 const StackSize = 256
 
+const maxGenerateSeriesElements = 1_000_000
+
 var (
 	ErrStackOverflow  = errors.New("vm: stack overflow")
 	ErrStackUnderflow = errors.New("vm: stack underflow")
@@ -2370,6 +2372,24 @@ func (vm *VM) ExecuteWithContext(prog *Program, fields map[string]event.Value, p
 		case OpArrayCumSum:
 			a := vm.stack[vm.sp-1]
 			vm.stack[vm.sp-1] = execArrayCumSum(a, vm.Warnings)
+
+		case OpGenerateSeries:
+			count, opErr := readOperandSafe(ins, ip)
+			if opErr != nil {
+				return event.NullValue(), opErr
+			}
+			ip += 2
+			if count != 2 && count != 3 {
+				return event.NullValue(), fmt.Errorf("%w: generate_series count %d invalid", ErrInvalidBytecode, count)
+			}
+			if int(count) > vm.sp {
+				return event.NullValue(), fmt.Errorf("%w: generate_series count %d invalid for stack depth %d", ErrInvalidBytecode, count, vm.sp)
+			}
+			args := vm.stack[vm.sp-int(count) : vm.sp]
+			result := execGenerateSeries(args)
+			vm.sp -= int(count)
+			vm.stack[vm.sp] = result
+			vm.sp++
 
 		case OpZip:
 			count, opErr := readOperandSafe(ins, ip)

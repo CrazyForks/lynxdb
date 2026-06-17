@@ -499,6 +499,9 @@ func (a *analyzer) analyzeJoin(s ast.Stage) {
 	if s.Join == nil {
 		return
 	}
+	if s.Join.Tolerance != nil {
+		a.inferExpr(s.Join.Tolerance)
+	}
 	// Analyze the right-side pipeline.
 	if s.Join.Right != nil && s.Join.Right.Pipeline != nil {
 		rightAnalyzer := &analyzer{

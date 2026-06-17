@@ -1444,16 +1444,21 @@ func (p *parser) parseFieldPattern() ast.FieldPattern {
 func (p *parser) parseJoinBody(s *ast.Stage) {
 	payload := &ast.JoinPayload{Type: "inner"}
 
-	// Parse options: type=inner|left|outer|semi|anti, on=field1[,field2]
+	// Parse options: type=inner|left|outer|semi|anti|asof, on field1[,field2], tolerance=duration.
 	for {
 		if n, ok := p.identLike(); ok {
-			if n == "type" && p.peekIsEq() {
+			if (n == "type" || n == "tolerance") && p.peekIsEq() {
 				p.advance()
 				p.advance() // consume =
-				payload.TypeSpan = p.curSpan()
-				if v, ok2 := p.identLike(); ok2 {
-					payload.Type = v
-					p.advance()
+				switch n {
+				case "type":
+					payload.TypeSpan = p.curSpan()
+					if v, ok2 := p.identLike(); ok2 {
+						payload.Type = v
+						p.advance()
+					}
+				case "tolerance":
+					payload.Tolerance = p.parseExprSafe()
 				}
 				continue
 			}

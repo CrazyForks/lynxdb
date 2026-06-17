@@ -649,9 +649,10 @@ func (n *Dedup) String() string {
 // Join combines the left input with a right sub-plan.
 type Join struct {
 	unaryNode             // Left input
-	Type         string   // "inner", "left", "outer", "semi", "anti"
+	Type         string   // "inner", "left", "outer", "semi", "anti", "asof"
 	On           []string // join key field names
-	Right        Node     // right-side sub-plan
+	Tolerance    ast.Expr
+	Right        Node // right-side sub-plan
 	cachedSchema []sema.Field
 }
 

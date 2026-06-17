@@ -101,7 +101,7 @@ gapfill_stage    ::= 'gapfill' ['span' '=' duration] ['fill' '=' expr] ['by' '='
 head_stage       ::= 'head' number ;
 hist_stage       ::= 'hist' field ['bins' '=' number] ;
 impact_stage     ::= 'impact' [agg_list] ['by' '=' field_list] ;
-join_stage       ::= 'join' sub_pipeline ['type' '=' ident] ['on' '=' field_list] ;
+join_stage       ::= 'join' sub_pipeline ['type' '=' ident] ['on' '=' field_list] ['tolerance' '=' duration] ;
 keep_stage       ::= 'keep' field_patterns ;
 latency_stage    ::= 'latency' field ['every' '=' duration] ['by' '=' field_list] ;
 materialize_stage ::= 'materialize' string ['retention' '=' duration] ['partition_by' '=' field_list] ;

@@ -1556,9 +1556,10 @@ func cloneFloat64Ptr(v *float64) *float64 {
 
 func (d *desugarer) cloneJoinPayload(j *ast.JoinPayload) *ast.JoinPayload {
 	out := &ast.JoinPayload{
-		Type:     j.Type,
-		TypeSpan: j.TypeSpan,
-		On:       cloneExprs(j.On),
+		Type:      j.Type,
+		TypeSpan:  j.TypeSpan,
+		On:        cloneExprs(j.On),
+		Tolerance: cloneExpr(j.Tolerance),
 	}
 	if j.Right != nil {
 		r := d.cloneSubPipeline(*j.Right)

@@ -486,6 +486,13 @@ func renderJoin(n *Join) string {
 		b.WriteString("on ")
 		b.WriteString(strings.Join(n.On, ", "))
 	}
+	if n.Tolerance != nil {
+		if len(n.On) > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("tolerance=")
+		b.WriteString(n.Tolerance.String())
+	}
 	if n.Right != nil {
 		b.WriteString(" with [")
 		rightChain := linearize(n.Right)

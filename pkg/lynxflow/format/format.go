@@ -930,6 +930,13 @@ func formatJoinPayload(b *strings.Builder, p *ast.JoinPayload) {
 			formatExpr(b, f, precTop)
 		}
 	}
+	if p.Tolerance != nil {
+		if len(p.On) > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("tolerance=")
+		formatExpr(b, p.Tolerance, precTop)
+	}
 	if p.Right != nil {
 		b.WriteString(" with ")
 		formatSubPipeline(b, p.Right)

@@ -437,6 +437,7 @@ func (l *lowerer) lowerJoin(input Node, s ast.Stage) Node {
 		unaryNode: unaryNode{Input: input},
 		Type:      joinType,
 		On:        onFields,
+		Tolerance: s.Join.Tolerance,
 		Right:     rightNode,
 	}
 }

@@ -1009,6 +1009,24 @@ func (b *builder) buildJoin(nd *logical.Join) (pipeline.Iterator, error) {
 		return nil, fmt.Errorf("physical.Build: join right: %w", err)
 	}
 
+	if strings.EqualFold(joinType, "asof") {
+		if len(nd.On) == 0 {
+			return nil, fmt.Errorf("physical.Build: asof join requires at least one key")
+		}
+		var tolerance *time.Duration
+		if nd.Tolerance != nil {
+			d, err := durationLiteralArg(nd.Tolerance)
+			if err != nil {
+				return nil, fmt.Errorf("physical.Build: asof join tolerance: %w", err)
+			}
+			if d < 0 {
+				return nil, fmt.Errorf("physical.Build: asof join tolerance must be non-negative")
+			}
+			tolerance = &d
+		}
+		return pipeline.NewAsofJoinIterator(left, right, nd.On, tolerance, b.opts.batchSize()), nil
+	}
+
 	// The old JoinIterator takes a single field name. The logical Join has
 	// []string On. Use the first key; multi-key join uses comma-joined key.
 	field := ""

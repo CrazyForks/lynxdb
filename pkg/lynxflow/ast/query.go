@@ -774,10 +774,11 @@ func (f *FieldPattern) String() string { return f.Name }
 
 // JoinPayload is the typed payload for join.
 type JoinPayload struct {
-	Type     string // "inner", "left", "outer", "semi", "anti" (default "inner")
-	TypeSpan Span
-	On       []Expr
-	Right    *SubPipeline
+	Type      string // "inner", "left", "outer", "semi", "anti", "asof" (default "inner")
+	TypeSpan  Span
+	On        []Expr
+	Tolerance Expr
+	Right     *SubPipeline
 }
 
 func (j *JoinPayload) String() string {
@@ -795,6 +796,13 @@ func (j *JoinPayload) String() string {
 			}
 			b.WriteString(f.String())
 		}
+	}
+	if j.Tolerance != nil {
+		if len(j.On) > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("tolerance=")
+		b.WriteString(j.Tolerance.String())
 	}
 	if j.Right != nil {
 		b.WriteString(" with ")

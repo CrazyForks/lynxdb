@@ -1475,6 +1475,73 @@ func TestBuild_Join_SemiAnti(t *testing.T) {
 	}
 }
 
+func TestBuild_Join_Asof(t *testing.T) {
+	left := &logical.Scan{OutputSchema: nil}
+	right := &logical.Scan{OutputSchema: nil}
+	join := &logical.Join{
+		Type: "asof",
+		On:   []string{"host", "service"},
+		Tolerance: &lfast.Literal{
+			Kind:  lfast.LitDuration,
+			Raw:   "6m",
+			Value: 6 * time.Minute,
+		},
+		Right: right,
+	}
+	join.SetChildren([]logical.Node{left})
+
+	base := time.Date(2026, 1, 1, 10, 0, 0, 0, time.UTC)
+	leftRows := []map[string]event.Value{
+		{"_time": tsV(base), "host": strV("a"), "service": strV("api"), "id": intV(1)},
+		{"_time": tsV(base.Add(10 * time.Minute)), "host": strV("a"), "service": strV("api"), "id": intV(2)},
+		{"_time": tsV(base.Add(5 * time.Minute)), "host": strV("b"), "service": strV("api"), "id": intV(3)},
+		{"_time": tsV(base.Add(20 * time.Minute)), "host": strV("a"), "service": strV("api"), "id": intV(4)},
+		{"_time": tsV(base.Add(10 * time.Minute)), "host": strV("a"), "service": strV("web"), "id": intV(5)},
+	}
+	rightRows := []map[string]event.Value{
+		{"_time": tsV(base.Add(-5 * time.Minute)), "host": strV("a"), "service": strV("api"), "deploy": strV("v1")},
+		{"_time": tsV(base.Add(5 * time.Minute)), "host": strV("a"), "service": strV("api"), "deploy": strV("v2")},
+		{"_time": tsV(base.Add(30 * time.Minute)), "host": strV("a"), "service": strV("api"), "deploy": strV("future")},
+		{"_time": tsV(base.Add(1 * time.Minute)), "host": strV("b"), "service": strV("api"), "deploy": strV("vb")},
+		{"_time": tsV(base.Add(9 * time.Minute)), "host": strV("a"), "service": strV("web"), "deploy": strV("web")},
+	}
+
+	callCount := 0
+	sourceFunc := func(scan *logical.Scan) (pipeline.Iterator, error) {
+		callCount++
+		if callCount == 1 {
+			return sliceSource(leftRows, 2), nil
+		}
+		return sliceSource(rightRows, 2), nil
+	}
+
+	iter, err := Build(&logical.Plan{Root: join}, BuildOptions{
+		Source:    sourceFunc,
+		BatchSize: 2,
+	})
+	if err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	result, err := pipeline.CollectAll(context.Background(), iter)
+	if err != nil {
+		t.Fatalf("CollectAll: %v", err)
+	}
+	if len(result) != 4 {
+		t.Fatalf("expected 4 rows, got %d: %#v", len(result), result)
+	}
+
+	wantDeploys := []string{"v1", "v2", "vb", "web"}
+	wantIDs := []int64{1, 2, 3, 5}
+	for i := range wantDeploys {
+		if got := result[i]["id"]; got != intV(wantIDs[i]) {
+			t.Fatalf("row %d id = %s, want %d", i, got.String(), wantIDs[i])
+		}
+		if got := result[i]["deploy"]; got != strV(wantDeploys[i]) {
+			t.Fatalf("row %d deploy = %s, want %s", i, got.String(), wantDeploys[i])
+		}
+	}
+}
+
 func TestBuild_Join_Outer(t *testing.T) {
 	left := &logical.Scan{OutputSchema: nil}
 	right := &logical.Scan{OutputSchema: nil}

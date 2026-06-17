@@ -118,11 +118,12 @@ var operators = []Operator{
 		Name: "join", Class: ClassCore, Streaming: StreamingAcc,
 		Positionals: []Positional{{Name: "right", Type: ArgSubPipeline, Required: true, Doc: "with $cte or with [ <pipeline> ]"}},
 		Options: []Option{
-			{Name: "type", Type: ArgEnum, Default: "inner", Enum: []string{"inner", "left", "outer", "semi", "anti"}},
+			{Name: "type", Type: ArgEnum, Default: "inner", Enum: []string{"inner", "left", "outer", "semi", "anti", "asof"}},
 			{Name: "on", Type: ArgFieldList, Required: true},
+			{Name: "tolerance", Type: ArgDuration, Doc: "maximum lag for type=asof"},
 		},
-		Doc:      "Hash join. Default type=inner is a plain inner join (never innerunique).",
-		Examples: []string{`join type=left on user_id with [from users]`, `join type=anti on user_id with [from allowlist]`},
+		Doc:      "Hash join. Default type=inner is a plain inner join (never innerunique). type=asof matches the latest right row at or before the left _time.",
+		Examples: []string{`join type=left on user_id with [from users]`, `join type=anti on user_id with [from allowlist]`, `join type=asof on host tolerance=30s with [from deploys]`},
 	},
 	{
 		Name: "union", Class: ClassCore, Streaming: StreamingRow,

@@ -106,13 +106,14 @@ lynxdb query 'from nginx
 ### Join syntax
 
 ```
-| join [type=inner|left|outer] on <field>[, <field>] with ($cte | [<pipeline>])
+| join [type=inner|left|outer|semi|anti|asof] on <field>[, <field>] [tolerance=<duration>] with ($cte | [<pipeline>])
 ```
 
 | Parameter | Description |
 |-----------|-------------|
-| `type` | `inner` (only matches, the default — a plain inner join, never innerunique), `left` (keep all from primary), or `outer` (full outer join) |
+| `type` | `inner` (only matches, the default — a plain inner join, never innerunique), `left` (keep all from primary), `outer` (full outer join), `semi` (keep matching primary rows only), `anti` (keep non-matching primary rows only), or `asof` (latest secondary row at or before the primary `_time`) |
 | `on` | The field(s) to join on (must exist in both datasets) |
+| `tolerance` | Optional maximum lag for `type=asof`, such as `30s` or `5m` |
 | `with` | The secondary dataset: a `$cte` reference or a `[<pipeline>]` in square brackets |
 
 ### Join on multiple fields

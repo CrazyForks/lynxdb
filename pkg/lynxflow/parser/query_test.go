@@ -144,6 +144,35 @@ func TestRFC002Examples(t *testing.T) {
 	}
 }
 
+func TestParseJoinAsofTolerance(t *testing.T) {
+	q, diags := Parse(`from app | join type=asof on host, service tolerance=30s with [from deploys]`)
+	if len(diags) > 0 {
+		t.Fatalf("Parse returned diagnostics: %v", diags)
+	}
+	if q == nil || len(q.Pipeline.Stages) != 1 {
+		t.Fatalf("unexpected query: %#v", q)
+	}
+	join := q.Pipeline.Stages[0].Join
+	if join == nil {
+		t.Fatalf("stage is not join: %#v", q.Pipeline.Stages[0])
+	}
+	if join.Type != "asof" {
+		t.Fatalf("join type = %q, want asof", join.Type)
+	}
+	if len(join.On) != 2 {
+		t.Fatalf("join on len = %d, want 2", len(join.On))
+	}
+	if join.Tolerance == nil || join.Tolerance.String() != "30s" {
+		t.Fatalf("join tolerance = %v, want 30s", join.Tolerance)
+	}
+
+	got := format.Query(q)
+	want := "from app\n| join type=asof on host, service tolerance=30s with [from deploys]"
+	if got != want {
+		t.Fatalf("format = %q, want %q", got, want)
+	}
+}
+
 // 3. Golden structure tests
 
 func TestGoldenStructure(t *testing.T) {
@@ -529,6 +558,7 @@ func FuzzParse(f *testing.F) {
 		`| union [from a | head 1], [from b | head 1]`,
 		`| join type=left on user_id with [from users]`,
 		`| join type=anti on user_id with [from allowlist]`,
+		`| join type=asof on host tolerance=30s with [from deploys]`,
 		`| stats count(where status >= 500) as errors`,
 	}
 	for _, ex := range examples {

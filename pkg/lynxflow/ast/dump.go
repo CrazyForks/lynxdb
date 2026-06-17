@@ -216,6 +216,10 @@ func (d *dumper) dumpStage(s *Stage, depth int) {
 				d.dumpExpr(f, depth+2)
 			}
 		}
+		if s.Join.Tolerance != nil {
+			d.line(depth+1, "Tolerance")
+			d.dumpExpr(s.Join.Tolerance, depth+2)
+		}
 		if s.Join.Right != nil {
 			d.line(depth+1, "With")
 			d.dumpSubPipeline(s.Join.Right, depth+2)

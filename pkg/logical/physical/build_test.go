@@ -478,6 +478,36 @@ func TestBuild_ObjectSumAggregates(t *testing.T) {
 	assertObjectFloatField(t, streamRows[2], "totals", "err", 4, 2)
 }
 
+func TestBuild_MomentAggregates(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"x": intV(1)},
+		{"x": intV(2)},
+		{"x": intV(3)},
+		{"x": intV(10)},
+	}
+
+	statsRows := drain(t, `from * | stats skewness(x) as skew, kurtosis(x) as kurt`, rows)
+	if len(statsRows) != 1 {
+		t.Fatalf("expected 1 row, got %d", len(statsRows))
+	}
+	assertFloatField(t, statsRows[0], "skew", 1.763632614803888, 0)
+	assertFloatField(t, statsRows[0], "kurt", 3.228, 0)
+
+	eventRows := drain(t, `from * | eventstats skewness(x) as skew, kurtosis(x) as kurt`, rows)
+	assertFloatField(t, eventRows[0], "skew", 1.763632614803888, 0)
+	assertFloatField(t, eventRows[3], "kurt", 3.228, 3)
+
+	streamRows := drain(t, `from * | streamstats skewness(x) as skew, kurtosis(x) as kurt`, rows)
+	if !streamRows[0]["skew"].IsNull() || !streamRows[1]["skew"].IsNull() {
+		t.Fatalf("streamstats skewness should be null until three values")
+	}
+	if !streamRows[2]["kurt"].IsNull() {
+		t.Fatalf("streamstats kurtosis should be null until four values")
+	}
+	assertFloatField(t, streamRows[3], "skew", 1.763632614803888, 3)
+	assertFloatField(t, streamRows[3], "kurt", 3.228, 3)
+}
+
 func TestBuild_CorrCovarInWindowAggregates(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"x": intV(1), "y": intV(2)},
@@ -1267,6 +1297,8 @@ func TestAggNameMapping(t *testing.T) {
 		"covar":        "covar",
 		"linear_fit":   "linear_fit",
 		"sum_object":   "sum_object",
+		"skewness":     "skewness",
+		"kurtosis":     "kurtosis",
 		"rate":         "rate",
 	}
 	for input, want := range expected {

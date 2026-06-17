@@ -435,6 +435,8 @@ var aggNameMapping = map[string]string{
 	"covar":         "covar",
 	"linear_fit":    "linear_fit",
 	"sum_object":    "sum_object",
+	"skewness":      "skewness",
+	"kurtosis":      "kurtosis",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {

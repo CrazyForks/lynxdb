@@ -22,6 +22,8 @@ var aggregates = []Aggregate{
 	{Name: "covar", Params: []Param{{Name: "x", Type: TNumber}, {Name: "y", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Sample covariance over rows where both arguments are numeric."},
 	{Name: "linear_fit", Params: []Param{{Name: "x", Type: TNumber}, {Name: "y", Type: TNumber}}, SupportsWhere: true, Result: TObject, Doc: "Least-squares fit as {slope, intercept, r2}."},
 	{Name: "sum_object", Params: []Param{{Name: "obj", Type: TObject}}, SupportsWhere: true, Result: TObject, Doc: "Per-key sums for numeric object values."},
+	{Name: "skewness", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Bias-corrected sample skewness."},
+	{Name: "kurtosis", Params: []Param{{Name: "x", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Bias-corrected sample excess kurtosis."},
 	{Name: "mode", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny},
 	{Name: "arg_max", Params: []Param{{Name: "value", Type: TAny}, {Name: "order", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the greatest order expression."},
 	{Name: "arg_min", Params: []Param{{Name: "value", Type: TAny}, {Name: "order", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the least order expression."},

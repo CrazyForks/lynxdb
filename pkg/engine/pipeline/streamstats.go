@@ -49,6 +49,8 @@ type runningAggState struct {
 	sumXY     float64
 	objectSum map[string]float64
 	objectN   map[string]int64
+	sumCube   float64
+	sumFourth float64
 }
 
 type ringBuffer struct {
@@ -692,6 +694,8 @@ func addValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Va
 		addPairValueToRunning(st, agg, row)
 	case aggSumObj:
 		addObjectValueToRunning(st, agg, row, 1)
+	case aggSkew, aggKurt:
+		addMomentValueToRunning(st, agg, row, 1)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			if st.minVal.IsNull() || vm.CompareValues(v, st.minVal) < 0 {
@@ -761,6 +765,8 @@ func removeValueFromRunning(st *runningAggState, agg AggFunc, row map[string]eve
 		removePairValueFromRunning(st, agg, row)
 	case aggSumObj:
 		addObjectValueToRunning(st, agg, row, -1)
+	case aggSkew, aggKurt:
+		addMomentValueToRunning(st, agg, row, -1)
 	case aggMin:
 		if v, ok := row[agg.Field]; ok && !v.IsNull() {
 			st.count--
@@ -817,6 +823,10 @@ func readRunningAgg(st *runningAggState, agg AggFunc, rb *ringBuffer) event.Valu
 		return finalizeRunningLinearFit(st)
 	case aggSumObj:
 		return objectSumValue(st.objectSum)
+	case aggSkew:
+		return finalizeSkewness(momentAggState(st))
+	case aggKurt:
+		return finalizeKurtosis(momentAggState(st))
 	case aggMin:
 		if st.minVal.IsNull() && st.count > 0 {
 			// Min was evicted — rescan window to find new minimum.
@@ -926,6 +936,34 @@ func addObjectValueToRunning(st *runningAggState, agg AggFunc, row map[string]ev
 			delete(st.objectSum, key)
 			delete(st.objectN, key)
 		}
+	}
+}
+
+func addMomentValueToRunning(st *runningAggState, agg AggFunc, row map[string]event.Value, delta int64) {
+	val, ok := row[agg.Field]
+	if !ok {
+		return
+	}
+	x, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	x2 := x * x
+	sign := float64(delta)
+	st.count += delta
+	st.sum += sign * x
+	st.sumSq += sign * x2
+	st.sumCube += sign * x2 * x
+	st.sumFourth += sign * x2 * x2
+}
+
+func momentAggState(st *runningAggState) *aggState {
+	return &aggState{
+		count:     st.count,
+		sum:       st.sum,
+		sumSq:     st.sumSq,
+		sumCube:   st.sumCube,
+		sumFourth: st.sumFourth,
 	}
 }
 
@@ -1072,6 +1110,15 @@ func (s *StreamStatsIterator) computeAgg(agg AggFunc, items []map[string]event.V
 			addObjectValueToRunning(&st, agg, item, 1)
 		}
 		return objectSumValue(st.objectSum)
+	case aggSkew, aggKurt:
+		st := runningAggState{}
+		for _, item := range items {
+			addMomentValueToRunning(&st, agg, item, 1)
+		}
+		if strings.EqualFold(agg.Name, aggSkew) {
+			return finalizeSkewness(momentAggState(&st))
+		}
+		return finalizeKurtosis(momentAggState(&st))
 	case aggMin:
 		var minVal event.Value
 		for _, item := range items {

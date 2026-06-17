@@ -500,6 +500,8 @@ func updateAggStateWithOrder(s *aggState, fn string, val, orderVal, weightVal ev
 		updatePairStatsState(s, val, weightVal)
 	case aggSumObj:
 		updateObjectSumState(s, val, 1)
+	case aggSkew, aggKurt:
+		updateMomentState(s, val)
 	case aggMin:
 		if !val.IsNull() && (s.min.IsNull() || vm.CompareValues(val, s.min) < 0) {
 			s.min = val
@@ -567,6 +569,10 @@ func finalizeEventStatsAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeLinearFit(s)
 	case aggSumObj:
 		return objectSumValue(s.objectSum)
+	case aggSkew:
+		return finalizeSkewness(s)
+	case aggKurt:
+		return finalizeKurtosis(s)
 	}
 	return finalizeAggState(s, agg.Name)
 }
@@ -587,6 +593,10 @@ func finalizeAggState(s *aggState, fn string) event.Value {
 		return event.FloatValue(s.sum / float64(s.count))
 	case aggSumObj:
 		return objectSumValue(s.objectSum)
+	case aggSkew:
+		return finalizeSkewness(s)
+	case aggKurt:
+		return finalizeKurtosis(s)
 	case aggMin:
 		return s.min
 	case aggMax:

@@ -126,6 +126,8 @@ const (
 	aggCovar   = "covar"
 	aggLinFit  = "linear_fit"
 	aggSumObj  = "sum_object"
+	aggSkew    = "skewness"
+	aggKurt    = "kurtosis"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -175,6 +177,8 @@ type aggState struct {
 	sumXY     float64
 	objectSum map[string]float64
 	objectN   map[string]int64
+	sumCube   float64
+	sumFourth float64
 }
 
 type topKItem struct {
@@ -734,6 +738,8 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 		updatePairStatsState(s, val, weightVal)
 	case aggSumObj:
 		updateObjectSumState(s, val, 1)
+	case aggSkew, aggKurt:
+		updateMomentState(s, val)
 	case aggMin:
 		if !val.IsNull() {
 			if s.min.IsNull() || vm.CompareValues(val, s.min) < 0 {
@@ -1023,6 +1029,19 @@ func updateObjectSumState(s *aggState, val event.Value, delta int64) {
 	}
 }
 
+func updateMomentState(s *aggState, val event.Value) {
+	x, ok := vm.ValueToFloat(val)
+	if !ok {
+		return
+	}
+	x2 := x * x
+	s.count++
+	s.sum += x
+	s.sumSq += x2
+	s.sumCube += x2 * x
+	s.sumFourth += x2 * x2
+}
+
 func objectSumValue(sums map[string]float64) event.Value {
 	fields := make(map[string]event.Value, len(sums))
 	for key, sum := range sums {
@@ -1085,6 +1104,48 @@ func finalizeLinearFit(s *aggState) event.Value {
 		fields["r2"] = event.FloatValue(corr * corr)
 	}
 	return event.ObjectValue(fields)
+}
+
+func centralMoments(s *aggState) (float64, float64, float64, bool) {
+	if s.count == 0 {
+		return 0, 0, 0, false
+	}
+	n := float64(s.count)
+	mean := s.sum / n
+	m2 := s.sumSq - n*mean*mean
+	m3 := s.sumCube - 3*mean*s.sumSq + 3*mean*mean*s.sum - n*mean*mean*mean
+	m4 := s.sumFourth - 4*mean*s.sumCube + 6*mean*mean*s.sumSq -
+		4*mean*mean*mean*s.sum + n*mean*mean*mean*mean
+	if m2 <= 0 {
+		return 0, 0, 0, false
+	}
+	return m2 / n, m3 / n, m4 / n, true
+}
+
+func finalizeSkewness(s *aggState) event.Value {
+	if s.count < 3 {
+		return event.NullValue()
+	}
+	m2, m3, _, ok := centralMoments(s)
+	if !ok {
+		return event.NullValue()
+	}
+	n := float64(s.count)
+	g1 := m3 / math.Pow(m2, 1.5)
+	return event.FloatValue(math.Sqrt(n*(n-1)) / (n - 2) * g1)
+}
+
+func finalizeKurtosis(s *aggState) event.Value {
+	if s.count < 4 {
+		return event.NullValue()
+	}
+	m2, _, m4, ok := centralMoments(s)
+	if !ok {
+		return event.NullValue()
+	}
+	n := float64(s.count)
+	g2 := m4/(m2*m2) - 3
+	return event.FloatValue((n - 1) / ((n - 2) * (n - 3)) * ((n+1)*g2 + 6))
 }
 
 func finalizeEntropy(s *aggState) event.Value {
@@ -1390,6 +1451,8 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergePairStatsFromRow(&group.states[j], row, agg.Alias)
 		case aggSumObj:
 			a.mergeObjectSumFromRow(&group.states[j], row, agg.Alias)
+		case aggSkew, aggKurt:
+			a.mergeMomentsFromRow(&group.states[j], row, agg.Alias)
 		case aggSum, aggSumSq, aggPerSec, aggPerMin, aggPerHr, aggPerDay:
 			// Read raw sum from suffixed key.
 			sumVal := row[agg.Alias+"__sum"]
@@ -1691,6 +1754,24 @@ func (a *AggregateIterator) mergeObjectSumFromRow(s *aggState, row map[string]ev
 	}
 }
 
+func (a *AggregateIterator) mergeMomentsFromRow(s *aggState, row map[string]event.Value, alias string) {
+	if countF, ok := vm.ValueToFloat(row[alias+"__count"]); ok {
+		s.count += int64(countF)
+	}
+	if sumF, ok := vm.ValueToFloat(row[alias+"__sum"]); ok {
+		s.sum += sumF
+	}
+	if sum2F, ok := vm.ValueToFloat(row[alias+"__sum2"]); ok {
+		s.sumSq += sum2F
+	}
+	if sum3F, ok := vm.ValueToFloat(row[alias+"__sum3"]); ok {
+		s.sumCube += sum3F
+	}
+	if sum4F, ok := vm.ValueToFloat(row[alias+"__sum4"]); ok {
+		s.sumFourth += sum4F
+	}
+}
+
 func topKStateValue(s *aggState) event.Value {
 	return finalizeTopK(s, 0)
 }
@@ -1908,6 +1989,10 @@ func (a *AggregateIterator) finalizeState(s *aggState, fn string) event.Value {
 		return finalizeLinearFit(s)
 	case aggSumObj:
 		return objectSumValue(s.objectSum)
+	case aggSkew:
+		return finalizeSkewness(s)
+	case aggKurt:
+		return finalizeKurtosis(s)
 	case aggMin:
 		return s.min
 	case aggMax:

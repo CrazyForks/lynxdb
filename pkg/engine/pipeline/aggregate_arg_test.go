@@ -56,6 +56,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "covar", Field: "score", WeightField: "weight", Alias: "score_weight_covar"},
 		{Name: "linear_fit", Field: "score", WeightField: "weight", Alias: "score_weight_fit"},
 		{Name: "sum_object", Field: "metrics", Alias: "metric_totals"},
+		{Name: "skewness", Field: "score", Alias: "score_skew"},
+		{Name: "kurtosis", Field: "score", Alias: "score_kurt"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -102,6 +104,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventObjectFloat(t, row["score_weight_fit"], "r2", scoreWeightR2Want(), group+" fit r2")
 		assertEventObjectFloat(t, row["metric_totals"], "requests", 50, group+" object requests")
 		assertEventObjectFloat(t, row["metric_totals"], "errors", 25, group+" object errors")
+		assertEventFloat(t, row["score_skew"], scoreSkewWant(), group+" skew")
+		assertEventFloat(t, row["score_kurt"], scoreKurtWant(), group+" kurt")
 	}
 }
 
@@ -178,6 +182,42 @@ func scoreWeightStats() scoreWeightSummary {
 		stats.sumXY += x * y
 	}
 	return stats
+}
+
+func scoreSkewWant() float64 {
+	_, _, _, skew, _ := scoreMoments()
+	return skew
+}
+
+func scoreKurtWant() float64 {
+	_, _, _, _, kurt := scoreMoments()
+	return kurt
+}
+
+func scoreMoments() (float64, float64, float64, float64, float64) {
+	const count = 50
+	var sum float64
+	for score := 0; score < count; score++ {
+		sum += float64(score)
+	}
+	mean := sum / count
+	var m2, m3, m4 float64
+	for score := 0; score < count; score++ {
+		diff := float64(score) - mean
+		diff2 := diff * diff
+		m2 += diff2
+		m3 += diff2 * diff
+		m4 += diff2 * diff2
+	}
+	n := float64(count)
+	m2 /= n
+	m3 /= n
+	m4 /= n
+	g1 := m3 / math.Pow(m2, 1.5)
+	skew := math.Sqrt(n*(n-1)) / (n - 2) * g1
+	g2 := m4/(m2*m2) - 3
+	kurt := (n - 1) / ((n - 2) * (n - 3)) * ((n+1)*g2 + 6)
+	return m2, m3, m4, skew, kurt
 }
 
 func assertEventString(t *testing.T, v event.Value, expected string, label string) {

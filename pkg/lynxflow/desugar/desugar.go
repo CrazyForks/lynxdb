@@ -707,6 +707,18 @@ func (d *desugarer) expandEvery(s ast.Stage) []ast.Stage {
 	}
 
 	result := []ast.Stage{statsStage}
+	if ev.Fill != nil {
+		result = append(result, ast.Stage{
+			Name:    "gapfill",
+			NamePos: s.NamePos,
+			Gapfill: &ast.GapfillPayload{
+				Span: cloneExpr(ev.Span),
+				Fill: cloneExpr(ev.Fill),
+				By:   cloneExprs(ev.By),
+			},
+			Pos: s.Pos,
+		})
+	}
 	d.addRewrite(s.String(), renderStages(result), "sugar:every", s.Pos)
 	return result
 }
@@ -1489,6 +1501,8 @@ func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 		out.Rare = cloneTopRarePayload(s.Rare)
 	case s.Hist != nil:
 		out.Hist = cloneHistPayload(s.Hist)
+	case s.Gapfill != nil:
+		out.Gapfill = cloneGapfillPayload(s.Gapfill)
 	case s.Materialize != nil:
 		out.Materialize = cloneMaterializePayload(s.Materialize)
 	case s.Tee != nil:
@@ -1823,6 +1837,14 @@ func cloneHistPayload(h *ast.HistPayload) *ast.HistPayload {
 	return &ast.HistPayload{
 		Field: cloneExpr(h.Field),
 		Bins:  cloneExpr(h.Bins),
+	}
+}
+
+func cloneGapfillPayload(g *ast.GapfillPayload) *ast.GapfillPayload {
+	return &ast.GapfillPayload{
+		Span: cloneExpr(g.Span),
+		Fill: cloneExpr(g.Fill),
+		By:   cloneExprs(g.By),
 	}
 }
 

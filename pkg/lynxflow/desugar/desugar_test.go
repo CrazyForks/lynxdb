@@ -272,6 +272,12 @@ func TestGoldenExpansions(t *testing.T) {
 			wantReason: "sugar:every",
 		},
 		{
+			name:       "every_with_fill",
+			input:      `from app | every 5m by service stats count() fill=0`,
+			wantPipe:   `from app | stats count() by service, bin(_time, 5m) | gapfill span=5m fill=0 by service`,
+			wantReason: "sugar:every",
+		},
+		{
 			name:       "rate_default",
 			input:      `from app | rate`,
 			wantPipe:   `from app | stats count() as rate by bin(_time, 1m)`,

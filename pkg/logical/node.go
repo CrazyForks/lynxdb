@@ -595,6 +595,41 @@ func (n *Sample) String() string {
 	return b.String()
 }
 
+// Gapfill densifies observed time buckets per group.
+type Gapfill struct {
+	unaryNode
+	Span ast.Expr
+	Fill ast.Expr
+	By   []ast.Expr
+}
+
+func (n *Gapfill) Schema() []sema.Field { return n.inputSchema() }
+func (n *Gapfill) String() string {
+	var b strings.Builder
+	b.WriteString("Gapfill(")
+	if n.Span != nil {
+		b.WriteString("span=")
+		b.WriteString(n.Span.String())
+	}
+	if n.Fill != nil {
+		if n.Span != nil {
+			b.WriteString(" ")
+		}
+		b.WriteString("fill=")
+		b.WriteString(n.Fill.String())
+	}
+	if len(n.By) > 0 {
+		b.WriteString(" by ")
+		keys := make([]string, len(n.By))
+		for i, by := range n.By {
+			keys[i] = by.String()
+		}
+		b.WriteString(strings.Join(keys, ", "))
+	}
+	b.WriteString(")")
+	return b.String()
+}
+
 // Dedup
 
 // Dedup keeps the first N rows per unique key combination.

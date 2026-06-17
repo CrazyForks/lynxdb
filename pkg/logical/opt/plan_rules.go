@@ -954,6 +954,9 @@ func cloneNode(n logical.Node) logical.Node {
 	case *logical.Limit:
 		c := *x
 		return &c
+	case *logical.Gapfill:
+		c := *x
+		return &c
 	case *logical.Dedup:
 		c := *x
 		return &c

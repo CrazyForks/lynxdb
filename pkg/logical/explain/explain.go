@@ -183,6 +183,8 @@ func nodeOneLiner(n logical.Node) string {
 		return nd.String()
 	case *logical.Limit:
 		return nd.String()
+	case *logical.Gapfill:
+		return nd.String()
 	case *logical.Dedup:
 		return nd.String()
 	case *logical.Join:

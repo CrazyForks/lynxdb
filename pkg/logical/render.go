@@ -144,6 +144,8 @@ func renderNode(n Node) string {
 		return renderTopK(n)
 	case *Limit:
 		return renderLimit(n)
+	case *Gapfill:
+		return renderGapfill(n)
 	case *Dedup:
 		return renderDedup(n)
 	case *Join:
@@ -163,6 +165,29 @@ func renderNode(n Node) string {
 	default:
 		return ""
 	}
+}
+
+func renderGapfill(n *Gapfill) string {
+	var b strings.Builder
+	b.WriteString("gapfill")
+	if n.Span != nil {
+		b.WriteString(" span=")
+		b.WriteString(format.Expr(n.Span))
+	}
+	if n.Fill != nil {
+		b.WriteString(" fill=")
+		b.WriteString(format.Expr(n.Fill))
+	}
+	if len(n.By) > 0 {
+		b.WriteString(" by ")
+		for i, by := range n.By {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(format.Expr(by))
+		}
+	}
+	return b.String()
 }
 
 func renderScan(n *Scan) string {

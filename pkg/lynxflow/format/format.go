@@ -705,6 +705,9 @@ func formatStage(b *strings.Builder, s *ast.Stage) {
 	case s.Hist != nil:
 		b.WriteByte(' ')
 		formatHistPayload(b, s.Hist)
+	case s.Gapfill != nil:
+		b.WriteByte(' ')
+		formatGapfillPayload(b, s.Gapfill)
 	case s.Count != nil:
 		if len(s.Count.By) > 0 {
 			b.WriteString(" by ")
@@ -1064,6 +1067,39 @@ func formatEveryPayload(b *strings.Builder, p *ast.EveryPayload) {
 			b.WriteString(", ")
 		}
 		formatAggExpr(b, &agg)
+	}
+	if p.Fill != nil {
+		b.WriteString(" fill=")
+		formatExpr(b, p.Fill, precTop)
+	}
+}
+
+func formatGapfillPayload(b *strings.Builder, p *ast.GapfillPayload) {
+	wrote := false
+	if p.Span != nil {
+		b.WriteString("span=")
+		formatExpr(b, p.Span, precTop)
+		wrote = true
+	}
+	if p.Fill != nil {
+		if wrote {
+			b.WriteByte(' ')
+		}
+		b.WriteString("fill=")
+		formatExpr(b, p.Fill, precTop)
+		wrote = true
+	}
+	if len(p.By) > 0 {
+		if wrote {
+			b.WriteByte(' ')
+		}
+		b.WriteString("by ")
+		for i, by := range p.By {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			formatExpr(b, by, precTop)
+		}
 	}
 }
 

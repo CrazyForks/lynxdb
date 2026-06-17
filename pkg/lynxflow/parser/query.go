@@ -1000,6 +1000,8 @@ func (p *parser) parseStageBody(s *ast.Stage) {
 		p.parseTopRareBody(s, false)
 	case "hist":
 		p.parseHistBody(s)
+	case "gapfill":
+		p.parseGapfillBody(s)
 	case "count":
 		p.parseCountBody(s)
 	case "every":
@@ -1766,8 +1768,45 @@ func (p *parser) parseEveryBody(s *ast.Stage) {
 	}
 
 	payload.Aggs = p.parseAggList()
+	if n, ok := p.identLike(); ok && n == "fill" && p.peekIsEq() {
+		p.advance() // consume fill
+		p.advance() // consume =
+		payload.Fill = p.parseExprSafe()
+	}
 
 	s.Every = payload
+}
+
+func (p *parser) parseGapfillBody(s *ast.Stage) {
+	payload := &ast.GapfillPayload{}
+	for {
+		if p.atStageBoundary() {
+			break
+		}
+		if p.consume(lexer.KwBy) {
+			payload.By = p.parseGroupByList()
+			continue
+		}
+		if n, ok := p.identLike(); ok && p.peekIsEq() {
+			p.advance()
+			p.advance()
+			switch n {
+			case "span":
+				payload.Span = p.parseExprSafe()
+			case "fill":
+				payload.Fill = p.parseExprSafe()
+			default:
+				p.errorf(p.cur, CodeStageError, []string{"span", "fill", "by"}, "",
+					"unknown gapfill option %q", n)
+				p.parseExprSafe()
+			}
+			continue
+		}
+		p.errorf(p.cur, CodeStageError, []string{"span", "fill", "by"}, "",
+			"expected gapfill option, got %s", kindName(p.cur.Kind))
+		p.advance()
+	}
+	s.Gapfill = payload
 }
 
 func (p *parser) parseRateBody(s *ast.Stage) {

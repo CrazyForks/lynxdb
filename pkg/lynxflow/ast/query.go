@@ -322,6 +322,7 @@ type Stage struct {
 	Top         *TopRarePayload
 	Rare        *TopRarePayload
 	Hist        *HistPayload
+	Gapfill     *GapfillPayload
 	Count       *CountPayload
 	Every       *EveryPayload
 	Rate        *RatePayload
@@ -420,6 +421,9 @@ func (s *Stage) String() string {
 	case s.Hist != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Hist.String())
+	case s.Gapfill != nil:
+		b.WriteByte(' ')
+		b.WriteString(s.Gapfill.String())
 	case s.Every != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Every.String())
@@ -990,6 +994,7 @@ type EveryPayload struct {
 	Span Expr   // duration
 	By   []Expr // optional by keys
 	Aggs []AggExpr
+	Fill Expr // optional fill value for empty buckets
 }
 
 func (e *EveryPayload) String() string {
@@ -1010,6 +1015,45 @@ func (e *EveryPayload) String() string {
 			b.WriteString(", ")
 		}
 		b.WriteString(agg.String())
+	}
+	if e.Fill != nil {
+		b.WriteString(" fill=")
+		b.WriteString(e.Fill.String())
+	}
+	return b.String()
+}
+
+// GapfillPayload is the typed payload for gapfill.
+type GapfillPayload struct {
+	Span Expr
+	Fill Expr
+	By   []Expr
+}
+
+func (g *GapfillPayload) String() string {
+	var b strings.Builder
+	if g.Span != nil {
+		b.WriteString("span=")
+		b.WriteString(g.Span.String())
+	}
+	if g.Fill != nil {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("fill=")
+		b.WriteString(g.Fill.String())
+	}
+	if len(g.By) > 0 {
+		if b.Len() > 0 {
+			b.WriteByte(' ')
+		}
+		b.WriteString("by ")
+		for i, by := range g.By {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(by.String())
+		}
 	}
 	return b.String()
 }

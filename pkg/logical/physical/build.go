@@ -182,6 +182,8 @@ func (b *builder) buildNode(n logical.Node) (pipeline.Iterator, error) {
 		iter, err = b.buildLimit(nd)
 	case *logical.Sample:
 		iter, err = b.buildSample(nd)
+	case *logical.Gapfill:
+		iter, err = b.buildGapfill(nd)
 	case *logical.Dedup:
 		iter, err = b.buildDedup(nd)
 	case *logical.Join:
@@ -800,6 +802,69 @@ func numericLiteralArg(expr lfast.Expr) (float64, error) {
 	}
 }
 
+func durationLiteralArg(expr lfast.Expr) (time.Duration, error) {
+	lit, ok := expr.(*lfast.Literal)
+	if !ok || lit.Kind != lfast.LitDuration {
+		return 0, fmt.Errorf("expected duration literal, got %T", expr)
+	}
+	d, ok := lit.Value.(time.Duration)
+	if !ok {
+		return 0, fmt.Errorf("duration literal has value %T", lit.Value)
+	}
+	return d, nil
+}
+
+func eventLiteralArg(expr lfast.Expr) (event.Value, error) {
+	lit, ok := expr.(*lfast.Literal)
+	if !ok {
+		return event.NullValue(), fmt.Errorf("expected literal, got %T", expr)
+	}
+	switch lit.Kind {
+	case lfast.LitNull:
+		return event.NullValue(), nil
+	case lfast.LitBool:
+		v, ok := lit.Value.(bool)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("bool literal has value %T", lit.Value)
+		}
+		return event.BoolValue(v), nil
+	case lfast.LitInt:
+		v, ok := lit.Value.(int64)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("int literal has value %T", lit.Value)
+		}
+		return event.IntValue(v), nil
+	case lfast.LitFloat:
+		v, ok := lit.Value.(float64)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("float literal has value %T", lit.Value)
+		}
+		return event.FloatValue(v), nil
+	case lfast.LitString:
+		v, ok := lit.Value.(string)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("string literal has value %T", lit.Value)
+		}
+		return event.StringValue(v), nil
+	case lfast.LitDuration:
+		v, ok := lit.Value.(time.Duration)
+		if !ok {
+			return event.NullValue(), fmt.Errorf("duration literal has value %T", lit.Value)
+		}
+		return event.DurationValue(v), nil
+	default:
+		return event.NullValue(), fmt.Errorf("unsupported literal %s", lit.String())
+	}
+}
+
+func fieldNameExpr(expr lfast.Expr) (string, error) {
+	ident, ok := expr.(*lfast.Ident)
+	if !ok {
+		return "", fmt.Errorf("expected field identifier, got %T", expr)
+	}
+	return ident.Name, nil
+}
+
 // aggAutoAlias generates a default alias like "count()" or "sum(x)".
 func aggAutoAlias(call *lfast.Call) string {
 	if len(call.Args) > 0 {
@@ -862,6 +927,34 @@ func (b *builder) buildLimit(nd *logical.Limit) (pipeline.Iterator, error) {
 		return pipeline.NewTailIteratorWithBudget(child, int(nd.N), b.opts.batchSize(), acct), nil
 	}
 	return pipeline.NewLimitIterator(child, int(nd.N)), nil
+}
+
+func (b *builder) buildGapfill(nd *logical.Gapfill) (pipeline.Iterator, error) {
+	child, err := b.buildNode(nd.Input)
+	if err != nil {
+		return nil, err
+	}
+	span, err := durationLiteralArg(nd.Span)
+	if err != nil {
+		return nil, fmt.Errorf("physical.Build: gapfill span: %w", err)
+	}
+	if span <= 0 {
+		return nil, fmt.Errorf("physical.Build: gapfill span must be positive")
+	}
+	fill, err := eventLiteralArg(nd.Fill)
+	if err != nil {
+		return nil, fmt.Errorf("physical.Build: gapfill fill: %w", err)
+	}
+	by := make([]string, len(nd.By))
+	for i, expr := range nd.By {
+		name, err := fieldNameExpr(expr)
+		if err != nil {
+			return nil, fmt.Errorf("physical.Build: gapfill by: %w", err)
+		}
+		by[i] = name
+	}
+
+	return pipeline.NewGapfillIterator(child, span, fill, by, b.opts.batchSize()), nil
 }
 
 func (b *builder) buildSample(nd *logical.Sample) (pipeline.Iterator, error) {

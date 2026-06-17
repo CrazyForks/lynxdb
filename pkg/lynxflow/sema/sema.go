@@ -257,7 +257,7 @@ func (a *analyzer) analyzeStage(s ast.Stage) {
 		a.analyzeStreamstats(s)
 	case "sort":
 		a.analyzeSort(s)
-	case "head", "tail":
+	case "head", "tail", "gapfill":
 		// Schema unchanged.
 	case "dedup":
 		a.analyzeDedup(s)

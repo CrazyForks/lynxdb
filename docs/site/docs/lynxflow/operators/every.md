@@ -12,7 +12,7 @@ Time-bucketed aggregation.
 ## Signature
 
 ```
-| every <span> <aggs> [by=<field_list>]
+| every <span> <aggs> [by=<field_list>] [fill=<expr>]
 ```
 
 ## Positional Arguments
@@ -27,17 +27,22 @@ Time-bucketed aggregation.
 | Name | Type | Default | Description |
 |------|------|---------|-------------|
 | `by` | `field_list` | `-` | - |
+| `fill` | `expr` | `-` | - |
 
 ## Desugars To
 
 ```
-stats <aggs> by [<keys>,] bin(_time, <span>)
+stats <aggs> by [<keys>,] bin(_time, <span>) [| gapfill span=<span> fill=<fill> by <keys>]
 ```
 
 ## Examples
 
 ```
 every 5m by service stats count()
+```
+
+```
+every 5m by service stats count() fill=0
 ```
 
 ---

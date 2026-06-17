@@ -228,9 +228,19 @@ func TestGoldenStructure(t *testing.T) {
 			want:  `hist duration_ms bins=20`,
 		},
 		{
+			name:  "gapfill",
+			input: `| gapfill span=5m fill=0 by service`,
+			want:  `gapfill span=5m fill=0 by service`,
+		},
+		{
 			name:  "every_sugar",
 			input: `| every 5m by service stats count()`,
 			want:  `every 5m by service stats count()`,
+		},
+		{
+			name:  "every_fill",
+			input: `| every 5m by service stats count() fill=0`,
+			want:  `every 5m by service stats count() fill=0`,
 		},
 		{
 			name:  "cte_let",

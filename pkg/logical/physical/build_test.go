@@ -463,6 +463,38 @@ func TestBuild_Stats_TimeBin(t *testing.T) {
 	}
 }
 
+func TestBuild_EveryFillGapfill(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	rows := []map[string]event.Value{
+		{"_time": tsV(base), "service": strV("api")},
+		{"_time": tsV(base.Add(10 * time.Minute)), "service": strV("api")},
+		{"_time": tsV(base), "service": strV("web")},
+		{"_time": tsV(base.Add(5 * time.Minute)), "service": strV("web")},
+	}
+
+	result := drain(t, `from * | every 5m by service stats count() as count fill=0`, rows)
+	if len(result) != 5 {
+		t.Fatalf("expected 5 rows, got %d: %#v", len(result), result)
+	}
+
+	var gap map[string]event.Value
+	for _, row := range result {
+		service, _ := row["service"].TryAsString()
+		ts, _ := row["_time"].TryAsTimestamp()
+		if service == "api" && ts.Equal(base.Add(5*time.Minute)) {
+			gap = row
+			break
+		}
+	}
+	if gap == nil {
+		t.Fatalf("missing api gap row: %#v", result)
+	}
+	count, ok := gap["count"].TryAsInt()
+	if !ok || count != 0 {
+		t.Fatalf("gap count: got %s, want 0", gap["count"].String())
+	}
+}
+
 // Tests: EventStats / StreamStats
 
 func TestBuild_EventStats(t *testing.T) {

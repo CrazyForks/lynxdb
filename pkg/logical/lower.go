@@ -198,6 +198,8 @@ func (l *lowerer) lowerStage(input Node, s ast.Stage) Node {
 		return l.lowerDedup(input, s)
 	case "sample":
 		return l.lowerSample(input, s)
+	case "gapfill":
+		return l.lowerGapfill(input, s)
 	case "join":
 		return l.lowerJoin(input, s)
 	case "union":
@@ -244,6 +246,18 @@ func (l *lowerer) lowerStage(input Node, s ast.Stage) Node {
 			unaryNode: unaryNode{Input: input},
 			Name:      s.Name,
 		}
+	}
+}
+
+func (l *lowerer) lowerGapfill(input Node, s ast.Stage) Node {
+	if s.Gapfill == nil {
+		return input
+	}
+	return &Gapfill{
+		unaryNode: unaryNode{Input: input},
+		Span:      s.Gapfill.Span,
+		Fill:      s.Gapfill.Fill,
+		By:        s.Gapfill.By,
 	}
 }
 

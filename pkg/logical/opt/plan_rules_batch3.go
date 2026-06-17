@@ -616,6 +616,17 @@ func propagateDown(n logical.Node, parentNeeded map[string]bool) (map[string]boo
 		}
 		return propagateDown(x.Input, needed)
 
+	case *logical.Gapfill:
+		needed := cloneSet(parentNeeded)
+		if needed == nil {
+			needed = schemaSet(x)
+		}
+		needed["_time"] = true
+		for _, by := range x.By {
+			collectExprIdents(by, needed)
+		}
+		return propagateDown(x.Input, needed)
+
 	case *logical.Dedup:
 		needed := cloneSet(parentNeeded)
 		if needed == nil {

@@ -79,6 +79,13 @@ func walkExprs(n logical.Node, f func(ast.Expr) ast.Expr) bool {
 			x.Positional[i] = apply(x.Positional[i])
 		}
 
+	case *logical.Gapfill:
+		x.Span = apply(x.Span)
+		x.Fill = apply(x.Fill)
+		for i := range x.By {
+			x.By[i] = apply(x.By[i])
+		}
+
 		// Scan, Project, Limit, Dedup, Describe, Join, Union, Explode,
 		// Materialize, Tee, Parse, Empty — no expression positions to walk.
 	}

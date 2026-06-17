@@ -190,15 +190,25 @@ var operators = []Operator{
 		Examples:   []string{`count`, `count by host`},
 	},
 	{
+		Name: "gapfill", Class: ClassCore, Streaming: StreamingAcc,
+		Options: []Option{
+			{Name: "span", Type: ArgDuration, Required: true},
+			{Name: "fill", Type: ArgExpr, Required: true},
+			{Name: "by", Type: ArgFieldList},
+		},
+		Doc:      "Insert missing observed _time buckets per group and fill aggregate columns.",
+		Examples: []string{`gapfill span=5m fill=0 by service`},
+	},
+	{
 		Name: "every", Class: ClassSugar, Streaming: StreamingAcc,
 		Positionals: []Positional{
 			{Name: "span", Type: ArgDuration, Required: true},
 			{Name: "aggs", Type: ArgAggList, Required: true, Doc: "introduced by the stats keyword"},
 		},
-		Options:    []Option{{Name: "by", Type: ArgFieldList}},
-		DesugarsTo: "stats <aggs> by [<keys>,] bin(_time, <span>)",
+		Options:    []Option{{Name: "by", Type: ArgFieldList}, {Name: "fill", Type: ArgExpr}},
+		DesugarsTo: "stats <aggs> by [<keys>,] bin(_time, <span>) [| gapfill span=<span> fill=<fill> by <keys>]",
 		Doc:        "Time-bucketed aggregation.",
-		Examples:   []string{`every 5m by service stats count()`},
+		Examples:   []string{`every 5m by service stats count()`, `every 5m by service stats count() fill=0`},
 	},
 	{
 		Name: "rate", Class: ClassSugar, Streaming: StreamingAcc,

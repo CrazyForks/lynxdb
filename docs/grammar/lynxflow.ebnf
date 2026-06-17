@@ -46,6 +46,7 @@ stage       ::= baseline_stage
               | extend_stage
               | facets_stage
               | from_stage
+              | gapfill_stage
               | head_stage
               | hist_stage
               | impact_stage
@@ -90,12 +91,13 @@ dedup_stage      ::= 'dedup' [number] field_list ;
 describe_stage   ::= 'describe' ;
 drop_stage       ::= 'drop' field_patterns ;
 eventstats_stage ::= 'eventstats' agg_list ['by' '=' field_list] ;
-every_stage      ::= 'every' duration agg_list ['by' '=' field_list] ;
+every_stage      ::= 'every' duration agg_list ['by' '=' field_list] ['fill' '=' expr] ;
 exemplars_stage  ::= 'exemplars' [number] ['by' '=' field_list] ;
 explode_stage    ::= 'explode' field [field] ;
 extend_stage     ::= 'extend' assign_list ;
 facets_stage     ::= 'facets' field_list ['limit' '=' number] ;
 from_stage       ::= 'from' field_patterns ;
+gapfill_stage    ::= 'gapfill' ['span' '=' duration] ['fill' '=' expr] ['by' '=' field_list] ;
 head_stage       ::= 'head' number ;
 hist_stage       ::= 'hist' field ['bins' '=' number] ;
 impact_stage     ::= 'impact' [agg_list] ['by' '=' field_list] ;

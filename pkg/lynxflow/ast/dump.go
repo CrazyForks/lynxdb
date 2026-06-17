@@ -244,6 +244,17 @@ func (d *dumper) dumpStage(s *Stage, depth int) {
 			d.line(depth+1, "Bins")
 			d.dumpExpr(s.Hist.Bins, depth+2)
 		}
+	case s.Gapfill != nil:
+		d.line(depth+1, "Span")
+		d.dumpExpr(s.Gapfill.Span, depth+2)
+		d.line(depth+1, "Fill")
+		d.dumpExpr(s.Gapfill.Fill, depth+2)
+		if len(s.Gapfill.By) > 0 {
+			d.line(depth+1, "By")
+			for _, k := range s.Gapfill.By {
+				d.dumpExpr(k, depth+2)
+			}
+		}
 	case s.Every != nil:
 		d.line(depth+1, "Span")
 		d.dumpExpr(s.Every.Span, depth+2)
@@ -256,6 +267,10 @@ func (d *dumper) dumpStage(s *Stage, depth int) {
 		d.line(depth+1, "Aggs")
 		for _, agg := range s.Every.Aggs {
 			d.dumpAggExpr(&agg, depth+2)
+		}
+		if s.Every.Fill != nil {
+			d.line(depth+1, "Fill")
+			d.dumpExpr(s.Every.Fill, depth+2)
 		}
 	case s.Rate != nil:
 		if s.Rate.Per != nil {

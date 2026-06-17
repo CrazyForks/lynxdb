@@ -123,6 +123,45 @@ func TestBuild_Unpivot(t *testing.T) {
 	}
 }
 
+func TestBuild_TopBy(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"service": strV("api"), "uri": strV("/a")},
+		{"service": strV("api"), "uri": strV("/a")},
+		{"service": strV("api"), "uri": strV("/b")},
+		{"service": strV("web"), "uri": strV("/x")},
+		{"service": strV("web"), "uri": strV("/x")},
+		{"service": strV("web"), "uri": strV("/y")},
+	}
+
+	got := drain(t, `from * | top 1 uri by service`, rows)
+
+	if len(got) != 2 {
+		t.Fatalf("row count: got %d want 2 rows: %#v", len(got), got)
+	}
+	expected := []struct {
+		service string
+		uri     string
+		count   int64
+	}{
+		{service: "api", uri: "/a", count: 2},
+		{service: "web", uri: "/x", count: 2},
+	}
+	for i, want := range expected {
+		if gotService := got[i]["service"]; gotService != strV(want.service) {
+			t.Fatalf("row %d service: got %s want %s", i, gotService.String(), want.service)
+		}
+		if gotURI := got[i]["uri"]; gotURI != strV(want.uri) {
+			t.Fatalf("row %d uri: got %s want %s", i, gotURI.String(), want.uri)
+		}
+		if gotCount := got[i]["count"]; gotCount != intV(want.count) {
+			t.Fatalf("row %d count: got %s want %d", i, gotCount.String(), want.count)
+		}
+		if _, ok := got[i]["_top_rank"]; ok {
+			t.Fatalf("row %d retained _top_rank: %#v", i, got[i])
+		}
+	}
+}
+
 func intPtr(n int64) *int64       { return &n }
 func floatPtr(n float64) *float64 { return &n }
 

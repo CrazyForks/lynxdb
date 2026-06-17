@@ -506,6 +506,12 @@ func (d *dumper) dumpTopRare(p *TopRarePayload, depth int) {
 		d.line(depth, "N %d", *p.N)
 	}
 	d.dumpExpr(p.Field, depth)
+	if len(p.By) > 0 {
+		d.line(depth, "By")
+		for _, by := range p.By {
+			d.dumpExpr(by, depth+1)
+		}
+	}
 }
 
 func (d *dumper) dumpGenericPayload(p *GenericOptionsPayload, depth int) {

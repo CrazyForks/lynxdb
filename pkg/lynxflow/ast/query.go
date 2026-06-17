@@ -936,13 +936,29 @@ func (c *CountPayload) String() string {
 type TopRarePayload struct {
 	N     *int64 // nil = default (10)
 	Field Expr
+	By    []Expr
 }
 
 func (t *TopRarePayload) String() string {
-	if t.N != nil {
-		return fmt.Sprintf("%d %s", *t.N, t.Field.String())
+	field := "<nil>"
+	if t.Field != nil {
+		field = t.Field.String()
 	}
-	return t.Field.String()
+	var b strings.Builder
+	if t.N != nil {
+		b.WriteString(fmt.Sprintf("%d ", *t.N))
+	}
+	b.WriteString(field)
+	if len(t.By) > 0 {
+		b.WriteString(" by ")
+		for i, by := range t.By {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			b.WriteString(by.String())
+		}
+	}
+	return b.String()
 }
 
 // EveryPayload is the typed payload for every.

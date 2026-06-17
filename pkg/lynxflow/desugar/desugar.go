@@ -419,6 +419,10 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 	}
 
 	field := cloneExpr(payload.Field)
+	by := cloneExprs(payload.By)
+	statsBy := make([]ast.Expr, 0, len(by)+1)
+	statsBy = append(statsBy, by...)
+	statsBy = append(statsBy, field)
 
 	// stats count() as count by <field>
 	statsStage := ast.Stage{
@@ -430,7 +434,7 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 				Alias: "count",
 				Pos:   s.Pos,
 			}},
-			By: []ast.Expr{field},
+			By: statsBy,
 		},
 		Pos: s.Pos,
 	}
@@ -449,6 +453,7 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 				Alias: "_total",
 				Pos:   s.Pos,
 			}},
+			By: cloneExprs(payload.By),
 		},
 		Pos: s.Pos,
 	}
@@ -494,13 +499,62 @@ func (d *desugarer) expandTopRare(s ast.Stage, isTop bool) []ast.Stage {
 		Pos: s.Pos,
 	}
 
-	// sort -count / sort +count
-	sortKey := ast.SortKey{Field: &ast.Ident{Name: "count", Pos: s.Pos}, Desc: isTop, Pos: s.Pos}
+	// sort by group keys, then -count / +count
+	sortKeys := make([]ast.SortKey, 0, len(payload.By)+1)
+	for _, key := range payload.By {
+		sortKeys = append(sortKeys, ast.SortKey{Field: cloneExpr(key), Pos: s.Pos})
+	}
+	sortKeys = append(sortKeys, ast.SortKey{Field: &ast.Ident{Name: "count", Pos: s.Pos}, Desc: isTop, Pos: s.Pos})
 	sortStage := ast.Stage{
 		Name:    "sort",
 		NamePos: s.NamePos,
-		Sort:    &ast.SortPayload{Keys: []ast.SortKey{sortKey}},
+		Sort:    &ast.SortPayload{Keys: sortKeys},
 		Pos:     s.Pos,
+	}
+
+	if len(payload.By) > 0 {
+		rankStage := ast.Stage{
+			Name:    "streamstats",
+			NamePos: s.NamePos,
+			Streamstats: &ast.StreamstatsPayload{
+				StatsPayload: ast.StatsPayload{
+					Aggs: []ast.AggExpr{{
+						Func:  &ast.Call{Callee: "row_number", Pos: s.Pos},
+						Alias: "_top_rank",
+						Pos:   s.Pos,
+					}},
+					By: cloneExprs(payload.By),
+				},
+			},
+			Pos: s.Pos,
+		}
+		whereStage := ast.Stage{
+			Name:    "where",
+			NamePos: s.NamePos,
+			Where: &ast.WherePayload{Expr: &ast.Binary{
+				Op:    ast.OpLtEq,
+				Left:  &ast.Ident{Name: "_top_rank", Pos: s.Pos},
+				Right: &ast.Literal{Kind: ast.LitInt, Raw: fmt.Sprintf("%d", n), Value: n, Pos: s.Pos},
+				Pos:   s.Pos,
+			}},
+			Pos: s.Pos,
+		}
+		dropRankStage := ast.Stage{
+			Name:    "drop",
+			NamePos: s.NamePos,
+			Drop: &ast.FieldPatternsPayload{
+				Patterns: []ast.FieldPattern{{Name: "_top_rank", Pos: s.Pos}},
+			},
+			Pos: s.Pos,
+		}
+		result := []ast.Stage{statsStage, eventstatsStage, extendStage, dropStage, sortStage, rankStage, whereStage, dropRankStage}
+		reason := "sugar:top"
+		if !isTop {
+			reason = "sugar:rare"
+		}
+		d.addRewrite(s.String(), renderStages(result), reason, s.Pos)
+
+		return result
 	}
 
 	// head N
@@ -1328,6 +1382,10 @@ func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 		out.Describe = &ast.DescribePayload{}
 	case s.Parse != nil:
 		out.Parse = cloneParsePayload(s.Parse)
+	case s.Top != nil:
+		out.Top = cloneTopRarePayload(s.Top)
+	case s.Rare != nil:
+		out.Rare = cloneTopRarePayload(s.Rare)
 	case s.Materialize != nil:
 		out.Materialize = cloneMaterializePayload(s.Materialize)
 	case s.Tee != nil:
@@ -1648,6 +1706,14 @@ func cloneParsePayload(pp *ast.ParsePayload) *ast.ParsePayload {
 		out.Into = append(out.Into, ast.CaptureField{Name: c.Name, Type: c.Type, Pos: c.Pos})
 	}
 	return out
+}
+
+func cloneTopRarePayload(tp *ast.TopRarePayload) *ast.TopRarePayload {
+	return &ast.TopRarePayload{
+		N:     cloneInt64Ptr(tp.N),
+		Field: cloneExpr(tp.Field),
+		By:    cloneExprs(tp.By),
+	}
 }
 
 func cloneMaterializePayload(mp *ast.MaterializePayload) *ast.MaterializePayload {

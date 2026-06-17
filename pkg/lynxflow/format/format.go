@@ -1017,6 +1017,15 @@ func formatTopRarePayload(b *strings.Builder, p *ast.TopRarePayload) {
 	if needParens {
 		b.WriteByte(')')
 	}
+	if len(p.By) > 0 {
+		b.WriteString(" by ")
+		for i, by := range p.By {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			formatExpr(b, by, precTop)
+		}
+	}
 }
 
 // exprStartsWithNumber reports whether the formatted expression begins with

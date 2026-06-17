@@ -1701,6 +1701,10 @@ func (p *parser) parseTopRareBody(s *ast.Stage, isTop bool) {
 
 	payload.Field = p.parseExprSafe()
 
+	if p.consume(lexer.KwBy) {
+		payload.By = p.parseGroupByList()
+	}
+
 	if isTop {
 		s.Top = payload
 	} else {

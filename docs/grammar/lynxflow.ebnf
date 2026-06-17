@@ -106,7 +106,7 @@ parse_stage      ::= 'parse' format_spec ['from' '=' field] ['into' '=' captures
 patterns_stage   ::= 'patterns' ['field' '=' field] ['max_templates' '=' number] ['similarity' '=' string] ;
 percentiles_stage ::= 'percentiles' field ['by' '=' field_list] ;
 proportion_stage ::= 'proportion' expr field ['every' '=' duration] ['by' '=' field_list] ;
-rare_stage       ::= 'rare' [number] field ;
+rare_stage       ::= 'rare' [number] field ['by' field_list] ;
 rate_stage       ::= 'rate' ['per' '=' duration] ['by' '=' field_list] ;
 rename_stage     ::= 'rename' assign_list ;
 rollup_stage     ::= 'rollup' duration... ['by' '=' field_list] ;
@@ -117,7 +117,7 @@ stats_stage      ::= 'stats' agg_list ['by' '=' field_list] ;
 streamstats_stage ::= 'streamstats' agg_list ['window' '=' window] ['current' '=' 'true' | 'false'] ['by' '=' field_list] ;
 tail_stage       ::= 'tail' number ;
 tee_stage        ::= 'tee' string ;
-top_stage        ::= 'top' [number] field ;
+top_stage        ::= 'top' [number] field ['by' field_list] ;
 topology_stage   ::= 'topology' ['source_field' '=' field] ['dest_field' '=' field] ['weight_field' '=' field] ['max_nodes' '=' number] ;
 trace_stage      ::= 'trace' ['trace_id' '=' field] ['span_id' '=' field] ['parent_id' '=' field] ;
 transaction_stage ::= 'transaction' field_list ['maxspan' '=' duration] ['startswith' '=' expr] ['endswith' '=' expr] ;

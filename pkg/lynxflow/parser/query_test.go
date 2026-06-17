@@ -218,6 +218,11 @@ func TestGoldenStructure(t *testing.T) {
 			want:  `rare 3 service`,
 		},
 		{
+			name:  "top_by",
+			input: `| top 2 uri by service`,
+			want:  `top 2 uri by service`,
+		},
+		{
 			name:  "every_sugar",
 			input: `| every 5m by service stats count()`,
 			want:  `every 5m by service stats count()`,

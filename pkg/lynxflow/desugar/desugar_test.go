@@ -206,6 +206,12 @@ func TestGoldenExpansions(t *testing.T) {
 			wantReason: "sugar:top",
 		},
 		{
+			name:       "top_by",
+			input:      `from app | top 2 uri by service`,
+			wantPipe:   `from app | stats count() as count by service, uri | eventstats sum(count) as _total by service | extend percent = round(((count * 100) / _total), 2) | drop _total | sort service, -count | streamstats row_number() as _top_rank by service | where (_top_rank <= 2) | drop _top_rank`,
+			wantReason: "sugar:top",
+		},
+		{
 			name:       "rare_default",
 			input:      `from app | rare service`,
 			wantPipe:   `from app | stats count() as count by service | eventstats sum(count) as _total | extend percent = round(((count * 100) / _total), 2) | drop _total | sort count | head 10`,
@@ -215,6 +221,12 @@ func TestGoldenExpansions(t *testing.T) {
 			name:       "rare_with_n",
 			input:      `from app | rare 3 service`,
 			wantPipe:   `from app | stats count() as count by service | eventstats sum(count) as _total | extend percent = round(((count * 100) / _total), 2) | drop _total | sort count | head 3`,
+			wantReason: "sugar:rare",
+		},
+		{
+			name:       "rare_by",
+			input:      `from app | rare 2 status by host`,
+			wantPipe:   `from app | stats count() as count by host, status | eventstats sum(count) as _total by host | extend percent = round(((count * 100) / _total), 2) | drop _total | sort host, count | streamstats row_number() as _top_rank by host | where (_top_rank <= 2) | drop _top_rank`,
 			wantReason: "sugar:rare",
 		},
 		{

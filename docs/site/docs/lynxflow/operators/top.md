@@ -12,7 +12,7 @@ Top-N frequent values.
 ## Signature
 
 ```
-| top [n] <field>
+| top [n] <field> [by <fields>]
 ```
 
 ## Positional Arguments
@@ -25,13 +25,17 @@ Top-N frequent values.
 ## Desugars To
 
 ```
-stats count() as count by <field> | sort -count | head <n>
+stats count() as count by <field>[, <fields>] | sort <fields>, -count | head <n> or per-group row_number filter
 ```
 
 ## Examples
 
 ```
 top 10 uri
+```
+
+```
+top 3 uri by service
 ```
 
 ---

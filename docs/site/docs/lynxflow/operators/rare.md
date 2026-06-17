@@ -12,7 +12,7 @@ Bottom-N frequent values.
 ## Signature
 
 ```
-| rare [n] <field>
+| rare [n] <field> [by <fields>]
 ```
 
 ## Positional Arguments
@@ -25,13 +25,17 @@ Bottom-N frequent values.
 ## Desugars To
 
 ```
-stats count() as count by <field> | sort +count | head <n>
+stats count() as count by <field>[, <fields>] | sort <fields>, count | head <n> or per-group row_number filter
 ```
 
 ## Examples
 
 ```
 rare 3 service
+```
+
+```
+rare 2 status by host
 ```
 
 ---

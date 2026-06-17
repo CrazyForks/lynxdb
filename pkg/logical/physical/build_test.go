@@ -161,6 +161,28 @@ func TestBuild_ColumnsMacroInStats(t *testing.T) {
 	}
 }
 
+func TestBuild_ColumnsMacroInUnpivot(t *testing.T) {
+	rows := []map[string]event.Value{
+		{"_raw": strV(`{"db_ms":12,"api_ms":7,"level":"info"}`)},
+	}
+	got := drain(t, `from * | parse json into (db_ms as int, api_ms as int, level as string) | unpivot columns("*_ms") as metric, value | sort metric`, rows)
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows, got %d: %#v", len(got), got)
+	}
+	if metric := got[0]["metric"].AsString(); metric != "api_ms" {
+		t.Fatalf("row 0 metric = %q, want api_ms", metric)
+	}
+	if value := got[0]["value"].AsInt(); value != 7 {
+		t.Fatalf("row 0 value = %d, want 7", value)
+	}
+	if metric := got[1]["metric"].AsString(); metric != "db_ms" {
+		t.Fatalf("row 1 metric = %q, want db_ms", metric)
+	}
+	if value := got[1]["value"].AsInt(); value != 12 {
+		t.Fatalf("row 1 value = %d, want 12", value)
+	}
+}
+
 func TestBuild_Unpivot(t *testing.T) {
 	rows := []map[string]event.Value{
 		{"service": strV("api"), "cpu_ms": intV(12), "db_ms": intV(7), "status": intV(200)},

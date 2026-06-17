@@ -83,6 +83,22 @@ func TestLower_ColumnsMacroExpandsAggregateArgs(t *testing.T) {
 	}
 }
 
+func TestLower_ColumnsMacroExpandsUnpivotFields(t *testing.T) {
+	plan, diags := parseDesugarLower(t, `from app | parse json into (db_ms as int, api_ms as int, level as string) | unpivot columns("*_ms") as metric, value`)
+	assertNoDiagErrors(t, diags)
+	assertNodeType[*Helper](t, plan.Root, "root should be Helper")
+	helper := plan.Root.(*Helper)
+	want := []string{"db_ms", "api_ms", "metric", "value"}
+	if len(helper.Positional) != len(want) {
+		t.Fatalf("positionals len = %d, want %d", len(helper.Positional), len(want))
+	}
+	for i, expr := range helper.Positional {
+		if got := exprFieldName(expr); got != want[i] {
+			t.Fatalf("positional %d = %q, want %q", i, got, want[i])
+		}
+	}
+}
+
 func TestLower_SortStarExpandsInputSchema(t *testing.T) {
 	plan, diags := parseDesugarLower(t, `from app | sort -*`)
 	assertNoDiagErrors(t, diags)

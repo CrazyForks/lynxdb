@@ -1030,7 +1030,7 @@ func (l *lowerer) lowerHelper(input Node, s ast.Stage, extra []sema.Field) Node 
 		}
 	case "unpivot":
 		if s.Unpivot != nil {
-			positional = append(positional, s.Unpivot.Fields...)
+			positional = append(positional, expandColumnsFields(input, s.Unpivot.Fields)...)
 			positional = append(positional, s.Unpivot.NameField, s.Unpivot.ValueField)
 		}
 	case "xyseries":
@@ -1046,6 +1046,35 @@ func (l *lowerer) lowerHelper(input Node, s ast.Stage, extra []sema.Field) Node 
 		Positional:  positional,
 		extraFields: extra,
 	}
+}
+
+func expandColumnsFields(input Node, fields []ast.Expr) []ast.Expr {
+	out := make([]ast.Expr, 0, len(fields))
+	for _, expr := range fields {
+		if pattern, ok := columnsFieldPattern(expr); ok {
+			for _, field := range input.Schema() {
+				if matchGlob(pattern, field.Name) {
+					out = append(out, &ast.Ident{Name: field.Name, Pos: expr.ExprSpan()})
+				}
+			}
+			continue
+		}
+		out = append(out, expr)
+	}
+	return out
+}
+
+func columnsFieldPattern(expr ast.Expr) (string, bool) {
+	call, ok := expr.(*ast.Call)
+	if !ok || call.Callee != "columns" || len(call.Args) != 1 {
+		return "", false
+	}
+	lit, ok := call.Args[0].(*ast.Literal)
+	if !ok || (lit.Kind != ast.LitString && lit.Kind != ast.LitRawString) {
+		return "", false
+	}
+	pattern, ok := lit.Value.(string)
+	return pattern, ok
 }
 
 func (l *lowerer) lowerHelperGeneric(input Node, s ast.Stage, gp *ast.GenericOptionsPayload, extra []sema.Field) Node {

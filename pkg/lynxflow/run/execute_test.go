@@ -260,7 +260,9 @@ func TestExecute_ArgAggregates(t *testing.T) {
 		`top_k(team, 2) as teams, ` +
 		`value_counts(team) as team_counts, ` +
 		`avg_weighted(duration_ms, samples) as weighted_ms, ` +
-		`entropy(team) as team_entropy by service`
+		`entropy(team) as team_entropy, ` +
+		`max_n(duration_ms, 2) as worst_ms, ` +
+		`min_n(duration_ms, 2) as best_ms by service`
 
 	rows, err := Execute(
 		context.Background(),
@@ -291,6 +293,8 @@ func TestExecute_ArgAggregates(t *testing.T) {
 	assertTopKEntry(t, byService["api"], "team_counts", 1, "edge", 1)
 	assertFloatField(t, byService["api"], "weighted_ms", 106.25)
 	assertFloatField(t, byService["api"], "team_entropy", 0.9182958340544896)
+	assertIntArrayField(t, byService["api"], "worst_ms", []int64{250, 125})
+	assertIntArrayField(t, byService["api"], "best_ms", []int64{25, 125})
 	assertStringField(t, byService["web"], "worst_uri", "/home", 0)
 	assertStringField(t, byService["web"], "best_uri", "/home", 0)
 	assertStringField(t, byService["web"], "some_team", "web", 0)
@@ -298,6 +302,8 @@ func TestExecute_ArgAggregates(t *testing.T) {
 	assertTopKEntry(t, byService["web"], "team_counts", 0, "web", 1)
 	assertFloatField(t, byService["web"], "weighted_ms", 30)
 	assertFloatField(t, byService["web"], "team_entropy", 0)
+	assertIntArrayField(t, byService["web"], "worst_ms", []int64{30})
+	assertIntArrayField(t, byService["web"], "best_ms", []int64{30})
 }
 
 func assertTopKEntry(t *testing.T, row map[string]event.Value, field string, idx int, value string, count int64) {
@@ -328,6 +334,23 @@ func assertFloatField(t *testing.T, row map[string]event.Value, field string, wa
 	}
 	if math.Abs(got-want) > 1e-9 {
 		t.Fatalf("%s got %f, want %f", field, got, want)
+	}
+}
+
+func assertIntArrayField(t *testing.T, row map[string]event.Value, field string, want []int64) {
+	t.Helper()
+	arr, ok := row[field].TryAsArray()
+	if !ok {
+		t.Fatalf("%s should be array, got %s", field, row[field].Type())
+	}
+	if len(arr) != len(want) {
+		t.Fatalf("%s length got %d, want %d", field, len(arr), len(want))
+	}
+	for i, expected := range want {
+		got, ok := arr[i].TryAsInt()
+		if !ok || got != expected {
+			t.Fatalf("%s[%d] got %v, want %d", field, i, arr[i], expected)
+		}
 	}
 }
 

@@ -120,6 +120,8 @@ const (
 	aggValCnt  = "value_counts"
 	aggAvgW    = "avg_weighted"
 	aggEntropy = "entropy"
+	aggMaxN    = "max_n"
+	aggMinN    = "min_n"
 )
 
 // AggregateIterator implements streaming hash aggregation (STATS command).
@@ -346,7 +348,7 @@ func aggResultType(name string) string {
 		return "float"
 	case aggEarT, aggLatT:
 		return "timestamp"
-	case aggTopK, aggValCnt:
+	case aggTopK, aggValCnt, aggMaxN, aggMinN:
 		return "array"
 	default:
 		return "any"
@@ -776,7 +778,7 @@ func (a *AggregateIterator) updateState(s *aggState, fn string, val, orderVal, w
 			}
 			s.mode[val.String()]++
 		}
-	case aggTopK, aggValCnt, aggEntropy:
+	case aggTopK, aggValCnt, aggEntropy, aggMaxN, aggMinN:
 		updateTopKState(s, val, 1)
 	case "first":
 		if !val.IsNull() && !s.hasFirst {
@@ -903,6 +905,37 @@ func finalizeTopK(s *aggState, limit int) event.Value {
 			"value": item.Value,
 			"count": event.IntValue(item.Count),
 		}))
+	}
+	return event.ArrayValue(result)
+}
+
+func finalizeExtremaN(s *aggState, limit int, maxOrder bool) event.Value {
+	if len(s.topK) == 0 || limit <= 0 {
+		return event.ArrayValue(nil)
+	}
+	items := make([]topKItem, 0, len(s.topK))
+	for _, item := range s.topK {
+		items = append(items, item)
+	}
+	sort.Slice(items, func(i, j int) bool {
+		cmp := vm.CompareValues(items[i].Value, items[j].Value)
+		if cmp == 0 {
+			return items[i].Value.String() < items[j].Value.String()
+		}
+		if maxOrder {
+			return cmp > 0
+		}
+		return cmp < 0
+	})
+
+	result := make([]event.Value, 0, limit)
+	for _, item := range items {
+		for i := int64(0); i < item.Count; i++ {
+			if len(result) == limit {
+				return event.ArrayValue(result)
+			}
+			result = append(result, item.Value)
+		}
 	}
 	return event.ArrayValue(result)
 }
@@ -1233,7 +1266,7 @@ func (a *AggregateIterator) mergeAggStateFromSpillRow(group *aggGroup, row map[s
 			a.mergeListFromRow(&group.states[j], row, agg.Alias)
 		case aggMode:
 			a.mergeModeFromRow(&group.states[j], row, agg.Alias)
-		case aggTopK, aggValCnt, aggEntropy:
+		case aggTopK, aggValCnt, aggEntropy, aggMaxN, aggMinN:
 			a.mergeTopKFromRow(&group.states[j], row, agg.Alias)
 		case "earliest":
 			a.mergeEarliestValueFromRow(&group.states[j], row, agg.Alias)
@@ -1787,6 +1820,10 @@ func (a *AggregateIterator) finalizeAgg(s *aggState, agg AggFunc) event.Value {
 		return finalizeTopK(s, 0)
 	case aggEntropy:
 		return finalizeEntropy(s)
+	case aggMaxN:
+		return finalizeExtremaN(s, agg.Limit, true)
+	case aggMinN:
+		return finalizeExtremaN(s, agg.Limit, false)
 	}
 	val := a.finalizeState(s, agg.Name)
 	if val.IsNull() || agg.Scale == 0 {

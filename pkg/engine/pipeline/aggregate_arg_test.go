@@ -45,6 +45,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		{Name: "value_counts", Field: "route", Alias: "route_counts"},
 		{Name: "avg_weighted", Field: "score", WeightField: "weight", Alias: "weighted_score"},
 		{Name: "entropy", Field: "route", Alias: "route_entropy"},
+		{Name: "max_n", Field: "score", Limit: 3, Alias: "max_scores"},
+		{Name: "min_n", Field: "score", Limit: 3, Alias: "min_scores"},
 	}
 	iter := NewAggregateIteratorWithSpill(child, aggs, []string{"group"}, acct, mgr)
 
@@ -82,6 +84,8 @@ func TestAggregateArgFunctionsWithSpill(t *testing.T) {
 		assertEventTopKEntry(t, row["route_counts"], 2, "route-2", 16, group+" counts 2")
 		assertEventFloat(t, row["weighted_score"], weightedScoreWant(), group+" weighted")
 		assertEventFloat(t, row["route_entropy"], routeEntropyWant(), group+" entropy")
+		assertEventIntArray(t, row["max_scores"], []int64{49, 48, 47}, group+" max_n")
+		assertEventIntArray(t, row["min_scores"], []int64{0, 1, 2}, group+" min_n")
 	}
 }
 
@@ -143,5 +147,22 @@ func assertEventFloat(t *testing.T, v event.Value, expected float64, label strin
 	}
 	if math.Abs(got-expected) > 1e-9 {
 		t.Fatalf("%s: got %f, want %f", label, got, expected)
+	}
+}
+
+func assertEventIntArray(t *testing.T, v event.Value, expected []int64, label string) {
+	t.Helper()
+	if v.Type() != event.FieldTypeArray {
+		t.Fatalf("%s: expected array, got %s", label, v.Type())
+	}
+	arr := v.AsArray()
+	if len(arr) != len(expected) {
+		t.Fatalf("%s: got len %d, want %d", label, len(arr), len(expected))
+	}
+	for i, want := range expected {
+		got, ok := arr[i].TryAsInt()
+		if !ok || got != want {
+			t.Fatalf("%s[%d]: got %v, want %d", label, i, arr[i], want)
+		}
 	}
 }

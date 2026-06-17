@@ -1111,6 +1111,8 @@ func TestAggNameMapping(t *testing.T) {
 		"value_counts": "value_counts",
 		"avg_weighted": "avg_weighted",
 		"entropy":      "entropy",
+		"max_n":        "max_n",
+		"min_n":        "min_n",
 		"rate":         "rate",
 	}
 	for input, want := range expected {

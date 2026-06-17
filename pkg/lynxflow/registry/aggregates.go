@@ -26,6 +26,8 @@ var aggregates = []Aggregate{
 	{Name: "value_counts", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TArray, Doc: "All non-null values with counts, sorted by frequency."},
 	{Name: "avg_weighted", Params: []Param{{Name: "x", Type: TNumber}, {Name: "weight", Type: TNumber}}, SupportsWhere: true, Result: TFloat, Doc: "Weighted average as sum(x * weight) / sum(weight)."},
 	{Name: "entropy", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TFloat, Doc: "Shannon entropy of non-null values, in bits."},
+	{Name: "max_n", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt}}, SupportsWhere: true, Result: TArray, Doc: "Largest n non-null values."},
+	{Name: "min_n", Params: []Param{{Name: "x", Type: TAny}, {Name: "n", Type: TInt}}, SupportsWhere: true, Result: TArray, Doc: "Smallest n non-null values."},
 	{Name: "first", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "First non-null in row order."},
 	{Name: "last", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Last non-null in row order."},
 	{Name: "earliest", Params: []Param{{Name: "x", Type: TAny}}, SupportsWhere: true, Result: TAny, Doc: "Value from the row with the smallest _time."},

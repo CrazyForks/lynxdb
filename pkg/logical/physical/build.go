@@ -429,6 +429,8 @@ var aggNameMapping = map[string]string{
 	"value_counts":  "value_counts",
 	"avg_weighted":  "avg_weighted",
 	"entropy":       "entropy",
+	"max_n":         "max_n",
+	"min_n":         "min_n",
 }
 
 func (b *builder) buildAggregate(nd *logical.Aggregate) (pipeline.Iterator, error) {
@@ -591,16 +593,16 @@ func (b *builder) convertAggArg(name string, args []lfast.Expr, index int) (stri
 
 func aggregateLimit(name string, call *lfast.Call) (int, error) {
 	switch name {
-	case "top_k":
+	case "top_k", "max_n", "min_n":
 		if len(call.Args) < 2 {
-			return 0, fmt.Errorf("physical.Build: top_k requires a limit")
+			return 0, fmt.Errorf("physical.Build: %s requires a limit", name)
 		}
 		n, err := intLiteralArg(call.Args[1])
 		if err != nil {
-			return 0, fmt.Errorf("physical.Build: top_k limit: %w", err)
+			return 0, fmt.Errorf("physical.Build: %s limit: %w", name, err)
 		}
 		if n <= 0 {
-			return 0, fmt.Errorf("physical.Build: top_k limit must be positive")
+			return 0, fmt.Errorf("physical.Build: %s limit must be positive", name)
 		}
 		return n, nil
 	default:

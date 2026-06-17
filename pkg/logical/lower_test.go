@@ -65,6 +65,7 @@ func TestLower_StatsByStarExpandsInputSchema(t *testing.T) {
 			t.Fatalf("key %d = %q, want %q", i, key.Name, want[i])
 		}
 	}
+	assertSchemaRewrite(t, plan, "schema-resolved:by-star", "by *", "by _time, _raw, _source, _sourcetype, host, index")
 }
 
 func TestLower_ColumnsMacroExpandsAggregateArgs(t *testing.T) {
@@ -81,6 +82,7 @@ func TestLower_ColumnsMacroExpandsAggregateArgs(t *testing.T) {
 			t.Fatalf("agg %d alias = %q, want %q", i, agg.Aggs[i].Alias, want)
 		}
 	}
+	assertSchemaRewrite(t, plan, "schema-resolved:columns-agg", `max(columns("*_ms"))`, "max(db_ms) as max_db_ms, max(api_ms) as max_api_ms")
 }
 
 func TestLower_ColumnsMacroExpandsUnpivotFields(t *testing.T) {
@@ -97,6 +99,7 @@ func TestLower_ColumnsMacroExpandsUnpivotFields(t *testing.T) {
 			t.Fatalf("positional %d = %q, want %q", i, got, want[i])
 		}
 	}
+	assertSchemaRewrite(t, plan, "schema-resolved:columns-fields", `columns("*_ms")`, "db_ms, api_ms")
 }
 
 func TestLower_SortStarExpandsInputSchema(t *testing.T) {
@@ -116,6 +119,20 @@ func TestLower_SortStarExpandsInputSchema(t *testing.T) {
 			t.Fatalf("key %d Desc = false, want true", i)
 		}
 	}
+	assertSchemaRewrite(t, plan, "schema-resolved:sort-star", "-*", "-_time, -_raw, -_source, -_sourcetype, -host, -index")
+}
+
+func assertSchemaRewrite(t *testing.T, plan *Plan, reason, before, after string) {
+	t.Helper()
+	for _, rw := range plan.SchemaRewrites {
+		if rw.Reason == reason {
+			if rw.Before != before || rw.After != after {
+				t.Fatalf("rewrite %s = %q => %q, want %q => %q", reason, rw.Before, rw.After, before, after)
+			}
+			return
+		}
+	}
+	t.Fatalf("missing rewrite %q in %#v", reason, plan.SchemaRewrites)
 }
 
 func TestFusion_SortHead_NotFused_WhenInterleaved(t *testing.T) {

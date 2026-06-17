@@ -39,6 +39,21 @@ func TestExecute_FreehandSearch(t *testing.T) {
 	}
 }
 
+func TestExecuteExplain_IncludesSchemaResolvedRewrites(t *testing.T) {
+	text, err := ExecuteExplain(`from main | stats count() by *`, Options{})
+	if err != nil {
+		t.Fatalf("ExecuteExplain: %v", err)
+	}
+	for _, want := range []string{
+		`schema-resolved:by-star`,
+		`by * => by _time, _raw, _source, _sourcetype, host, index`,
+	} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("EXPLAIN missing %q:\n%s", want, text)
+		}
+	}
+}
+
 // Test: parse json on_error=propagate (default)
 
 func TestExecute_ParseJSON_MixedValidity_Propagate(t *testing.T) {

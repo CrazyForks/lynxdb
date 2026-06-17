@@ -13,6 +13,9 @@ type Plan struct {
 	// CTE references in the main pipeline or other CTEs share pointers
 	// into this map; physical planning may materialize shared subplans.
 	Lets map[string]*Plan
+	// SchemaRewrites records schema-resolved macro expansions performed
+	// during lowering, such as by * and columns("glob").
+	SchemaRewrites []Rewrite
 }
 
 // Dump produces a deterministic, human-readable multi-line rendering of the

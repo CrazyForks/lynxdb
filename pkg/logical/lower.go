@@ -47,12 +47,13 @@ func Lower(q *ast.Query, opts Options) (*Plan, []Diag) {
 	// Lower main pipeline.
 	root, _ := l.lowerPipeline(q.Pipeline)
 
-	return &Plan{Root: root, Lets: l.lets}, l.diags
+	return &Plan{Root: root, Lets: l.lets, SchemaRewrites: l.rewrites}, l.diags
 }
 
 type lowerer struct {
 	opts       Options
 	diags      []Diag
+	rewrites   []Rewrite
 	lets       map[string]*Plan
 	initSchema []sema.Field
 }
@@ -63,6 +64,15 @@ func (l *lowerer) addDiag(code parser.DiagCode, sev parser.Severity, span ast.Sp
 		Severity: sev,
 		Message:  msg,
 		Span:     span,
+	})
+}
+
+func (l *lowerer) addSchemaRewrite(before, after, reason string, span ast.Span) {
+	l.rewrites = append(l.rewrites, Rewrite{
+		Before: before,
+		After:  after,
+		Reason: reason,
+		Span:   span,
 	})
 }
 
@@ -316,7 +326,7 @@ func (l *lowerer) lowerStats(input Node, sp *ast.StatsPayload, window *WindowSpe
 
 	var aggs []Agg
 	for _, a := range sp.Aggs {
-		aggs = append(aggs, expandColumnsAgg(input, a)...)
+		aggs = append(aggs, l.expandColumnsAgg(input, a)...)
 	}
 
 	var keys []Key
@@ -324,9 +334,14 @@ func (l *lowerer) lowerStats(input Node, sp *ast.StatsPayload, window *WindowSpe
 
 	for _, byExpr := range sp.By {
 		if isStarExpr(byExpr) {
+			var names []string
 			for _, field := range input.Schema() {
 				expr := &ast.Ident{Name: field.Name, Pos: byExpr.ExprSpan()}
 				keys = append(keys, Key{Expr: expr, Name: field.Name})
+				names = append(names, field.Name)
+			}
+			if len(names) > 0 {
+				l.addSchemaRewrite("by *", "by "+strings.Join(names, ", "), "schema-resolved:by-star", byExpr.ExprSpan())
 			}
 			continue
 		}
@@ -353,7 +368,7 @@ func (l *lowerer) lowerStats(input Node, sp *ast.StatsPayload, window *WindowSpe
 	}
 }
 
-func expandColumnsAgg(input Node, agg ast.AggExpr) []Agg {
+func (l *lowerer) expandColumnsAgg(input Node, agg ast.AggExpr) []Agg {
 	call, ok := agg.Func.(*ast.Call)
 	if !ok {
 		return []Agg{{Func: agg.Func, WhereCond: agg.WhereCond, Alias: agg.Alias}}
@@ -385,6 +400,7 @@ func expandColumnsAgg(input Node, agg ast.AggExpr) []Agg {
 	if len(out) == 0 {
 		return []Agg{{Func: agg.Func, WhereCond: agg.WhereCond, Alias: agg.Alias}}
 	}
+	l.addSchemaRewrite(agg.Func.String(), formatAggList(out), "schema-resolved:columns-agg", agg.Func.ExprSpan())
 	return out
 }
 
@@ -404,13 +420,32 @@ func columnsArg(call *ast.Call) (int, string, bool) {
 	return 0, "", false
 }
 
+func formatAggList(aggs []Agg) string {
+	parts := make([]string, 0, len(aggs))
+	for _, agg := range aggs {
+		text := agg.Func.String()
+		if agg.Alias != "" {
+			text += " as " + agg.Alias
+		}
+		parts = append(parts, text)
+	}
+	return strings.Join(parts, ", ")
+}
+
+func sortKeyName(name string, desc bool) string {
+	if desc {
+		return "-" + name
+	}
+	return "+" + name
+}
+
 func (l *lowerer) lowerSort(input Node, s ast.Stage) Node {
 	if s.Sort == nil {
 		return input
 	}
 	return &Sort{
 		unaryNode: unaryNode{Input: input},
-		Keys:      lowerSortKeys(input, s.Sort.Keys),
+		Keys:      l.lowerSortKeys(input, s.Sort.Keys),
 	}
 }
 
@@ -440,19 +475,24 @@ func (l *lowerer) lowerTopK(input Node, sortStage, headStage ast.Stage) Node {
 	return &TopK{
 		unaryNode: unaryNode{Input: input},
 		K:         headStage.Head.N,
-		SortKeys:  lowerSortKeys(input, sortStage.Sort.Keys),
+		SortKeys:  l.lowerSortKeys(input, sortStage.Sort.Keys),
 	}
 }
 
-func lowerSortKeys(input Node, keys []ast.SortKey) []SortKey {
+func (l *lowerer) lowerSortKeys(input Node, keys []ast.SortKey) []SortKey {
 	out := make([]SortKey, 0, len(keys))
 	for _, k := range keys {
 		if isStarExpr(k.Field) {
+			var names []string
 			for _, field := range input.Schema() {
 				out = append(out, SortKey{
 					Expr: &ast.Ident{Name: field.Name, Pos: k.Field.ExprSpan()},
 					Desc: k.Desc,
 				})
+				names = append(names, sortKeyName(field.Name, k.Desc))
+			}
+			if len(names) > 0 {
+				l.addSchemaRewrite(sortKeyName("*", k.Desc), strings.Join(names, ", "), "schema-resolved:sort-star", k.Field.ExprSpan())
 			}
 			continue
 		}
@@ -1052,7 +1092,7 @@ func (l *lowerer) lowerHelper(input Node, s ast.Stage, extra []sema.Field) Node 
 		}
 	case "unpivot":
 		if s.Unpivot != nil {
-			positional = append(positional, expandColumnsFields(input, s.Unpivot.Fields)...)
+			positional = append(positional, l.expandColumnsFields(input, s.Unpivot.Fields)...)
 			positional = append(positional, s.Unpivot.NameField, s.Unpivot.ValueField)
 		}
 	case "xyseries":
@@ -1070,14 +1110,19 @@ func (l *lowerer) lowerHelper(input Node, s ast.Stage, extra []sema.Field) Node 
 	}
 }
 
-func expandColumnsFields(input Node, fields []ast.Expr) []ast.Expr {
+func (l *lowerer) expandColumnsFields(input Node, fields []ast.Expr) []ast.Expr {
 	out := make([]ast.Expr, 0, len(fields))
 	for _, expr := range fields {
 		if pattern, ok := columnsFieldPattern(expr); ok {
+			var names []string
 			for _, field := range input.Schema() {
 				if matchGlob(pattern, field.Name) {
 					out = append(out, &ast.Ident{Name: field.Name, Pos: expr.ExprSpan()})
+					names = append(names, field.Name)
 				}
+			}
+			if len(names) > 0 {
+				l.addSchemaRewrite(expr.String(), strings.Join(names, ", "), "schema-resolved:columns-fields", expr.ExprSpan())
 			}
 			continue
 		}

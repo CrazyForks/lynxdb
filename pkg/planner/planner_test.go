@@ -235,6 +235,24 @@ func TestPlanResult_Rewrites(t *testing.T) {
 	}
 }
 
+func TestPlanResult_SchemaRewrites(t *testing.T) {
+	p := New()
+	res, err := p.Plan(PlanRequest{Query: "from main | stats count() by *"})
+	if err != nil {
+		t.Fatalf("Plan error: %v", err)
+	}
+	found := false
+	for _, rw := range res.Rewrites {
+		if rw.Reason == "schema-resolved:by-star" {
+			found = rw.Before == "by *" && rw.After == "by _time, _raw, _source, _sourcetype, host, index"
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected schema-resolved:by-star rewrite, got rewrites = %v", res.Rewrites)
+	}
+}
+
 // TestParseError_Diag verifies that ParseError carries the full Diag.
 func TestParseError_Diag(t *testing.T) {
 	p := New()

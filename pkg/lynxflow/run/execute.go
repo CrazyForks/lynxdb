@@ -272,7 +272,7 @@ func prepareExplain(query string, opts Options) (*logical.Plan, explain.Info, er
 	plan, applied := opt.Optimize(plan)
 
 	info := explain.Info{
-		Rewrites: rewrites,
+		Rewrites: append(rewrites, plan.SchemaRewrites...),
 		Applied:  applied,
 	}
 	return plan, info, nil

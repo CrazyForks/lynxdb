@@ -257,6 +257,13 @@ func (p *lynxFlowPlanner) Plan(req PlanRequest) (*PlanResult, error) {
 			Reason: rw.Reason,
 		})
 	}
+	for _, rw := range plan.SchemaRewrites {
+		rewrites = append(rewrites, model.QueryRewrite{
+			Before: rw.Before,
+			After:  rw.After,
+			Reason: rw.Reason,
+		})
+	}
 
 	// Run sema + lint on the desugared AST to collect advisory lints.
 	var lints []model.QueryLint

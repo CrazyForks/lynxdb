@@ -1,4 +1,5 @@
 # LynxDB
+
 <div align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/assets/lynxdb-logo-transparent-w.png">
@@ -14,213 +15,243 @@
   <a href="https://discord.gg/RgggCFdgWK"><img src="https://img.shields.io/badge/discord-5865F2.svg?style=for-the-badge&logo=discord&logoColor=white" alt="Join Discord"></a>
 </p>
 
-Log analytics in a single binary. No dependencies. Lynx Flow query language.
+LynxDB is a single-binary log analytics database. It works as a Unix-style pipe
+tool, a persistent server, or a distributed cluster, all through the same
+LynxFlow query engine.
 
-> LynxDB is in active development. APIs, storage format, and query behavior may change without notice between releases. Feedback and contributions are welcome
+> LynxDB is in active development. APIs, storage format, and query behavior may
+> change between releases.
 
 <p align="center">
   <img src="docs/assets/demo.gif" alt="LynxDB demo">
 </p>
 
-## Lynx Flow
+## Why LynxDB
 
-Lynx Flow is LynxDB's query language - a pipeline language where data flows left-to-right through commands separated by `|`. Commands are named for what they do: `parse`, `let`, `where`, `group`, `order by`, `take`.
+- **Pipe mode:** run analytics on stdin or local files with no daemon.
+- **Server mode:** ingest logs once, query indexed columnar storage repeatedly.
+- **LynxFlow:** a clean pipeline language with typed values, schema-on-read parsing,
+  CTEs, joins, materialized views, arrays, objects, and time-series sugar.
+- **Index-honest search:** `has` is term-index search, `contains` is substring
+  search, and `matches` is regex.
+- **Drop-in ingest paths:** Elasticsearch `_bulk`, OpenTelemetry OTLP, Splunk HEC,
+  syslog, and raw HTTP ingest.
 
-```
-from nginx
-| parse combined(_raw)
-| status >= 500
-| group by uri compute count() as hits, avg(duration_ms) as latency
-| order by hits desc
-| take 10
-```
-
-## Quick start
+## Install
 
 ```bash
 curl -fsSL https://lynxdb.org/install.sh | sh
 ```
 
-## Development setup
-
-LynxDB pins every required toolchain and CLI in `mise.toml`: Go, Bun, Rust, Node, Python, rclone, golangci-lint, GoReleaser, gh, and rsigma-cli. Install [mise](https://mise.jdx.dev) once, then:
+Other options:
 
 ```bash
-curl https://mise.run | sh
-mise install
-mise run build
-mise run test
+brew install lynxbase/tap/lynxdb
+go install github.com/lynxbase/lynxdb/cmd/lynxdb@latest
+docker run -p 3100:3100 ghcr.io/lynxbase/lynxdb server
 ```
 
-Pipe logs through lynxdb - no server, no config:
+## Query Without A Server
+
+Pipe any logs into `lynxdb query` and use the full LynxFlow engine in-process:
 
 ```bash
-# From raw logs to p99 latency in one line
 kubectl logs deploy/api | lynxdb query '
-      | group by endpoint compute avg(duration_ms), perc99(duration_ms)'
-
-# Three nested formats, one pipeline, zero config
-docker logs api-server 2>&1 | lynxdb query '
-      | parse docker(_raw)
-      | parse json(message)
-      | explode errors
-      | group by errors.code, errors.service compute count() as cnt
-      | order by cnt desc | take 10'
-
-# Wildcard array extraction - like jq, but with aggregation:
-cat orders.json | lynxdb query '
-      | json items[*].price AS price, items[*].product AS product
-      | explode product, price                     
-      | let revenue = price * qty                          
-      | group by product compute sum(revenue) as total_revenue          
-      | order by total_revenue desc''
+  where status >= 500
+  | stats count() as errors, p95(duration_ms) as p95_ms by endpoint
+  | sort -errors
+  | head 10'
 ```
 
-Or run as a persistent server:
+Query a local file directly:
+
+```bash
+lynxdb query --file access.log '
+  from main status>=500
+  | stats count() as count, dc(client_ip) as unique_ips by uri
+  | sort -count
+  | head 20'
+```
+
+Explore a large file cheaply:
+
+```bash
+lynxdb query --file app.ndjson '
+  sample 1% seed=42
+  | describe'
+```
+
+## Run A Server
 
 ```bash
 lynxdb server
-lynxdb ingest nginx_access.log --source nginx_access --index balancer --batch-size 100000
+lynxdb ingest nginx_access.log --source nginx
+
 lynxdb query '
-      | parse combined(_raw)
-      | method="POST" AND status < 300
-      | parse json(request_body)
-      | json items[*].sku AS skus
-      | explode skus
-      | group by skus compute count() as purchases, dc(client_ip) as unique_buyers
-      | order by purchases desc
-      | take 20'
+  from main[-1h] _source=nginx status>=500
+  | every 5m by uri stats count() as errors fill=0
+  | sort uri, _time'
 ```
 
-Generate sample data and explore:
+`from main[-1h]` scopes the source and time range. Search terms immediately after
+`from` are source-level search sugar: `status>=500`, `"connection reset"`, `error`,
+and `field=*` all desugar to typed LynxFlow predicates.
 
-```bash
-# Start the demo (streams realistic logs from 4 sources at 200 events/sec)
-lynxdb demo
+## LynxFlow In 60 Seconds
 
-# Try in another terminal:
-lynxdb query 'from nginx | group by status compute count()'
-lynxdb query '| level="ERROR" | group by host compute count()' --since 5m
-lynxdb tail 'level=ERROR'
+LynxFlow v2 is the only query language in LynxDB. The old SPL2 runtime was
+removed; legacy spellings now produce migration hints.
 
+```lynxflow
+from nginx[-24h] "timeout" status>=500
+| parse json
+| extend route = url_strip_query(uri),
+         latency_bucket = bucket(duration_ms, [0, 50, 100, 250, 500, 1000])
+| stats count() as count,
+        p95(duration_ms) as p95_ms,
+        top_k(client_ip, 5) as top_clients
+  by service, route, latency_bucket
+| sort -count
+| head 20
+```
+
+Core stage names are intentionally explicit:
+
+| Old habit | LynxFlow v2 |
+|---|---|
+| `eval x=...` | `extend x = ...` |
+| `table a, b` / `fields a, b` | `keep a, b` |
+| `stats count by host` | `stats count() by host` |
+| `timechart count span=5m` | `every 5m stats count()` |
+| `sort count desc` | `sort -count` |
+| `head 10` / `tail 10` | unchanged |
+
+Useful idioms:
+
+```lynxflow
+// Conditional aggregation
+from main[-1h]
+| stats count(where status >= 500) as errors,
+        count() as total
+  by service
+| extend error_rate = errors * 100.0 / total
+| sort -error_rate
+```
+
+```lynxflow
+// CTEs and joins
+let $threats = from threat_feed | keep client_ip, threat_type;
+let $failures = from auth[-24h] event="login_failed"
+  | stats count() as failures by src_ip
+  | rename src_ip as client_ip;
+
+from $threats
+| join type=inner on client_ip with $failures
+| sort -failures
+```
+
+```lynxflow
+// Arrays inside one event
+from traces[-1h]
+| extend p95_span = array_reduce("p95", map(spans, s -> s.duration_ms)),
+         slow_spans = array_count(spans, s -> s.duration_ms > 500)
+| where slow_spans > 0
+| keep _time, trace_id, service, p95_span, slow_spans
 ```
 
 ## Features
 
-- **Pipe mode** - reads from stdin or files, works like `grep`. No server, no config.
-- **Lynx Flow** - `group`, `let`, `parse`, `order by`, `join`, CTEs, domain sugar, and [more](https://docs.lynxdb.org/docs/lynx-flow/overview). Partial SPL2 compatibility.
-- **Full-text search** - FST inverted index + roaring bitmaps, bloom filters for segment skipping
-- **Columnar storage** - custom `.lsg` format, delta-varint timestamps, dictionary encoding, Gorilla XOR, LZ4
-- **Materialized views** - precomputed aggregations with automatic query rewrite, up to ~400x speedup
-- **Cluster mode** - add `--cluster.seeds` to go distributed; S3-backed shared storage
-- **Drop-in ingestion** - Elasticsearch `_bulk`, OpenTelemetry OTLP, Splunk HEC
-- **Sigma rule support** - run [rsigma-generated](https://github.com/timescale/rsigma) SPL2, for example `lynxdb query "$(rsigma convert -t lynxdb rule.yml)"`; see [docs/site/docs/sigma](docs/site/docs/sigma/index.md)
+- **LynxFlow v2** - one expression grammar, typed values, arrays/objects,
+  lambdas, CTEs, joins, window functions, and visible sugar rewrites.
+- **Full-text index** - FST term dictionary, roaring bitmap postings, and bloom
+  filters for segment skipping.
+- **Columnar storage** - custom `.lsg` segments with delta-varint timestamps,
+  dictionary encoding, Gorilla XOR, and LZ4 compression.
+- **Materialized views** - stored partial aggregate states with automatic query
+  rewrites and rollups.
+- **Time-series helpers** - `every`, `gapfill`, `hist`, `latency`,
+  `percentiles`, `streamstats`, `rank`, `dense_rank`, `ema`, and `delta`.
+- **Analytics stdlib** - `arg_max`, `top_k`, `value_counts`, `entropy`,
+  calendar functions, URL/IP helpers, JSON path helpers, and array reducers.
+- **Operational modes** - stdin/file mode, local server, Web UI, REST API,
+  cluster mode, S3 tiering, syslog, and shipper-compatible ingest.
+- **Sigma support** - convert and run Sigma detections as LynxFlow queries; see
+  [docs/site/docs/sigma](docs/site/docs/sigma/index.md).
 
 ## Comparison
 
-|                   | lynxdb           | Splunk        | Elasticsearch | Loki               |
-|-------------------|------------------|---------------|---------------|--------------------|
-| Deployment        | Single binary    | Standalone    | Cluster       | Single binary      |
-| Dependencies      | None             | --            | JVM           | Object storage     |
-| Query language    | Lynx Flow / SPL2 | SPL           | Lucene/ES\|QL | LogQL              |
-| Pipe mode         | Yes              | --            | --            | --                 |
-| Full-text index   | FST + bitmaps    | tsidx         | Lucene        | Label index only   |
-| Memory (idle)     | ~50 MB           | ~12 GB        | ~1 GB+        | ~256 MB            |
-| License           | Apache 2.0       | Commercial    | ELv2 / AGPL   | AGPL               |
+| | LynxDB | Splunk | Elasticsearch | Loki | ClickHouse |
+|---|---|---|---|---|---|
+| Deployment | Single binary | Standalone or distributed | Single node or cluster | Single binary or microservices | Single binary or cluster |
+| Dependencies | None | - | JVM | Object storage in production | Keeper for replication |
+| Query language | LynxFlow | SPL | Lucene DSL / ES\|QL | LogQL | SQL |
+| Pipe mode | Yes | No | No | No | Yes |
+| Schema | Schema-on-read | Schema-on-read | Schema-on-write | Labels + line | Schema-on-write |
+| Full-text index | FST + bitmaps | tsidx | Lucene | Label index only | Token bloom filters |
+| License | Apache 2.0 | Commercial | ELv2 / AGPL | AGPL | Apache 2.0 |
+
+## CLI Map
+
+```text
+lynxdb query <query>         run a LynxFlow query
+lynxdb server                start the HTTP server and Web UI
+lynxdb ingest <file>         ingest local files into a server
+lynxdb tail <query>          live tail query results
+lynxdb shell                 interactive REPL
+lynxdb explain <query>       show the logical/physical query plan
+lynxdb fields <query>        inspect fields for matching events
+lynxdb mv create/list        manage materialized views
+lynxdb config                inspect and edit configuration
+lynxdb status                show server status
+lynxdb demo                  generate sample data
+lynxdb grammar               print the LynxFlow grammar/cookbook
+```
+
+Run `lynxdb <command> --help` or see [docs/site/docs/cli/overview.md](docs/site/docs/cli/overview.md)
+for the full command map.
 
 ## Configuration
 
-Zero config needed - sensible defaults for everything. Customize in `~/.config/lynxdb/config.yaml`.
-The values below are the defaults - override only what you need:
+Zero config is required for pipe mode and local use. Server defaults are
+documented in [docs/site/docs/configuration](docs/site/docs/configuration/overview.md).
 
-```yaml
-listen: "localhost:3100"
-data_dir: "~/.local/share/lynxdb"   # $XDG_DATA_HOME/lynxdb if set
-retention: 7d
-log_level: info
-
-storage:
-  compression: lz4                  # lz4 | zstd
-  cache_max_bytes: 1gb
-```
-
-Cascade: CLI flags -> `LYNXDB_*` env vars -> config file -> defaults.
-
-<details>
-<summary>Full configuration reference (defaults)</summary>
-
-```yaml
-listen: "localhost:3100"
-data_dir: "~/.local/share/lynxdb"   # $XDG_DATA_HOME/lynxdb if set
-retention: 7d
-log_level: info
-
-storage:
-  compression: lz4          # lz4 | zstd
-  flush_threshold: 512mb
-  cache_max_bytes: 1gb
-  s3_bucket: ""             # no default - set to enable S3 tiering
-  s3_region: us-east-1
-
-query:
-  max_concurrent: 32
-  max_query_runtime: 5m
-  default_result_limit: 1000
-
-ingest:
-  max_body_size: 100mb
-```
-
-`lynxdb config` prints the effective config with the source of each value;
-`lynxdb config init` writes a fully commented template with every setting.
-
-</details>
-
-## CLI reference
-
-```
-lynxdb server                start server
-lynxdb query <query>         run a query (Lynx Flow or SPL2)
-lynxdb tail <query>          live tail
-lynxdb ingest <file>         ingest a file
-lynxdb shell                 interactive REPL (tab completion, /help, PgUp scrollback)
-lynxdb count <query>         quick event count
-lynxdb sample N <query>      peek at data shape
-lynxdb watch <query> -i 5s   periodic refresh with deltas
-lynxdb diff <query> -p 1h    this period vs previous period
-lynxdb explain <query>       query plan without executing
-lynxdb mv create/list        materialized views
-lynxdb status                server metrics
-lynxdb bench                 benchmark
-lynxdb demo                  generate sample data
-```
-
-## Build from source
+Common overrides:
 
 ```bash
-git clone https://github.com/lynxbase/lynxdb && cd lynxdb
-go build -o lynxdb ./cmd/lynxdb/
-go test ./...
+lynxdb server --data-dir /var/lib/lynxdb --addr 0.0.0.0:3100
+LYNXDB_SERVER=http://localhost:3100 lynxdb query 'from main | stats count()'
+lynxdb config init
 ```
+
+## Documentation
+
+- [What is LynxDB?](docs/site/docs/intro.md)
+- [Quick Start](docs/site/docs/getting-started/quickstart.md)
+- [LynxFlow operators](docs/site/docs/lynxflow/operators/from.md)
+- [LynxFlow functions](docs/site/docs/lynxflow/functions.md)
+- [LynxFlow aggregates](docs/site/docs/lynxflow/aggregates.md)
+- [RFC-002 language specification](docs/grammar/RFC-002.md)
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md)
+Contributor workflow and PR guidelines live in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Feedback
+
 - [Issues](https://github.com/lynxbase/lynxdb/issues)
+- [Discord](https://discord.gg/RgggCFdgWK)
 
 ---
 
-LynxDB wouldn't exist without the projects that inspired it:
+LynxDB would not exist without the projects that inspired it:
 
-- **[Splunk](https://www.splunk.com/)** - for creating SPL, the most expressive log query language. LynxDB's SPL2 compatibility and Lynx Flow design owe everything to Splunk's query model.
-- **[ClickHouse](https://clickhouse.com/)** - for proving that a single-binary analytical database with incredible performance is possible. The MergeTree architecture deeply influenced LynxDB's storage engine design.
-- **[VictoriaLogs](https://docs.victoriametrics.com/victorialogs/)** - for showing that log analytics can be resource-efficient and operationally simple.
-- **`grep`, `awk`, `sed`** - for the Unix philosophy of composable tools and piping. LynxDB's pipe mode is a direct homage to this tradition.
-
-This project started in early 2025 out of a deep appreciation for these tools and a desire to bring Splunk-level analytics to everyone in a single, lightweight binary.
-
+- **[Splunk](https://www.splunk.com/)** - for the pipe-first log analytics model
+  that inspired LynxFlow.
+- **[ClickHouse](https://clickhouse.com/)** - for showing how much analytical
+  performance a focused engine can deliver.
+- **[VictoriaLogs](https://docs.victoriametrics.com/victorialogs/)** - for
+  proving that operational log storage can be simple and efficient.
+- **`grep`, `awk`, `sed`, `jq`** - for the Unix style of composable data tools.
 
 ## Star History
 

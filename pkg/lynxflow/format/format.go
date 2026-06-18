@@ -454,7 +454,10 @@ func formatPipelineInline(b *strings.Builder, p *ast.Pipeline) {
 
 func formatFromStage(b *strings.Builder, f *ast.FromStage) {
 	b.WriteString("from")
-	if len(f.Sources) > 0 || len(f.TimeRanges) > 0 || f.SugarTerms != nil {
+	// Sources and ranges need a separator after "from"; sugar terms supply
+	// their own leading space below, so counting them here double-spaces a
+	// sourceless search like "A" into "from  A".
+	if len(f.Sources) > 0 || len(f.TimeRanges) > 0 {
 		b.WriteByte(' ')
 	}
 	for i, src := range f.Sources {

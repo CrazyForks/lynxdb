@@ -174,8 +174,10 @@ func TestE2E_JsonFunctions(t *testing.T) {
 	}
 	ingestJSONEvents(t, h, "json_fn_idx", events)
 
-	// Count events where _raw is valid JSON (from_json returns null for invalid JSON).
-	r := h.MustQuery(`from json_fn_idx | extend parsed = from_json(_raw) | where exists(parsed) | stats count() as count`)
+	// Count events where _raw is valid JSON. from_json yields null for invalid
+	// JSON, and extend keeps that column present, so exists() now matches all
+	// rows; filter on the value with not is_null instead.
+	r := h.MustQuery(`from json_fn_idx | extend parsed = from_json(_raw) | where not is_null(parsed) | stats count() as count`)
 	requireAggValue(t, r, "count", 2)
 }
 

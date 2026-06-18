@@ -1497,6 +1497,8 @@ func (d *desugarer) cloneStage(s ast.Stage) ast.Stage {
 		out.Head = &ast.IntPayload{N: s.Head.N, Pos: s.Head.Pos}
 	case s.Tail != nil:
 		out.Tail = &ast.IntPayload{N: s.Tail.N, Pos: s.Tail.Pos}
+	case s.Offset != nil:
+		out.Offset = &ast.IntPayload{N: s.Offset.N, Pos: s.Offset.Pos}
 	case s.Dedup != nil:
 		out.Dedup = &ast.DedupPayload{N: s.Dedup.N, Fields: cloneExprs(s.Dedup.Fields)}
 	case s.Sample != nil:

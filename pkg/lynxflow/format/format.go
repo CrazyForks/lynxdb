@@ -705,6 +705,9 @@ func formatStage(b *strings.Builder, s *ast.Stage) {
 	case s.Tail != nil:
 		b.WriteByte(' ')
 		b.WriteString(strconv.FormatInt(s.Tail.N, 10))
+	case s.Offset != nil:
+		b.WriteByte(' ')
+		b.WriteString(strconv.FormatInt(s.Offset.N, 10))
 	case s.Dedup != nil:
 		b.WriteByte(' ')
 		formatDedupPayload(b, s.Dedup)

@@ -211,6 +211,8 @@ func commandName(n logical.Node) string {
 			return "tail"
 		}
 		return "head"
+	case *logical.Offset:
+		return "offset"
 	case *logical.Dedup:
 		return "dedup"
 	case *logical.Parse:
@@ -423,7 +425,7 @@ func buildPipelineStage(node logical.Node, prevFields []string, catalogFields []
 			FieldsOut:   outSchema,
 		}
 
-	case *logical.Sort, *logical.Limit, *logical.Dedup:
+	case *logical.Sort, *logical.Limit, *logical.Offset, *logical.Dedup:
 		// These do not change the field set.
 		return PipelineStage{
 			Command:     name,

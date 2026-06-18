@@ -328,6 +328,7 @@ type Stage struct {
 	Sort        *SortPayload
 	Head        *IntPayload
 	Tail        *IntPayload
+	Offset      *IntPayload
 	Dedup       *DedupPayload
 	Sample      *SamplePayload
 	Keep        *FieldPatternsPayload
@@ -406,6 +407,9 @@ func (s *Stage) String() string {
 	case s.Tail != nil:
 		b.WriteByte(' ')
 		b.WriteString(fmt.Sprintf("%d", s.Tail.N))
+	case s.Offset != nil:
+		b.WriteByte(' ')
+		b.WriteString(fmt.Sprintf("%d", s.Offset.N))
 	case s.Dedup != nil:
 		b.WriteByte(' ')
 		b.WriteString(s.Dedup.String())

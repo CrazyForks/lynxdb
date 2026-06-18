@@ -737,6 +737,8 @@ func detectNodeResultType(n logical.Node) string {
 		return "aggregate"
 	case *logical.Limit:
 		return detectNodeResultType(nd.Input)
+	case *logical.Offset:
+		return detectNodeResultType(nd.Input)
 	case *logical.Sort:
 		return detectNodeResultType(nd.Input)
 	case *logical.Project:

@@ -299,6 +299,14 @@ func (k Kind) IsKeyword() bool {
 	return k >= KwFrom && k <= KwExcept
 }
 
+// IsKeyword reports whether s is a reserved keyword (e.g. a stage-starting
+// word like "stats" or "sort"). Contextual idents and sugar stage names that
+// lex as plain identifiers (count, sample, hist, ...) return false.
+func IsKeyword(s string) bool {
+	k, ok := keywords[s]
+	return ok && k.IsKeyword()
+}
+
 // keywords maps lowercase keyword text to the corresponding Kind.
 // Built once at init-free package load time via a variable initializer.
 var keywords = func() map[string]Kind {

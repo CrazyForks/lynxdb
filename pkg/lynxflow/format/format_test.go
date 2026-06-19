@@ -150,6 +150,25 @@ func TestFormat_SourcelessSearchTerm(t *testing.T) {
 	assertFixpoint(t, "A")
 }
 
+// TestFixpoint_SearchSugarRoundtrip covers freehand search and sourceless
+// stages that previously broke the format round-trip: a sourceless search was
+// wrapped in "from" (eating the first term as a source), a sourceless sugar
+// stage dropped its leading pipe (reparsing as freehand), and numeric-led
+// value runs were split (A=0A -> A=0 and A).
+func TestFixpoint_SearchSugarRoundtrip(t *testing.T) {
+	for _, input := range []string{
+		"*A",
+		`*A00000("0000")`,
+		"error timeout",
+		"|Count BY A",
+		`A A=\0A`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			assertFixpoint(t, input)
+		})
+	}
+}
+
 // 2. Expression fixpoint
 
 func TestFixpoint_Expr(t *testing.T) {

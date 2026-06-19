@@ -612,6 +612,13 @@ func isParserIdentContinue(b byte) bool {
 	return b == '_' || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
 }
 
+// isSearchRunGlue reports whether byte b, immediately adjacent to a value
+// literal, continues a bare-word/glob run (ident chars, glob metacharacters,
+// backslash escape, or dash) rather than starting a new search term.
+func isSearchRunGlue(b byte) bool {
+	return isParserIdentContinue(b) || b == '*' || b == '?' || b == '\\' || b == '-'
+}
+
 // parseSearchSugar parses search sugar terms with standard precedence:
 // not > and > or. Juxtaposition is implicit 'and'.
 func (p *parser) parseSearchSugar() ast.SearchExpr {
@@ -868,18 +875,27 @@ func (p *parser) parseSearchValue() ast.Expr {
 		return p.parseRawStringLiteral()
 	}
 
-	// Integer
-	if p.at(lexer.Int) {
-		return p.parseIntLiteral()
-	}
-
-	// Float
-	if p.at(lexer.Float) {
-		return p.parseFloatLiteral()
-	}
-
-	// Duration
-	if p.at(lexer.Duration) {
+	// Integer, float, or duration. A numeric/duration literal glued to a
+	// following run token with no space (0A, 5h-x) is actually a bare/glob
+	// value, not a literal; reassemble it like an ident run so it round-trips
+	// through the formatter (otherwise A=0A reparses as A=0 and A).
+	if p.at(lexer.Int) || p.at(lexer.Float) || p.at(lexer.Duration) {
+		if end := p.cur.End; end < len(p.src) && isSearchRunGlue(p.src[end]) {
+			tok := p.cur
+			p.advance()
+			run := p.readAdjacentRun(tok.Text, tok.End)
+			pos := ast.Span{Start: start, End: run.end}
+			if run.isGlob {
+				return &ast.SearchGlobValue{Pattern: run.pattern, Pos: pos}
+			}
+			return &ast.Ident{Name: unescapeRun(run.pattern), Pos: pos}
+		}
+		if p.at(lexer.Int) {
+			return p.parseIntLiteral()
+		}
+		if p.at(lexer.Float) {
+			return p.parseFloatLiteral()
+		}
 		return p.parseDurationLiteral()
 	}
 

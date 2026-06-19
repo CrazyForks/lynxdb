@@ -427,7 +427,11 @@ func formatPipeline(b *strings.Builder, p *ast.Pipeline, afterLets bool) {
 	}
 
 	for i, s := range p.Stages {
-		if multiLine {
+		// A sourceless pipeline whose first stage lexes as a plain identifier
+		// (count, sample, hist, ...) needs a leading | so it reparses as a
+		// stage rather than as a freehand search. Keyword stages (head, sort,
+		// ...) reparse as stages on their own and keep the bare form.
+		if multiLine || (i == 0 && !hasSource && !lexer.IsKeyword(strings.ToLower(s.Name))) {
 			b.WriteString("| ")
 		}
 		formatStage(b, &s)
@@ -443,8 +447,13 @@ func formatPipelineInline(b *strings.Builder, p *ast.Pipeline) {
 		formatFromStage(b, p.Source)
 	}
 	for i, s := range p.Stages {
-		if p.Source != nil || i > 0 {
+		switch {
+		case p.Source != nil || i > 0:
 			b.WriteString(" | ")
+		case !lexer.IsKeyword(strings.ToLower(s.Name)):
+			// Sourceless first stage that lexes as a plain identifier needs a
+			// leading | so it does not reparse as a freehand search.
+			b.WriteString("| ")
 		}
 		formatStage(b, &s)
 	}
@@ -453,10 +462,18 @@ func formatPipelineInline(b *strings.Builder, p *ast.Pipeline) {
 // From stage
 
 func formatFromStage(b *strings.Builder, f *ast.FromStage) {
+	// A freehand search (no explicit source, no range) is bare search sugar.
+	// Wrapping it in "from" would reparse the first term as a source name,
+	// which is both wrong (a search term becomes a source) and breaks the
+	// format round-trip for globs/phrases (e.g. *A -> "from * A").
+	if len(f.Sources) == 0 && len(f.TimeRanges) == 0 && f.SugarTerms != nil {
+		formatSearchExpr(b, f.SugarTerms)
+		return
+	}
+
 	b.WriteString("from")
 	// Sources and ranges need a separator after "from"; sugar terms supply
-	// their own leading space below, so counting them here double-spaces a
-	// sourceless search like "A" into "from  A".
+	// their own leading space below.
 	if len(f.Sources) > 0 || len(f.TimeRanges) > 0 {
 		b.WriteByte(' ')
 	}

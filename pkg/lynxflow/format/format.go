@@ -634,13 +634,19 @@ func formatSearchNot(b *strings.Builder, se ast.SearchExpr) {
 func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 	switch s := se.(type) {
 	case *ast.SearchBareWord:
-		if s.Glob {
+		switch {
+		case s.Glob:
 			// Word is the glob pattern with escapes preserved — print as-is.
 			b.WriteString(s.Word)
-		} else {
+		case isCleanBareWord(s.Word):
 			// Word is literal text; re-escape glob metacharacters so the
 			// formatted query reparses with the same (non-glob) semantics.
 			b.WriteString(escapeGlobMeta(s.Word))
+		default:
+			// Word would re-lex as something other than a bare term (a keyword
+			// like "or", a number, ...). Emit it as a quoted phrase, which is
+			// semantically the same single-token search and always round-trips.
+			b.WriteString(quoteString(s.Word))
 		}
 	case *ast.SearchPhrase:
 		b.WriteString(s.Raw)
@@ -648,7 +654,7 @@ func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 		writeFieldName(b, s.Key)
 		b.WriteString(s.Op)
 		if s.Value != nil {
-			formatExpr(b, s.Value, precTop)
+			formatSearchValue(b, s.Value)
 		}
 	case *ast.SearchIn:
 		writeFieldName(b, s.Key)
@@ -657,7 +663,7 @@ func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			formatExpr(b, v, precTop)
+			formatSearchValue(b, v)
 		}
 		b.WriteByte(')')
 	case *ast.SearchBinary:
@@ -677,6 +683,61 @@ func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 
 // escapeGlobMeta backslash-escapes glob metacharacters (* ? \) so a literal
 // bare word survives a format→parse round trip without becoming a glob.
+// formatSearchValue formats a search-sugar value. A bare (non-backtick) Ident
+// holds the unescaped literal text of an adjacent run, so glob metacharacters
+// and backslashes must be re-escaped to reparse as the same literal value
+// (e.g. a value of `\0` must format as `\\0`, not `\0`). Other value kinds
+// (literals, glob values, backtick idents) format through formatExpr.
+func formatSearchValue(b *strings.Builder, e ast.Expr) {
+	if id, ok := e.(*ast.Ident); ok && !id.Quoted {
+		if isCleanBareWord(id.Name) {
+			b.WriteString(escapeGlobMeta(id.Name))
+		} else {
+			b.WriteString(quoteString(id.Name))
+		}
+		return
+	}
+	formatExpr(b, e, precTop)
+}
+
+// isCleanBareWord reports whether w can be formatted as a bare search term
+// (re-escaped via escapeGlobMeta) and still round-trip. It must start with a
+// letter or underscore and contain only identifier characters, dashes, or glob
+// metacharacters/backslashes (escapeGlobMeta re-escapes the latter, preserving
+// SearchBareWord semantics). Its leading identifier run must not be a reserved
+// keyword or boolean/null literal: the lexer tokenises that run on its own and
+// canonicalises keyword case, so "or" would come back as the OR operator and
+// "tOp" as "top". Words failing this are emitted as a quoted phrase instead.
+func isCleanBareWord(w string) bool {
+	if w == "" {
+		return false
+	}
+	if c := w[0]; !(c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+		return false
+	}
+	for i := 1; i < len(w); i++ {
+		b := w[i]
+		switch {
+		case b == '_' || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9'):
+		case b == '-' || b == '*' || b == '?' || b == '\\':
+		default:
+			return false
+		}
+	}
+	// The leading identifier run is lexed as its own token; if it is a keyword
+	// or literal the bare form would not round-trip.
+	j := 0
+	for j < len(w) && (w[j] == '_' || (w[j] >= 'A' && w[j] <= 'Z') || (w[j] >= 'a' && w[j] <= 'z') || (w[j] >= '0' && w[j] <= '9')) {
+		j++
+	}
+	head := strings.ToLower(w[:j])
+	switch head {
+	case "true", "false", "null":
+		return false
+	}
+	return !lexer.IsKeyword(head)
+}
+
 func escapeGlobMeta(s string) string {
 	if !strings.ContainsAny(s, `*?\`) {
 		return s

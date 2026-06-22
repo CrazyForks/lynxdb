@@ -7,7 +7,7 @@ sidebar_label: "from"
 
 **Class:** `source` &middot; **Streaming:** row-at-a-time
 
-Scan stage. Only valid first in a pipeline. Accepts bracket time ranges and search-sugar terms (RFC-002 §3.1).
+Scan stage. Only valid first in a pipeline. Accepts bracket time ranges, @duration shorthand, and search-sugar terms (RFC-002 §3.1).
 
 ## Signature
 
@@ -24,7 +24,7 @@ Scan stage. Only valid first in a pipeline. Accepts bracket time ranges and sear
 ## Examples
 
 ```
-from nginx[-1h] timeout status>=500
+from nginx@1h timeout status>=500
 ```
 
 ```

@@ -180,6 +180,8 @@ func (b *builder) buildNode(n logical.Node) (pipeline.Iterator, error) {
 		iter, err = b.buildSort(nd)
 	case *logical.Limit:
 		iter, err = b.buildLimit(nd)
+	case *logical.Offset:
+		iter, err = b.buildOffset(nd)
 	case *logical.Sample:
 		iter, err = b.buildSample(nd)
 	case *logical.Gapfill:
@@ -1071,6 +1073,14 @@ func (b *builder) buildLimit(nd *logical.Limit) (pipeline.Iterator, error) {
 		return pipeline.NewTailIteratorWithBudget(child, int(nd.N), b.opts.batchSize(), acct), nil
 	}
 	return pipeline.NewLimitIterator(child, int(nd.N)), nil
+}
+
+func (b *builder) buildOffset(nd *logical.Offset) (pipeline.Iterator, error) {
+	child, err := b.buildChild(nd)
+	if err != nil {
+		return nil, err
+	}
+	return pipeline.NewOffsetIterator(child, int(nd.N)), nil
 }
 
 func (b *builder) buildGapfill(nd *logical.Gapfill) (pipeline.Iterator, error) {

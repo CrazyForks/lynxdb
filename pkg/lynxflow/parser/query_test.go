@@ -166,6 +166,66 @@ func TestFreehandSearchRejectsLeadingComparison(t *testing.T) {
 	}
 }
 
+func TestParseSourceRelativeRangeShorthand(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		formatted string
+	}{
+		{
+			name:      "last hour",
+			input:     `from app@1h | stats count()`,
+			formatted: "from app[-1h]\n| stats count()",
+		},
+		{
+			name:      "with snap suffix",
+			input:     `from app@1h[@h] | stats count()`,
+			formatted: "from app[-1h][@h]\n| stats count()",
+		},
+		{
+			name:      "with search sugar",
+			input:     `from nginx@15m timeout status>=500`,
+			formatted: `from nginx[-15m] timeout and status>=500`,
+		},
+		{
+			name:      "source list",
+			input:     `from app, auth@30m | head 1`,
+			formatted: "from app, auth[-30m]\n| head 1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, diags := Parse(tt.input)
+			if len(diags) > 0 {
+				t.Fatalf("Parse returned diagnostics: %v", diags)
+			}
+			if q.Pipeline.Source == nil {
+				t.Fatal("expected source")
+			}
+			if len(q.Pipeline.Source.TimeRanges) != 1 {
+				t.Fatalf("time ranges = %d, want 1", len(q.Pipeline.Source.TimeRanges))
+			}
+			if got := format.Query(q); got != tt.formatted {
+				t.Fatalf("format.Query() = %q, want %q", got, tt.formatted)
+			}
+		})
+	}
+}
+
+func TestParseSourceRelativeRangeShorthandRejectsSnapUnit(t *testing.T) {
+	_, diags := Parse(`from app@h | stats count()`)
+	if len(diags) == 0 {
+		t.Fatal("expected diagnostic")
+	}
+	if diags[0].Code != CodeStageError {
+		t.Fatalf("diag code: got %s, want %s", diags[0].Code, CodeStageError)
+	}
+	if !strings.Contains(diags[0].Message, "requires a duration") {
+		t.Fatalf("diag message = %q", diags[0].Message)
+	}
+}
+
 func TestParseJoinAsofTolerance(t *testing.T) {
 	q, diags := Parse(`from app | join type=asof on host, service tolerance=30s with [from deploys]`)
 	if len(diags) > 0 {
@@ -284,6 +344,26 @@ func TestGoldenStructure(t *testing.T) {
 			name:  "head",
 			input: `| head 10`,
 			want:  `head 10`,
+		},
+		{
+			name:  "limit_alias_canonicalizes_to_head",
+			input: `| limit 20`,
+			want:  `head 20`,
+		},
+		{
+			name:  "offset",
+			input: `| offset 40`,
+			want:  `offset 40`,
+		},
+		{
+			name:  "order_by_desc_canonicalizes_to_sort",
+			input: `| order by count desc`,
+			want:  `sort -count`,
+		},
+		{
+			name:  "order_by_mixed_directions",
+			input: `| order by service asc, count desc`,
+			want:  `sort service, -count`,
 		},
 		{
 			name:  "dedup_n",
@@ -473,7 +553,6 @@ func TestErrorRecovery_KilledSpellings(t *testing.T) {
 		{`| rex field=_raw "pattern"`, "rex", "parse regex"},
 		{`| fillnull value="N/A" field1`, "fillnull", "extend"},
 		{`| take 10`, "take", "head"},
-		{`| limit 10`, "limit", "head"},
 		{`| omit _raw`, "omit", "drop"},
 		{`| enrich avg(x) by service`, "enrich", "eventstats"},
 		{`| running window=3 avg(x)`, "running", "streamstats"},
@@ -487,7 +566,6 @@ func TestErrorRecovery_KilledSpellings(t *testing.T) {
 		{`| select service, level`, "select", "keep"},
 		{`| filter status >= 500`, "filter", "where"},
 		{`| qualify rn <= 3`, "qualify", "streamstats"},
-		{`| order -count`, "order", "sort"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.killedName, func(t *testing.T) {
@@ -503,6 +581,42 @@ func TestErrorRecovery_KilledSpellings(t *testing.T) {
 				for _, d := range diags {
 					t.Logf("  [%s] %s => %s", d.Code, d.Message, d.Suggestion)
 				}
+			}
+		})
+	}
+}
+
+func TestParseStageAliases(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		formatted string
+	}{
+		{
+			name:      "limit",
+			input:     `from app | limit 10`,
+			formatted: "from app\n| head 10",
+		},
+		{
+			name:      "order desc",
+			input:     `from app | order by count desc`,
+			formatted: "from app\n| sort -count",
+		},
+		{
+			name:      "order asc desc",
+			input:     `from app | order by service asc, count desc`,
+			formatted: "from app\n| sort service, -count",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			q, diags := Parse(tt.input)
+			if len(diags) > 0 {
+				t.Fatalf("Parse returned diagnostics: %v", diags)
+			}
+			if got := format.Query(q); got != tt.formatted {
+				t.Fatalf("format.Query() = %q, want %q", got, tt.formatted)
 			}
 		})
 	}

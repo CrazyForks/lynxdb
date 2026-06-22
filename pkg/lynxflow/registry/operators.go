@@ -8,8 +8,8 @@ var operators = []Operator{
 		Positionals: []Positional{
 			{Name: "sources", Type: ArgFieldPatterns, Required: true, Doc: "source names, globs, !-excludes, *, $cte refs, or inline row objects; optional [range] suffix; optional trailing search-sugar terms"},
 		},
-		Doc:      "Scan stage. Only valid first in a pipeline. Accepts bracket time ranges and search-sugar terms (RFC-002 §3.1).",
-		Examples: []string{`from nginx[-1h] timeout status>=500`, `from logs*,!logs-debug*[-7d..-1d]`, `from $errs`, `from [{level: "ERROR", w: 3}, {level: "WARN", w: 2}]`},
+		Doc:      "Scan stage. Only valid first in a pipeline. Accepts bracket time ranges, @duration shorthand, and search-sugar terms (RFC-002 §3.1).",
+		Examples: []string{`from nginx@1h timeout status>=500`, `from logs*,!logs-debug*[-7d..-1d]`, `from $errs`, `from [{level: "ERROR", w: 3}, {level: "WARN", w: 2}]`},
 	},
 
 	// core
@@ -87,16 +87,36 @@ var operators = []Operator{
 		Examples:    []string{`sort -count, service`, `sort *`, `sort -*`},
 	},
 	{
+		Name: "order", Class: ClassCore, Streaming: StreamingAcc,
+		Positionals: []Positional{{Name: "keys", Type: ArgSortList, Required: true, Doc: "SQL-style keys after by: f1 [asc|desc], f2 [asc|desc]"}},
+		Syntax:      "order by <field> [asc|desc], …",
+		Grammar:     "'order' 'by' field [('asc'|'desc')] {',' field [('asc'|'desc')]}",
+		Doc:         "SQL-style ordering. Alias for sort: `order by f desc` is `sort -f`.",
+		Examples:    []string{`order by count desc`, `order by service asc, count desc`},
+	},
+	{
 		Name: "head", Class: ClassCore, Streaming: StreamingRow,
 		Positionals: []Positional{{Name: "n", Type: ArgInt, Required: true}},
 		Doc:         "First N rows (TopK pushdown after sort).",
 		Examples:    []string{`head 10`},
 	},
 	{
+		Name: "limit", Class: ClassCore, Streaming: StreamingRow,
+		Positionals: []Positional{{Name: "n", Type: ArgInt, Required: true}},
+		Doc:         "First N rows. SQL-style alias for head.",
+		Examples:    []string{`limit 20`},
+	},
+	{
 		Name: "tail", Class: ClassCore, Streaming: StreamingAcc,
 		Positionals: []Positional{{Name: "n", Type: ArgInt, Required: true}},
 		Doc:         "Last N rows.",
 		Examples:    []string{`tail 5`},
+	},
+	{
+		Name: "offset", Class: ClassCore, Streaming: StreamingRow,
+		Positionals: []Positional{{Name: "n", Type: ArgInt, Required: true}},
+		Doc:         "Skip the first N rows. Pair with head/limit for pagination after a sort.",
+		Examples:    []string{`sort -count | offset 40 | limit 20`},
 	},
 	{
 		Name: "dedup", Class: ClassCore, Streaming: StreamingRow,

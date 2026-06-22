@@ -209,6 +209,11 @@ func (p *parser) parseFromStage() ast.FromStage {
 		})
 	}
 
+	if p.at(lexer.At) {
+		tr := p.parseRelativeRangeShorthand()
+		from.TimeRanges = append(from.TimeRanges, tr)
+	}
+
 	for p.at(lexer.LBracket) {
 		tr := p.parseTimeRange()
 		from.TimeRanges = append(from.TimeRanges, tr)
@@ -508,6 +513,63 @@ func (p *parser) parseTimeRange() ast.TimeRange {
 	return tr
 }
 
+func (p *parser) parseRelativeRangeShorthand() ast.TimeRange {
+	start := p.cur.Start
+	p.advance() // consume @
+
+	tr := ast.TimeRange{Pos: ast.Span{Start: start}}
+	if !p.at(lexer.Duration) {
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    "source time shorthand requires a duration, like @1h",
+			Span:       ast.Span{Start: start, End: p.cur.End},
+			Suggestion: "write from source@1h for the last hour, or from source[@h] to snap to the hour",
+		})
+		tr.Pos.End = p.prev.End
+		return tr
+	}
+
+	duration := p.parseDurationLiteral()
+	tr.Start = &ast.Unary{
+		Op:      ast.OpNeg,
+		Operand: duration,
+		Pos:     ast.Span{Start: start, End: duration.ExprSpan().End},
+	}
+	tr.Pos.End = duration.ExprSpan().End
+
+	p.parseOptionalSnapSuffix(&tr)
+	return tr
+}
+
+func (p *parser) parseOptionalSnapSuffix(tr *ast.TimeRange) {
+	if !p.isSnapSuffixStart() {
+		return
+	}
+	p.advance() // consume [
+	if p.at(lexer.At) {
+		snapStart := p.cur.Start
+		p.advance()
+		if n, ok := p.identLike(); ok {
+			tr.Snap = "@" + n
+			tr.SnapSpan = ast.Span{Start: snapStart, End: p.cur.End}
+			p.advance()
+		} else if p.at(lexer.Duration) {
+			tr.Snap = "@" + p.cur.Text
+			tr.SnapSpan = ast.Span{Start: snapStart, End: p.cur.End}
+			p.advance()
+		}
+	}
+	p.expect(lexer.RBracket)
+}
+
+func (p *parser) isSnapSuffixStart() bool {
+	if !p.at(lexer.LBracket) {
+		return false
+	}
+	pos := skipASCIIWhitespace(p.src, p.cur.End)
+	return pos < len(p.src) && p.src[pos] == '@'
+}
+
 // Search sugar parsing (§3.1)
 
 func (p *parser) isSearchSugarStart() bool {
@@ -548,6 +610,13 @@ func (p *parser) startsFreehandSearch() bool {
 
 func isParserIdentContinue(b byte) bool {
 	return b == '_' || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9')
+}
+
+// isSearchRunGlue reports whether byte b, immediately adjacent to a value
+// literal, continues a bare-word/glob run (ident chars, glob metacharacters,
+// backslash escape, or dash) rather than starting a new search term.
+func isSearchRunGlue(b byte) bool {
+	return isParserIdentContinue(b) || b == '*' || b == '?' || b == '\\' || b == '-'
 }
 
 // parseSearchSugar parses search sugar terms with standard precedence:
@@ -806,18 +875,27 @@ func (p *parser) parseSearchValue() ast.Expr {
 		return p.parseRawStringLiteral()
 	}
 
-	// Integer
-	if p.at(lexer.Int) {
-		return p.parseIntLiteral()
-	}
-
-	// Float
-	if p.at(lexer.Float) {
-		return p.parseFloatLiteral()
-	}
-
-	// Duration
-	if p.at(lexer.Duration) {
+	// Integer, float, or duration. A numeric/duration literal glued to a
+	// following run token with no space (0A, 5h-x) is actually a bare/glob
+	// value, not a literal; reassemble it like an ident run so it round-trips
+	// through the formatter (otherwise A=0A reparses as A=0 and A).
+	if p.at(lexer.Int) || p.at(lexer.Float) || p.at(lexer.Duration) {
+		if end := p.cur.End; end < len(p.src) && isSearchRunGlue(p.src[end]) {
+			tok := p.cur
+			p.advance()
+			run := p.readAdjacentRun(tok.Text, tok.End)
+			pos := ast.Span{Start: start, End: run.end}
+			if run.isGlob {
+				return &ast.SearchGlobValue{Pattern: run.pattern, Pos: pos}
+			}
+			return &ast.Ident{Name: unescapeRun(run.pattern), Pos: pos}
+		}
+		if p.at(lexer.Int) {
+			return p.parseIntLiteral()
+		}
+		if p.at(lexer.Float) {
+			return p.parseFloatLiteral()
+		}
 		return p.parseDurationLiteral()
 	}
 
@@ -1014,6 +1092,17 @@ func (p *parser) parseStage() ast.Stage {
 	// Use a recovery wrapper for each stage body parser.
 	p.parseStageBody(&stage)
 
+	// Canonicalize aliases to their base stage so every downstream pass
+	// (sema, lint, lowering, optimizer, physical) sees a single form.
+	// limit ≡ head, order ≡ sort. They are recognized as stages via the
+	// registry but carry identical semantics to the base operator.
+	switch stage.Name {
+	case "limit":
+		stage.Name = "head"
+	case "order":
+		stage.Name = "sort"
+	}
+
 	stage.Pos.End = p.prev.End
 	return stage
 }
@@ -1043,10 +1132,16 @@ func (p *parser) parseStageBody(s *ast.Stage) {
 		p.parseStreamstatsBody(s)
 	case "sort":
 		p.parseSortBody(s)
-	case "head":
+	case "order":
+		// SQL-style alias for sort; canonicalized to "sort" after parsing.
+		p.parseOrderBody(s)
+	case "head", "limit":
+		// limit is an alias for head; canonicalized to "head" after parsing.
 		p.parseIntBody(s, true)
 	case "tail":
 		p.parseIntBody(s, false)
+	case "offset":
+		p.parseOffsetBody(s)
 	case "dedup":
 		p.parseDedupBody(s)
 	case "sample":
@@ -1306,6 +1401,62 @@ func (p *parser) parseSortKey() ast.SortKey {
 	}
 }
 
+// parseOrderBody parses the SQL-style ordering alias for sort:
+//
+//	order by f1 [asc|desc], f2 [asc|desc], ...
+//
+// It fills s.Sort, and parseStage rewrites the stage name to "sort" so the
+// rest of the pipeline treats it identically. `by` is required (order by f
+// desc ≡ sort -f).
+func (p *parser) parseOrderBody(s *ast.Stage) {
+	if !p.consume(lexer.KwBy) {
+		p.diags = append(p.diags, Diag{
+			Code:       CodeStageError,
+			Message:    "order requires 'by': order by <field> [asc|desc], …",
+			Span:       p.curSpan(),
+			Suggestion: "order by field desc (or use the prefix form: sort -field)",
+		})
+		s.HasError = true
+	}
+
+	var keys []ast.SortKey
+	for {
+		k := p.parseOrderKey()
+		keys = append(keys, k)
+		if !p.consume(lexer.Comma) {
+			break
+		}
+		if p.atStageBoundary() {
+			break
+		}
+	}
+	s.Sort = &ast.SortPayload{Keys: keys}
+}
+
+// parseOrderKey parses a single SQL ordering term: <field> [asc|desc].
+// Direction defaults to ascending; desc maps to a descending sort key.
+func (p *parser) parseOrderKey() ast.SortKey {
+	start := p.cur.Start
+	field := p.parseExprSafe()
+	desc := false
+
+	if n, ok := p.identLike(); ok {
+		switch strings.ToLower(n) {
+		case "desc":
+			desc = true
+			p.advance()
+		case "asc":
+			p.advance()
+		}
+	}
+
+	return ast.SortKey{
+		Field: field,
+		Desc:  desc,
+		Pos:   ast.Span{Start: start, End: p.prev.End},
+	}
+}
+
 func (p *parser) parseIntBody(s *ast.Stage, isHead bool) {
 	val := p.parseIntValue()
 	payload := &ast.IntPayload{N: val, Pos: ast.Span{Start: s.NamePos.Start, End: p.prev.End}}
@@ -1314,6 +1465,13 @@ func (p *parser) parseIntBody(s *ast.Stage, isHead bool) {
 	} else {
 		s.Tail = payload
 	}
+}
+
+// parseOffsetBody parses `offset N`, which skips the first N rows. N must be a
+// non-negative integer literal (a leading '-' fails parseIntValue).
+func (p *parser) parseOffsetBody(s *ast.Stage) {
+	val := p.parseIntValue()
+	s.Offset = &ast.IntPayload{N: val, Pos: ast.Span{Start: s.NamePos.Start, End: p.prev.End}}
 }
 
 func (p *parser) parseDedupBody(s *ast.Stage) {
@@ -2656,8 +2814,6 @@ var killedSpellings = map[string]killedFix{
 	"rex":           {message: "rex is replaced by parse regex in v2", suggestion: "parse regex r\"...\""},
 	"fillnull":      {message: "fillnull is replaced by extend with ?? in v2", suggestion: "extend field = field ?? default"},
 	"take":          {message: "take is replaced by head in v2", suggestion: "head"},
-	"limit":         {message: "limit is replaced by head in v2", suggestion: "head"},
-	"order":         {message: "order is replaced by sort in v2", suggestion: "sort"},
 	"omit":          {message: "omit is replaced by drop in v2", suggestion: "drop"},
 	"enrich":        {message: "enrich is replaced by eventstats in v2", suggestion: "eventstats"},
 	"running":       {message: "running is replaced by streamstats in v2", suggestion: "streamstats"},

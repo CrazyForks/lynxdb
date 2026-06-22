@@ -131,6 +131,44 @@ func assertFixpoint(t *testing.T, input string) {
 	}
 }
 
+// TestFormat_SourcelessSearchTerm guards against the from-stage formatter
+// emitting a double space ("from  A") when a search-sugar term has no
+// preceding source or time range; the doubled space broke format idempotency.
+func TestFormat_SourcelessSearchTerm(t *testing.T) {
+	for _, input := range []string{"A", "error timeout"} {
+		t.Run(input, func(t *testing.T) {
+			q, diags := parser.Parse(input)
+			if len(diags) > 0 {
+				t.Fatalf("parse %q: %v", input, diagStrings(diags))
+			}
+			if got := Query(q); strings.Contains(got, "from  ") {
+				t.Errorf("double space after from: %q", got)
+			}
+		})
+	}
+	// A bare word round-trips cleanly once the doubled space is gone.
+	assertFixpoint(t, "A")
+}
+
+// TestFixpoint_SearchSugarRoundtrip covers freehand search and sourceless
+// stages that previously broke the format round-trip: a sourceless search was
+// wrapped in "from" (eating the first term as a source), a sourceless sugar
+// stage dropped its leading pipe (reparsing as freehand), and numeric-led
+// value runs were split (A=0A -> A=0 and A).
+func TestFixpoint_SearchSugarRoundtrip(t *testing.T) {
+	for _, input := range []string{
+		"*A",
+		`*A00000("0000")`,
+		"error timeout",
+		"|Count BY A",
+		`A A=\0A`,
+	} {
+		t.Run(input, func(t *testing.T) {
+			assertFixpoint(t, input)
+		})
+	}
+}
+
 // 2. Expression fixpoint
 
 func TestFixpoint_Expr(t *testing.T) {

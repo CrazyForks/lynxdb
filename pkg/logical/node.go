@@ -591,6 +591,17 @@ func (n *Limit) String() string {
 	return fmt.Sprintf("Limit(%d)", n.N)
 }
 
+// Offset
+
+// Offset skips the first N rows of its input.
+type Offset struct {
+	unaryNode
+	N int64
+}
+
+func (n *Offset) Schema() []sema.Field { return n.inputSchema() }
+func (n *Offset) String() string       { return fmt.Sprintf("Offset(%d)", n.N) }
+
 // Sample
 
 // Sample randomly keeps either a percentage of rows or a fixed reservoir count.

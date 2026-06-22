@@ -77,6 +77,30 @@ func hasSugarTerms(q *ast.Query) bool {
 	return false
 }
 
+// TestDesugarPreservesOffset guards against cloneStage dropping the offset
+// payload (it copies Head/Tail; the Offset field must be cloned too).
+func TestDesugarPreservesOffset(t *testing.T) {
+	q := mustParse(t, `from main | sort -count | offset 5`)
+	out, _ := Desugar(q, Options{DefaultSource: "main"})
+
+	var found *ast.Stage
+	for i := range out.Pipeline.Stages {
+		if out.Pipeline.Stages[i].Name == "offset" {
+			found = &out.Pipeline.Stages[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatal("offset stage missing after desugar")
+	}
+	if found.Offset == nil {
+		t.Fatal("offset stage lost its Offset payload after desugar (cloneStage drop)")
+	}
+	if found.Offset.N != 5 {
+		t.Fatalf("offset N = %d, want 5", found.Offset.N)
+	}
+}
+
 // 1. Golden expansion tests
 
 func TestGoldenExpansions(t *testing.T) {

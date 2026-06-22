@@ -427,7 +427,11 @@ func formatPipeline(b *strings.Builder, p *ast.Pipeline, afterLets bool) {
 	}
 
 	for i, s := range p.Stages {
-		if multiLine {
+		// A sourceless pipeline whose first stage lexes as a plain identifier
+		// (count, sample, hist, ...) needs a leading | so it reparses as a
+		// stage rather than as a freehand search. Keyword stages (head, sort,
+		// ...) reparse as stages on their own and keep the bare form.
+		if multiLine || (i == 0 && !hasSource && !lexer.IsKeyword(strings.ToLower(s.Name))) {
 			b.WriteString("| ")
 		}
 		formatStage(b, &s)
@@ -443,8 +447,13 @@ func formatPipelineInline(b *strings.Builder, p *ast.Pipeline) {
 		formatFromStage(b, p.Source)
 	}
 	for i, s := range p.Stages {
-		if p.Source != nil || i > 0 {
+		switch {
+		case p.Source != nil || i > 0:
 			b.WriteString(" | ")
+		case !lexer.IsKeyword(strings.ToLower(s.Name)):
+			// Sourceless first stage that lexes as a plain identifier needs a
+			// leading | so it does not reparse as a freehand search.
+			b.WriteString("| ")
 		}
 		formatStage(b, &s)
 	}
@@ -453,8 +462,19 @@ func formatPipelineInline(b *strings.Builder, p *ast.Pipeline) {
 // From stage
 
 func formatFromStage(b *strings.Builder, f *ast.FromStage) {
+	// A freehand search (no explicit source, no range) is bare search sugar.
+	// Wrapping it in "from" would reparse the first term as a source name,
+	// which is both wrong (a search term becomes a source) and breaks the
+	// format round-trip for globs/phrases (e.g. *A -> "from * A").
+	if len(f.Sources) == 0 && len(f.TimeRanges) == 0 && f.SugarTerms != nil {
+		formatSearchExpr(b, f.SugarTerms)
+		return
+	}
+
 	b.WriteString("from")
-	if len(f.Sources) > 0 || len(f.TimeRanges) > 0 || f.SugarTerms != nil {
+	// Sources and ranges need a separator after "from"; sugar terms supply
+	// their own leading space below.
+	if len(f.Sources) > 0 || len(f.TimeRanges) > 0 {
 		b.WriteByte(' ')
 	}
 	for i, src := range f.Sources {
@@ -614,13 +634,19 @@ func formatSearchNot(b *strings.Builder, se ast.SearchExpr) {
 func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 	switch s := se.(type) {
 	case *ast.SearchBareWord:
-		if s.Glob {
+		switch {
+		case s.Glob:
 			// Word is the glob pattern with escapes preserved — print as-is.
 			b.WriteString(s.Word)
-		} else {
+		case isCleanBareWord(s.Word):
 			// Word is literal text; re-escape glob metacharacters so the
 			// formatted query reparses with the same (non-glob) semantics.
 			b.WriteString(escapeGlobMeta(s.Word))
+		default:
+			// Word would re-lex as something other than a bare term (a keyword
+			// like "or", a number, ...). Emit it as a quoted phrase, which is
+			// semantically the same single-token search and always round-trips.
+			b.WriteString(quoteString(s.Word))
 		}
 	case *ast.SearchPhrase:
 		b.WriteString(s.Raw)
@@ -628,7 +654,7 @@ func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 		writeFieldName(b, s.Key)
 		b.WriteString(s.Op)
 		if s.Value != nil {
-			formatExpr(b, s.Value, precTop)
+			formatSearchValue(b, s.Value)
 		}
 	case *ast.SearchIn:
 		writeFieldName(b, s.Key)
@@ -637,7 +663,7 @@ func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 			if i > 0 {
 				b.WriteString(", ")
 			}
-			formatExpr(b, v, precTop)
+			formatSearchValue(b, v)
 		}
 		b.WriteByte(')')
 	case *ast.SearchBinary:
@@ -657,6 +683,61 @@ func formatSearchPrimary(b *strings.Builder, se ast.SearchExpr) {
 
 // escapeGlobMeta backslash-escapes glob metacharacters (* ? \) so a literal
 // bare word survives a format→parse round trip without becoming a glob.
+// formatSearchValue formats a search-sugar value. A bare (non-backtick) Ident
+// holds the unescaped literal text of an adjacent run, so glob metacharacters
+// and backslashes must be re-escaped to reparse as the same literal value
+// (e.g. a value of `\0` must format as `\\0`, not `\0`). Other value kinds
+// (literals, glob values, backtick idents) format through formatExpr.
+func formatSearchValue(b *strings.Builder, e ast.Expr) {
+	if id, ok := e.(*ast.Ident); ok && !id.Quoted {
+		if isCleanBareWord(id.Name) {
+			b.WriteString(escapeGlobMeta(id.Name))
+		} else {
+			b.WriteString(quoteString(id.Name))
+		}
+		return
+	}
+	formatExpr(b, e, precTop)
+}
+
+// isCleanBareWord reports whether w can be formatted as a bare search term
+// (re-escaped via escapeGlobMeta) and still round-trip. It must start with a
+// letter or underscore and contain only identifier characters, dashes, or glob
+// metacharacters/backslashes (escapeGlobMeta re-escapes the latter, preserving
+// SearchBareWord semantics). Its leading identifier run must not be a reserved
+// keyword or boolean/null literal: the lexer tokenises that run on its own and
+// canonicalises keyword case, so "or" would come back as the OR operator and
+// "tOp" as "top". Words failing this are emitted as a quoted phrase instead.
+func isCleanBareWord(w string) bool {
+	if w == "" {
+		return false
+	}
+	if c := w[0]; !(c == '_' || (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z')) {
+		return false
+	}
+	for i := 1; i < len(w); i++ {
+		b := w[i]
+		switch {
+		case b == '_' || (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z') || (b >= '0' && b <= '9'):
+		case b == '-' || b == '*' || b == '?' || b == '\\':
+		default:
+			return false
+		}
+	}
+	// The leading identifier run is lexed as its own token; if it is a keyword
+	// or literal the bare form would not round-trip.
+	j := 0
+	for j < len(w) && (w[j] == '_' || (w[j] >= 'A' && w[j] <= 'Z') || (w[j] >= 'a' && w[j] <= 'z') || (w[j] >= '0' && w[j] <= '9')) {
+		j++
+	}
+	head := strings.ToLower(w[:j])
+	switch head {
+	case "true", "false", "null":
+		return false
+	}
+	return !lexer.IsKeyword(head)
+}
+
 func escapeGlobMeta(s string) string {
 	if !strings.ContainsAny(s, `*?\`) {
 		return s
@@ -705,6 +786,9 @@ func formatStage(b *strings.Builder, s *ast.Stage) {
 	case s.Tail != nil:
 		b.WriteByte(' ')
 		b.WriteString(strconv.FormatInt(s.Tail.N, 10))
+	case s.Offset != nil:
+		b.WriteByte(' ')
+		b.WriteString(strconv.FormatInt(s.Offset.N, 10))
 	case s.Dedup != nil:
 		b.WriteByte(' ')
 		formatDedupPayload(b, s.Dedup)

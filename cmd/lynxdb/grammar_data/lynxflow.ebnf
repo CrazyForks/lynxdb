@@ -53,7 +53,10 @@ stage       ::= baseline_stage
               | join_stage
               | keep_stage
               | latency_stage
+              | limit_stage
               | materialize_stage
+              | offset_stage
+              | order_stage
               | outliers_stage
               | parse_stage
               | patterns_stage
@@ -104,7 +107,10 @@ impact_stage     ::= 'impact' [agg_list] ['by' '=' field_list] ;
 join_stage       ::= 'join' sub_pipeline ['type' '=' ident] ['on' '=' field_list] ['tolerance' '=' duration] ;
 keep_stage       ::= 'keep' field_patterns ;
 latency_stage    ::= 'latency' field ['every' '=' duration] ['by' '=' field_list] ;
+limit_stage      ::= 'limit' number ;
 materialize_stage ::= 'materialize' string ['retention' '=' duration] ['partition_by' '=' field_list] ;
+offset_stage     ::= 'offset' number ;
+order_stage      ::= 'order' 'by' field [('asc'|'desc')] {',' field [('asc'|'desc')]} ;
 outliers_stage   ::= 'outliers' ['field' '=' field] ['method' '=' ident] ['threshold' '=' string] ;
 parse_stage      ::= 'parse' format_spec ['from' '=' field] ['into' '=' captures] ['prefix' '=' string] ['on_error' '=' ident] ;
 patterns_stage   ::= 'patterns' ['field' '=' field] ['max_templates' '=' number] ['similarity' '=' string] ;

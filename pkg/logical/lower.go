@@ -208,6 +208,8 @@ func (l *lowerer) lowerStage(input Node, s ast.Stage) Node {
 		return l.lowerHead(input, s)
 	case "tail":
 		return l.lowerTail(input, s)
+	case "offset":
+		return l.lowerOffset(input, s)
 	case "dedup":
 		return l.lowerDedup(input, s)
 	case "sample":
@@ -468,6 +470,16 @@ func (l *lowerer) lowerTail(input Node, s ast.Stage) Node {
 		unaryNode: unaryNode{Input: input},
 		N:         s.Tail.N,
 		Tail:      true,
+	}
+}
+
+func (l *lowerer) lowerOffset(input Node, s ast.Stage) Node {
+	if s.Offset == nil {
+		return input
+	}
+	return &Offset{
+		unaryNode: unaryNode{Input: input},
+		N:         s.Offset.N,
 	}
 }
 

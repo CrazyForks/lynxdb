@@ -674,6 +674,16 @@ func TestTimeRangeSnap(t *testing.T) {
 	assertKinds(t, "time range snap", kinds(tokens), want)
 }
 
+func TestSourceRelativeRangeShorthand(t *testing.T) {
+	input := `from app@1h`
+	tokens, diags := Lex(input)
+	if len(diags) > 0 {
+		t.Fatalf("unexpected diags: %v", diags)
+	}
+	want := []Kind{KwFrom, Ident, At, Duration, EOF}
+	assertKinds(t, "source relative range shorthand", kinds(tokens), want)
+}
+
 // Edge cases
 
 func TestEmptyInput(t *testing.T) {

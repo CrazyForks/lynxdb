@@ -18,7 +18,7 @@ Set Theme "Catppuccin Frappe"
 Set CursorBlink false
 Set LoopOffset 18%
 
-Env lynxdb_SERVER "http://127.0.0.1:3100"
+Env LYNXDB_SERVER "http://127.0.0.1:3100"
 
 Hide
 Type "ZSH_HIGHLIGHT_HIGHLIGHTERS=(main pattern)"
@@ -33,7 +33,7 @@ Type "ZSH_HIGHLIGHT_STYLES[double-quoted-argument]='fg=#a6e3a1'"
 Enter
 Type "typeset -gA ZSH_HIGHLIGHT_PATTERNS"
 Enter
-Type "ZSH_HIGHLIGHT_PATTERNS=( '(#i)(FROM|parse|where|stats|sort|head)' 'fg=#38bdf8,bold' '((#s)|[[:space:]|(),])(#i)(by|as|or|and)((#e)|[[:space:]|(),])' 'fg=#f472b6,bold' '(#i)(count|json|combined|cef)' 'fg=#fde68a,bold' '>=|=|-hits|-count' 'fg=#f472b6,bold' )"
+Type "ZSH_HIGHLIGHT_PATTERNS=( '(#i)(from|parse|where|stats|sort|head|top)' 'fg=#38bdf8,bold' '((#s)|[[:space:]|(),])(#i)(by|as|or|and)((#e)|[[:space:]|(),])' 'fg=#f472b6,bold' '(#i)(count|json|combined|cef|message)' 'fg=#fde68a,bold' '>=|==|-hits|-count|\\[-1h\\]' 'fg=#f472b6,bold' )"
 Enter
 Type "PS1='lynxdb-demo $ '"
 Enter
@@ -55,46 +55,46 @@ Sleep 2s
 Ctrl+L
 Type "lynxdb indexes"
 Enter
-Wait+Screen /23 indexes/
+Wait+Screen /nginx-access|app-json/
 Sleep 2s
 
 Ctrl+L
-Type `lynxdb query 'FROM app-json | parse json(message) | where level="ERROR" or level="FATAL" | stats count() by service, level | sort -count | head 8' --since 1h`
+Type `lynxdb query 'from app-json[-1h] | parse json from message | where level=="ERROR" or level=="FATAL" | stats count() by service, level | sort -count | head 8'`
 Enter
 Wait+Screen /payment-svc|order-svc|user-svc/
 Sleep 3s
 
 Ctrl+L
-Type "lynxdb query 'FROM nginx-access | parse combined(message) | where status>=500 | stats count() as hits by uri | sort -hits | head 8' --since 1h"
+Type "lynxdb query 'from nginx-access[-1h] | parse combined from message | where status>=500 | top 8 uri'"
 Enter
 Wait+Screen /\/admin|\/index.html|\/api/
 Sleep 3s
 
 Ctrl+L
-Type `lynxdb query 'FROM cef-security | parse cef(message) | where severity="Critical" or severity="High" | stats count() as hits by severity, act | sort -hits | head 8' --since 1h`
+Type `lynxdb query 'from cef-security[-1h] | parse cef from message | where severity=="Critical" or severity=="High" | stats count() as hits by severity, act | sort -hits | head 8'`
 Enter
 Wait+Screen /Critical/
 Sleep 3s
 
 Ctrl+L
-Type "lynxdb query --explain 'FROM nginx-access | parse combined(message) | where status>=500 | stats count() as hits by uri | sort -hits | head 8'"
+Type "lynxdb query --explain 'from nginx-access[-1h] | parse combined from message | where status>=500 | top 8 uri'"
 Enter
-Wait+Screen /TopK heap optimization/
+Wait+Screen /TopK|sugar:top/
 Sleep 4s
 
 Ctrl+L
-Type "lynxdb shell --since 1h"
+Type "lynxdb shell"
 Enter
 Wait+Screen /lynxdb shell/
 Sleep 1s
 
-Type `FROM app-json | parse json(message) | stats count() by level | sort -count | head 5`
+Type `from app-json[-1h] | parse json from message | top 5 level`
 Enter
 Wait+Screen /FATAL|ERROR|WARN/
 Sleep 2s
 
 Ctrl+L
-Type `FROM nginx-access | parse combined(message) | where status>=500 | stats count() by status | sort status`
+Type `from nginx-access[-1h] | parse combined from message | where status>=500 | stats count() by status | sort status`
 Enter
 Wait+Screen /500|502|503|504/
 Sleep 3s

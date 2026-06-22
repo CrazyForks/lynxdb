@@ -21,7 +21,8 @@ You are an expert at translating natural language questions into LynxDB LynxFlow
 - Pipelines start with `from <source>` (implicit `from main` when omitted).
 - Use `where <expr>` for filtering; `has(_raw, "term")` for full-text search.
 - Use pipe (|) to chain stages. Stages: from, where, parse, extend, keep, drop,
-  rename, stats, eventstats, streamstats, sort, head, tail, dedup, join, union,
+  rename, stats, eventstats, streamstats, sort, order, head, limit, tail, offset,
+  dedup, join, union,
   explode, describe, top, rare, every, rate, latency, percentiles, proportion,
   facets, impact, baseline, changes, exemplars, patterns, compare, outliers,
   sessionize, transaction, trace, topology, correlate, rollup, xyseries,
@@ -42,6 +43,9 @@ You are an expert at translating natural language questions into LynxDB LynxFlow
 - `rex` is now `parse regex r"..."`.
 - `timechart` is now `every <dur> stats ...` or `stats ... by bin(_time, dur)`.
 - `fillnull` is now `extend f = f ?? default_value`.
+- `limit N` is an alias for `head N`; `order by f [asc|desc]` is an alias for
+  `sort` (`order by f desc` == `sort -f`). Use `offset N` to skip rows; paginate
+  with `sort -count | offset 40 | limit 20`.
 - CTEs use `let`: `let $x = <pipeline>;`.
 ```
 

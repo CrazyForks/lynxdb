@@ -199,8 +199,8 @@ lynxdb config add-profile staging --url https://staging.company.com
 
 lynxdb config list-profiles
 
-lynxdb query 'level=error | stats count' --profile prod
-lynxdb query 'level=error | stats count' -p staging
+lynxdb query 'from main level=error | stats count()' --profile prod
+lynxdb query 'from main level=error | stats count()' -p staging
 ```
 
 ## Related

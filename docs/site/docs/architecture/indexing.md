@@ -11,7 +11,7 @@ LynxDB provides full-text search through two index structures embedded in every 
 ## Index Architecture
 
 ```
-Query: search "connection refused"
+Query: from main "connection refused"
                     │
                     ▼
     ┌───────────────────────────────┐
@@ -63,7 +63,7 @@ The bloom filter is implemented using `github.com/bits-and-blooms/bloom/v3`.
 
 ### Query-Time Usage
 
-When the query optimizer detects search terms in the query (e.g., `search "connection refused"` or `WHERE _raw LIKE "%timeout%"`), it extracts the literal strings and checks them against each segment's bloom filter before scanning:
+When the query optimizer detects search terms in the query (e.g., `from main "connection refused"` or `where contains(_raw, "timeout")`), it extracts the literal strings and checks them against each segment's bloom filter before scanning:
 
 ```
 for each segment:
@@ -118,19 +118,19 @@ Each term in the FST points to a roaring bitmap that records which event indices
 For multi-term queries, the inverted index resolves boolean operations using bitmap algebra:
 
 ```
-Query: search "connection" AND "refused"
+Query: from main "connection" "refused"
 
 1. FST lookup "connection" → posting list A = {0, 5, 12, 33, 847, 1203, 5891}
 2. FST lookup "refused"    → posting list B = {12, 847, 1203, 5891, 7002}
 3. A ∩ B (AND)             → result = {12, 847, 1203, 5891}
 
-Query: search "error" OR "warning"
+Query: from main "error" "warning"
 
 1. FST lookup "error"   → posting list A = {1, 2, 5, 9, 12}
 2. FST lookup "warning" → posting list B = {3, 7, 14, 20}
 3. A ∪ B (OR)           → result = {1, 2, 3, 5, 7, 9, 12, 14, 20}
 
-Query: search "error" AND NOT "timeout"
+Query: from main "error" "timeout" (as "error AND NOT timeout")
 
 1. FST lookup "error"   → posting list A = {1, 2, 5, 9, 12}
 2. FST lookup "timeout" → posting list B = {2, 9}
@@ -170,8 +170,8 @@ The query optimizer integrates index usage across multiple rules:
 
 The segment header contains `min_timestamp` and `max_timestamp`. Queries with time bounds skip segments entirely:
 
-```spl
-level=error | where _time >= "2026-01-15" AND _time < "2026-01-16"
+```lynxflow
+from main level=error | where _time >= "2026-01-15" and _time < "2026-01-16"
 ```
 
 Any segment whose `max_timestamp < 2026-01-15` or `min_timestamp >= 2026-01-16` is pruned.
@@ -180,8 +180,8 @@ Any segment whose `max_timestamp < 2026-01-15` or `min_timestamp >= 2026-01-16` 
 
 Literal string terms extracted from the query are tested against segment bloom filters:
 
-```spl
-search "connection refused"
+```lynxflow
+from main "connection refused"
 ```
 
 Terms `"connection"` and `"refused"` are tested. Segments where either bloom filter test returns false are skipped.
@@ -190,18 +190,18 @@ Terms `"connection"` and `"refused"` are tested. Segments where either bloom fil
 
 For segments that pass bloom filter checks, the inverted index resolves the exact matching events:
 
-```spl
-search "connection refused" | where level="error"
+```lynxflow
+from main "connection refused" | where level == "error"
 ```
 
-The inverted index resolves `"connection" AND "refused"` to a set of event IDs. The `WHERE level="error"` filter is then applied only to those events.
+The inverted index resolves `"connection" AND "refused"` to a set of event IDs. The `where level == "error"` filter is then applied only to those events.
 
 ### 4. Regex Literal Extraction
 
-When a query uses `REX` or `MATCH` with a regex pattern, the optimizer extracts any literal prefix or substring:
+When a query uses `parse regex` or `matches` with a regex pattern, the optimizer extracts any literal prefix or substring:
 
-```spl
-| rex field=_raw "host=(?P<host>\S+)"
+```lynxflow
+| parse regex r"host=(?P<host>\S+)"
 ```
 
 The literal `"host="` is extracted and used for bloom filter pruning, even though the full pattern is a regex.

@@ -14,7 +14,7 @@ With default settings on commodity hardware:
 | Metric | Value |
 |--------|-------|
 | Single-node ingest throughput | 300K+ events/sec |
-| Pipeline throughput (WHERE + STATS) | ~2.1M events/sec |
+| Pipeline throughput (where + stats) | ~2.1M events/sec |
 | VM simple predicate | 22ns/op, 0 allocs |
 | Cache hit latency | 299ns |
 | Streaming `head 10` on 100K events | 0.23ms |
@@ -100,11 +100,11 @@ For repeated aggregation queries, materialized views provide ~400x speedup:
 ```bash
 # Create a view for a common query pattern
 lynxdb mv create mv_errors_5m \
-  'level=error | stats count, avg(duration) by source, time_bucket(timestamp, "5m") AS bucket' \
+  'from main level=error | stats count(), avg(duration) by source, bin(_time, 5m) as bucket' \
   --retention 90d
 
 # Queries matching this pattern are automatically accelerated
-lynxdb query 'level=error | stats count by source'
+lynxdb query 'from main level=error | stats count() by source'
 # meta.accelerated_by: {view: mv_errors_5m, speedup: "~400x"}
 ```
 
@@ -125,10 +125,10 @@ Use `--analyze` to identify bottlenecks in specific queries:
 
 ```bash
 # Basic profiling
-lynxdb query 'level=error | stats count by source' --analyze
+lynxdb query 'from main level=error | stats count() by source' --analyze
 
 # Full profiling with per-operator timing
-lynxdb query 'level=error | stats count by source' --analyze full
+lynxdb query 'from main level=error | stats count() by source' --analyze full
 ```
 
 Look for:
@@ -241,7 +241,7 @@ Create materialized views for your hot aggregation queries:
 
 ```bash
 lynxdb mv create mv_errors_5m \
-  'level=error | stats count by source, time_bucket(timestamp, "5m") AS bucket' \
+  'from main level=error | stats count() by source, bin(_time, 5m) as bucket' \
   --retention 90d
 ```
 

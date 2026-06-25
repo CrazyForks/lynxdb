@@ -313,7 +313,7 @@ The syslog receiver supports RFC 5424, RFC 3164, and raw messages with automatic
 You do not need a running server to analyze logs. LynxDB can ingest data into an ephemeral in-memory engine and query it in one step:
 
 ```bash
-cat app.log | lynxdb query '| stats count by level'
+cat app.log | lynxdb query '| stats count() by level'
 lynxdb query --file '/var/log/nginx/*.log' '| where status>=500 | top 10 uri'
 ```
 

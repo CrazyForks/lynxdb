@@ -71,7 +71,7 @@ Queries that exceed this limit are cancelled with an error. Increase for workloa
 
 ### Default Result Limit
 
-The default number of result rows returned when the query does not include a `HEAD` or `LIMIT` command.
+The default number of result rows returned when the query does not include a `head` or `limit` stage.
 
 | Config Key | `query.default_result_limit` |
 |---|---|
@@ -135,7 +135,7 @@ For pipe/file mode queries, limit the ephemeral engine's memory usage.
 
 ```bash
 # Limit ephemeral engine to 512MB
-lynxdb query --file huge.log '| stats count by host' --max-memory 512mb
+lynxdb query --file huge.log '| stats count() by host' --max-memory 512mb
 ```
 
 ## Async Job Management

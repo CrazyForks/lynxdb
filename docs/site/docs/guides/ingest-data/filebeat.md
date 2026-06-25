@@ -20,7 +20,7 @@ Save the config, restart Filebeat, then check:
 
 ```bash
 lynxdb shippers
-lynxdb query 'FROM main | STATS count AS total BY _source'
+lynxdb query 'from main | stats count() as total by _source'
 ```
 
 ## Full annotated config

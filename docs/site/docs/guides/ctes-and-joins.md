@@ -15,7 +15,7 @@ CTEs let you define named result sets and reference them later in the query. Thi
 
 Define a CTE with `let $name = <pipeline>;` and reference it with `from $name`:
 
-```spl
+```lynxflow
 let $threats = from idx_backend | where threat_type in ["sqli", "path_traversal"] | keep client_ip, threat_type;
 let $logins = from idx_audit | where type == "USER_LOGIN" and res == "failed" | stats count() as failures by src_ip | rename src_ip as client_ip;
 from $threats | join type=inner on client_ip with $logins | keep client_ip, threat_type, failures

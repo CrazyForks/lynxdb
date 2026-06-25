@@ -158,7 +158,7 @@ lynxdb query 'from main level=info | stats count() by service'
 
 LynxFlow is a pipeline language. Data flows left to right through `|` (pipe) operators:
 
-```spl
+```lynxflow
 from main source=nginx status>=500
   | stats count() as count, avg(duration_ms) by uri
   | sort -count

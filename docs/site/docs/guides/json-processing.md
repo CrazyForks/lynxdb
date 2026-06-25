@@ -69,7 +69,7 @@ echo '{"level":"error","request":{"method":"POST","duration_ms":5012}}' \
 
 ### Multi-level nesting
 
-```spl
+```lynxflow
 // Access deeply nested values
 | parse json
 | where response.headers.content_type == "application/json"
@@ -79,7 +79,7 @@ echo '{"level":"error","request":{"method":"POST","duration_ms":5012}}' \
 
 ### Array elements
 
-```spl
+```lynxflow
 | parse json
 | extend first_tag = tags[0]
 | extend num_items = len(order.items)
@@ -180,7 +180,7 @@ After `explode items`, each row's `items` column holds one element. Object eleme
 
 Use `as` to name the element column:
 
-```spl
+```lynxflow
 // Input: {"name": "alice", "tags": ["admin", "user"]}
 | parse json | explode tags as tag
 // Row 1: name=alice, tag=admin
@@ -252,7 +252,7 @@ cat app.log | lynxdb query '| parse first_of(json, logfmt)'
 2. **Use `from_json()` in extend/where for single embedded values.** When only one field holds JSON, you avoid running a full parse stage.
 
 3. **Place extraction early in the pipeline.** Extract before `where` so the filter operates on typed fields:
-   ```spl
+   ```lynxflow
    | parse json into (status as int) | where status >= 500   // fast: status is an int
    ```
 

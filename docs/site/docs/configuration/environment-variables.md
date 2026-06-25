@@ -26,7 +26,7 @@ These control CLI client behavior when connecting to a LynxDB server.
 # Connect to a remote server with authentication
 export LYNXDB_SERVER=https://lynxdb.company.com
 export LYNXDB_TOKEN=lxk_a1b2c3d4e5f6...
-lynxdb query 'level=error | stats count'
+lynxdb query 'from main level=error | stats count()'
 ```
 
 ## Server Variables

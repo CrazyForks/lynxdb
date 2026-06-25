@@ -22,19 +22,19 @@ Data starts on the left (a `from` stage with optional search terms) and flows th
 
 The simplest query is a keyword search attached to the `from` stage:
 
-```spl
+```lynxflow
 from main error
 ```
 
 This finds all events containing the word "error". You can also search specific fields:
 
-```spl
+```lynxflow
 from main level=error
 ```
 
 Combine terms with boolean operators:
 
-```spl
+```lynxflow
 from main level=error source=nginx
 from main level=error OR level=warn
 from main level=error NOT source=redis
@@ -44,21 +44,21 @@ from main level=error NOT source=redis
 If your query omits the `from` stage, LynxDB reads from the default `main` dataset. So `stats count()` is equivalent to `from main | stats count()`. Note that search-term sugar like `level=error` only works in the `from` stage -- everywhere else, use `where` with `==`.
 :::
 
-## Step 2: Filter with WHERE
+## Step 2: Filter with `where`
 
 Use `where` for precise filtering. Inside `where`, `==` compares (a bare `=` binds values, so it is not a comparison):
 
-```spl
+```lynxflow
 from main source=nginx | where status >= 500
 from main source=nginx | where status >= 500 and duration_ms > 1000
 from main source=nginx | where contains(uri, "/api/")
 ```
 
-## Step 3: Aggregate with STATS
+## Step 3: Aggregate with `stats`
 
 `stats` computes aggregations. Aggregate calls always take parentheses -- `count()`, not `count`:
 
-```spl
+```lynxflow
 // Count events
 from main | stats count()
 
@@ -76,7 +76,7 @@ from main source=nginx | stats count() as requests, avg(duration_ms) as avg_late
 
 Alias `count()` with `as count` when later stages reference it:
 
-```spl
+```lynxflow
 // Sort descending (prefix with -)
 from main source=nginx | stats count() as count by uri | sort -count
 
@@ -89,7 +89,7 @@ from main source=nginx | top 10 uri
 
 ## Step 5: Select Columns
 
-```spl
+```lynxflow
 // Pick specific fields
 from main level=error | keep _time, source, message
 
@@ -101,7 +101,7 @@ from main level=error | drop _raw
 
 Create computed fields:
 
-```spl
+```lynxflow
 from main source=nginx
   | stats count() as total, count(where status >= 500) as errors by uri
   | extend error_rate = round(errors / total * 100, 1)
@@ -114,7 +114,7 @@ from main source=nginx
 
 Aggregate over time buckets:
 
-```spl
+```lynxflow
 // Error count per 5-minute bucket
 from main level=error | every 5m stats count()
 
@@ -128,7 +128,7 @@ from main level=error | every 5m by source stats count()
 
 Extract new fields from raw text using regex:
 
-```spl
+```lynxflow
 from main "connection refused"
   | parse regex r"host=(?P<host>\S+) port=(?P<port>\d+)"
   | stats count() as count by host, port
@@ -139,7 +139,7 @@ from main "connection refused"
 
 Here's a real-world query that finds the slowest API endpoints with high error rates:
 
-```spl
+```lynxflow
 from main source=nginx
   | stats count() as total,
           count(where status >= 500) as errors,

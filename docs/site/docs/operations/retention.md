@@ -131,12 +131,12 @@ Materialized views have their own retention policy, independent of the raw data 
 ```bash
 # Create a view with 90-day retention
 lynxdb mv create mv_errors_5m \
-  'level=error | stats count, avg(duration) by source, time_bucket(timestamp, "5m") AS bucket' \
+  'from main level=error | stats count(), avg(duration) by source, bin(_time, 5m) as bucket' \
   --retention 90d
 
 # Create a cascading view with longer retention
 lynxdb mv create mv_errors_1h \
-  '| from mv_errors_5m | stats sum(count) AS count by source, time_bucket(bucket, "1h") AS hour' \
+  'from mv_errors_5m | stats sum(count) as count by source, bin(bucket, 1h)' \
   --retention 365d
 ```
 

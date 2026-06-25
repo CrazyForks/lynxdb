@@ -191,15 +191,15 @@ lynxdb config add-profile staging --url https://staging.company.com
 Use profiles with the global `--profile` / `-p` flag:
 
 ```bash
-lynxdb query 'level=error | stats count' --profile prod
-lynxdb query 'level=error | stats count' -p staging
+lynxdb query 'from main level=error | stats count()' --profile prod
+lynxdb query 'from main level=error | stats count()' -p staging
 ```
 
 Or set a default profile via environment variable:
 
 ```bash
 export LYNXDB_PROFILE=prod
-lynxdb query 'level=error | stats count'
+lynxdb query 'from main level=error | stats count()'
 ```
 
 ---

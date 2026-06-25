@@ -9,8 +9,8 @@ description: LynxDB output format options -- json, ndjson, table, box, ascii, ma
 Control output format with the `--format` / `-F` global flag, available on all commands.
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format table
-lynxdb query 'level=error | stats count by source' -F csv
+lynxdb query 'from main level=error | stats count() by source' --format table
+lynxdb query 'from main level=error | stats count() by source' -F csv
 ```
 
 ## Format Reference
@@ -46,7 +46,7 @@ The default `--format auto` adapts based on context:
 ### json and ndjson
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format json
+lynxdb query 'from main level=error | stats count() by source' --format json
 ```
 
 ```json
@@ -57,7 +57,7 @@ lynxdb query 'level=error | stats count by source' --format json
 `ndjson` uses the same byte format:
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format ndjson
+lynxdb query 'from main level=error | stats count() by source' --format ndjson
 ```
 
 ```
@@ -68,7 +68,7 @@ lynxdb query 'level=error | stats count by source' --format ndjson
 ### table
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format table
+lynxdb query 'from main level=error | stats count() by source' --format table
 ```
 
 ```
@@ -84,19 +84,19 @@ lynxdb query 'level=error | stats count by source' --format table
 Use `--format ascii` when box-drawing characters are not desired:
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format ascii
+lynxdb query 'from main level=error | stats count() by source' --format ascii
 ```
 
 Use `--format markdown` for README or issue comments:
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format markdown
+lynxdb query 'from main level=error | stats count() by source' --format markdown
 ```
 
 ### vertical
 
 ```bash
-lynxdb query 'level=error | head 1' --format vertical
+lynxdb query 'from main level=error | head 1' --format vertical
 ```
 
 ```text
@@ -111,13 +111,13 @@ The query suffix `\G` is equivalent to `--format vertical` when `--format` is
 still `auto`:
 
 ```bash
-lynxdb query 'level=error | head 1 \G'
+lynxdb query 'from main level=error | head 1 \G'
 ```
 
 ### csv
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format csv
+lynxdb query 'from main level=error | stats count() by source' --format csv
 ```
 
 ```
@@ -129,7 +129,7 @@ api-gateway,120
 ### tsv
 
 ```bash
-lynxdb query 'level=error | stats count by source' --format tsv
+lynxdb query 'from main level=error | stats count() by source' --format tsv
 ```
 
 ```
@@ -141,7 +141,7 @@ api-gateway	120
 ### raw
 
 ```bash
-lynxdb query '_source=nginx | head 3' --format raw
+lynxdb query 'from main _source=nginx | head 3' --format raw
 ```
 
 ```
@@ -156,10 +156,10 @@ Colors are enabled by default when output goes to a TTY. Disable them with:
 
 ```bash
 # Flag
-lynxdb query 'level=error | stats count' --no-color
+lynxdb query 'from main level=error | stats count()' --no-color
 
 # Environment variable (any non-empty value)
-NO_COLOR=1 lynxdb query 'level=error | stats count'
+NO_COLOR=1 lynxdb query 'from main level=error | stats count()'
 ```
 
 ## Human Table Controls
@@ -181,16 +181,16 @@ When stdout is not a terminal, `--format auto` produces clean JSON suitable for 
 
 ```bash
 # Pipe to jq
-lynxdb query 'FROM main | stats count by host' | jq '.host'
+lynxdb query 'from main | stats count() by host' | jq '.host'
 
 # Export to file
-lynxdb query 'FROM main | where level="ERROR"' --since 24h > errors.json
+lynxdb query 'from main | where level == "ERROR"' --since 24h > errors.json
 
 # Export as CSV for spreadsheets
-lynxdb query 'FROM main | stats count by host' --format csv > report.csv
+lynxdb query 'from main | stats count() by host' --format csv > report.csv
 
 # Chain with other tools
-lynxdb query '| stats count by status' --format csv | sort -t, -k2 -rn
+lynxdb query '| stats count() by status' --format csv | sort -t, -k2 -rn
 ```
 
 ### Metadata to stderr
@@ -199,7 +199,7 @@ Stats and summary lines are written to stderr so they do not pollute piped outpu
 
 ```bash
 # Only JSON goes to the file; stats go to the terminal
-lynxdb query --file access.log '| stats count' > result.json
+lynxdb query --file access.log '| stats count()' > result.json
 # stderr shows: Scanned 50,000 events | 1 results | 89ms
 ```
 

@@ -57,11 +57,11 @@ The benchmark runs five query patterns against the generated dataset:
 
 | Query | Pattern |
 |-------|---------|
-| Filtered aggregate | `WHERE` + `STATS` on a selective predicate |
-| Full scan aggregate | `STATS` across all events |
+| Filtered aggregate | `where` + `stats` on a selective predicate |
+| Full scan aggregate | `stats` across all events |
 | Full-text search | Term search in `_raw` with inverted index |
-| Range filter + top | Numeric range filter + `TOP` command |
-| Time bucketed | `TIMECHART` with time bucket aggregation |
+| Range filter + top | Numeric range filter + `top` command |
+| Time bucketed | `every` time-bucket aggregation |
 
 Results include ingest throughput (events/sec) and per-query latency.
 
@@ -110,16 +110,16 @@ While the demo is running, query the data in another terminal:
 
 ```bash
 # Count events by source
-lynxdb query 'FROM main | stats count by source'
+lynxdb query 'from main | stats count() by source'
 
 # Error rate
-lynxdb query 'level=error | stats count by source'
+lynxdb query 'from main level=error | stats count() by source'
 
 # Top slow endpoints
-lynxdb query '_source=nginx duration_ms > 1000 | top 10 uri'
+lynxdb query 'from main _source=nginx duration_ms > 1000 | top 10 uri'
 
 # Live tail
-lynxdb tail 'level=error'
+lynxdb tail 'from main level=error'
 
 # Server dashboard
 lynxdb top

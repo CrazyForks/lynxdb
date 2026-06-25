@@ -73,10 +73,10 @@ ExecStart=/usr/local/bin/lynxdb server \
 
 ```bash
 # Connect to TLS-enabled server
-lynxdb query --server https://lynxdb.company.com 'level=error | stats count'
+lynxdb query --server https://lynxdb.company.com 'from main level=error | stats count()'
 
 # Skip TLS verification (development only)
-lynxdb query --server https://localhost:3100 --tls-skip-verify 'level=error'
+lynxdb query --server https://localhost:3100 --tls-skip-verify 'from main level=error'
 
 # Or via environment variable
 export LYNXDB_SERVER=https://lynxdb.company.com
@@ -205,7 +205,7 @@ Client setup:
 lynxdb login --server https://lynxdb.company.com --token lxk_a1b2c3d4e5f6...
 
 # All subsequent commands use saved credentials
-lynxdb query 'level=error | stats count'
+lynxdb query 'from main level=error | stats count()'
 ```
 
 ### API Access with Auth
@@ -214,12 +214,12 @@ lynxdb query 'level=error | stats count'
 # Include token in API requests
 curl -s https://lynxdb.company.com/api/v1/query \
   -H "Authorization: Bearer lxk_a1b2c3d4e5f6..." \
-  -d '{"q": "level=error | stats count"}'
+  -d '{"q": "from main level=error | stats count()"}'
 
 # Or use the X-LynxDB-Token header
 curl -s https://lynxdb.company.com/api/v1/query \
   -H "X-LynxDB-Token: lxk_a1b2c3d4e5f6..." \
-  -d '{"q": "level=error | stats count"}'
+  -d '{"q": "from main level=error | stats count()"}'
 ```
 
 ## Connection Profiles
@@ -238,7 +238,7 @@ lynxdb config add-profile staging \
   --token lxk_staging_key...
 
 # Use a specific profile
-lynxdb query 'level=error | stats count' --profile prod
+lynxdb query 'from main level=error | stats count()' --profile prod
 
 # Set default profile
 export LYNXDB_PROFILE=prod

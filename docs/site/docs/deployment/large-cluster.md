@@ -129,9 +129,9 @@ query:
 The optimizer automatically splits queries for distributed execution:
 
 ```
-"source=nginx | where status>=500 | stats count by uri | sort -count | head 10"
+"source=nginx | where status>=500 | stats count() by uri | sort -count | head 10"
 
-  Shard-level (pushed):    | where status>=500 | stats count by uri   (partial agg)
+  Shard-level (pushed):    | where status>=500 | stats count() by uri   (partial agg)
   Coordinator (merged):    | sort -count | head 10
 ```
 

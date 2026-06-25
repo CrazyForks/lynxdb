@@ -234,7 +234,7 @@ LynxFlow query text
 | Streaming `head 10` on 100K events | 0.23 ms |
 | Binary search on sorted timestamps (1M events) | 15 ns vs 232 us full scan |
 | Cache hit latency | 299 ns |
-| Pipeline throughput (WHERE + STATS, 100K events) | ~2.1M events/sec |
+| Pipeline throughput (where + stats, 100K events) | ~2.1M events/sec |
 | Single-node ingest throughput | 300K+ events/sec |
 | Materialized view acceleration | ~400x vs raw scan |
 

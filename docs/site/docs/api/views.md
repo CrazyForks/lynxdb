@@ -139,7 +139,7 @@ curl -X POST localhost:3100/api/v1/views \
     "name": "mv_access",
     "query": "from main source=nginx | keep _time, method, uri, status, size, duration",
     "retention": "14d",
-    "partition_by": "date(_time)"
+    "partition_by": "bin(_time, 1d)"
   }'
 ```
 

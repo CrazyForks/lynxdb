@@ -209,13 +209,13 @@ Profile individual queries to identify performance bottlenecks:
 
 ```bash
 # Basic profiling
-lynxdb query 'level=error | stats count by source' --analyze
+lynxdb query 'from main level=error | stats count() by source' --analyze
 
 # Full profiling with per-operator timing
-lynxdb query 'level=error | stats count by source' --analyze full
+lynxdb query 'from main level=error | stats count() by source' --analyze full
 
 # Trace-level profiling
-lynxdb query 'level=error | stats count by source' --analyze trace
+lynxdb query 'from main level=error | stats count() by source' --analyze trace
 ```
 
 The `--analyze` output shows:
@@ -264,7 +264,7 @@ Use the `lynxdb watch` command for quick metric monitoring:
 
 ```bash
 # Watch error rate every 30 seconds
-lynxdb watch 'level=error | stats count' --interval 30s --diff
+lynxdb watch 'from main level=error | stats count()' --interval 30s --diff
 ```
 
 ## Recommended Monitoring Checklist

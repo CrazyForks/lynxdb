@@ -93,7 +93,7 @@ func ExecuteSlashCommand(input string, sess *Session, history *History) (output 
 
 	case "/format":
 		if len(parts) < 2 {
-			return fmt.Sprintf("  Current format: %s\n  Usage: /format [table|json|csv|raw]", sess.Format), nil, false
+			return fmt.Sprintf("  Current format: %s\n  Usage: /format [table|vertical|json|csv|raw]", sess.Format), nil, false
 		}
 
 		return setFormat(sess, parts[1]), nil, false
@@ -204,7 +204,7 @@ func helpText() string {
 	b.WriteString("  /sources           List event sources\n")
 	b.WriteString("  /explain <query>   Show query execution plan\n")
 	b.WriteString("  /set since <val>   Change default time range\n")
-	b.WriteString("  /format <fmt>      Set output format (table|json|csv|raw)\n")
+	b.WriteString("  /format <fmt>      Set output format (table|vertical|json|csv|raw)\n")
 	b.WriteString("  /timing [on|off]   Toggle elapsed time display\n")
 	b.WriteString("  /server            Show server version, health, uptime\n")
 	b.WriteString("  /since <duration>  Shorthand for /set since <val>\n")
@@ -258,6 +258,8 @@ func setFormat(sess *Session, value string) string {
 	switch strings.ToLower(value) {
 	case "table":
 		sess.Format = output.FormatTable
+	case "vertical", "line", "g":
+		sess.Format = output.FormatVertical
 	case "json":
 		sess.Format = output.FormatJSON
 	case "csv":
@@ -265,7 +267,7 @@ func setFormat(sess *Session, value string) string {
 	case "raw":
 		sess.Format = output.FormatRaw
 	default:
-		return fmt.Sprintf("  Unknown format %q. Available: table, json, csv, raw", value)
+		return fmt.Sprintf("  Unknown format %q. Available: table, vertical, json, csv, raw", value)
 	}
 
 	return fmt.Sprintf("  Set format=%s", strings.ToLower(value))

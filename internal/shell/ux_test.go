@@ -2,6 +2,7 @@ package shell
 
 import (
 	"errors"
+	"fmt"
 	"regexp"
 	"strings"
 	"testing"
@@ -199,6 +200,40 @@ func TestModelViewKeepsEditorInsideScreen(t *testing.T) {
 	}
 }
 
+func TestSidebarStaysHiddenOnEightyColumnTerminal(t *testing.T) {
+	model := NewModel("server", RunOpts{Server: "http://localhost:3100"})
+	model.width = 80
+	model.height = 24
+	model.recalcLayout()
+
+	if !model.sidebarOpen {
+		t.Fatal("narrow layout should preserve sidebar intent for later resize")
+	}
+	if model.sidebarLay.sidebarW != 0 {
+		t.Fatalf("sidebar width = %d, want hidden at 80 columns", model.sidebarLay.sidebarW)
+	}
+	if model.sidebarLay.mainW != 80 {
+		t.Fatalf("main width = %d, want full terminal width", model.sidebarLay.mainW)
+	}
+}
+
+func TestSidebarIntentSurvivesNarrowToWideResize(t *testing.T) {
+	model := NewModel("server", RunOpts{Server: "http://localhost:3100"})
+	model.width = 80
+	model.height = 24
+	model.recalcLayout()
+
+	model.width = 120
+	model.recalcLayout()
+
+	if !model.sidebarOpen {
+		t.Fatal("sidebar intent should survive narrow layout")
+	}
+	if model.sidebarLay.sidebarW == 0 {
+		t.Fatal("sidebar should reappear after resizing wide enough")
+	}
+}
+
 func TestModelEditorStopsBeforeSidebar(t *testing.T) {
 	zone.NewGlobal()
 	defer zone.Close()
@@ -244,19 +279,22 @@ func TestEditorRendersFramedInputBlock(t *testing.T) {
 	}
 }
 
-func TestEditorHighlightsQueryWithoutChangingText(t *testing.T) {
+func TestEditorRendersQueryWithoutLiteralANSICodes(t *testing.T) {
 	editor := NewEditor("lynxdb> ", "   ...> ", NewHistory(), NewCompleter())
 	editor.SetWidth(80)
-	editor.SetValue("from nginx | stats count by status")
+	editor.SetValue("where level == \"error\"")
 
 	got := editor.View()
-	for _, want := range []string{"from nginx | stats count by status", "lynxdb>"} {
-		if !strings.Contains(plain(got), want) {
-			t.Fatalf("editor view missing %q in %q", want, plain(got))
+	plainGot := plain(got)
+	for _, want := range []string{"where level == \"error\"", "lynxdb>"} {
+		if !strings.Contains(plainGot, want) {
+			t.Fatalf("editor view missing %q in %q", want, plainGot)
 		}
 	}
-	if !strings.Contains(got, "\x1b[") {
-		t.Fatalf("editor view should contain syntax styling, got %q", got)
+	for _, bad := range []string{"[37m", "[m", "[0m"} {
+		if strings.Contains(plainGot, bad) {
+			t.Fatalf("editor view leaked literal ANSI code %q in %q", bad, plainGot)
+		}
 	}
 }
 
@@ -296,6 +334,21 @@ func TestRenderResultRowsFitsLogTableWidth(t *testing.T) {
 		if w := lipgloss.Width(line); w > 48 {
 			t.Fatalf("rendered line width = %d, want <= 48 in %q\n%s", w, line, got)
 		}
+	}
+}
+
+func TestRenderResultRowsFallsBackToVerticalForWideLogRows(t *testing.T) {
+	row := make(map[string]interface{})
+	for i := 0; i < 14; i++ {
+		row[fmt.Sprintf("field_%02d", i)] = strings.Repeat("value ", 6)
+	}
+
+	got := plain(renderResultRows([]map[string]interface{}{row}, 80, output.FormatTable))
+	if !strings.Contains(got, "record 1") {
+		t.Fatalf("wide shell result should use vertical layout, got:\n%s", got)
+	}
+	if strings.Contains(got, "│ … │") {
+		t.Fatalf("wide shell result rendered as unreadable ellipsis table:\n%s", got)
 	}
 }
 

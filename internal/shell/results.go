@@ -199,6 +199,10 @@ func renderResultRows(rows []map[string]interface{}, width int, format output.Fo
 		return ""
 	}
 
+	if shouldRenderShellResultsVertical(rows, width, format) {
+		format = output.FormatVertical
+	}
+
 	f := output.DetectFormatWithOptions(format, rows, output.HumanTableOptions{
 		Theme: ui.Stdout,
 		Width: width,
@@ -208,6 +212,38 @@ func renderResultRows(rows []map[string]interface{}, width int, format output.Fo
 	_ = f.Format(&b, rows)
 
 	return b.String()
+}
+
+func shouldRenderShellResultsVertical(rows []map[string]interface{}, width int, format output.Format) bool {
+	if format != output.FormatTable && format != output.FormatAuto {
+		return false
+	}
+	if width <= 0 || len(rows) == 0 {
+		return false
+	}
+
+	cols := make(map[string]struct{})
+	for _, row := range rows {
+		for col := range row {
+			cols[col] = struct{}{}
+		}
+	}
+
+	colCount := len(cols)
+	if colCount < 8 {
+		return false
+	}
+
+	// Box-table chrome is one separator per edge/column plus one space of
+	// padding on both sides of each column. If the average remaining content
+	// width drops below a short word, a table turns into a grid of ellipses.
+	chrome := colCount + 1 + 2*colCount
+	available := width - chrome
+	if available <= 0 {
+		return true
+	}
+
+	return available/colCount < 8
 }
 
 // appendZeroGuidance renders "No results." with contextual tips.

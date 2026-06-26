@@ -17,8 +17,12 @@ const (
 	//   < breakpointHideSidebar  → sidebar fully hidden
 	//   < breakpointCompact      → compact mode (section headers only)
 	//   >= breakpointCompact     → full sidebar
-	breakpointHideSidebar = 60
-	breakpointCompact     = 100
+	//
+	// A compact sidebar is still 25 columns including the separator. On an
+	// 80-column terminal that leaves log tables and the editor too cramped, so
+	// keep the main query surface full-width until the terminal is wide enough.
+	breakpointHideSidebar = 100
+	breakpointCompact     = 120
 )
 
 // sidebarLayout holds computed layout dimensions.

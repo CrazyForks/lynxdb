@@ -704,6 +704,7 @@ func (m Model) handleMouseClick(msg tea.MouseClickMsg) (tea.Model, tea.Cmd) {
 // View renders the full-screen TUI.
 func (m Model) View() tea.View {
 	var b strings.Builder
+	sidebarVisible := m.sidebarOpen && m.sidebarLay.sidebarW > 0
 
 	// Header (1 line, full width).
 	b.WriteString(oneLine(m.header.View()))
@@ -713,7 +714,7 @@ func (m Model) View() tea.View {
 	mainH := m.mainHeight()
 	resultsView := fixedHeight(m.results.View(), mainH)
 
-	if m.sidebarOpen && m.sidebarLay.sidebarW > 0 {
+	if sidebarVisible {
 		separator := renderVerticalSeparator(mainH)
 		sidebarView := fixedHeight(m.sidebar.View(), mainH)
 		mainArea := lipgloss.JoinHorizontal(lipgloss.Top, resultsView, separator, sidebarView)
@@ -726,7 +727,7 @@ func (m Model) View() tea.View {
 
 	// Editor stays aligned with the results pane when the sidebar is open.
 	editorView := fixedHeight(m.editor.View(), m.editor.EditorHeight())
-	if m.sidebarOpen && m.sidebarLay.sidebarW > 0 {
+	if sidebarVisible {
 		separator := renderVerticalSeparator(m.editor.EditorHeight())
 		sidebarBlank := lipgloss.NewStyle().Width(m.sidebarLay.sidebarW).Render("")
 		editorView = lipgloss.JoinHorizontal(lipgloss.Top, editorView, separator, fixedHeight(sidebarBlank, m.editor.EditorHeight()))
@@ -739,7 +740,7 @@ func (m Model) View() tea.View {
 	if m.running {
 		elapsed = time.Since(m.startTime)
 	}
-	status := m.statusBar.View(m.focus, m.running, m.editor.InMultiLine(), m.editor.PopupVisible(), elapsed, m.progress, m.tailActive, m.sidebarOpen, m.keys)
+	status := m.statusBar.View(m.focus, m.running, m.editor.InMultiLine(), m.editor.PopupVisible(), elapsed, m.progress, m.tailActive, sidebarVisible, m.keys)
 	b.WriteString(oneLine(status))
 
 	output := b.String()
@@ -863,13 +864,6 @@ func (m *Model) recalcLayout() {
 
 	lay := computeSidebarLayout(m.width, m.sidebarOpen)
 	m.sidebarLay = lay
-
-	// If sidebar can't fit, force it closed.
-	if m.sidebarOpen && lay.sidebarW == 0 {
-		m.sidebarOpen = false
-		lay = computeSidebarLayout(m.width, m.sidebarOpen)
-		m.sidebarLay = lay
-	}
 
 	mainH := m.mainHeight()
 	m.editor.SetWidth(lay.mainW)
